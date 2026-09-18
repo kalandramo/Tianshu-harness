@@ -1,0 +1,366 @@
+{
+  "deepseek": {
+    "supportsThinking": true,
+    "thinkingBlockType": "enabled",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": true,
+    "supportsCacheControl": false,
+    "stripParams": [
+      "top_k",
+      "metadata",
+      "service_tier",
+      "cache_control"
+    ],
+    "hasToolJsonInContentBug": true,
+    "effortFormat": "reasoning_effort",
+    "prefixCacheStrategy": "deepseek-native",
+    "supportsResponseFormat": true,
+    "effortCap": null,
+    "hasMapUsage": true
+  },
+  "kimi": {
+    "supportsThinking": true,
+    "thinkingBlockType": "enabled",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": false,
+    "supportsCacheControl": false,
+    "stripParams": [
+      "top_k",
+      "metadata",
+      "service_tier",
+      "cache_control"
+    ],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "reasoning_effort",
+    "prefixCacheStrategy": "none",
+    "supportsResponseFormat": false,
+    "effortCap": null,
+    "hasMapUsage": false
+  },
+  "glm": {
+    "supportsThinking": true,
+    "thinkingBlockType": "enabled",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": false,
+    "supportsCacheControl": false,
+    "stripParams": [
+      "top_k",
+      "metadata",
+      "service_tier"
+    ],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "reasoning_effort",
+    "prefixCacheStrategy": "deepseek-native",
+    "supportsResponseFormat": true,
+    "effortCap": null,
+    "hasMapUsage": true
+  },
+  "minimax": {
+    "supportsThinking": true,
+    "thinkingBlockType": "adaptive",
+    "reasoningSplit": true,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": false,
+    "supportsCacheControl": false,
+    "stripParams": [
+      "top_k",
+      "metadata",
+      "service_tier",
+      "cache_control"
+    ],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "none",
+    "prefixCacheStrategy": "none",
+    "supportsResponseFormat": false,
+    "effortCap": null,
+    "hasMapUsage": false
+  },
+  "mimo": {
+    "supportsThinking": true,
+    "thinkingBlockType": "enabled",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": true,
+    "supportsCacheControl": false,
+    "stripParams": [
+      "top_k",
+      "metadata",
+      "service_tier",
+      "cache_control"
+    ],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "none",
+    "prefixCacheStrategy": "none",
+    "supportsResponseFormat": false,
+    "effortCap": null,
+    "hasMapUsage": false
+  },
+  "mimo-api": {
+    "supportsThinking": true,
+    "thinkingBlockType": "enabled",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": false,
+    "supportsCacheControl": false,
+    "stripParams": [
+      "top_k",
+      "metadata",
+      "service_tier",
+      "cache_control"
+    ],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "none",
+    "prefixCacheStrategy": "deepseek-native",
+    "supportsResponseFormat": false,
+    "effortCap": null,
+    "hasMapUsage": false
+  },
+  "opencode-go": {
+    "supportsThinking": true,
+    "thinkingBlockType": "none",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": false,
+    "supportsCacheControl": false,
+    "stripParams": [
+      "top_k",
+      "metadata",
+      "service_tier",
+      "cache_control"
+    ],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "reasoning_effort",
+    "prefixCacheStrategy": "none",
+    "supportsResponseFormat": false,
+    "effortCap": null,
+    "hasMapUsage": false
+  },
+  "openai": {
+    "supportsThinking": true,
+    "thinkingBlockType": "none",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": false,
+    "supportsCacheControl": true,
+    "stripParams": [],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "reasoning_effort",
+    "prefixCacheStrategy": "none",
+    "supportsResponseFormat": true,
+    "effortCap": null,
+    "hasMapUsage": false
+  },
+  "codex": {
+    "supportsThinking": true,
+    "thinkingBlockType": "none",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": false,
+    "supportsCacheControl": true,
+    "stripParams": [],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "reasoning_effort",
+    "prefixCacheStrategy": "none",
+    "supportsResponseFormat": true,
+    "effortCap": {
+      "max": "xhigh"
+    },
+    "hasMapUsage": false
+  },
+  "claude": {
+    "supportsThinking": true,
+    "thinkingBlockType": "enabled",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "budget_tokens",
+    "preservedThinkingProtocol": false,
+    "supportsCacheControl": false,
+    "stripParams": [
+      "top_k",
+      "metadata",
+      "service_tier"
+    ],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "reasoning_effort",
+    "prefixCacheStrategy": "none",
+    "supportsResponseFormat": false,
+    "effortCap": null,
+    "hasMapUsage": false
+  },
+  "longcat": {
+    "supportsThinking": false,
+    "thinkingBlockType": "none",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": false,
+    "supportsCacheControl": false,
+    "stripParams": [
+      "top_k",
+      "metadata",
+      "service_tier",
+      "cache_control"
+    ],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "none",
+    "prefixCacheStrategy": "deepseek-native",
+    "supportsResponseFormat": false,
+    "effortCap": null,
+    "hasMapUsage": true
+  },
+  "ccswitch": {
+    "supportsThinking": true,
+    "thinkingBlockType": "none",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": false,
+    "supportsCacheControl": false,
+    "stripParams": [
+      "top_k",
+      "metadata",
+      "service_tier",
+      "cache_control"
+    ],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "reasoning_effort",
+    "prefixCacheStrategy": "none",
+    "supportsResponseFormat": false,
+    "effortCap": null,
+    "hasMapUsage": false
+  },
+  "siliconflow": {
+    "supportsThinking": true,
+    "thinkingBlockType": "enabled",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": false,
+    "supportsCacheControl": false,
+    "stripParams": [
+      "top_k",
+      "metadata",
+      "service_tier",
+      "cache_control"
+    ],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "reasoning_effort",
+    "prefixCacheStrategy": "deepseek-native",
+    "supportsResponseFormat": false,
+    "effortCap": null,
+    "hasMapUsage": true
+  },
+  "dashscope": {
+    "supportsThinking": true,
+    "thinkingBlockType": "enabled",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": false,
+    "supportsCacheControl": false,
+    "stripParams": [
+      "top_k",
+      "metadata",
+      "service_tier",
+      "cache_control"
+    ],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "reasoning_effort",
+    "prefixCacheStrategy": "none",
+    "supportsResponseFormat": true,
+    "effortCap": null,
+    "hasMapUsage": false
+  },
+  "openrouter": {
+    "supportsThinking": true,
+    "thinkingBlockType": "none",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": false,
+    "supportsCacheControl": false,
+    "stripParams": [
+      "top_k",
+      "metadata",
+      "service_tier",
+      "cache_control"
+    ],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "reasoning_effort",
+    "prefixCacheStrategy": "none",
+    "supportsResponseFormat": false,
+    "effortCap": null,
+    "hasMapUsage": false
+  },
+  "relay": {
+    "supportsThinking": true,
+    "thinkingBlockType": "none",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": false,
+    "supportsCacheControl": false,
+    "stripParams": [
+      "top_k",
+      "metadata",
+      "service_tier",
+      "cache_control"
+    ],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "reasoning_effort",
+    "prefixCacheStrategy": "none",
+    "supportsResponseFormat": false,
+    "effortCap": null,
+    "hasMapUsage": false
+  },
+  "no-such-provider-xyz": {
+    "supportsThinking": false,
+    "thinkingBlockType": "none",
+    "reasoningSplit": false,
+    "thinkingBudgetField": "",
+    "preservedThinkingProtocol": false,
+    "supportsCacheControl": true,
+    "stripParams": [],
+    "hasToolJsonInContentBug": false,
+    "effortFormat": "none",
+    "prefixCacheStrategy": "none",
+    "supportsResponseFormat": false,
+    "effortCap": null,
+    "hasMapUsage": false
+  },
+  "__cuts": {
+    "providerLayer": "none",
+    "modelLayerWins": "output_config",
+    "emptyStripParamsIsNoOpinion": [
+      "top_k",
+      "metadata",
+      "service_tier",
+      "cache_control"
+    ],
+    "explicitStripParams": [
+      "only_this"
+    ],
+    "deriveThinkingFromBlock": true,
+    "deriveNoThinking": false,
+    "undeclaredFallsThrough": {
+      "prefixCacheStrategy": "deepseek-native",
+      "preservedThinkingProtocol": true
+    }
+  },
+  "__usage": {
+    "deepseekNative": {
+      "input_tokens": 100,
+      "output_tokens": 20,
+      "cache_read_input_tokens": 80,
+      "cache_creation_input_tokens": 20
+    },
+    "anthropicCompat": {
+      "input_tokens": 100,
+      "output_tokens": 20,
+      "cache_read_input_tokens": 80,
+      "cache_creation_input_tokens": 20
+    },
+    "nestedCached": {
+      "input_tokens": 100,
+      "output_tokens": 20,
+      "cache_read_input_tokens": 55,
+      "cache_creation_input_tokens": 0
+    }
+  }
+}
