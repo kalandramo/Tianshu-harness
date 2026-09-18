@@ -335,6 +335,39 @@ export-fixtures.ts                       读同一份 fixtures/
 
 ### Wave 1 — API 层与字节稳定序列化（先啃最硬的骨头）
 
+> **⚠️ 实测修正（2026-09-19）：wire 路径需要两个序列化器，不是一个是。**
+>
+> 原计划假设请求体走 `stableStringify`。实测发现真实路径是
+> `JSON.stringify(effectiveBody)`（`src/api/openai-client.ts:783`），而
+> `stableStringify` 用在**另外三处**：
+>
+> | 用途 | 位置 | 是否进 wire |
+> |------|------|------------|
+> | 请求体外层结构 | `openai-client.ts:783`（`JSON.stringify`） | ✅ 是 |
+> | 工具调用的 `arguments` 字段 | `session-persist.ts:43`、`context.ts:373` | ✅ 是 |
+> | 工具定义签名比对 | `openai-client.ts:623`、`engine.ts:972` | ❌ 否（仅诊断） |
+> | 缓存指纹 | `fingerprint.ts:32` | ❌ 否（仅诊断） |
+>
+> **两者语义相反**：
+> - `JSON.stringify` **保插入顺序**——请求体顶层字段由 `openai-client.ts:430+`
+>   按固定序赋值决定（`messages → model → stream → max_tokens → stream_options
+>   → tools → temperature`）
+> - `stableStringify` **递归排序所有键**——用于工具 arguments 的确定性
+>
+> **Go 侧的关键约束（实测）**：`map[string]any` 序列化时**强制排序键**——
+> 实测 `{"role":"system","content":"x"}` 被输出为 `{"content":"x","role":"system"}`，
+> 无法保插入序。因此：
+> - 请求体外层 → **显式 struct**（字段声明序 = TS 赋值序，已验证两侧顶层长度一致）
+> - 消息/工具等嵌套对象 → 需**有序结构**（struct 或 ordered-map），不能用裸 map
+> - 工具 `arguments` → `stablejson.Stringify`（已实现并通过 oracle 对账）
+>
+> 证据：探针对账 `go/testdata/wire/oracle.json`；两侧顶层 795 字节，仅嵌套键序不同。
+
+- [ ] `internal/api/stablejson`：字节稳定序列化（**已实现**，对账 `src/api/stable-json.ts`）
+- [ ] `internal/api/wirebody.go`：请求体**有序构造**——struct 字段序对齐 `openai-client.ts:430+` 的赋值序；嵌套对象用有序类型而非 map。对账 `go/testdata/wire/oracle.json`
+- [ ] `internal/api/provider.go`：`Capabilities` + 三层 `ResolveCapabilities`（**已实现**，对账 `src/api/provider.ts`）
+- [ ] `internal/api/openai_client.go`：请求构造 / 流式解析 / usage 归一化
+
 - [ ] `internal/api/stablejson`：字节稳定序列化，对账 `src/api/stable-json.ts`
 - [ ] `internal/api/provider.go`：`Capabilities` + 三层 `ResolveCapabilities`（对账 `src/api/provider.ts`）
 - [ ] `internal/api/openai_client.go`：请求构造 / 流式解析 / usage 归一化
