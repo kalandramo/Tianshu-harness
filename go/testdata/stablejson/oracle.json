@@ -1,0 +1,10 @@
+{
+  "real_chat_request": "{\"max_tokens\":8192,\"messages\":[{\"content\":\"你是天枢。证据先行。\",\"role\":\"system\"},{\"content\":\"refactor this function\",\"role\":\"user\"},{\"content\":\"ok\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\",\"name\":\"read_file\"},\"id\":\"c1\",\"type\":\"function\"}]},{\"content\":\"line1\\nline2\",\"role\":\"tool\",\"tool_call_id\":\"c1\"}],\"model\":\"deepseek-v4-pro\",\"stream\":true,\"temperature\":0.7,\"tools\":[{\"function\":{\"description\":\"Read a file\",\"name\":\"read_file\",\"parameters\":{\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"],\"type\":\"object\"}},\"type\":\"function\"},{\"function\":{\"description\":\"Run a command\",\"name\":\"bash\",\"parameters\":{\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+  "html_in_content": "{\"content\":\"<div class=\\\"x\\\">&amp;</div>\",\"nested\":{\"a\":\"<b>\"}}",
+  "numbers": "{\"a\":1,\"b\":0.1,\"c\":1e+21,\"d\":1e-7,\"e\":0.3333333333333333,\"f\":0,\"g\":100,\"h\":100000000000000000000}",
+  "mixed_keys": "{\"Z\":4,\"ascii\":2,\"中文键\":1,\"𐀀\":6,\"🎉\":3,\"\":5}",
+  "deep_nesting": "{\"a\":{\"b\":{\"c\":{\"d\":{\"e\":[1,[2,[3]]]}}}}}",
+  "empty_containers": "{\"a\":[],\"f\":false,\"n\":null,\"o\":{},\"s\":\"\",\"z\":0}",
+  "unicode_escapes": "{\"c\":\"\\u0000\\u001f\",\"t\":\"a\\tb\\nc\\\"d\\\\e\",\"u\":\"  \"}",
+  "tool_schema_like": "{\"additionalProperties\":false,\"properties\":{\"pattern\":{\"description\":\"Regex, e.g. <a>&</a>\",\"type\":\"string\"}},\"required\":[],\"type\":\"object\"}"
+}
