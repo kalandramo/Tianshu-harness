@@ -350,6 +350,29 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **syntaxcheck 子系统 + 语法检查回滚**（新建 `internal/syntaxcheck/`）
+  - **对账契约**：TS 的 `{ warning, fatal }`，`fatal` 非空 → 调用方回滚
+  - **架构判断（有意差异，非降级）**：TS 版用 **esbuild**（+ TypeScript 编译器
+    二次确认）检查 `.ts/.js`、用 tree-sitter 检查 `.py`——因为**它自己是
+    TS 项目**。Go 版天枢的首要语言是 **Go**，而 Go 有**原生解析器**
+    （`go/parser`），比 esbuild 更权威（TS 版自己都要做「二次确认」来过滤
+    esbuild 的误报）。故按**生态重映射**：
+    - `.go` → `go/parser`（原生、权威、零依赖）
+    - `.json` / `.css` / `.html` → **纯算法**，与 TS **逐字节对账判定**
+  - **未覆盖（已知边界）**：`.ts/.tsx/.js/.jsx`（需 esbuild，Go 无等价物）、
+    `.py`（需 tree-sitter）。若将来 Go 版要服务 TS 项目，应引入 esbuild 的
+    Go 绑定而非自己写解析器
+  - oracle：`go/testdata/syntaxcheck/`（**只锁判定**，不锁消息文本——
+    Go 与 JS 的解析器错误文本天然不同），三次 sha256 一致
+  - 接入 `apply_patch`（`firstFatalSyntax`：逐文件检查，不可读则跳过，
+    致命错误整补丁回滚）+ `hash_edit`（写后检查 + 从备份恢复）
+  - **测试设计教训**：首版用 `t.Skipf` 处理「锚点格式不符」——结果**掩盖了
+    变异**（M5 短路语法检查后测试 SKIP 而非 FAIL，显示红 0）。改为 `Fatalf`
+    后 M5 立即变红。**Skipf 是变异的隐身衣**
+  - 变异反证 5 个：**全部有判别力**（CSS 状态机失效 8 红 / HTML void 入栈 5 红 /
+    Go 检查失效 8 红 / apply_patch 不检查 1 红 / hash_edit 不检查 1 红）
+  - **已知边界**：`write_file` **未接**语法检查（TS 侧有）——由
+    `TestWriteFileSyntaxCheckNotWired` 显式记录，接入时该测试应改为断言回滚
 - [x] **recovery 子系统 + apply_patch 失败回滚**（新建 `internal/recovery/`）
   - **背景**：上轮判定「数据损坏风险 > 新增工具」，`apply_patch` 失败回滚是
     与 TS 最显著的行为差异。调研发现它不是局部补丁——**依赖整个
@@ -716,6 +739,8 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   wire 桥接（`OaiMessageFromWire`）
 - `internal/tools/schema.go`：**schema 有序序列化**——`OrderedProps` /
   `OrderValue`（从 agent 包移入，schema 序列化属 tools 领域）
+- `internal/syntaxcheck/`：**语法检查**——`.go`（原生解析器）+
+  `.json/.css/.html`（纯算法）。判定与 TS 对账，语言按生态重映射
 - `internal/recovery/`：**备份与恢复**——journal（事件日志）+ stack
   （备份栈，`DefaultStack()` 进程级共享）。**4 个写工具的共享地基**：
   write_file / edit_file / hash_edit / apply_patch 均在写盘前调
@@ -779,16 +804,15 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
      后续 `go.mod` 会有更多依赖——注意保持 `go.sum` 提交完整（他人
      拉取需能复现构建，已用 `-mod=readonly` 验证）。
 3. **apply_patch 的降级**（部分已修复）：
-   - ✅ **补丁前备份 + 失败回滚**——本轮完成（见顶部条目）
-   - **应用后语法检查回滚**（firstFatalSyntax）：同 hash_edit，未移植。
+   - ✅ **补丁前备份 + 失败回滚**——已完成
+   - ✅ **应用后语法检查回滚**（firstFatalSyntax）——已完成
    - **编辑失败计数门**、**client-delegate（apply_edit 通道）**：未移植。
    - **跨工具指针检测**：仅做 apply_patch 自己的前缀检查。
-4. **hash_edit 的 4 项降级**（对账 TS 时明确未移植，各自独立）：
+4. **hash_edit 的降级**（部分已修复）：
+   - ✅ **语法检查 + 回滚**（checkSyntax）——已完成
    - **指针回灌守卫**（pointer-guard）：依赖 4 个未移植的 arg-processor
      常量模块（write_file / edit_file / hash_edit / apply_patch）。风险：
      模型可能把历史里的指针文本当 `new_string` 传回来并被写进文件。
-   - **语法检查 + 回滚**（checkSyntax）：TS 侧在致命语法错误时自动回滚
-     并递增失败计数。Go 侧直接写入，无回滚。
    - **失败计数门**：连续 3 次失败后要求先重新 read_file。
    - **dry_run 的 diff 预览**（buildFileDiff / computeChangedLineRanges，
      185 行）：Go 侧只返回行数变更摘要，不含 unified diff。

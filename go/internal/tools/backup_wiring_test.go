@@ -228,7 +228,7 @@ func TestHashEditCreatesBackup(t *testing.T) {
 		t.Fatalf("Execute 错误：%v", err)
 	}
 	if res.IsError {
-		t.Skipf("hash_edit 锚点格式不符（跳过备份断言）：%s", res.Content)
+		t.Fatalf("hash_edit 应成功：%s", res.Content)
 	}
 	if got := readRepoFile(t, dir, "h.txt"); !strings.Contains(got, "replaced") {
 		t.Errorf("编辑未生效：%q", got)
@@ -263,7 +263,7 @@ func TestHashEditDryRunNoBackup(t *testing.T) {
 		t.Fatalf("Execute 错误：%v", err)
 	}
 	if res.IsError {
-		t.Skipf("dry_run 锚点格式不符：%s", res.Content)
+		t.Fatalf("dry_run 应成功：%s", res.Content)
 	}
 	// 文件未变
 	if got := readRepoFile(t, dir, "d.txt"); got != "original\n" {

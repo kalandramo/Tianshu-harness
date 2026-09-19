@@ -12,6 +12,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"github.com/kalandramo/tianshu/go/internal/recovery"
+	"github.com/kalandramo/tianshu/go/internal/syntaxcheck"
 )
 
 // Anchor 是一个编辑锚点。
@@ -519,6 +520,25 @@ func (t *hashEditTool) applyEdit(
 	recoveredCount := 0
 	if recovered {
 		recoveredCount = len(anchors)
+	}
+
+	// ── 应用后语法检查 + 回滚 ──
+	//
+	// 对账 TS 的 checkSyntax 分支：致命语法错误时从备份恢复并报错。
+	// TS 侧还有「失败计数门」（连续 3 次要求先 read_file）——那是独立欠账，
+	// 尚未移植（见 HANDOFF）。
+	if chk := syntaxcheck.Check(absPath, applyEOL(newContent, eol)); chk.Fatal != "" {
+		rel := relForRecovery(t.Cwd, absPath)
+		restored := t.Stack.RestoreLatestBackup(t.Cwd, rel, p.SessionID)
+		rollbackMsg := "自动回滚失败。"
+		if restored {
+			rollbackMsg = "更改已自动回滚。"
+		}
+		return contract.Result{
+			Content: "错误：" + chk.Fatal + "\n\n" + rollbackMsg +
+				"\n\n请修复编辑后重试。复杂改动建议优先用 apply_patch 加 unified diff。",
+			IsError: true,
+		}, nil
 	}
 
 	recoveredInfo := ""

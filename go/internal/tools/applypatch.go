@@ -12,6 +12,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"github.com/kalandramo/tianshu/go/internal/recovery"
+	"github.com/kalandramo/tianshu/go/internal/syntaxcheck"
 )
 
 // applyPatchVerifyEnabled 报告是否启用应用后校验与失败回滚。
@@ -254,6 +255,21 @@ func (t *applyPatchTool) Execute(ctx context.Context, p *CallParams) (contract.R
 		return contract.Result{Content: "补丁可干净应用（仅校验；未修改文件）。"}, nil
 	}
 
+	// ── 应用后结构校验 ──
+	//
+	// `git apply --3way` 可能留下冲突标记，或补丁本身引入语法错误——两者都会
+	// **静默损坏文件**。逐文件解析检查；致命错误时整个补丁回滚。
+	if verify {
+		if rel, message, fatal := t.firstFatalSyntax(targets); fatal {
+			t.rollbackTargets(targets, p.SessionID)
+			return contract.Result{
+				Content: "补丁已应用，但在 " + rel + " 中引入了致命错误：\n" + message +
+					"\n\n补丁已自动回滚。请修复 diff（检查上下文漂移/冲突标记）后重试。",
+				IsError: true,
+			}, nil
+		}
+	}
+
 	// 登记写入的文件（让证据追踪感知）
 	if p.OnFileWrite != nil {
 		for _, rel := range prompt.ExtractPatchTargetPaths(normalized) {
@@ -268,6 +284,28 @@ func (t *applyPatchTool) Execute(ctx context.Context, p *CallParams) (contract.R
 		Content:   "补丁应用成功。",
 		UIContent: truncateDiffForUI(strings.TrimSpace(normalized), applyPatchMaxUILines),
 	}, nil
+}
+
+// firstFatalSyntax 对补丁目标做应用后语法检查，返回第一个致命错误。
+//
+// 对账 firstFatalSyntax：`git apply --3way` 可能留下冲突标记，或补丁本身
+// 引入了语法错误——两者都会**静默损坏文件**。逐文件解析检查，致命错误时
+// 整个补丁回滚。
+//
+// 单个文件的读取/检查失败**降级为跳过**（二进制、竞态）——不是语法判定，
+// 绝不阻塞一个只是读不出内容的补丁。
+func (t *applyPatchTool) firstFatalSyntax(targets []patchTarget) (rel, message string, fatal bool) {
+	for _, tg := range targets {
+		content, err := os.ReadFile(tg.abs)
+		if err != nil {
+			continue // 不可读 → 跳过（不是语法判定）
+		}
+		res := syntaxcheck.Check(tg.abs, string(content))
+		if res.Fatal != "" {
+			return tg.rel, res.Fatal, true
+		}
+	}
+	return "", "", false
 }
 
 // rollbackTargets 撤销已应用的补丁：存在过的文件从备份恢复，新建的文件删除。

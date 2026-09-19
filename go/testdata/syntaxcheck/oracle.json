@@ -1,0 +1,198 @@
+{
+  "a.css::平衡": {
+    "file": "a.css",
+    "note": "平衡",
+    "content": "body { color: red; }",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "b.css::缺 }": {
+    "file": "b.css",
+    "note": "缺 }",
+    "content": "body { color: red;",
+    "hasFatal": true,
+    "hasWarning": true
+  },
+  "c.css::多余 }": {
+    "file": "c.css",
+    "note": "多余 }",
+    "content": "body { color: red; }}",
+    "hasFatal": true,
+    "hasWarning": true
+  },
+  "d.css::嵌套平衡": {
+    "file": "d.css",
+    "note": "嵌套平衡",
+    "content": "@media (min-width: 100px) { .a { x: 1 } }",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "e.css::字符串里的 } 不计": {
+    "file": "e.css",
+    "note": "字符串里的 } 不计",
+    "content": ".a { content: \"}\"; }",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "f.css::单引号字符串里的 }": {
+    "file": "f.css",
+    "note": "单引号字符串里的 }",
+    "content": ".a { content: '}'; }",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "g.css::注释里的 } 不计": {
+    "file": "g.css",
+    "note": "注释里的 } 不计",
+    "content": ".a { /* } */ }",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "h.css::未闭合注释吞掉后续（应 fatal）": {
+    "file": "h.css",
+    "note": "未闭合注释吞掉后续（应 fatal）",
+    "content": ".a { /* } ",
+    "hasFatal": true,
+    "hasWarning": true
+  },
+  "i.css::空文件": {
+    "file": "i.css",
+    "note": "空文件",
+    "content": "",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "j.css::转义引号后的 }": {
+    "file": "j.css",
+    "note": "转义引号后的 }",
+    "content": ".a { content: \"\\\"}\"; }",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "a.html::平衡": {
+    "file": "a.html",
+    "note": "平衡",
+    "content": "<div><span>x</span></div>",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "b.html::标签不匹配": {
+    "file": "b.html",
+    "note": "标签不匹配",
+    "content": "<div><span>x</div>",
+    "hasFatal": true,
+    "hasWarning": true
+  },
+  "c.html::未闭合 div": {
+    "file": "c.html",
+    "note": "未闭合 div",
+    "content": "<div><span>x</span>",
+    "hasFatal": true,
+    "hasWarning": true
+  },
+  "d.html::void 元素不入栈": {
+    "file": "d.html",
+    "note": "void 元素不入栈",
+    "content": "<br><img src=\"x\"><hr>",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "e.html::自闭合不入栈": {
+    "file": "e.html",
+    "note": "自闭合不入栈",
+    "content": "<div/>",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "f.html::多余的闭合标签": {
+    "file": "f.html",
+    "note": "多余的闭合标签",
+    "content": "</div>",
+    "hasFatal": true,
+    "hasWarning": true
+  },
+  "g.html::大小写不敏感": {
+    "file": "g.html",
+    "note": "大小写不敏感",
+    "content": "<DIV></div>",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "h.html::带属性": {
+    "file": "h.html",
+    "note": "带属性",
+    "content": "<div class=\"a\"><p>x</p></div>",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "i.html::空文件": {
+    "file": "i.html",
+    "note": "空文件",
+    "content": "",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "a.json::合法": {
+    "file": "a.json",
+    "note": "合法",
+    "content": "{\"a\":1}",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "b.json::截断": {
+    "file": "b.json",
+    "note": "截断",
+    "content": "{\"a\":1",
+    "hasFatal": true,
+    "hasWarning": true
+  },
+  "c.json::尾逗号": {
+    "file": "c.json",
+    "note": "尾逗号",
+    "content": "{\"a\":1,}",
+    "hasFatal": true,
+    "hasWarning": true
+  },
+  "d.json::数组": {
+    "file": "d.json",
+    "note": "数组",
+    "content": "[1,2,3]",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "e.json::空文件（JSON.parse 空串会抛）": {
+    "file": "e.json",
+    "note": "空文件（JSON.parse 空串会抛）",
+    "content": "",
+    "hasFatal": true,
+    "hasWarning": true
+  },
+  "f.json::字面量 null": {
+    "file": "f.json",
+    "note": "字面量 null",
+    "content": "null",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "g.json::尾部多余内容": {
+    "file": "g.json",
+    "note": "尾部多余内容",
+    "content": "{\"a\":\"b\"}extra",
+    "hasFatal": true,
+    "hasWarning": true
+  },
+  "a.unknownext::未知扩展名 → OK": {
+    "file": "a.unknownext",
+    "note": "未知扩展名 → OK",
+    "content": "anything {{{",
+    "hasFatal": false,
+    "hasWarning": false
+  },
+  "a.md::md → OK": {
+    "file": "a.md",
+    "note": "md → OK",
+    "content": "# hi\n```\nunclosed",
+    "hasFatal": false,
+    "hasWarning": false
+  }
+}
