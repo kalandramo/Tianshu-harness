@@ -187,6 +187,45 @@
         "标标标标标标标标标标标标标标标标标标标标标标标",
         "标标标标标标标标标标标标标标标标标"
       ]
+    },
+    "emoji79": {
+      "md": "## 节A\nx😀😀xxxxx\n## 节B\n😀😀x😀xxxx\n## 节C\nx😀x😀xxxxx😀x😀xxx😀xx😀xx\n## 节D\n😀😀😀xxxx😀x😀xx😀xx😀😀xx😀xxxxxxxx😀😀x😀x😀",
+      "budget": 79,
+      "measureEscaped": false,
+      "text": "## 节A\nx😀😀xxxxx\n## 节B\n😀😀x😀xxxx\n## 节C\nx😀x😀xxxxx😀x😀xxx😀xx😀xx\n## 节D\n😀😀😀xxxx😀x😀xx😀xx😀😀xx😀xxxxxxxx😀😀x😀x😀",
+      "omitted": []
+    },
+    "emoji85": {
+      "md": "## 节A\nx😀😀xxxxx\n## 节B\n😀😀x😀xxxx\n## 节C\nx😀x😀xxxxx😀x😀xxx😀xx😀xx\n## 节D\n😀😀😀xxxx😀x😀xx😀xx😀😀xx😀xxxxxxxx😀😀x😀x😀",
+      "budget": 85,
+      "measureEscaped": false,
+      "text": "## 节A\nx😀😀xxxxx\n\n[本块超出前缀预算，已略去 3 节：节B、节C、节D。需要时直接读 AGENTS.md / .rivet.md 原文。]",
+      "omitted": [
+        "节B",
+        "节C",
+        "节D"
+      ]
+    },
+    "emoji95": {
+      "md": "## 节A\nx😀😀xxxxx\n## 节B\n😀😀x😀xxxx\n## 节C\nx😀x😀xxxxx😀x😀xxx😀xx😀xx\n## 节D\n😀😀😀xxxx😀x😀xx😀xx😀😀xx😀xxxxxxxx😀😀x😀x😀",
+      "budget": 95,
+      "measureEscaped": false,
+      "text": "## 节A\nx😀😀xxxxx\n\n[本块超出前缀预算，已略去 3 节：节B、节C、节D。需要时直接读 AGENTS.md / .rivet.md 原文。]",
+      "omitted": [
+        "节B",
+        "节C",
+        "节D"
+      ]
+    },
+    "emoji120": {
+      "md": "## 节A\nx😀😀xxxxx\n## 节B\n😀😀x😀xxxx\n## 节C\nx😀x😀xxxxx😀x😀xxx😀xx😀xx\n## 节D\n😀😀😀xxxx😀x😀xx😀xx😀😀xx😀xxxxxxxx😀😀x😀x😀",
+      "budget": 120,
+      "measureEscaped": false,
+      "text": "## 节A\nx😀😀xxxxx\n\n## 节B\n😀😀x😀xxxx\n\n[本块超出前缀预算，已略去 2 节：节C、节D。需要时直接读 AGENTS.md / .rivet.md 原文。]",
+      "omitted": [
+        "节C",
+        "节D"
+      ]
     }
   },
   "greedy": {

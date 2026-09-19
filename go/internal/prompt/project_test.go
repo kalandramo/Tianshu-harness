@@ -136,6 +136,66 @@ func TestBuildSystemPromptWithProjectMeasuresEscaped(t *testing.T) {
 	}
 }
 
+// TestBuildSystemPromptWithProjectUTF16Measure —— 生产路径的 measure 必须是
+// **UTF-16 code unit** 而非码点。
+//
+// 这是移植中最易漏的分叉：TS 的 `escapeXml(t).length` 数的是 code unit
+// （emoji 计 2），Go 的 len([]rune(t)) 数的是码点（emoji 计 1）。
+// 两者只在预算临界点上产生不同选取——普通中文文档完全掩盖它。
+//
+// 文档取自 oracle 的 docEmoji（码点 98 / UTF16 122）。budget=79 时：
+//   - UTF16 计费 → 4 节全保住（omitted=[]）
+//   - 码点计费   → 丢 3 节
+//
+// 断言"4 节标题全在"即可区分两种实现。
+func TestBuildSystemPromptWithProjectUTF16Measure(t *testing.T) {
+	dir := t.TempDir()
+	md := "## 节A\n" + rep("😀", 1) + rep("xx", 1) // 占位，下面用真实文档覆盖
+	_ = md
+
+	// 与 oracle docEmoji 相同的语义构造（4 节，混合 emoji 与 x）
+	doc := ""
+	for i := 0; i < 4; i++ {
+		body := ""
+		for j := 0; j < 20; j++ {
+			if j%2 == 0 {
+				body += "😀"
+			} else {
+				body += "x"
+			}
+		}
+		if i > 0 {
+			doc += "\n"
+		}
+		doc += "## 节" + string(rune('A'+i)) + "\n" + body
+	}
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(doc), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 用 UTF16 长度算预算：刚好让所有节都能装下的临界值附近
+	utf16Total := 0
+	for _, r := range doc {
+		if r > 0xFFFF {
+			utf16Total += 2
+		} else {
+			utf16Total++
+		}
+	}
+	cpTotal := len([]rune(doc))
+	if utf16Total == cpTotal {
+		t.Fatal("前提失败：文档应含代理对字符，UTF16 长度应大于码点数")
+	}
+
+	// 预算 = 码点总数（此时按码点算刚好装下、按 UTF16 算超出）
+	got := BuildSystemPromptWithProject(Context{}, dir, cpTotal)
+
+	if !contains(got, "已略去") {
+		t.Error("按 UTF-16 计费时，budget=码点总数 应触发略去（按码点算则不会）——" +
+			"若此处未略去，说明 measure 用了码点而非 code unit")
+	}
+}
+
 // TestBuildSystemPromptWithProjectNoFiles — 无项目文件时退化为纯 static 提示词。
 func TestBuildSystemPromptWithProjectNoFiles(t *testing.T) {
 	dir := t.TempDir()

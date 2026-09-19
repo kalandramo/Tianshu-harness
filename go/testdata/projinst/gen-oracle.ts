@@ -155,6 +155,25 @@ const twoPassCases: Record<string, { md: string; budget: number; measureEscaped:
   twoPass220: { md: docTwoPass, budget: 220, measureEscaped: false },
 }
 
+// 用例 2d: **UTF-16 code unit vs 码点** 的计费差异（代理对）。
+//
+// JS 的 String.length 是 UTF-16 code unit 数（emoji = 2），不是 Unicode 码点数。
+// TS 侧默认 measure 是 `t => t.length`，生产调用方是 `t => escapeXml(t).length`
+// ——两者都是 code unit。Go 若用 len([]rune(t))（码点）会分叉。
+//
+// 这个用例由 Go 侧穷举搜索（20000 随机含 emoji 文档 × 全预算）定位：
+// 文档码点 98 / UTF16 122，budget=79 时两种计费给出**截然不同**的选取结果
+// （UTF16 全保住 omitted=[]，码点丢 3 节）。差异只在预算临界点出现，
+// 普通中文/ASCII 文档完全掩盖它——这是最容易漏的一类分叉。
+const docEmoji = "## 节A\nx😀😀xxxxx\n## 节B\n😀😀x😀xxxx\n## 节C\nx😀x😀xxxxx😀x😀xxx😀xx😀xx\n## 节D\n😀😀😀xxxx😀x😀xx😀xx😀😀xx😀xxxxxxxx😀😀x😀x😀"
+
+const emojiCases: Record<string, { md: string; budget: number; measureEscaped: boolean }> = {
+  emoji79: { md: docEmoji, budget: 79, measureEscaped: false },
+  emoji85: { md: docEmoji, budget: 85, measureEscaped: false },
+  emoji95: { md: docEmoji, budget: 95, measureEscaped: false },
+  emoji120: { md: docEmoji, budget: 120, measureEscaped: false },
+}
+
 const selectCases: Record<string, { md: string; budget: number; measureEscaped: boolean }> = {
   // 预算充足 → 原样返回，无略去
   ample: { md: docMixed, budget: 100000, measureEscaped: false },
@@ -207,7 +226,7 @@ const out = {
     ]),
   ),
   select: Object.fromEntries(
-    Object.entries({ ...selectCases, ...tierConflictCases, ...twoPassCases }).map(([k, c]) => {
+    Object.entries({ ...selectCases, ...tierConflictCases, ...twoPassCases, ...emojiCases }).map(([k, c]) => {
       const measure = c.measureEscaped ? (t: string) => escapeXmlRef(t).length : undefined
       const r = measure
         ? selectProjectInstructions(c.md, c.budget, measure)

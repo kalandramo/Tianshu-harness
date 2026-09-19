@@ -169,7 +169,7 @@ func SplitSections(md string) []DocSection {
 // 转义膨胀在本仓库是 31%）。传 nil 按原文长度。
 func SelectSections(sections []DocSection, budget int, measure func(string) int) SelectionResult {
 	if measure == nil {
-		measure = func(t string) int { return len([]rune(t)) }
+		measure = utf16Len
 	}
 	const sep = "\n\n"
 	sepCost := measure(sep)
@@ -217,7 +217,7 @@ func SelectSections(sections []DocSection, budget int, measure func(string) int)
 // 只作为候选，装不下就退回首轮——首轮按最坏情况预留，恒定装得下。
 func SelectProjectInstructions(md string, budget int, measure func(string) int) SelectionResult {
 	if measure == nil {
-		measure = func(t string) int { return len([]rune(t)) }
+		measure = utf16Len
 	}
 	sections := SplitSections(md)
 	if measure(md) <= budget {
@@ -265,6 +265,30 @@ func render(r SelectionResult) string {
 	}
 	return r.Text + "\n\n" + renderNote(r.Omitted)
 }
+
+// UTF16Len 复刻 JS 的 String.prototype.length —— UTF-16 code unit 数。
+//
+// **这是移植中最易漏的一处分叉**：JS 的 .length 是 code unit 数（BMP 外字符
+// 计 2，如 emoji），不是 Unicode 码点数（Go 的 len([]rune(s))）。
+// TS 侧 selectSections 的默认 measure 是 `t => t.length`，生产调用方
+// （volatile.ts:1122）是 `t => escapeXml(t).length` —— 两者都是 code unit。
+//
+// 后果：预算临界点上，按码点计费会多丢/少丢章节。含 emoji 的 AGENTS.md
+// 就会触发（实测文档码点 98 / UTF16 122，budget=79 时结果截然不同）。
+func UTF16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		if r > 0xFFFF {
+			n += 2
+		} else {
+			n++
+		}
+	}
+	return n
+}
+
+// utf16Len 是包内短名（对外导出 UTF16Len 供调用方构造 measure）。
+func utf16Len(s string) int { return UTF16Len(s) }
 
 // EscapeXML 复刻 volatile.ts:493 的 escapeXml。
 //

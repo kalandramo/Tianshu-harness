@@ -71,7 +71,10 @@ func BuildSystemPromptWithProject(ctx Context, cwd string, cap int) string {
 		cap = defaultProjectInstructionsCap
 	}
 
-	sel := SelectProjectInstructions(md, cap, func(t string) int { return len([]rune(EscapeXML(t))) })
+	// measure 按**转义后**的 UTF-16 code unit 数计费——对账 TS 侧
+	// volatile.ts:1122 的 `t => escapeXml(t).length`。注意是 code unit
+	// 而非码点：含 emoji 的文档在预算临界点上两者结果不同。
+	sel := SelectProjectInstructions(md, cap, func(t string) int { return UTF16Len(EscapeXML(t)) })
 	block := "<project-instructions>\n" + EscapeXML(sel.Text) + "\n</project-instructions>"
 	return base + "\n\n" + block
 }
