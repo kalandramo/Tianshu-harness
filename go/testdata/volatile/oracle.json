@@ -174,6 +174,31 @@
       "out": "<context>\n<environment platform=\"darwin\" cwd=\"/tmp/a&lt;b&gt;&amp;&quot;c&quot;/proj\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n</context>",
       "note": "cwd 含需转义字符（< > & \"）——锁定 environment 行的转义"
     },
+    "runtimeEnvBlock": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "runtimeEnv": "<runtime-env>\npython: 3.12.1\n</runtime-env>"
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n</context>",
+      "note": "**接线区分点**：RuntimeEnv 非空 → 块应插在 environment 之后、sober 之前"
+    },
+    "stripTableWhenIndexPresent": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "rivetMd": "## 标题\n正文\n\n> 目录索引\n| a | b |\n| - | - |\n| 1 | 2 |\n\n后续内容",
+        "projectIndexBlock": "<codebase-index>\n模块表\n</codebase-index>"
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<project-instructions>\n## 标题\n正文\n\n后续内容\n</project-instructions>\n\n<codebase-index>\n模块表\n</codebase-index>\n</context>",
+      "note": "**接线区分点**：projectIndexBlock 存在 → 剥离 rivetMd 的首个表格"
+    },
+    "noStripWithoutIndex": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "rivetMd": "## 标题\n正文\n\n| a | b |\n| - | - |\n| 1 | 2 |"
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<project-instructions>\n## 标题\n正文\n\n| a | b |\n| - | - |\n| 1 | 2 |\n</project-instructions>\n</context>",
+      "note": "对照：无 projectIndexBlock → 不剥离表格（表格应保留）"
+    },
     "emojiContent": {
       "ctx": {
         "cwd": "/fixture/volatile",

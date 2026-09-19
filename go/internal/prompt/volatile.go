@@ -64,6 +64,10 @@ type VolatileContext struct {
 	// CwdRelation 取值 "self" / "world" / ""（对应 TS 的 CwdRelation）。
 	CwdRelation  string
 	ActiveDomain *ActiveDomain
+	// RuntimeEnv 是 <runtime-env> 块的内容（对账 TS 的 detectRuntimeEnvBlock）。
+	// 空串表示无该块。由调用方用 DetectRuntimeEnvBlock 生成后传入——
+	// 这样 BuildStableVolatileBlock 保持纯函数（不 spawn 子进程）。
+	RuntimeEnv string
 	// BlockCaps 覆盖默认 caps（对齐 TS 的 `{...FROZEN_BLOCK_CAPS, ...ctx.blockCaps}`）。
 	BlockCaps map[string]int
 }
@@ -122,6 +126,11 @@ func BuildStableVolatileBlock(ctx VolatileContext, host HostEnv) string {
 	// verify-commands 未移植（见函数注释）——在非 Windows 且无 runtime 标记
 	// 的项目上，省略它们与 TS 输出一致（oracle 用例覆盖的场景）。
 
+	// runtime-env 在 sober **之前**（对账 volatile.ts:1090 的顺序）。
+	if ctx.RuntimeEnv != "" {
+		ordered = append(ordered, ctx.RuntimeEnv)
+	}
+
 	ordered = append(ordered, soberBlock)
 	if ctx.CwdRelation == "self" {
 		ordered = append(ordered, locusSelfBlock)
@@ -135,7 +144,13 @@ func BuildStableVolatileBlock(ctx VolatileContext, host HostEnv) string {
 	}
 
 	if ctx.RivetMd != "" {
-		ordered = append(ordered, RenderProjectInstructionsBlock(ctx.RivetMd, caps.ProjectInstructions))
+		// 对账 volatile.ts:1113 —— codebase-index 已含模块目录表时，剥离
+		// project-instructions 里的冗余表（省 ~600-800 字符）。
+		md := ctx.RivetMd
+		if ctx.ProjectIndexBlock != "" {
+			md = StripFirstMarkdownTable(md)
+		}
+		ordered = append(ordered, RenderProjectInstructionsBlock(md, caps.ProjectInstructions))
 	}
 	if ctx.ProjectMemoryBlock != "" {
 		ordered = append(ordered, TruncateBlock(ctx.ProjectMemoryBlock, caps.ProjectMemory, "project-memory"))

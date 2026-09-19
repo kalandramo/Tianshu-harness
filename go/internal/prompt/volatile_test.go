@@ -118,3 +118,68 @@ func parseVolatileCtx(t *testing.T, raw json.RawMessage) VolatileContext {
 	}
 	return ctx
 }
+
+// TestRuntimeEnvBlockInjectionPosition —— runtime-env 块的注入位置。
+//
+// **这条是 Go-only 测试**（oracle 覆盖不了它，原因见 gen-oracle.ts 的注释）：
+// TS 侧 runtime-env 由 detectRuntimeEnvBlock(ctx.cwd) 内部探测产生，不是 ctx
+// 字段；Go 侧为保持纯函数做成了注入字段 ctx.RuntimeEnv。两者架构分歧是有意的。
+//
+// 断言：块应出现在 environment 之后、sober 之前（对账 volatile.ts:1090 顺序）。
+func TestRuntimeEnvBlockInjectionPosition(t *testing.T) {
+	host := HostEnv{Platform: "darwin", OSType: "Darwin", OSRelease: "25.6.0"}
+	ctx := VolatileContext{
+		Cwd:        "/fixture",
+		RuntimeEnv: "<runtime-env>\ngo: declared 1.22.0 via go.mod\n</runtime-env>",
+	}
+	got := BuildStableVolatileBlock(ctx, host)
+
+	idxEnv := indexOf(got, "<environment")
+	idxRuntime := indexOf(got, "<runtime-env>")
+	idxSober := indexOf(got, "<sober>")
+
+	if idxRuntime < 0 {
+		t.Fatalf("runtime-env 块应出现，实际 %q", got)
+	}
+	if !(idxEnv < idxRuntime && idxRuntime < idxSober) {
+		t.Errorf("顺序应为 environment → runtime-env → sober，实际位置 %d/%d/%d",
+			idxEnv, idxRuntime, idxSober)
+	}
+}
+
+// TestRuntimeEnvBlockAbsent —— RuntimeEnv 为空时不产生该块。
+func TestRuntimeEnvBlockAbsent(t *testing.T) {
+	host := HostEnv{Platform: "darwin", OSType: "Darwin", OSRelease: "25.6.0"}
+	got := BuildStableVolatileBlock(VolatileContext{Cwd: "/fixture"}, host)
+	if contains(got, "<runtime-env>") {
+		t.Errorf("RuntimeEnv 为空时不应有该块，实际 %q", got)
+	}
+}
+
+// TestStripTableWiring —— projectIndexBlock 存在时剥离 rivetMd 的表格。
+//
+// 这条锁定 volatile.go 里 StripFirstMarkdownTable 的**调用点**
+// （函数早已移植，但此前未接线）。
+func TestStripTableWiring(t *testing.T) {
+	host := HostEnv{Platform: "darwin", OSType: "Darwin", OSRelease: "25.6.0"}
+	md := "## 标题\n正文\n\n> 索引\n| a | b |\n| - | - |\n| 1 | 2 |\n\n后续"
+
+	// 有 projectIndexBlock → 表格被剥离
+	withIdx := BuildStableVolatileBlock(VolatileContext{
+		Cwd:               "/fixture",
+		RivetMd:           md,
+		ProjectIndexBlock: "<codebase-index>\n模块\n</codebase-index>",
+	}, host)
+	if contains(withIdx, "| a | b |") {
+		t.Error("projectIndexBlock 存在时表格应被剥离")
+	}
+
+	// 无 projectIndexBlock → 表格保留
+	withoutIdx := BuildStableVolatileBlock(VolatileContext{
+		Cwd:     "/fixture",
+		RivetMd: md,
+	}, host)
+	if !contains(withoutIdx, "| a | b |") {
+		t.Error("无 projectIndexBlock 时表格应保留")
+	}
+}

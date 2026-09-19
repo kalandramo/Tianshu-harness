@@ -246,13 +246,37 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   - 注：TS 侧 frozen 块是 trailer-merge 到 user message（engine.ts:659），
     此处拼在 system prompt 后是**最小可用路径**。后续移植 trailer-merge 时
     应**替换**本函数，而非叠加
-- [ ] **未移植的 IO 探测块**（下一刀）：
-  - `detectRuntimeEnvBlock`（runtime-env.ts，184 行）——探测 python/node/rust/go
-    版本，需 spawn 命令
-  - `renderDeclaredVerify`（读 .rivet-config.json 的 verify 节）
+- [x] **`detectRuntimeEnvBlock`**：`internal/prompt/runtimeenv.go`
+  - 对账 runtime-env.ts（184 行），探测 python/node/rust/go 四种运行时
+  - **可注入依赖**：`RuntimeEnvDeps{ReadFile, Probe}`——TS 侧本就如此（测试传
+    fake probe），参数化后成为纯函数，21 个 oracle 用例逐字节对账
+  - 踩到的语义细节：
+    - rust 的 `??` 是 **null 合并**（空文件不回退 .toml），与 python 的
+      truthiness 判定不同——易错点，有专项测试
+    - `isDated` 的版本正则 `(\d+)\.(\d+)` **要求小数点**，故 declared "16"
+      不判为 dated 而 actual "16.20.0" 会
+  - 变异反证 7 个（M7 首轮红 0 处是**编译失败**而非测试无判别力——见下方教训）
+- [x] **`stripFirstMarkdownTable` 接线**：projectIndexBlock 存在时剥离
+  rivetMd 的首个表格（对账 volatile.ts:1113），2 个 oracle 用例
+- [x] **runtime-env 接线**：块插在 environment 之后、sober 之前
+  （对账 volatile.ts:1090）。**架构分歧（有意）**：TS 是内部探测
+  （`detectRuntimeEnvBlock(ctx.cwd)`），Go 做成注入字段 `ctx.RuntimeEnv`
+  以保纯度。故该接线点由 Go-only 测试覆盖（oracle 覆盖不了——固定假 cwd
+  探测不出东西，真实 fixture 目录的临时路径不可复现）
+
+> **教训（golden 复现性）**：首版 runtime-env 用例用 `mkdtempSync` 生成
+> fixture 目录，**临时路径进了 golden** → 每次生成都不同 → 对账必然失败。
+> 任何进入 golden 的路径/时间戳都必须可复现，否则测试是假的。本次的处置
+> 是**不造这个 oracle 用例**（而非强行让它绿）——架构分歧用 Go-only 测试覆盖。
+
+> **教训（变异红 0 处的第二种成因）**：M7 首轮红 0 处，我一度以为测试无
+> 判别力；实际是**编译失败**（删掉 `hasProject` 的使用后它成为未使用变量，
+> Go 编译不过 → 测试根本没跑）。变异反证必须确认测试**真的执行了**
+> （看输出有无 `build failed`），而不只看 FAIL 计数。
+
+- [ ] **剩余未移植的 IO 块**：
+  - `renderDeclaredVerify`（读 .rivet-config.json 的 verify 节 + 信任门）
   - Windows 相关：`windowsShellNote` / path-style-note / platform-note
-  - `stripFirstMarkdownTable` 的**调用点**（projectIndexBlock 存在时剥离 AGENTS.md
-    的目录表）——函数已移植（truncate.go），但 volatile.go 里未接线
 - [ ] `buildDynamicAppendixParts`（动态 appendix）——**依赖会话状态容器，
   建议先做最小 session 状态**
 - [ ] appendixDelta / 动态 appendix 的分段与冻结边界

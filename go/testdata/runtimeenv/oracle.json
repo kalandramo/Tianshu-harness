@@ -1,0 +1,194 @@
+{
+  "_note": "files/probe 是输入；out 是 TS 真实 detectRuntimeEnvBlock 的产出",
+  "cases": {
+    "emptyProject": {
+      "note": "空目录——两个探测都不成立，返回 null",
+      "files": {},
+      "probe": {},
+      "out": null
+    },
+    "pythonVersionPinned": {
+      "note": ".python-version 钉版本 + probed 解释器版本（取 probed）",
+      "files": {
+        ".python-version": "3.6.9\n",
+        "setup.py": ""
+      },
+      "probe": {
+        "python3": "Python 3.6.9"
+      },
+      "out": "<runtime-env>\npython: 3.6.9 (declared 3.6.9 via .python-version)\n注意：目标环境 python 低于当前常识版本。版本敏感构造（enum 类属性、typing/match 语法、walrus、可选链等）以上述版本为准，动手前确认目标版本支持，不凭训练常识假设。\n</runtime-env>"
+    },
+    "pythonDeclaredOnlySetupPy": {
+      "note": "无 .python-version，从 setup.py 的 python_requires 取 declared",
+      "files": {
+        "setup.py": "setup(python_requires='>=3.5')"
+      },
+      "probe": {},
+      "out": "<runtime-env>\npython: declared >=3.5 via setup.py\n注意：目标环境 python 低于当前常识版本。版本敏感构造（enum 类属性、typing/match 语法、walrus、可选链等）以上述版本为准，动手前确认目标版本支持，不凭训练常识假设。\n</runtime-env>"
+    },
+    "pythonDeclaredOnlyPyproject": {
+      "note": "从 pyproject.toml 的 requires-python 取 declared",
+      "files": {
+        "pyproject.toml": "requires-python = \">=3.11\"\n"
+      },
+      "probe": {},
+      "out": "<runtime-env>\npython: declared >=3.11 via pyproject.toml\n</runtime-env>"
+    },
+    "pythonDeclaredOnlySetupCfg": {
+      "note": "从 setup.cfg 取 declared（第三种来源）",
+      "files": {
+        "setup.cfg": "python_requires = >=3.8\n"
+      },
+      "probe": {},
+      "out": "<runtime-env>\npython: declared >=3.8 via setup.cfg\n注意：目标环境 python 低于当前常识版本。版本敏感构造（enum 类属性、typing/match 语法、walrus、可选链等）以上述版本为准，动手前确认目标版本支持，不凭训练常识假设。\n</runtime-env>"
+    },
+    "pythonMarkerOnlyNoDeclared": {
+      "note": "有 marker（requirements.txt）但无版本声明、无 probe → null",
+      "files": {
+        "requirements.txt": "requests\n"
+      },
+      "probe": {},
+      "out": null
+    },
+    "pythonFallbackToPlainPython": {
+      "note": "python3 探测失败，回退 python（第二条 probe 路径）",
+      "files": {
+        ".python-version": "3.10.0\n"
+      },
+      "probe": {
+        "python": "Python 3.10.2"
+      },
+      "out": "<runtime-env>\npython: 3.10.2 (declared 3.10.0 via .python-version)\n</runtime-env>"
+    },
+    "pythonDated": {
+      "note": "python 3.6 < 3.9 → 触发 isDated 的 caution 文案",
+      "files": {
+        ".python-version": "3.6.9\n"
+      },
+      "probe": {},
+      "out": "<runtime-env>\npython: declared 3.6.9 via .python-version\n注意：目标环境 python 低于当前常识版本。版本敏感构造（enum 类属性、typing/match 语法、walrus、可选链等）以上述版本为准，动手前确认目标版本支持，不凭训练常识假设。\n</runtime-env>"
+    },
+    "nodeEngines": {
+      "note": "package.json engines.node + probed node 版本",
+      "files": {
+        "package.json": "{\"engines\":{\"node\":\">=18\"}}"
+      },
+      "probe": {
+        "node": "v20.11.0"
+      },
+      "out": "<runtime-env>\nnode: 20.11.0 (declared >=18 via package.json engines)\n</runtime-env>"
+    },
+    "nodeNvmrc": {
+      "note": "无 engines，从 .nvmrc 取 declared",
+      "files": {
+        ".nvmrc": "18.20.0\n"
+      },
+      "probe": {},
+      "out": "<runtime-env>\nnode: declared 18.20.0 via .nvmrc\n</runtime-env>"
+    },
+    "nodeMalformedPackageJson": {
+      "note": "package.json 非法 JSON → 忽略 engines；无 .nvmrc → 无 declared",
+      "files": {
+        "package.json": "{ this is not json"
+      },
+      "probe": {},
+      "out": null
+    },
+    "nodeDated": {
+      "note": "node 16 < 18 → 触发 caution",
+      "files": {
+        "package.json": "{\"engines\":{\"node\":\"16\"}}"
+      },
+      "probe": {
+        "node": "v16.20.0"
+      },
+      "out": "<runtime-env>\nnode: 16.20.0 (declared 16 via package.json engines)\n注意：目标环境 node 低于当前常识版本。版本敏感构造（enum 类属性、typing/match 语法、walrus、可选链等）以上述版本为准，动手前确认目标版本支持，不凭训练常识假设。\n</runtime-env>"
+    },
+    "rustToolchainToml": {
+      "note": "rust-toolchain.toml 的 channel",
+      "files": {
+        "rust-toolchain.toml": "[toolchain]\nchannel = \"1.75.0\"\n"
+      },
+      "probe": {},
+      "out": "<runtime-env>\nrust: declared 1.75.0 via rust-toolchain\n</runtime-env>"
+    },
+    "rustToolchainPlain": {
+      "note": "无 channel 键 → 取首行作 declared（rust-toolchain 裸文件）",
+      "files": {
+        "rust-toolchain": "nightly-2024-01-01\n"
+      },
+      "probe": {},
+      "out": "<runtime-env>\nrust: declared nightly-2024-01-01 via rust-toolchain\n</runtime-env>"
+    },
+    "goMod": {
+      "note": "go.mod 的 go 指令",
+      "files": {
+        "go.mod": "module x\n\ngo 1.27\n"
+      },
+      "probe": {},
+      "out": "<runtime-env>\ngo: declared 1.27 via go.mod\n</runtime-env>"
+    },
+    "goModNoVersion": {
+      "note": "go.mod 无 go 指令 → 该行不产生",
+      "files": {
+        "go.mod": "module x\n"
+      },
+      "probe": {},
+      "out": null
+    },
+    "allFour": {
+      "note": "四种运行时齐上——验证顺序 python→node→rust→go 与拼接",
+      "files": {
+        ".python-version": "3.12.0\n",
+        "package.json": "{\"engines\":{\"node\":\">=20\"}}",
+        "rust-toolchain.toml": "[toolchain]\nchannel = \"1.78.0\"\n",
+        "go.mod": "module x\n\ngo 1.22.0\n"
+      },
+      "probe": {
+        "python3": "Python 3.12.1",
+        "node": "v20.11.0"
+      },
+      "out": "<runtime-env>\npython: 3.12.1 (declared 3.12.0 via .python-version)\nnode: 20.11.0 (declared >=20 via package.json engines)\nrust: declared 1.78.0 via rust-toolchain\ngo: declared 1.22.0 via go.mod\n</runtime-env>"
+    },
+    "twoDated": {
+      "note": "python 与 node 都 dated → caution 列出两个名字（用 / 连接）",
+      "files": {
+        ".python-version": "3.8.0\n",
+        "package.json": "{\"engines\":{\"node\":\"16\"}}"
+      },
+      "probe": {},
+      "out": "<runtime-env>\npython: declared 3.8.0 via .python-version\nnode: declared 16 via package.json engines\n注意：目标环境 python 低于当前常识版本。版本敏感构造（enum 类属性、typing/match 语法、walrus、可选链等）以上述版本为准，动手前确认目标版本支持，不凭训练常识假设。\n</runtime-env>"
+    },
+    "python3AndPythonBoth": {
+      "note": "**M4 区分点**：python3 与 python 都有响应 → python3 优先（顺序敏感）",
+      "files": {
+        ".python-version": "3.10.0\n"
+      },
+      "probe": {
+        "python3": "Python 3.12.1",
+        "python": "Python 3.10.5"
+      },
+      "out": "<runtime-env>\npython: 3.12.1 (declared 3.10.0 via .python-version)\n</runtime-env>"
+    },
+    "markerWithDeclaredNoPinned": {
+      "note": "**M7 区分点**：有 marker（setup.py）+ 有版本声明，但无 .python-version。若忽略 marker 判定会漏掉整条 python 行",
+      "files": {
+        "setup.py": "setup(python_requires='>=3.9')"
+      },
+      "probe": {},
+      "out": "<runtime-env>\npython: declared >=3.9 via setup.py\n</runtime-env>"
+    },
+    "declaredWithActualMixed": {
+      "note": "实际版本 + 声明版本并存——renderLine 的两种形态",
+      "files": {
+        ".python-version": ">=3.10\n",
+        "package.json": "{\"engines\":{\"node\":\">=18\"}}"
+      },
+      "probe": {
+        "python3": "Python 3.11.5",
+        "node": "v18.19.0"
+      },
+      "out": "<runtime-env>\npython: 3.11.5 (declared >=3.10 via .python-version)\nnode: 18.19.0 (declared >=18 via package.json engines)\n</runtime-env>"
+    }
+  }
+}

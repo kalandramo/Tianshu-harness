@@ -153,6 +153,26 @@ const cases: Case[] = [
     ctx: { cwd: '/tmp/a<b>&"c"/proj' },
   },
   {
+    name: 'runtimeEnvBlock',
+    note: '**接线区分点**：RuntimeEnv 非空 → 块应插在 environment 之后、sober 之前',
+    ctx: { runtimeEnv: '<runtime-env>\npython: 3.12.1\n</runtime-env>' },
+  },
+  {
+    name: 'stripTableWhenIndexPresent',
+    note: '**接线区分点**：projectIndexBlock 存在 → 剥离 rivetMd 的首个表格',
+    ctx: {
+      rivetMd: '## 标题\n正文\n\n> 目录索引\n| a | b |\n| - | - |\n| 1 | 2 |\n\n后续内容',
+      projectIndexBlock: '<codebase-index>\n模块表\n</codebase-index>',
+    },
+  },
+  {
+    name: 'noStripWithoutIndex',
+    note: '对照：无 projectIndexBlock → 不剥离表格（表格应保留）',
+    ctx: {
+      rivetMd: '## 标题\n正文\n\n| a | b |\n| - | - |\n| 1 | 2 |',
+    },
+  },
+  {
     name: 'emojiContent',
     note: '含代理对字符——锁定 UTF-16 计费（truncateBlock 的切断）',
     ctx: {
@@ -168,6 +188,20 @@ for (const c of cases) {
   const out = buildStableVolatileBlock(ctx)
   results[c.name] = { ctx, out, note: c.note }
 }
+
+// **runtime-env 无法在此对账**（架构分歧，有意为之）：
+//
+// TS 侧 runtime-env 由 `detectRuntimeEnvBlock(ctx.cwd)` **内部探测**产生——
+// 它不是 ctx 字段。Go 侧为了保持 BuildStableVolatileBlock 是纯函数，
+// 把它做成**注入字段** `ctx.RuntimeEnv`（由调用方用 DetectRuntimeEnvBlock 生成）。
+//
+// 后果：无法构造一个稳定的 oracle 用例覆盖它——
+//   - 用固定的假 cwd → 探测不出东西（目录不存在）
+//   - 用真实 fixture 目录 → 临时路径进 golden，每次生成都不同（不可复现）
+//
+// 故该接线点由 Go-only 测试覆盖（见 volatile_test.go 的
+// TestRuntimeEnvBlockInjectionPosition），块内容本身由 runtimeenv_test.go
+// 的 oracle 用例覆盖（21 个）。这里只记录这个分歧，不造假的 oracle 用例。
 
 // 记录宿主的 platform/os —— Go 侧对账时需产出同一行
 const platform = process.platform
