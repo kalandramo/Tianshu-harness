@@ -534,12 +534,17 @@ func (t *hashEditTool) applyEdit(
 		if restored {
 			rollbackMsg = "更改已自动回滚。"
 		}
+		// 失败计数门（≥3 次时前置提示）
+		incrementEditFailCount(absPath)
+		gate := editFailGatePrefix(absPath, "hash_edit")
 		return contract.Result{
-			Content: "错误：" + chk.Fatal + "\n\n" + rollbackMsg +
+			Content: gate + "错误：" + chk.Fatal + "\n\n" + rollbackMsg +
 				"\n\n请修复编辑后重试。复杂改动建议优先用 apply_patch 加 unified diff。",
 			IsError: true,
 		}, nil
 	}
+	// 成功：清零失败计数
+	resetEditFailCount(absPath)
 
 	recoveredInfo := ""
 	if recovered {

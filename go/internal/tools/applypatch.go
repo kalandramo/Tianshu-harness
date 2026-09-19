@@ -262,11 +262,23 @@ func (t *applyPatchTool) Execute(ctx context.Context, p *CallParams) (contract.R
 	if verify {
 		if rel, message, fatal := t.firstFatalSyntax(targets); fatal {
 			t.rollbackTargets(targets, p.SessionID)
+			// 失败计数门：逐 target 递增（对账 TS 的 `for (const t of targets)`）
+			var gate string
+			for _, tg := range targets {
+				incrementEditFailCount(tg.abs)
+				if gate == "" {
+					gate = editFailGatePrefix(tg.abs, "apply_patch")
+				}
+			}
 			return contract.Result{
-				Content: "补丁已应用，但在 " + rel + " 中引入了致命错误：\n" + message +
+				Content: gate + "补丁已应用，但在 " + rel + " 中引入了致命错误：\n" + message +
 					"\n\n补丁已自动回滚。请修复 diff（检查上下文漂移/冲突标记）后重试。",
 				IsError: true,
 			}, nil
+		}
+		// 成功：清零全部 target 的失败计数（对账 TS 的 reset 循环）
+		for _, tg := range targets {
+			resetEditFailCount(tg.abs)
 		}
 	}
 

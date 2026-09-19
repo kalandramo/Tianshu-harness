@@ -350,6 +350,19 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **编辑失败计数门**（`internal/tools/editfail.go`）
+  - 对账 `read-file.ts` 的 `editFailCount` Map + 三个函数
+  - **语义**：按文件累计**连续**编辑失败次数；≥3 时在报错文案**前置**一句门禁
+    提示（「此文件已连续 X 失败 N 次，再次编辑前必须先重新 read_file」）；
+    成功编辑清零。**是提示性门禁**（文案前缀），不是硬拒绝——对账 TS 的
+    `gatePrefix` 语义
+  - `canonicalPathKey`：非 Windows **原样返回**（大小写敏感文件系统，
+    不能 lowercase）；Windows 转 POSIX 分隔符 + lowercase
+  - 接入 `write_file` / `hash_edit` / `apply_patch`（语法检查失败时递增、
+    成功时清零；apply_patch 逐 target 处理）
+  - 变异反证 6 个：**全部有判别力**（阈值 2→2 红 / 阈值 4→4 红 /
+    reset 不清零→2 红 / increment 不递增→5 红 / hash_edit 不递增→1 红 /
+    hash_edit 成功不清零→1 红）
 - [x] **syntaxcheck 子系统 + 语法检查回滚**（新建 `internal/syntaxcheck/`）
   - **对账契约**：TS 的 `{ warning, fatal }`，`fatal` 非空 → 调用方回滚
   - **架构判断（有意差异，非降级）**：TS 版用 **esbuild**（+ TypeScript 编译器
@@ -743,6 +756,8 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   wire 桥接（`OaiMessageFromWire`）
 - `internal/tools/schema.go`：**schema 有序序列化**——`OrderedProps` /
   `OrderValue`（从 agent 包移入，schema 序列化属 tools 领域）
+- `internal/tools/editfail.go`：**编辑失败计数门**——连续失败 ≥3 时前置
+  read_file 提示
 - `internal/syntaxcheck/`：**语法检查**——`.go`（原生解析器）+
   `.json/.css/.html`（纯算法）。判定与 TS 对账，语言按生态重映射
 - `internal/recovery/`：**备份与恢复**——journal（事件日志）+ stack
@@ -810,14 +825,15 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 3. **apply_patch 的降级**（部分已修复）：
    - ✅ **补丁前备份 + 失败回滚**——已完成
    - ✅ **应用后语法检查回滚**（firstFatalSyntax）——已完成
-   - **编辑失败计数门**、**client-delegate（apply_edit 通道）**：未移植。
+   - ✅ **编辑失败计数门**——已完成
+   - **client-delegate（apply_edit 通道）**：未移植。
    - **跨工具指针检测**：仅做 apply_patch 自己的前缀检查。
 4. **hash_edit 的降级**（部分已修复）：
    - ✅ **语法检查 + 回滚**（checkSyntax）——已完成
+   - ✅ **失败计数门**（连续 3 次要求先 read_file）——已完成
    - **指针回灌守卫**（pointer-guard）：依赖 4 个未移植的 arg-processor
      常量模块（write_file / edit_file / hash_edit / apply_patch）。风险：
      模型可能把历史里的指针文本当 `new_string` 传回来并被写进文件。
-   - **失败计数门**：连续 3 次失败后要求先重新 read_file。
    - **dry_run 的 diff 预览**（buildFileDiff / computeChangedLineRanges，
      185 行）：Go 侧只返回行数变更摘要，不含 unified diff。
 5. ✅ **工具 schema 已与 TS 逐字节对账**（本轮完成）

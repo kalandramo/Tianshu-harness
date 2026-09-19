@@ -123,11 +123,16 @@ func (t *writeFileTool) Execute(_ context.Context, p *CallParams) (contract.Resu
 		} else if t.Stack.RestoreLatestBackup(t.Cwd, rel, p.SessionID) {
 			rollbackMsg = "更改已自动回滚。"
 		}
+		// 失败计数门（≥3 次时前置提示）
+		incrementEditFailCount(vr.Path)
+		gate := editFailGatePrefix(vr.Path, "写入")
 		return contract.Result{
-			Content: "错误：" + chk.Fatal + "\n\n" + rollbackMsg + "\n\n请修复内容后重试。",
+			Content: gate + "错误：" + chk.Fatal + "\n\n" + rollbackMsg + "\n\n请修复内容后重试。",
 			IsError: true,
 		}, nil
 	}
+	// 成功：清零失败计数
+	resetEditFailCount(vr.Path)
 
 	// 登记文件写入（让证据追踪感知）
 	if p.OnFileWrite != nil {
