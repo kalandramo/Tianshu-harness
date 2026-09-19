@@ -293,8 +293,22 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     双向可判别：20→1 红、20→30 红）
   - **未移植**：TS 的信任门（isProjectTrusted）——Go 侧无 trust store，
     故未授信项目也会返回声明。已知行为差异，记于此
-- [ ] **剩余未移植**：
-  - Windows 相关：`windowsShellNote` / path-style-note / platform-note
+- [x] **Windows note 三条**：`internal/prompt/winnote.go`
+  - `WindowsShellNote(kind)` —— 四分支（bash/powershell/cmd 有文案，sh/其他空）
+  - `renderPlatformNote(target, host)` —— 目标平台≠宿主时出现
+  - `pathStyleNote` —— 目标 win32 时出现
+  - **参数化**：`VolatileContext.TargetPlatform` / `.ShellKind` 注入，
+    使三条 note 可测（本机 darwin 无法真实触发 win32 分支）
+  - environment 行的 `host="..."` 属性（此前是死代码，现为真实逻辑）
+  - 顺序对账：environment → platform-note → path-style-note → shell-note
+    → runtime-env → sober
+  - 变异反证 6 个（M2「不产生 host 属性」首轮红 0 处→补 environment 行
+    形态断言后暴露）
+- [ ] **未移植（Windows 特有，需真实环境验证）**：
+  - `resolveShellCommand` 的 Windows 分支（探测 Git Bash 路径 / pwsh）。
+    Go 侧 `DetectShellKind` 只做非 Windows 判定（恒返回 "sh"）；Windows
+    返回空串（**保守选择**——宁不注入，也不注入可能错误的 shell 语法指引，
+    后者会诱导模型反复失败重试）
 - [ ] `buildDynamicAppendixParts`（动态 appendix）——**依赖会话状态容器，
   建议先做最小 session 状态**
 - [ ] appendixDelta / 动态 appendix 的分段与冻结边界

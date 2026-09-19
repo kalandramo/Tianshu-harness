@@ -6,6 +6,25 @@ import (
 	"strings"
 )
 
+// DetectShellKind 探测宿主的 shell 族。
+//
+// **未移植 Windows 分支**（有意）：TS 的 resolveShellCommand 在 Windows 上
+// 探测 Git Bash 路径（findGitBashPath）与 pwsh（hasPwshWindows），需真实
+// Windows 环境才能验证。Go 侧目前只做非 Windows 判定——返回 "sh"，与 TS 的
+// Unix 分支一致（windowsShellNote("sh") 返回空，不注入 note）。
+//
+// 有 Windows 环境时应补齐：探测 git-bash → "bash"、pwsh/powershell → "powershell"、
+// 否则 "cmd"，并支持 RIVET_USE_POWERSHELL 覆盖。
+func DetectShellKind(hostPlatform string) string {
+	if hostPlatform != "win32" {
+		return "sh"
+	}
+	// Windows：暂不探测，返回空（不注入 shell-note）。
+	// 保守选择——宁可不注入，也不注入可能错误的指引（给错 shell 语法会诱导
+	// 模型反复失败重试，比不给指引更糟）。
+	return ""
+}
+
 // DetectHostEnv 探测宿主环境信息，供 `<environment>` 行使用。
 //
 // 关键：**Go 与 Node 的命名不同**，必须映射才能字节等价：
@@ -88,6 +107,8 @@ func BuildFullSystemPrompt(ctx Context, cwd string, host HostEnv) string {
 		// verify-commands：对账 TS 的 renderDeclaredVerify(cwd)。
 		// 同 RuntimeEnv，**必须在这里调**——BuildStableVolatileBlock 只插位置。
 		DeclaredVerify: DetectDeclaredVerifyBlock(cwd),
+		// shell 族：决定是否注入 <shell-note>（非 Windows 恒为 "sh" → 不注入）。
+		ShellKind: DetectShellKind(host.Platform),
 	}
 	frozen := BuildStableVolatileBlock(vctx, host)
 	if frozen == "" {

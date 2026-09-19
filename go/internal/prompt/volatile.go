@@ -72,6 +72,14 @@ type VolatileContext struct {
 	// 空串表示无该块。由调用方用 DetectDeclaredVerifyBlock 生成后传入——
 	// 同样为保持纯函数（不读文件系统）。
 	DeclaredVerify string
+	// TargetPlatform 是目标平台（Node 的 process.platform 命名，如 "win32"）。
+	// 空串 = 与宿主相同（对账 TS 的 getTargetPlatform() 缺省行为）。
+	// 与 host.Platform 不同时产生 <platform-note>；等于 "win32" 时产生
+	// <path-style-note>。
+	TargetPlatform string
+	// ShellKind 是解析出的 shell 族（"bash" / "powershell" / "cmd" / "sh"）。
+	// 空串或 "sh" 不产生 <shell-note>（对账 TS 的 windowsShellNote）。
+	ShellKind string
 	// BlockCaps 覆盖默认 caps（对齐 TS 的 `{...FROZEN_BLOCK_CAPS, ...ctx.blockCaps}`）。
 	BlockCaps map[string]int
 }
@@ -97,11 +105,11 @@ const (
 //	[<platform-note>...]           ← 仅当目标平台≠宿主
 //	[<path-style-note>...]         ← 仅 win32
 //	[<shell-note>...]              ← 仅 Windows shell（Unix 返回空）
-//	[<runtime-env>...]             ← 未移植（IO 探测）
+//	[<runtime-env>...]             ← 由 ctx.RuntimeEnv 注入
 //	<sober>...</sober>
 //	[<locus relation="...">...]    ← self / world
 //	[<project-instructions>...]    ← 按节选取 + 转义 + truncateBlock
-//	[<verify-commands ...>]        ← 未移植（读 .rivet-config.json）
+//	[<verify-commands ...>]        ← 由 ctx.DeclaredVerify 注入
 //	[<project-memory>...]
 //	[<knowledge-manifest>...]
 //	[<seed-capsules>...]
@@ -119,16 +127,30 @@ const (
 func BuildStableVolatileBlock(ctx VolatileContext, host HostEnv) string {
 	ordered := []string{}
 
-	// <environment> —— 宿主相关。目标平台≠宿主时附加 host 属性与提示。
-	// 本轮 targetPlatform 恒等于 host.Platform（跨平台目标未移植）。
-	ordered = append(ordered, `<environment platform="`+host.Platform+`" cwd="`+
+	// <environment> —— 目标平台与宿主不同时附加 host 属性。
+	// 对账 TS volatile.ts:1062-1063。
+	targetPlatform := ctx.TargetPlatform
+	if targetPlatform == "" {
+		targetPlatform = host.Platform
+	}
+	hostAttr := ""
+	if targetPlatform != host.Platform {
+		hostAttr = ` host="` + host.Platform + `"`
+	}
+	ordered = append(ordered, `<environment platform="`+targetPlatform+`"`+hostAttr+` cwd="`+
 		EscapeXML(ctx.Cwd)+`" os="`+EscapeXML(host.OSType+" "+host.OSRelease)+`" />`)
 
-	// NOTE: TS 的顺序是 environment → platform-note → path-style-note →
-	// shell-note → runtime-env → sober → locus → project-instructions → ...。
-	// 本轮 platform-note / path-style-note / shell-note / runtime-env /
-	// verify-commands 未移植（见函数注释）——在非 Windows 且无 runtime 标记
-	// 的项目上，省略它们与 TS 输出一致（oracle 用例覆盖的场景）。
+	// 顺序对账 volatile.ts:1064-1080：
+	// environment → platform-note → path-style-note → shell-note → runtime-env → sober
+	if targetPlatform != host.Platform {
+		ordered = append(ordered, renderPlatformNote(targetPlatform, host.Platform))
+	}
+	if targetPlatform == "win32" {
+		ordered = append(ordered, pathStyleNote)
+	}
+	if note := WindowsShellNote(ctx.ShellKind); note != "" {
+		ordered = append(ordered, note)
+	}
 
 	// runtime-env 在 sober **之前**（对账 volatile.ts:1090 的顺序）。
 	if ctx.RuntimeEnv != "" {
