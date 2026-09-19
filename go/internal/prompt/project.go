@@ -44,37 +44,52 @@ func joinRest(parts []string) string {
 	return out
 }
 
+// projectInstructionsWrap 是 <project-instructions> 包裹标签的固定开销。
+// 对账 TS volatile.ts:1118 的 `const wrap = '<project-instructions>\n\n</project-instructions>'.length`
+// ——注意数的是 `\n\n`（两个换行），而实际渲染用单个 `\n`，这是 TS 的原样行为。
+const projectInstructionsWrap = len("<project-instructions>\n\n</project-instructions>")
+
+// RenderProjectInstructionsBlock 渲染 <project-instructions> 块。
+//
+// 对账 TS volatile.ts:1118-1124 的完整路径：
+//
+//	const wrap = '<project-instructions>\n\n</project-instructions>'.length
+//	const selected = selectProjectInstructions(stripped, caps.projectInstructions - wrap, t => escapeXml(t).length)
+//	parts.push(truncateBlock(`<project-instructions>\n${escapeXml(selected.text)}\n</project-instructions>`, caps.projectInstructions, 'project-instructions'))
+//
+// 两个易漏点（首版接线时都漏了）：
+//  1. 选取预算要**先扣掉 wrap**（47 字符）
+//  2. 包裹后还要**再过一次 truncateBlock**
+//
+// 反直觉但必须复刻：truncateBlock 的结果**可以超出 cap**。它内部扣的是
+// 标签开销（maxChars - tag.length*2 - 10），而包裹标签加回来的可能更多
+// （实测 cap=200 → 233 字符）。TS 就是这样，不能"顺手"让它不超。
+func RenderProjectInstructionsBlock(md string, cap int) string {
+	if cap <= 0 {
+		cap = defaultProjectInstructionsCap
+	}
+	// measure 按**转义后**的 UTF-16 code unit 数计费——对账 TS 的
+	// `t => escapeXml(t).length`。注意是 code unit 而非码点。
+	measure := func(t string) int { return UTF16Len(EscapeXML(t)) }
+	sel := SelectProjectInstructions(md, cap-projectInstructionsWrap, measure)
+	block := "<project-instructions>\n" + EscapeXML(sel.Text) + "\n</project-instructions>"
+	return TruncateBlock(block, cap, "project-instructions")
+}
+
 // BuildSystemPromptWithProject 渲染 system prompt，并把项目指令按节选取后
 // 追加在尾部。
 //
-// 这是 projinst.go 的**生产消费路径**——没有它，按节选取算法就是悬空代码。
+// 这是 projinst.go / truncate.go 的**生产消费路径**——没有它，按节选取算法
+// 与块截断就是悬空代码。
 //
-// 结构：
-//
-//	<static 提示词>
-//
-//	<project-instructions>
-//	<按节选取后的项目文档>
-//	</project-instructions>
-//
-// 注意：TS 侧这部分由 buildVolatileBlockInternal 渲染，且 project-instructions
-// 经 escapeXml 转义后进 <context> 块。此处是**最小可用路径**——直接追加，
-// 不做 XML 转义与 <context> 包裹。后续移植 volatile 层时应替换本函数，
-// 而非在其上叠加（否则会出现两处渲染同一内容的双写）。
+// 注意：TS 侧这部分由 buildVolatileBlockInternal 渲染进 <context> 块。此处是
+// **最小可用路径**——直接追加，不做 <context> 包裹。后续移植 volatile 层时应
+// 替换本函数，而非在其上叠加（否则会出现两处渲染同一内容的双写）。
 func BuildSystemPromptWithProject(ctx Context, cwd string, cap int) string {
 	base := BuildSystemPrompt(ctx)
 	md := LoadProjectInstructions(cwd)
 	if md == "" {
 		return base
 	}
-	if cap <= 0 {
-		cap = defaultProjectInstructionsCap
-	}
-
-	// measure 按**转义后**的 UTF-16 code unit 数计费——对账 TS 侧
-	// volatile.ts:1122 的 `t => escapeXml(t).length`。注意是 code unit
-	// 而非码点：含 emoji 的文档在预算临界点上两者结果不同。
-	sel := SelectProjectInstructions(md, cap, func(t string) int { return UTF16Len(EscapeXML(t)) })
-	block := "<project-instructions>\n" + EscapeXML(sel.Text) + "\n</project-instructions>"
-	return base + "\n\n" + block
+	return base + "\n\n" + RenderProjectInstructionsBlock(md, cap)
 }

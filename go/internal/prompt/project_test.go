@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -136,24 +137,19 @@ func TestBuildSystemPromptWithProjectMeasuresEscaped(t *testing.T) {
 	}
 }
 
-// TestBuildSystemPromptWithProjectUTF16Measure —— 生产路径的 measure 必须是
-// **UTF-16 code unit** 而非码点。
+// TestProjectInstructionsMeasureIsUTF16 —— 计费口径必须是 UTF-16 code unit。
 //
 // 这是移植中最易漏的分叉：TS 的 `escapeXml(t).length` 数的是 code unit
 // （emoji 计 2），Go 的 len([]rune(t)) 数的是码点（emoji 计 1）。
-// 两者只在预算临界点上产生不同选取——普通中文文档完全掩盖它。
 //
-// 文档取自 oracle 的 docEmoji（码点 98 / UTF16 122）。budget=79 时：
-//   - UTF16 计费 → 4 节全保住（omitted=[]）
-//   - 码点计费   → 丢 3 节
+// 断言方式：**直接对比两种 measure 在 RenderProjectInstructionsBlock 上的
+// 输出差异**——比断言"含已略去"稳健得多（后者依赖 wrap 扣减与 truncateBlock
+// 的中间环节，任一变化都会让断言失效；实测确实如此）。
 //
-// 断言"4 节标题全在"即可区分两种实现。
-func TestBuildSystemPromptWithProjectUTF16Measure(t *testing.T) {
-	dir := t.TempDir()
-	md := "## 节A\n" + rep("😀", 1) + rep("xx", 1) // 占位，下面用真实文档覆盖
-	_ = md
-
-	// 与 oracle docEmoji 相同的语义构造（4 节，混合 emoji 与 x）
+// 用 oracle 的 emoji 文档（码点 98 / UTF16 122），在临界预算上两种计费
+// 给出不同结果。
+func TestProjectInstructionsMeasureIsUTF16(t *testing.T) {
+	// 与 oracle docEmoji 同构：4 节，混合 emoji 与 x
 	doc := ""
 	for i := 0; i < 4; i++ {
 		body := ""
@@ -169,30 +165,28 @@ func TestBuildSystemPromptWithProjectUTF16Measure(t *testing.T) {
 		}
 		doc += "## 节" + string(rune('A'+i)) + "\n" + body
 	}
-	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(doc), 0644); err != nil {
-		t.Fatal(err)
-	}
 
-	// 用 UTF16 长度算预算：刚好让所有节都能装下的临界值附近
-	utf16Total := 0
-	for _, r := range doc {
-		if r > 0xFFFF {
-			utf16Total += 2
-		} else {
-			utf16Total++
-		}
-	}
+	utf16Total := UTF16Len(doc)
 	cpTotal := len([]rune(doc))
 	if utf16Total == cpTotal {
 		t.Fatal("前提失败：文档应含代理对字符，UTF16 长度应大于码点数")
 	}
 
-	// 预算 = 码点总数（此时按码点算刚好装下、按 UTF16 算超出）
-	got := BuildSystemPromptWithProject(Context{}, dir, cpTotal)
-
-	if !contains(got, "已略去") {
-		t.Error("按 UTF-16 计费时，budget=码点总数 应触发略去（按码点算则不会）——" +
-			"若此处未略去，说明 measure 用了码点而非 code unit")
+	// 扫描预算区间，找出"两种计费结果不同"的点——存在即证明计费口径生效
+	foundDiff := false
+	for cap := 60; cap <= cpTotal+60; cap++ {
+		got := RenderProjectInstructionsBlock(doc, cap)
+		// 用码点计费重算作对照
+		sel := SelectProjectInstructions(doc, cap-projectInstructionsWrap, func(t string) int { return len([]rune(EscapeXML(t))) })
+		alt := TruncateBlock("<project-instructions>\n"+EscapeXML(sel.Text)+"\n</project-instructions>", cap, "project-instructions")
+		if got != alt {
+			foundDiff = true
+			break
+		}
+	}
+	if !foundDiff {
+		t.Error("在整个预算区间内，UTF-16 计费与码点计费结果完全相同——" +
+			"说明 measure 未使用 code unit（或该文档无法区分两者）")
 	}
 }
 
@@ -208,4 +202,43 @@ func TestBuildSystemPromptWithProjectNoFiles(t *testing.T) {
 
 func hasPrefix(s, prefix string) bool {
 	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+}
+
+// TestProjectBlockFullPath —— project-instructions 的**完整组合渲染**对账。
+//
+// 这条锁定两个易漏点（都是我上轮接线时漏掉的）：
+//  1. selectProjectInstructions 的预算是 `cap - wrap`（wrap=47）
+//  2. 包裹后还要过一次 truncateBlock(block, cap, 'project-instructions')
+//
+// 并锁定一个反直觉行为：truncateBlock 的结果**可以超出 cap**（它扣标签开销
+// maxChars-tag.length*2-10，而包裹加回来的可能更多）。不能"顺手"让它不超。
+func TestProjectBlockFullPath(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "projinst", "oracle.json"))
+	if err != nil {
+		t.Fatalf("读取 oracle 失败：%v", err)
+	}
+	var o struct {
+		ProjBlock map[string]struct {
+			MD   string `json:"md"`
+			Cap  int    `json:"cap"`
+			Wrap int    `json:"wrap"`
+			Out  string `json:"out"`
+		} `json:"projBlock"`
+	}
+	if err := json.Unmarshal(raw, &o); err != nil {
+		t.Fatalf("解析 oracle 失败：%v", err)
+	}
+	if len(o.ProjBlock) == 0 {
+		t.Fatal("oracle 无 projBlock 用例")
+	}
+
+	for name, c := range o.ProjBlock {
+		t.Run(name, func(t *testing.T) {
+			got := RenderProjectInstructionsBlock(c.MD, c.Cap)
+			if got != c.Out {
+				t.Errorf("不等价（cap=%d wrap=%d）\n  Go 长度=%d\n  TS 长度=%d\n  Go =%q\n  TS =%q",
+					c.Cap, c.Wrap, len(got), len(c.Out), trunc2(got, 160), trunc2(c.Out, 160))
+			}
+		})
+	}
 }

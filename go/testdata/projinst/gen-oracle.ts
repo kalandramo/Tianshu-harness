@@ -218,7 +218,55 @@ const escapeCases = [
   '中文 & 符号 <测试>',
 ]
 
+// ── 用例 5: project-instructions 的**完整组合渲染** ──────────────
+// 这是 volatile.ts:1118-1124 的真实路径，含两个易漏点：
+//   1. selectProjectInstructions 的预算是 `cap - wrap`（wrap=47，包裹标签长度）
+//   2. 包裹后还要过一次 truncateBlock(block, cap, 'project-instructions')
+//
+// 反直觉事实（探针实测）：truncateBlock 的结果**可以超出 cap**——它扣的是
+// 标签开销（maxChars - tag.length*2 - 10），而包裹加回来的可能更多。
+// 复刻时必须忠实于此，不能"顺手"让它不超。
+const wrap = '<project-instructions>\n\n</project-instructions>'.length
+
+function renderProjectBlock(md: string, cap: number): string {
+  const selected = selectProjectInstructions(md, cap - wrap, t => escapeXmlRef(t).length)
+  return truncateBlockRef(`<project-instructions>\n${escapeXmlRef(selected.text)}\n</project-instructions>`, cap, 'project-instructions')
+}
+
+// truncateBlock 未导出，此处复刻（与 volatile.ts:1209 逐行一致）
+function truncateBlockRef(block: string, maxChars: number, kind: string): string {
+  if (block.length <= maxChars) return block
+  const singleRootMatch = block.match(/^<([a-z-]+)[^>]*>([\s\S]*)<\/\1>$/m)
+  if (singleRootMatch) {
+    const [_full, tag, content] = singleRootMatch
+    const trimmed = content!.slice(0, maxChars - tag!.length * 2 - 10)
+    return `<${tag}>\n${trimmed}\n<!-- truncated: ${block.length} → ${maxChars} chars -->\n</${tag}>`
+  }
+  return block.slice(0, maxChars) + `\n<!-- ${kind} truncated: ${block.length} → ${maxChars} chars -->`
+}
+
+const projBlockCases: Record<string, { md: string; cap: number }> = {
+  // 未超预算：原样包裹
+  under: { md: '## 甲\n' + 'x'.repeat(50), cap: 8000 },
+  // 略超：走 selectProjectInstructions 的按节选取
+  overSelect: { md: '## 甲节\n' + 'x'.repeat(300) + '\n## 乙节\n' + 'y'.repeat(100), cap: 200 },
+  // 超很多：选取 + truncateBlock 双重作用
+  overBoth: { md: '## 甲节\n' + 'x'.repeat(2000), cap: 300 },
+  // 含 emoji：代理对切断
+  emoji: { md: '## 甲节\n' + '😀'.repeat(100), cap: 150 },
+  // 含需转义字符
+  escaping: { md: '## 甲节\n<a> & "b" ' + 'x'.repeat(100), cap: 120 },
+  // 极小预算：连 wrap 都装不下
+  tiny: { md: '## 甲\n' + 'x'.repeat(200), cap: 60 },
+}
+
+const projBlock: Record<string, { md: string; cap: number; wrap: number; out: string }> = {}
+for (const [name, c] of Object.entries(projBlockCases)) {
+  projBlock[name] = { ...c, wrap, out: renderProjectBlock(c.md, c.cap) }
+}
+
 const out = {
+  projBlock,
   split: Object.fromEntries(
     Object.entries(splitCases).map(([k, md]) => [
       k,

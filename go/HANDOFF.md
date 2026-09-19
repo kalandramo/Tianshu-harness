@@ -161,11 +161,29 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     连续两轮 0 红就换穷举搜索，不要继续猜。
 - [x] **项目指令接线**：`internal/prompt/project.go`
   - `LoadProjectInstructions` 读 cwd 下 AGENTS.md + .rivet.md（`\n\n` 拼接，
-    对账 TS readRivetMd）；`BuildSystemPromptWithProject` 按节选取后追加
-  - 这是 `projinst.go` 的**生产消费路径**——接线前它是悬空代码（仅测试消费）
-  - 端到端验证：真实端点下模型确认读到了 AGENTS.md 的「高危命令纪律」章节
-  - 注：这是**最小可用路径**（不做 XML 转义外的 <context> 包裹）。后续移植
-    volatile 层时应**替换**本函数，而非在其上叠加（避免双写）
+    对账 TS readRivetMd）
+  - `RenderProjectInstructionsBlock(md, cap)` 对账 TS volatile.ts:1118-1124 的
+    **完整路径**：选取预算先扣 `wrap`(=47) → 包裹 → 再过 `truncateBlock`
+  - `BuildSystemPromptWithProject` 追加到 static 提示词尾部
+  - 这是 `projinst.go` / `truncate.go` 的生产消费路径——没有它两者都是悬空代码
+  - 注：仍是**最小可用路径**（不做 `<context>` 包裹）。后续移植 volatile 层时
+    应**替换**本函数，而非在其上叠加（避免双写）
+
+  **接线时的两个偏差（已修，值得记住）**：
+  1. 选取预算漏了 `- wrap`（wrap=47 是包裹标签开销）
+  2. 包裹后漏了再过 `truncateBlock` 这一道
+  两处都是对照 TS 源码逐行核对时发现的——**接线不等于照抄签名**，
+  要核对 TS 调用点的**每个参数与前后步骤**。
+
+  **反直觉但必须复刻的行为**：`truncateBlock` 的结果**可以超出 cap**
+  （实测 cap=200 → 233 字符）。它内部扣的是标签开销
+  （`maxChars - tag.length*2 - 10`），而包裹标签加回来的可能更多。
+  TS 就是这样，不能"顺手"让它不超。
+
+  **端到端验证**（真实端点，9195 字符的超大 AGENTS.md）：模型确认看到
+  「高危命令纪律」「参考章节0～99」「通用执行纪律」，以及
+  `[本块超出前缀预算，已略去 20 节：参考章节100…119]` 标记——
+  纪律类优先保住、参考类按预算丢、标记可见，正是算法意图。
 ### ✅ 已完成：truncateBlock / stripFirstMarkdownTable
 
 `internal/prompt/truncate.go`。这是上轮预告的"最微妙的一处"，实际踩到的
