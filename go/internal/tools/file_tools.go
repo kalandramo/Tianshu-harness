@@ -11,6 +11,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/contract"
 	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 	"github.com/kalandramo/tianshu/go/internal/recovery"
+	"github.com/kalandramo/tianshu/go/internal/syntaxcheck"
 )
 
 // ── write_file ──
@@ -78,6 +79,11 @@ func (t *writeFileTool) Execute(_ context.Context, p *CallParams) (contract.Resu
 
 	// **写入前备份**（供回滚）。新文件无备份可做——trackFileChange 只备份
 	// 已存在的文件（对账 TS）。
+	// 同时记录「写入前是否存在」——语法检查失败时的回滚策略依此分流
+	// （新文件删除、已存在文件从备份恢复）。
+	_, preStatErr := os.Stat(vr.Path)
+	existedBefore := preStatErr == nil
+
 	if _, err := t.Stack.TrackFileChange(t.Cwd, recovery.FileChangeRecord{
 		FilePath:   relForRecovery(t.Cwd, vr.Path),
 		Action:     "write",
@@ -100,6 +106,27 @@ func (t *writeFileTool) Execute(_ context.Context, p *CallParams) (contract.Resu
 	}
 	if writeErr != nil {
 		return contract.Result{Content: fmt.Sprintf("写入失败：%v", writeErr), IsError: true}, nil
+	}
+
+	// ── 应用后语法检查 + 回滚 ──
+	//
+	// 对账 TS 的 checkSyntax 分支。回滚策略按「写入前是否存在」分流：
+	// 新文件**删除**（无备份可恢复，不把语法损坏的残尸留在磁盘上）；
+	// 已存在文件从备份恢复。
+	if chk := syntaxcheck.Check(vr.Path, content); chk.Fatal != "" {
+		rel := relForRecovery(t.Cwd, vr.Path)
+		rollbackMsg := "自动回滚失败。"
+		if !existedBefore {
+			if err := os.Remove(vr.Path); err == nil {
+				rollbackMsg = "新文件已自动移除（写入前不存在，无备份可恢复）。"
+			}
+		} else if t.Stack.RestoreLatestBackup(t.Cwd, rel, p.SessionID) {
+			rollbackMsg = "更改已自动回滚。"
+		}
+		return contract.Result{
+			Content: "错误：" + chk.Fatal + "\n\n" + rollbackMsg + "\n\n请修复内容后重试。",
+			IsError: true,
+		}, nil
 	}
 
 	// 登记文件写入（让证据追踪感知）

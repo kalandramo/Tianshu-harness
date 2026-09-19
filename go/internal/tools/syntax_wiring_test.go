@@ -159,12 +159,11 @@ func TestApplyPatchConflictMarkersCaughtBySyntax(t *testing.T) {
 	}
 }
 
-// TestWriteFileSyntaxCheckNotWired —— 记录现状：write_file 未接语法检查。
+// TestWriteFileSyntaxErrorNewFileRemoved —— **新文件**语法错误时被移除。
 //
-// TS 侧 write_file **也**调 checkSyntax，但 Go 侧本轮只接了 hash_edit 与
-// apply_patch。此测试是**已知边界**的显式记录——若将来接入，此测试应改为
-// 断言回滚行为。
-func TestWriteFileSyntaxCheckNotWired(t *testing.T) {
+// 对账 TS：新文件没有备份可恢复（trackFileChange 只备份已存在文件），
+// 回滚 = **移除**刚写入的坏文件，不把语法损坏的残尸留在磁盘上。
+func TestWriteFileSyntaxErrorNewFileRemoved(t *testing.T) {
 	dir := t.TempDir()
 	tool := WriteFile(dir, nil)
 	p := &CallParams{
@@ -176,10 +175,81 @@ func TestWriteFileSyntaxCheckNotWired(t *testing.T) {
 		ApprovalMode: "dangerously-skip-permissions",
 	}
 	res, _ := tool.Execute(context.Background(), p)
-	if res.IsError {
-		t.Errorf("当前 write_file 未接语法检查（已知边界）——若已接入请更新此测试：%s", res.Content)
+	if !res.IsError {
+		t.Fatalf("语法错误的新文件应失败：%s", res.Content)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "bad.go")); err != nil {
-		t.Error("write_file 应已写入（未回滚）")
+	if !strings.Contains(res.Content, "新文件已自动移除") {
+		t.Errorf("文案应说明新文件被移除：%s", res.Content)
+	}
+	// **关键断言**：坏文件不留在磁盘上
+	if _, err := os.Stat(filepath.Join(dir, "bad.go")); err == nil {
+		t.Error("语法损坏的新文件应被移除")
+	}
+}
+
+// TestWriteFileSyntaxErrorExistingRolledBack —— **已存在文件**语法错误时回滚。
+func TestWriteFileSyntaxErrorExistingRolledBack(t *testing.T) {
+	dir := t.TempDir()
+	original := "package main\n\nfunc main() {}\n"
+	writeRepoFile(t, dir, "m.go", original)
+
+	tool := WriteFile(dir, nil)
+	p := &CallParams{
+		Input: map[string]any{
+			"file_path": "m.go",
+			"content":   "package main\n\nfunc main() {\n", // 缺右花括号
+		},
+		Cwd:          dir,
+		ApprovalMode: "dangerously-skip-permissions",
+	}
+	res, _ := tool.Execute(context.Background(), p)
+	if !res.IsError {
+		t.Fatalf("语法错误的覆盖应失败：%s", res.Content)
+	}
+	if !strings.Contains(res.Content, "已自动回滚") {
+		t.Errorf("文案应说明回滚：%s", res.Content)
+	}
+	// **关键断言**：恢复原内容
+	if got := readRepoFile(t, dir, "m.go"); got != original {
+		t.Errorf("应回滚到写入前内容：\n  期望=%q\n  实际=%q", original, got)
+	}
+}
+
+// TestWriteFileValidGoNoRollback —— 合法 Go 写入不回滚。
+func TestWriteFileValidGoNoRollback(t *testing.T) {
+	dir := t.TempDir()
+	tool := WriteFile(dir, nil)
+	p := &CallParams{
+		Input: map[string]any{
+			"file_path": "ok.go",
+			"content":   "package main\n\nfunc main() {}\n",
+		},
+		Cwd:          dir,
+		ApprovalMode: "dangerously-skip-permissions",
+	}
+	res, _ := tool.Execute(context.Background(), p)
+	if res.IsError {
+		t.Fatalf("合法写入不应失败：%s", res.Content)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ok.go")); err != nil {
+		t.Error("合法文件应保留")
+	}
+}
+
+// TestWriteFileUnknownExtNoCheck —— 未覆盖扩展名不检查（不误伤）。
+func TestWriteFileUnknownExtNoCheck(t *testing.T) {
+	dir := t.TempDir()
+	tool := WriteFile(dir, nil)
+	p := &CallParams{
+		Input: map[string]any{
+			"file_path": "x.md",
+			"content":   "# hi\n\n```\nunclosed fence\n",
+		},
+		Cwd:          dir,
+		ApprovalMode: "dangerously-skip-permissions",
+	}
+	res, _ := tool.Execute(context.Background(), p)
+	if res.IsError {
+		t.Errorf("未覆盖的扩展名不应被检查：%s", res.Content)
 	}
 }
