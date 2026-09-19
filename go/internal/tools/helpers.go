@@ -40,6 +40,41 @@ func arrayProp(desc, itemType string) map[string]any {
 	}
 }
 
+// arrProp 构造一个「元素为 object」的数组型属性（todos 等）。
+//
+// items 用**平铺 map** 表达（而非嵌套 *contract.InputSchema）——
+// wire.writeValue 不认 *InputSchema，且 orderedProps 只递归 map[string]any
+// 与 []any。用平铺 map 才能安全穿过序列化路径。
+func arrProp(desc string, items map[string]any) map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"description": desc,
+		"items":       items,
+	}
+}
+
+// objPropMap 构造一个「object 型」的平铺 map（供 arrProp 的 items 用）。
+func objPropMap(props map[string]any, required ...string) map[string]any {
+	m := map[string]any{"type": "object", "properties": props}
+	if len(required) > 0 {
+		req := make([]any, len(required))
+		for i, r := range required {
+			req[i] = r
+		}
+		m["required"] = req
+	}
+	return m
+}
+
+// enumProp 构造一个带枚举约束的 string 型属性。
+func enumProp(desc string, values []string) map[string]any {
+	return map[string]any{
+		"type":        "string",
+		"description": desc,
+		"enum":        values,
+	}
+}
+
 // baseTool 是工具的公共实现——各工具嵌入它以避免重复样板。
 type baseTool struct {
 	def        contract.Definition

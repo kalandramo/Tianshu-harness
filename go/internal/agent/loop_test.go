@@ -72,14 +72,24 @@ func (s *scriptedServer) handler() http.HandlerFunc {
 // newTestLoop 构造测试用 loop。
 func newTestLoop(t *testing.T, srv *httptest.Server, cfg Config) *Loop {
 	t.Helper()
+	reg := tools.NewDefaultRegistry(tools.Options{Cwd: cfg.Cwd})
+	return newTestLoopWithRegistry(t, srv, cfg, reg)
+}
+
+// newTestLoopWithRegistry 同 newTestLoop，但注入自定义注册表。
+func newTestLoopWithRegistry(t *testing.T, srv *httptest.Server, cfg Config, reg *tools.Registry) *Loop {
+	t.Helper()
 	if cfg.Cwd == "" {
 		cfg.Cwd = t.TempDir()
 	}
+	baseURL := ""
+	if srv != nil {
+		baseURL = srv.URL
+	}
 	cl := client.New(client.Config{
-		BaseURL: srv.URL, APIKey: "k", Model: "test-model", MaxTokens: 100,
+		BaseURL: baseURL, APIKey: "k", Model: "test-model", MaxTokens: 100,
 		Retry: &retry.Options{MaxTotalRetries: intPtr(0)},
 	})
-	reg := tools.NewDefaultRegistry(tools.Options{Cwd: cfg.Cwd})
 	return New(cfg, cl, reg)
 }
 
@@ -468,4 +478,62 @@ func TestUsagePropagatedToEvent(t *testing.T) {
 	if got.StopReason != "end_turn" {
 		t.Errorf("StopReason = %q, want end_turn", got.StopReason)
 	}
+}
+
+// TestToolDefsArraySchemaNoPanic —— 数组型 schema（items 为嵌套 object）
+// 必须能穿过 toolDefs 序列化路径，不 panic。
+//
+// 回归背景：orderedProps 原先只递归 map[string]any，遇到 arrProp 产出的
+// "items" 字段（数组元素 schema）时，wire.writeValue 收到裸 map 会排序键、
+// 收到 *contract.InputSchema 会直接 panic。todo 工具接上注册表后，
+// TestLoopSingleTextTurn 因此炸掉。
+func TestToolDefsArraySchemaNoPanic(t *testing.T) {
+	reg := tools.NewRegistry()
+	reg.Register(tools.Todo())
+
+	l := newTestLoopWithRegistry(t, nil, Config{Model: "m", MaxTokens: 100}, reg)
+	defs := l.toolDefs()
+	if len(defs) != 1 {
+		t.Fatalf("应有 1 个工具声明，得到 %d", len(defs))
+	}
+	// 序列化必须成功且包含嵌套的 items 结构
+	s := defs[0].Marshal()
+	if !containsSub(s, `"todos"`) {
+		t.Errorf("序列化结果应含 todos 属性：%s", s)
+	}
+	if !containsSub(s, `"items"`) {
+		t.Errorf("序列化结果应含 items（数组元素 schema）：%s", s)
+	}
+	if !containsSub(s, `"enum"`) {
+		t.Errorf("序列化结果应含 status 的 enum 约束：%s", s)
+	}
+
+	// **确定性断言**——这是本测试真正锁的契约。
+	//
+	// orderedProps 会**主动对键排序**（见其注释：schema 由我们生成，
+	// 只要每次生成顺序一致即可保证请求体稳定）。所以 items 内的键序
+	// 是字母序，不是插入序——这与 TS 侧（zod 生成序）**尚未对账**，
+	// 是已知欠账（见 HANDOFF）。
+	//
+	// 此处只锁「同一输入两次序列化字节一致」——这是前缀缓存的最低要求。
+	if again := l.toolDefs()[0].Marshal(); again != s {
+		t.Errorf("两次序列化应字节一致\n  第一次: %s\n  第二次: %s", s, again)
+	}
+
+	// 嵌套结构完整性：items 内的 properties 必须被递归展开（不是裸 map 排序）
+	if !containsSub(s, `"items":{"properties":{`) {
+		t.Errorf("items 内应有递归展开的 properties：%s", s)
+	}
+	if !containsSub(s, `"required":["id","content","status"]`) {
+		t.Errorf("items 内应保留 required 顺序：%s", s)
+	}
+}
+
+func containsSub(h, n string) bool {
+	for i := 0; i+len(n) <= len(h); i++ {
+		if h[i:i+len(n)] == n {
+			return true
+		}
+	}
+	return false
 }

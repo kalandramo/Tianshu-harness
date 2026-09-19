@@ -274,6 +274,17 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 > 测试根本没跑）。判据：看输出有无 `build failed`。规避：变异时加 `_ = x`
 > 保留引用，或先单独跑一次确认能编译。
 >
+> **教训（`git checkout <file>` 会清掉该文件的未提交改动）**：本轮做变异反证后
+> 用 `git checkout internal/tools/helpers.go` 恢复，把该文件**从未提交过的**
+> 新增函数一并清掉了。变异恢复一律用 `cp` 备份/还原，
+> **不要对未提交文件用 git checkout**。
+>
+> **教训（等价变异 ≠ 测试缺口）**：变异后红 0 处有两种成因——测试覆盖不到
+> （真缺口），或**变异本身不改变行为**（等价变异）。判据：比对变异前后的
+> **实际输出**，逐字节相同则是等价变异。本轮 M1（去掉 orderValue 的 map
+> 递归）属后者：`orderedProps` 自身排序键、`writeSortedMap` 也排序键，
+> 两条路径输出一致（已实测比对确认）。
+>
 > **教训（golden 复现性）**：首版 runtime-env 用例用 `mkdtempSync` 生成
 > fixture 目录，**临时路径进了 golden** → 每次生成都不同 → 对账必然失败。
 > 任何进入 golden 的路径/时间戳都必须可复现，否则测试是假的。本次的处置
@@ -339,6 +350,18 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **todo 工具本体**：`internal/tools/todo.go`
+  - 消费了 todofmt 的渲染（FormatTodoList / FormatTodoSummary）——
+    这是本轮**唯一有生产调用方**的新增能力
+  - read / write 两个 action；write 是**整体替换**；接受结构化数组与
+    **原始 JSON 字符串**两种 todos 形态（模型常见形态）
+  - 校验：id/content 非空、status 三值枚举
+  - **接上 default_registry**（工具集 7 → 8）
+  - **连带修复一个架构缺陷**：`loop.go` 的 `orderedProps` 原先只递归
+    `map[string]any`，不处理 `[]any` 内的嵌套 object。数组型 schema
+    （如 todo 的 todos.items）会让 `wire.writeValue` 收到裸 map 或
+    非 map 类型而 panic。新增 `orderValue` 递归处理
+  - 回归测试 `TestToolDefsArraySchemaNoPanic` 锁定该修复
 - [x] **todo 清单渲染**：`internal/prompt/todofmt.go`
   - 对账 src/tools/todo-store.ts 的 `TodoStore.formatList` / `formatSummary`
     ——模型直接读到的清单文本
@@ -432,15 +455,20 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 
 ### 架构欠账（已知，非缺陷）
 
-1. **frozen 块位置**：TS 是 trailer-merge 到 user message（`engine.ts:659`），
+1. **工具 schema 键序未与 TS 对账**：`orderedProps` 主动对键**排序**（字母序），
+   而 TS 侧 schema 由 zod 生成（**插入序**）。当前注释自称「只要每次生成
+   顺序一致即可保证请求体稳定」——这保证了**确定性**，但**未保证与 TS 字节
+   等价**。工具 schema 进请求体时（`tools` 字段）是缓存命中率风险。
+   待办：对账 TS 的真实 schema 键序，决定是否改为保插入序。
+2. **frozen 块位置**：TS 是 trailer-merge 到 user message（`engine.ts:659`），
    Go 侧拼在 system prompt 后——`full.go` 注释标了是「最小可用路径」。
    后续移植 trailer-merge 时应**替换**而非叠加。
-2. **三处「最小可用路径」待替换**：`BuildFullSystemPrompt`（拼法）、
+3. **三处「最小可用路径」待替换**：`BuildFullSystemPrompt`（拼法）、
    `RenderProjectInstructionsBlock`（无 `<context>` 包裹）、
    `BuildSystemPromptWithProject`（已被 `full.go` 取代但保留，因 11 个测试锁定它）。
-3. **未移植的行为差异**：TS 的信任门 `isProjectTrusted`（Go 侧无 trust store）；
+4. **未移植的行为差异**：TS 的信任门 `isProjectTrusted`（Go 侧无 trust store）；
    Windows 的 `resolveShellCommand`（需真实 Windows 环境验证）。
-4. **`main` 分支未合并**：`go-runtime` 有 47 个提交，`main` 仍在 `69b0381`；
+5. **`main` 分支未合并**：`go-runtime` 有 47 个提交，`main` 仍在 `69b0381`；
    分支**未 push**。
 
 ## 建议的第一刀

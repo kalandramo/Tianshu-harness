@@ -38,6 +38,9 @@ func NewDefaultRegistry(opts Options) *Registry {
 	r.Register(Bash(cwd))
 	r.Register(RunTests(cwd))
 
+	// ── 任务 ──
+	r.Register(Todo())
+
 	// ── 装配注入 ──
 	for _, t := range opts.Extra {
 		r.Register(t)

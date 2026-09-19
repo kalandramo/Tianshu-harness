@@ -247,14 +247,29 @@ func orderedProps(props map[string]any) *wire.OrderedMap {
 		}
 	}
 	for _, k := range keys {
-		v := props[k]
-		if m, ok := v.(map[string]any); ok {
-			om.Set(k, orderedProps(m))
-			continue
-		}
-		om.Set(k, v)
+		om.Set(k, orderValue(props[k]))
 	}
 	return om
+}
+
+// orderValue 递归把 schema 值转为有序结构。
+//
+// 必须处理 **[]any 内的 map**——数组型 schema（如 todo 的 todos）
+// 的 items 是嵌套 object，不递归会让 wire.writeValue 遇到裸 map 而排序键，
+// 破坏 schema 的字节稳定性；更糟的是遇到非 map 类型（如 *InputSchema）直接 panic。
+func orderValue(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		return orderedProps(x)
+	case []any:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = orderValue(e)
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // buildAssistantMessage 从本回合的收集结果构造 assistant 消息。
