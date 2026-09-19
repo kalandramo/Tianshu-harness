@@ -79,11 +79,47 @@ go/
 - 端到端冒烟可用**本地 mock 端点**完成，无需真实 API key：写一个返回构造
   SSE 的临时 HTTP 服务，用 `TIANSHU_BASE_URL` 指过去
 
+### 真实端点验证怎么跑（2026-09-19 实测有效）
+
+凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`
+的键）。**密钥不进上下文**——让 shell 直接注入环境变量：
+
+```bash
+export DEEPSEEK_API_KEY="$(python3 -c "
+import json
+with open('$HOME/.rivet/secrets.json') as f: s=json.load(f)
+print(s['keys']['Tianyi-ds41'])")"
+
+cd go && go build -o /tmp/tr ./cmd/tianshu
+# 单轮看 usage
+TIANSHU_BASE_URL=https://ai.ctaigw.cn/v1 TIANSHU_MODEL=deepseek-v4.1-flash \
+  /tmp/tr -p "说：ok" --json --max-turns 1 | tail -3
+# 多轮看缓存命中（连续请求，间隔久会因服务端 TTL 归零）
+printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
+  TIANSHU_BASE_URL=https://ai.ctaigw.cn/v1 TIANSHU_MODEL=deepseek-v4.1-flash \
+  /tmp/tr --json | grep '"type":"done"'
+```
+
+已配置的可用端点（`~/.rivet/config.json` 的 `provider.providers`）：
+`Tianyi-ds41` → `https://ai.ctaigw.cn/v1`（deepseek-v4.1-flash，已验证）、
+`deepseek` → `https://api.deepseek.com/v1`、`glm`、`kimi`、`siliconflow` 等 14 个。
+
+**该端点的一个特性**：它把 `usage` 与 `finish_reason` 放在**同一个 SSE chunk**
+（非 OpenAI 式独立尾块）。SSE 层已处理该分支。
+
+**缓存诊断区分**（重要）：`cache_read` 归零有两种成因——① 字节不等价导致
+的碎裂（**每轮都 miss**）② 服务端缓存 TTL 过期（**仅间隔久时 miss**）。
+区分方法：连续快速请求多轮，若稳定命中则是 ②。
+
 ## 剩余工作（按建议优先级）
 
 ### Wave 1 剩余
-- [ ] 重试引擎已就位，但**未接入真实端点的 `cache_read_input_tokens > 0` 验证**
-      （需真实 key；当前证据强度止于「与真实 TS 客户端字节一致」）
+- [x] ~~真实端点的 `cache_read_input_tokens > 0` 验证~~ **已完成（2026-09-19）**：
+  指向 `ai.ctaigw.cn/v1` + `deepseek-v4.1-flash` 多轮实测，前缀缓存稳定命中
+  93.7%–95.5%（轮1 1608→1536、轮2 1617→1536、轮3 1630→1536、轮4 1639→1536）。
+  **Go/No-Go 门通过——字节等价成立**（缓存 key 与 TS 版一致）。
+  真实模型下的完整闭环也已跑通：模型自主读 calc.go（识别 `a + b` 应为 `a * b`）
+  → 改对 → 跑 `go test` 验证通过，该轮缓存命中 85.6%。
 
 ### Wave 2 剩余（工具内核）
 - [x] ~~`bash`~~ 已完成（超时 / 进程组清理 / 破坏性硬闸门 / 输出截断标记）
