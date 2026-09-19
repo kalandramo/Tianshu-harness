@@ -234,10 +234,13 @@ func (l *Loop) buildRequestMessages() []*wire.OrderedMap {
 	// 单次 drain → 不可变快照 → 多路分发）。
 	delivered := l.Advisories.DrainDelivered()
 	if l.Readback != nil {
-		// 对账 TS turn-step-producer：`readback.track(deliveredSnapshot, turn)`。
-		// **turn 用 0**——TS 用的是 session turn（非 run 局部序号），Go 侧当前
-		// 的 buildRequestMessages 没有 turn 参数（见 HANDOFF 的 turn 时钟统一项）。
-		l.Readback.Track(delivered, 0)
+		// 对账 TS turn-step-producer.ts:690：
+		//   `readback.track(deliveredSnapshot, this.self.session.getTurnCount())`
+		//
+		// **必须用 session turn**——TS 在同文件 682-688 行明确警告过：此处若用
+		// run 局部序号，会与 postTool/postTurn 的 session turn 错位，
+		// course_changed 永远无法核销。见 Loop.SessionTurn 的说明。
+		l.Readback.Track(delivered, l.SessionTurn())
 	}
 
 	out := make([]*wire.OrderedMap, 0, len(l.messages)+1)

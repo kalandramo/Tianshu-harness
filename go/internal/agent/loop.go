@@ -182,11 +182,31 @@ func (l *Loop) appendAndPersist(msg *wire.OrderedMap) {
 	}
 }
 
-// FlushSession 排空会话落盘缓冲（会话结束时调用，确保不留未写尾部）。
-func (l *Loop) FlushSession() {
+// FlushSession 在**会话结束**时调用：排空落盘缓冲 + 会话级核销收尾。
+//
+// **粒度很关键**——这里不是「每个 Run 结束」，而是整个会话退出（CLI 的输入
+// 循环结束 / 进程收尾）。对账 TS 的 postSession hook：
+//
+//	`deps.readback.flushAtSessionEnd(ctx.snapshot.turn)`
+//
+// **为什么不能在 Run 里 flush**（TS advisory-readback.ts:250-260 的原始说明）：
+// flush 会把仍未到期的 pending **清空**。若每个 user 轮都 flush，跨轮送达的
+// advisory 在第 1 轮末就被丢弃——第 2 轮即使满足了谓词也无 pending 可核销，
+// 表现为 `Adopted:0 Ignored:0`（既没采纳也没忽略，观测凭空消失）。
+//
+// 未到期的**不判 ignored**：advisory 在末轮送达时模型没走完观察窗口，判忽略
+// 会把「没机会响应」记成「听了不做」，经 ignoredStreak / efficacy / 跨会话
+// lift 三条路径压低效力评分。worker 尤其吃这一刀——中位只跑 2 轮。
+// 返回未到期的 pending 列表（观测价值：TS 会把它写进遥测）。调用方可忽略。
+func (l *Loop) FlushSession() []UnresolvedExpectation {
 	if l.Listener != nil {
 		_ = l.Listener.Drain()
 	}
+	if l.Readback != nil {
+		_, unresolved := l.Readback.FlushAtSessionEnd(l.SessionTurn())
+		return unresolved
+	}
+	return nil
 }
 
 // recordUsage 把本轮 API 计量累加到会话状态。
@@ -215,6 +235,39 @@ func (l *Loop) Messages() []*wire.OrderedMap {
 	out := make([]*wire.OrderedMap, len(l.messages))
 	copy(out, l.messages)
 	return out
+}
+
+// SessionTurn 返回**会话级**轮次——对账 TS 的 `session.getTurnCount()`。
+//
+// **语义**（TS context.ts:360 / context.ts:202）：
+//
+//	turnCount = messages.filter(m => m.role === 'user').length
+//
+// 即「历史里 user 消息的条数」，**在单个 Run 内恒定**（一个 Run 只追加一条
+// user 消息），跨 user 轮才推进。
+//
+// **为什么不能用 run 局部 turn**（TS turn-step-producer.ts:682-688 的原始警告）：
+//
+//	「必须与 runtime hook snapshot 使用同一 session turn 时钟；这里的 turn 是
+//	 TurnOrchestrator.run 局部序号，而 postTool/postTurn 观察事件使用 session
+//	 turn。混用会让 B2 在局部 turn=13 送达、事件却落在 session turn=2，
+//	 course_changed 永远无法核销。」
+//
+// 移植时踩了同一个坑：Track 硬编码 0、Observe/Evaluate 用 run 局部 turn——
+// 单 Run 内窗口就闭合，习惯化触发比 TS 频繁，且跨轮核销区间错位。
+//
+// **注意**：`l.messages` 只含持久化消息（buildRequestMessages 的 advisory
+// 注入不写回），因此计数与 TS 的 oaiMessages 语义一致。
+func (l *Loop) SessionTurn() int {
+	n := 0
+	for _, m := range l.messages {
+		if role, ok := m.Get("role"); ok {
+			if sv, ok := role.(string); ok && sv == "user" {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // Run 执行一轮用户交互，直到模型给出终答或触及预算。
@@ -271,10 +324,6 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 				Kind: "done", Text: collector.text(), Turn: turn,
 				Usage: &u, StopReason: collector.stopReason,
 			})
-			// ── 会话结束核销（正常收尾路径）──
-			if l.Readback != nil {
-				l.Readback.FlushAtSessionEnd(turn)
-			}
 			return nil
 		}
 
@@ -313,7 +362,7 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 			// toolEvent.Target 已按此规则构造（见 toolTarget）。
 			if l.Readback != nil {
 				l.Readback.ObserveTool(ObservedToolEvent{
-					Turn:    turn,
+					Turn:    l.SessionTurn(),
 					Name:    toolEvent.Name,
 					Target:  toolEvent.Target,
 					IsError: toolEvent.IsError,
@@ -347,20 +396,11 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 
 		// ── readback 核销评估 ──
 		//
-		// 对账 TS postTurn：`readback.evaluate(turn)` 判定到期的谓词。
+		// 对账 TS postTurn：`readback.evaluate(ctx.snapshot.turn)`——**session turn**，
+		// 不是 run 局部序号（见 SessionTurn 的说明）。
 		if l.Readback != nil {
-			l.Readback.Evaluate(turn)
+			l.Readback.Evaluate(l.SessionTurn())
 		}
-	}
-
-	// ── 会话结束核销 ──
-	//
-	// 对账 TS postSession：`flushAtSessionEnd(turn)`——**未到期的不判 ignored**
-	// （TS 注释：advisory 在末轮送达时模型没走完窗口，判忽略会把「没机会响应」
-	// 记成「听了不做」，经 ignoredStreak / efficacy / 跨会话 lift 三条路径
-	// 压低效力评分）。
-	if l.Readback != nil {
-		l.Readback.FlushAtSessionEnd(maxTurns)
 	}
 
 	return fmt.Errorf("已达最大轮数 %d——任务未完成（防无限循环）", maxTurns)

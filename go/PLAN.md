@@ -745,9 +745,76 @@ stats={Delivered:4 Adopted:0 Ignored:4 IgnoredStreak:4}
 silence / constitutional_exempt / mixed）。生成器新增 `streaks` 字段模拟
 `getIgnoredStreak`。
 
-**下一步**：efficacy 负反馈环（`getAdoptionRate` 消费者——低采纳率条目降权）
-或 lift 消费（`getLift` 负值静音，`LIFT_MUTE_RENDERS = 10`）。两者都以 readback
-为前置，现已可用。
+### 第十八刀（已完成）：统一 turn 时钟——修复已知偏差（2026-09-19）
+
+✅ `Loop.SessionTurn()` + 四个调用点统一 + flush 粒度修正 + 6 个验收测试
+
+**修复的偏差**：第十六刀遗留的「Track 传 0」。取证后发现**比描述的更严重**——
+不是「传 0」一个点，而是**两个语义不同的时钟被混用**。
+
+**TS 的权威语义**（三处铁证）：
+
+| 来源 | 内容 |
+|---|---|
+| `context.ts:360` | `turnCount = messages.filter(m => m.role === 'user').length` |
+| `context.ts:202` | `turnCount++` 在 `addUserMessage` 内 |
+| `loop-factory.ts:516` | `buildRuntimeSnapshot: turn: self.session.getTurnCount()` |
+
+即 **session turn = 历史里 user 消息条数**，**在单个 Run 内恒定**，跨 user 轮才推进。
+
+**TS 作者的原警告**（`turn-step-producer.ts:682-688`）：
+
+> 必须与 runtime hook snapshot 使用同一 session turn 时钟；这里的 `turn` 是
+> TurnOrchestrator.run 局部序号，而 postTool/postTurn 观察事件使用 session
+> turn。混用会让 B2 在局部 turn=13 送达、事件却落在 session turn=2，
+> **course_changed 永远无法核销**。
+
+**移植踩了同一个坑**，且是两处：
+
+1. `hook_snapshot.go` 的 `Track(delivered, 0)` 硬编码
+2. `loop.go` 的 `ObserveTool`/`Evaluate` 用 run 局部递增 turn
+
+**探针实证**（TS 真实代码）：session turn 恒定时 `evaluate(t)` 恒返回 0——
+证实窗口靠**跨 user 轮**推进，不是 run 内模型轮。
+
+**修复**：
+
+- 新增 `Loop.SessionTurn()`——按 user 消息计数（对账 `context.ts:360`）
+- 四个调用点统一：`Track` / `ObserveTool` / `Evaluate` / `FlushAtSessionEnd`
+
+**第二个缺陷（测试暴露的）**：`FlushAtSessionEnd` 原先挂在 **Run 的正常收尾
+路径**，而 TS 的 postSession 是**整个会话结束**。Go 的 `Run` = 一个 user 轮，
+所以每个 user 轮都 flush，把未到期的 pending 清空——表现为 `Adopted:0 Ignored:0`
+（既没采纳也没忽略，观测凭空消失）。
+
+修正：移到 `FlushSession()`（CLI 在两处会话结束点调用）。并让它**返回
+unresolved 列表**（TS 会写遥测，此前被丢弃——观测价值丢失）。
+
+**用户级验收（已执行）**：
+
+| 测试 | 实测 |
+|---|---|
+| `TestSessionTurnSemantics` | 3 个 Run 后 SessionTurn=3，逐个递增 |
+| `TestSessionTurnConstantWithinRun` | `Run 内各轮观察到的 SessionTurn: [1 1 1]` |
+| `TestClockUnifiedInProductionPath` | 跨 user 轮核销 `Adopted:1` |
+| `TestTrackUsesSessionTurnNotZero` | 送达前的 run_tests **不被误判采纳** |
+| `TestReadbackEvaluateAcrossUserTurns` | `ignoredStreak=2`（跨 user 轮累积） |
+| `TestFlushSessionRedeemsAtSessionEnd` | 未到期作 unresolved 报出，不误判 ignored |
+
+**变异反证 5 个：全部有判别力**（Track 退回 0 红 1 / SessionTurn 恒 0 红 3 /
+FlushSession 不核销 红 1 / Evaluate 退回局部 turn 红 2 / ObserveTool 退回红 1）。
+
+**两个既有测试按新语义重写**（它们断言的是我上一轮基于错误时钟写的期望）：
+`TestReadbackWiredInLoop` 改为断言「单 Run 内窗口不闭合是**正确行为**」；
+`TestReadbackEvaluatePerTurn` → `TestReadbackEvaluateAcrossUserTurns`（跨 user 轮）。
+
+**方法论收获**：探针（`.rivet/scratch/probe_clock.ts`，已清理）在写测试前就把
+「session turn 恒定 → evaluate 恒不判定」这个反直觉断言钉死了。若先写测试，
+极可能按错误时钟的直觉构造出**自洽但无判别力**的用例——事实上我第一版
+RED 测试正是如此（合成递增 turn，自洽通过）。
+
+**下一步**：efficacy 负反馈环（`getAdoptionRate` 消费者）或 lift 消费
+（`getLift` 负值静音，`LIFT_MUTE_RENDERS = 10`）。
 
 **为什么是它而不是补工具**：
 
