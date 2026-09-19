@@ -36,6 +36,7 @@ func NewDefaultRegistry(opts Options) *Registry {
 
 	// ── 执行 ──
 	r.Register(Bash(cwd))
+	r.Register(RunTests(cwd))
 
 	// ── 装配注入 ──
 	for _, t := range opts.Extra {
