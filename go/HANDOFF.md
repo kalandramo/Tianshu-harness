@@ -166,6 +166,26 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   - 端到端验证：真实端点下模型确认读到了 AGENTS.md 的「高危命令纪律」章节
   - 注：这是**最小可用路径**（不做 XML 转义外的 <context> 包裹）。后续移植
     volatile 层时应**替换**本函数，而非在其上叠加（避免双写）
+### ⚠ 移植前瞻：UTF-16 语义的两个高危位点
+
+本层踩到了 `String.length`（UTF-16 code unit）vs Go 码点的分叉（见上文缺陷
+修复）。**继续移植时还有两类同源陷阱**，提前记录：
+
+1. **`truncateBlock`（volatile.ts:1195）有三重 UTF-16 语义**
+   - `block.length <= maxChars` 比较（code unit）
+   - `block.slice(0, maxChars)` —— **JS 的 slice 会切断代理对**，产生
+     孤立代理码元！Go 的 `[]rune` 切片不会。要复刻必须按 code unit 切，
+     而不是按 rune 切。这是字节等价最微妙的一处。
+   - 截断标记里嵌入 `block.length`（code unit 数，进最终字节）
+2. **其余以 `.length` 计预算/计数的位点**（移植时逐个核对）：
+   - `volatile.ts:1003` `content.length > maxChars`（selectTopKBlocks）
+   - `engine.ts:806, 998-1001` 的 `rawChars` / 预览截断
+   - `prefix-budget.ts:48` `Math.ceil(text.length / 4)`
+
+判据：TS 侧凡出现 `.length`、`.slice(`、`.substring(`、`.charCodeAt(` 的
+文本处理，都要问"这里是 code unit 还是码点/字节"。oracle 用例必须含
+代理对字符（emoji）才能锁住——纯中文用例会全部掩盖。
+
 - [ ] volatile 层剩余：`buildVolatileBlockInternal`（148 行）的平台行/sober/
   locus/working-set/session-memory/star-domain 拼接，以及
   `buildDynamicAppendixParts`（动态 appendix）。**动态部分依赖会话状态容器，
