@@ -240,6 +240,24 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	loop.Hooks = pipeline
 	loop.Advisories = bus
 
+	// readback：劝导采纳率台账（核销闭环）。
+	//
+	// 对账 TS loop-factory 的 `new AdvisoryReadback()` 装配。四个调用点已在
+	// loop 里接好（render 后 Track / postTool ObserveTool / postTurn Evaluate /
+	// postSession FlushAtSessionEnd）。
+	//
+	// **pattern_absent 谓词需要文件读取器**——注入 os.ReadFile（读失败返回空串，
+	// 对账 TS defaultReadFile 的 null 分支 → 视为「模式消失」满足）。
+	readback := agent.NewAdvisoryReadback()
+	readback.SetReadFile(func(path string) string {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return ""
+		}
+		return string(b)
+	})
+	loop.Readback = readback
+
 	// claim 提取器装配——**这是 claim 的产生端**。
 	//
 	// 对账 TS 的工具执行后提取：`extractClaimsFromToolResult(ctx, meta)` →

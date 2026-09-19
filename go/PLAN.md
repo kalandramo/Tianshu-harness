@@ -659,7 +659,46 @@ flush 不报 unresolved 1 红。
 下一刀接进 loop（render 后 `track`、postTool `observeTool`、postTurn `evaluate`、
 postSession `flushAtSessionEnd`），再接四个治理子系统。
 
-**下一步**：接 readback 进 loop，然后做习惯化对抗（`getIgnoredStreak` 消费者）。
+### 第十六刀（已完成）：readback 接进 loop——消除悬空 + 核销闭环（2026-09-19）
+
+✅ `Loop.Readback` 字段 + **四个调用点** + CLI 装配
+
+**消除第十五刀的悬空**：`AdvisoryReadback` 此前无生产调用方。现在四个调用点
+全部接好（对账 TS 的三处触发 + 会话结束）：
+
+| 时机 | 调用 | 对账 TS |
+|---|---|---|
+| render 后 | `Track(delivered, 0)` | turn-step-producer |
+| postTool | `ObserveTool{Turn,Name,Target,IsError}` | tool-execution |
+| postTurn | `Evaluate(turn)` | postTurn |
+| 会话结束（两条路径）| `FlushAtSessionEnd` | postSession |
+
+**`pattern_absent` 的文件读取器**在 CLI 注入 `os.ReadFile`（读失败返回空串，
+对账 TS defaultReadFile 的 null 分支 → 视为满足）。
+
+**用户级验收（已执行）**：
+
+- `TestReadbackWiredInLoop`——loop 跑一轮，hook 投递带 `expect` 的 advisory，
+  模型跑了 `run_tests` → **实测 `采纳率=1 stats={Delivered:1 Adopted:1 ...}`**
+  （送达被跟踪 + 谓词被核销 + adopted 记账正确）
+- `TestReadbackFlushOnNormalExit`——正常收尾路径也 flush，未到期的**不误判
+  ignored**
+- `TestReadbackEvaluatePerTurn`——**逐轮 Evaluate 生效**：实测
+  `ignoredStreak=2`（窗口 1 轮 × 2 轮未满足）
+
+**变异反证 4 个：全部有判别力**（render 后不 Track 1 红 / postTool 不 ObserveTool
+1 红 / postTurn 不 Evaluate 1 红 / 正常收尾不 flush 1 红）。
+
+**一次覆盖缺口修正**（M3 首轮红 0）：原用例的场景里 `run_tests` 在第 1 轮就执行，
+即使不调逐轮 `Evaluate`，最后 `FlushAtSessionEnd` 也会判。补了
+`TestReadbackEvaluatePerTurn`（窗口 1 轮 × 多轮不满足 → `ignoredStreak` 必须 > 1）
+后才判别出「只在会话结束判一次」这个缺陷。
+
+**已知偏差**：`Track` 的 turn 传 **0**——TS 用的是 session turn（非 run 局部
+序号），Go 侧 `buildRequestMessages` 当前无 turn 参数。这会**低估多轮场景下的
+时间跨度**（窗口判定偏保守）。已在代码注释标注，见 HANDOFF 的 turn 时钟统一项。
+
+**下一步**：习惯化对抗（消费 `getIgnoredStreak`——连续被忽略则静音 + 升级措辞）。
 
 **为什么是它而不是补工具**：
 

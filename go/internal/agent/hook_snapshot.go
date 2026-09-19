@@ -227,9 +227,18 @@ func (l *Loop) buildRequestMessages() []*wire.OrderedMap {
 		return l.messages
 	}
 
-	// 送达快照交给 readback（本移植暂无 readback，但保持 drain 语义：
-	// 不 drain 会让 delivered 无限累积）
-	l.Advisories.DrainDelivered()
+	// 送达快照交给 readback（核销闭环的起点）。
+	//
+	// **必须 drain**——不 drain 会让 delivered 无限累积。drain 出的快照同时
+	// 喂给 Track（送达跟踪）与未来的 control adapter（TS 的控制面 tee 模式：
+	// 单次 drain → 不可变快照 → 多路分发）。
+	delivered := l.Advisories.DrainDelivered()
+	if l.Readback != nil {
+		// 对账 TS turn-step-producer：`readback.track(deliveredSnapshot, turn)`。
+		// **turn 用 0**——TS 用的是 session turn（非 run 局部序号），Go 侧当前
+		// 的 buildRequestMessages 没有 turn 参数（见 HANDOFF 的 turn 时钟统一项）。
+		l.Readback.Track(delivered, 0)
+	}
 
 	out := make([]*wire.OrderedMap, 0, len(l.messages)+1)
 	out = append(out, l.messages...)

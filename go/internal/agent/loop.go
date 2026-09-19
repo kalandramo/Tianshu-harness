@@ -129,6 +129,17 @@ type Loop struct {
 	// nil 时跳过（认知层未装配）。
 	OnToolResult func(ev *RuntimeToolEvent, turn int)
 
+	// Readback 是劝导采纳率台账（核销闭环）。
+	//
+	// nil 时跳过全部核销调用——增强而非必需。
+	//
+	// **四个调用点**（对账 TS turn-step-producer / tool-execution / postTurn）：
+	//   - render 后：`Track`（送达跟踪）
+	//   - postTool：`ObserveTool`（行为观察，核销的证据源）
+	//   - postTurn：`Evaluate`（核销评估）
+	//   - postSession：`FlushAtSessionEnd`（未到期的如实报出，不判 ignored）
+	Readback *AdvisoryReadback
+
 	// toolDefsCache 缓存工具定义的构造结果。
 	//
 	// **为什么需要**：`toolDefs()` 原本每轮重建全部工具的 schema 并重新
@@ -260,6 +271,10 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 				Kind: "done", Text: collector.text(), Turn: turn,
 				Usage: &u, StopReason: collector.stopReason,
 			})
+			// ── 会话结束核销（正常收尾路径）──
+			if l.Readback != nil {
+				l.Readback.FlushAtSessionEnd(turn)
+			}
 			return nil
 		}
 
@@ -291,6 +306,20 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 			l.recordToolForHooks(toolEvent)
 			l.runHookPhase(ctx, PhasePostTool, turn, toolEvent)
 
+			// ── readback 行为观察（核销的证据源）──
+			//
+			// 对账 TS tool-execution：postTool 把工具事件喂给 readback。
+			// **注意 target 语义**：bash → command；写/读类 → file_path。
+			// toolEvent.Target 已按此规则构造（见 toolTarget）。
+			if l.Readback != nil {
+				l.Readback.ObserveTool(ObservedToolEvent{
+					Turn:    turn,
+					Name:    toolEvent.Name,
+					Target:  toolEvent.Target,
+					IsError: toolEvent.IsError,
+				})
+			}
+
 			// ── claim 提取（认知层）──
 			//
 			// 在 postTool hook 之后——hook 可能已改状态（如标记 claim 过期），
@@ -315,6 +344,23 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 		//
 		// 轮末——hook 在此做跨轮判断（如"改了 TS 但没 typecheck"）。
 		l.runHookPhase(ctx, PhasePostTurn, turn, nil)
+
+		// ── readback 核销评估 ──
+		//
+		// 对账 TS postTurn：`readback.evaluate(turn)` 判定到期的谓词。
+		if l.Readback != nil {
+			l.Readback.Evaluate(turn)
+		}
+	}
+
+	// ── 会话结束核销 ──
+	//
+	// 对账 TS postSession：`flushAtSessionEnd(turn)`——**未到期的不判 ignored**
+	// （TS 注释：advisory 在末轮送达时模型没走完窗口，判忽略会把「没机会响应」
+	// 记成「听了不做」，经 ignoredStreak / efficacy / 跨会话 lift 三条路径
+	// 压低效力评分）。
+	if l.Readback != nil {
+		l.Readback.FlushAtSessionEnd(maxTurns)
 	}
 
 	return fmt.Errorf("已达最大轮数 %d——任务未完成（防无限循环）", maxTurns)
