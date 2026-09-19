@@ -350,6 +350,23 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **会话持久化编排层**：`internal/session/persist.go` + `legacy.go`
+  - 对账 `SessionPersist` 类的**编排核心**（928 行里只取编排，不取压缩/清理）
+  - `LoadOai` 完整链路：读 transcript（zstd 解码 + pending 合并）→
+    `VerifyLines` 校验和过滤 → 逐行 `ParseSessionLine`（**跳过审计行**）→
+    `IsOaiMessage` 判定 → 非 OAI 走 legacy 迁移 → `NormalizeOaiMessages` →
+    `RepairOrphanToolCalls` → 有孤儿则首位插 system-reminder
+  - `AppendOai`（校验和 + 入队 + 可选立即 flush）、`Flush`（transcript + 元数据
+    共享节拍）、`ReadTranscriptText`（含 pending）
+  - **legacy 迁移**（`legacyMessageToOaiMessages`）：user 的块数组拆成
+    文本 + tool 结果；assistant 拆成文本 + thinking + tool_use；
+    **tool_use 的 arguments 用 `stableStringify`（排序键）**而非 JSON.stringify
+  - **反直觉行为（oracle 锁定）**：legacy 迁移产出的 tool_calls **没有对应
+    tool_result** → 被判孤儿 → 触发 system-reminder。这是真实行为
+  - 变异反证 7 个：6 个有判别力（审计行 2 / checksum 2 / 孤儿修复 1 /
+    tool_result 拆分 2 / tool-only content 1 / thinking 迁移 1）；
+    **M5 经查证为等价变异**——Go 的 `encoding/json` 对 map **一律按字典序**
+    输出，与 `stableStringify` 行为一致，故替换无差异
 - [x] **会话元数据存储**：`internal/session/metadata.go`
   - 对账 src/agent/session-metadata.ts（85 行）。内存缓存 + 批量落盘节拍：
     append 热路径每条消息更新元数据，每次写整个 meta.json 是读写放大热点
@@ -610,6 +627,8 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   递归截断 / truncateString marker / KeyOrder 保插入序
 - `internal/session/metadata.go`：**会话元数据存储**——内存缓存 + 批量落盘节拍 /
   手写缩进器 / write 与 update 的键序差异
+- `internal/session/persist.go` + `legacy.go`：**持久化编排层**——`loadOai`
+  完整链路 / legacy 迁移 / 审计行跳过
 
 **本轮核心教训**：`orderedProps` 的数组型 schema 缺陷只在**接线后**暴露
 （单测工具全绿，接注册表立刻 panic）。这印证了「消费方核查」与
@@ -640,7 +659,13 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 
 ### 架构欠账（已知，非缺陷）
 
-1. **session 剩余（zstd 依赖已解决）**：
+1. **`mapToOai` 的键序是启发式的**：Go 的 `map[string]any` 遍历无序，
+   无法复现 TS 的 `JSON.parse` 键序。当前用 `orderKeys` 按「role → content →
+   tool_calls → tool_call_id → reasoning_content」重排——**覆盖了生产路径的
+   常见形态，但不是通用解**。若某会话文件的键序与此外不同，读-改-写会改变
+   字节序（不影响语义，但破坏"读回再写出应与原文一致"）。**正确解法**是
+   在解析层保留原始键序（用有序 map 解析 JSON）。
+2. **session 剩余（zstd 依赖已解决）**：
    - ✅ **transcript codec**（zstd 帧 encode/decode + torn tail）——本轮完成
    - ✅ **write-behind 批量写入器**（`session-batch-writer.ts`）——本轮完成
    - ✅ **孤儿工具调用修复 + 消息归一化**（`repairOrphanToolCalls` /
@@ -648,18 +673,21 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
    - ✅ **消息序列化 + 三层截断**（`serializeSessionMessage` /
      `serializeOaiSessionMessage` / `capJsonValue` / `truncateString`）——本轮完成
    - ✅ **会话元数据存储**（`SessionMetadataStore`）——本轮完成
-   - **`SessionPersist` 类本体**（`session-persist.ts` 928 行）剩余：`loadOai`/
-     `append` 的**编排层**（把已验证的组件串起来：读文件 → verifyLines →
-     逐行解析 → 三层链 → BatchWriter / MetadataStore）、`compact` 系列
-     （压缩重写）、`delete`/`evictOldSessions`（清理）。
-     **全部地基已就位**：BatchWriter（写）+ transcript codec（压缩）+
-     孤儿修复（完整性）+ 序列化（截断）+ 元数据（持久化）+ 状态容器（渲染）。
+   - ✅ **编排层**（`loadOai` / `append` / `flush` + legacy 迁移）——本轮完成
+   - **`SessionPersist` 剩余**：`compact` 系列（压缩重写，依赖 boundary
+     coordinator）、`delete` / `evictOldSessions`（清理策略）、
+     会话记忆（`appendSessionMemory`，依赖 context 层）、frozen 快照。
+   - **已知偏差**：`mapToOai` 的键序用启发式重排（Go 的 map 遍历无序，
+     无法完全复现 TS 的 JSON 键序）——见下方欠账。
+   - **会话层地基已全部就位**：BatchWriter（写）+ transcript codec（压缩）+
+     孤儿修复（完整性）+ 序列化（截断）+ 元数据（持久化）+ 编排（读写链路）
+     + 状态容器（渲染）。
    - **会话恢复**（`session-recovery.ts` 140 行）、**会话注册表**
      （`session-registry.ts` 589 行）未移植。
    - **依赖策略变更**：项目已从「零第三方依赖」改为「允许成熟生态」，
      后续 `go.mod` 会有更多依赖——注意保持 `go.sum` 提交完整（他人
      拉取需能复现构建，已用 `-mod=readonly` 验证）。
-2. **apply_patch 的 4 项降级**：
+3. **apply_patch 的 4 项降级**：
    - **补丁前备份 + 失败回滚**（rollbackTargets / unstagePatchTargets）：
      TS 侧 `git apply --3way` 失败时状态已被动过（冲突标记落盘、干净文件
      已 staged、UU 索引条目），故主动回滚。Go 侧依赖 git 自身原子性，
@@ -667,7 +695,7 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
    - **应用后语法检查回滚**（firstFatalSyntax）：同 hash_edit。
    - **编辑失败计数门**、**client-delegate（apply_edit 通道）**。
    - **跨工具指针检测**：仅做 apply_patch 自己的前缀检查。
-3. **hash_edit 的 4 项降级**（对账 TS 时明确未移植，各自独立）：
+4. **hash_edit 的 4 项降级**（对账 TS 时明确未移植，各自独立）：
    - **指针回灌守卫**（pointer-guard）：依赖 4 个未移植的 arg-processor
      常量模块（write_file / edit_file / hash_edit / apply_patch）。风险：
      模型可能把历史里的指针文本当 `new_string` 传回来并被写进文件。
@@ -676,20 +704,20 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
    - **失败计数门**：连续 3 次失败后要求先重新 read_file。
    - **dry_run 的 diff 预览**（buildFileDiff / computeChangedLineRanges，
      185 行）：Go 侧只返回行数变更摘要，不含 unified diff。
-4. **工具 schema 键序未与 TS 对账**：`orderedProps` 主动对键**排序**（字母序），
+5. **工具 schema 键序未与 TS 对账**：`orderedProps` 主动对键**排序**（字母序），
    而 TS 侧 schema 由 zod 生成（**插入序**）。当前注释自称「只要每次生成
    顺序一致即可保证请求体稳定」——这保证了**确定性**，但**未保证与 TS 字节
    等价**。工具 schema 进请求体时（`tools` 字段）是缓存命中率风险。
    待办：对账 TS 的真实 schema 键序，决定是否改为保插入序。
-5. **frozen 块位置**：TS 是 trailer-merge 到 user message（`engine.ts:659`），
+6. **frozen 块位置**：TS 是 trailer-merge 到 user message（`engine.ts:659`），
    Go 侧拼在 system prompt 后——`full.go` 注释标了是「最小可用路径」。
    后续移植 trailer-merge 时应**替换**而非叠加。
-6. **三处「最小可用路径」待替换**：`BuildFullSystemPrompt`（拼法）、
+7. **三处「最小可用路径」待替换**：`BuildFullSystemPrompt`（拼法）、
    `RenderProjectInstructionsBlock`（无 `<context>` 包裹）、
    `BuildSystemPromptWithProject`（已被 `full.go` 取代但保留，因 11 个测试锁定它）。
-7. **未移植的行为差异**：TS 的信任门 `isProjectTrusted`（Go 侧无 trust store）；
+8. **未移植的行为差异**：TS 的信任门 `isProjectTrusted`（Go 侧无 trust store）；
    Windows 的 `resolveShellCommand`（需真实 Windows 环境验证）。
-8. **分支策略**：`go-runtime` 已 push 到 `origin`（2026-09-19）；
+9. **分支策略**：`go-runtime` 已 push 到 `origin`（2026-09-19）；
    `main` 仍在 `69b0381` 未动（用户明确要求不合并）。Go 实现**将来要独立
    仓库**——当前 `go/` 与 TS 源码同仓库是过渡状态。拆分可行性已核实：
    52 个提交无交叉改动（无一个同时改 `go/` 与 `src/`）、所有 `.go` 都在

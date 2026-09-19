@@ -1,0 +1,222 @@
+{
+  "cases": {
+    "plainOai": {
+      "note": "普通 OAI 消息往返",
+      "rows": [
+        "{\"role\":\"user\",\"content\":\"hi\"}",
+        "{\"role\":\"assistant\",\"content\":\"hello\"}"
+      ],
+      "loaded": [
+        {
+          "role": "user",
+          "content": "hi",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallArgs": null,
+          "toolCallId": null,
+          "reasoning": null
+        },
+        {
+          "role": "assistant",
+          "content": "hello",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallArgs": null,
+          "toolCallId": null,
+          "reasoning": null
+        }
+      ],
+      "count": 2
+    },
+    "auditLinesSkipped": {
+      "note": "**审计行被跳过**（compact_start/end、model_switch）",
+      "rows": [
+        "{\"role\":\"user\",\"content\":\"hi\"}",
+        "{\"type\":\"compact_start\",\"t\":1}",
+        "{\"role\":\"assistant\",\"content\":\"ok\"}",
+        "{\"type\":\"compact_end\",\"t\":2}",
+        "{\"type\":\"model_switch\",\"from\":\"a\",\"to\":\"b\"}"
+      ],
+      "loaded": [
+        {
+          "role": "user",
+          "content": "hi",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallArgs": null,
+          "toolCallId": null,
+          "reasoning": null
+        },
+        {
+          "role": "assistant",
+          "content": "ok",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallArgs": null,
+          "toolCallId": null,
+          "reasoning": null
+        }
+      ],
+      "count": 2
+    },
+    "legacyUserBlocks": {
+      "note": "**legacy 迁移**：user 的块数组 → 文本 + tool 结果",
+      "rows": [
+        "{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"question\"},{\"type\":\"tool_result\",\"tool_use_id\":\"c1\",\"content\":\"result\"}]}"
+      ],
+      "loaded": [
+        {
+          "role": "system",
+          "content": "<system-reminder>The previous session was interrupted mid-turn. Some tool calls from the last assistant message were stripped because their results were not recorded. Re-run any read-only/search steps you still need; verify state before assuming any side effects took hold.</system-reminder>",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallArgs": null,
+          "toolCallId": null,
+          "reasoning": null
+        },
+        {
+          "role": "user",
+          "content": "question",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallArgs": null,
+          "toolCallId": null,
+          "reasoning": null
+        }
+      ],
+      "count": 2
+    },
+    "legacyAssistantBlocks": {
+      "note": "**legacy 迁移**：assistant 的文本 + tool_use 块",
+      "rows": [
+        "{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"let me read\"},{\"type\":\"tool_use\",\"id\":\"c1\",\"name\":\"read_file\",\"input\":{\"path\":\"a.txt\"}}]}"
+      ],
+      "loaded": [
+        {
+          "role": "system",
+          "content": "<system-reminder>The previous session was interrupted mid-turn. Some tool calls from the last assistant message were stripped because their results were not recorded. Re-run any read-only/search steps you still need; verify state before assuming any side effects took hold.</system-reminder>",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallArgs": null,
+          "toolCallId": null,
+          "reasoning": null
+        },
+        {
+          "role": "assistant",
+          "content": "let me read",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallArgs": null,
+          "toolCallId": null,
+          "reasoning": null
+        }
+      ],
+      "count": 2
+    },
+    "legacyAssistantThinking": {
+      "note": "**legacy 迁移**：assistant 带 thinking 块 → reasoning_content",
+      "rows": [
+        "{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"reasoning here\"},{\"type\":\"text\",\"text\":\"answer\"}]}"
+      ],
+      "loaded": [
+        {
+          "role": "assistant",
+          "content": "answer",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallArgs": null,
+          "toolCallId": null,
+          "reasoning": "reasoning here"
+        }
+      ],
+      "count": 1
+    },
+    "legacyAssistantToolOnly": {
+      "note": "**legacy 迁移**：只有 tool_use、无文本 → content 为 null",
+      "rows": [
+        "{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"c1\",\"name\":\"grep\",\"input\":{}}]}"
+      ],
+      "loaded": [
+        {
+          "role": "system",
+          "content": "<system-reminder>The previous session was interrupted mid-turn. Some tool calls from the last assistant message were stripped because their results were not recorded. Re-run any read-only/search steps you still need; verify state before assuming any side effects took hold.</system-reminder>",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallArgs": null,
+          "toolCallId": null,
+          "reasoning": null
+        }
+      ],
+      "count": 1
+    },
+    "malformedRow": {
+      "note": "损坏的 JSON 行被跳过",
+      "rows": [
+        "{\"role\":\"user\",\"content\":\"hi\"}",
+        "{not json",
+        "{\"role\":\"assistant\",\"content\":\"ok\"}"
+      ],
+      "loaded": [
+        {
+          "role": "user",
+          "content": "hi",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallArgs": null,
+          "toolCallId": null,
+          "reasoning": null
+        },
+        {
+          "role": "assistant",
+          "content": "ok",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallArgs": null,
+          "toolCallId": null,
+          "reasoning": null
+        }
+      ],
+      "count": 2
+    },
+    "toolPair": {
+      "note": "完整的 tool_call / tool_result 配对",
+      "rows": [
+        "{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{}\"}}]}",
+        "{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"file content\"}"
+      ],
+      "loaded": [
+        {
+          "role": "assistant",
+          "content": "",
+          "toolCallIds": [
+            "c1"
+          ],
+          "toolCallNames": [
+            "read_file"
+          ],
+          "toolCallArgs": [
+            "{}"
+          ],
+          "toolCallId": null,
+          "reasoning": null
+        },
+        {
+          "role": "tool",
+          "content": "file content",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallArgs": null,
+          "toolCallId": "c1",
+          "reasoning": null
+        }
+      ],
+      "count": 2
+    },
+    "emptyFile": {
+      "note": "空文件 → 空数组",
+      "rows": [],
+      "loaded": [],
+      "count": 0
+    }
+  }
+}
