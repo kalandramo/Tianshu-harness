@@ -4,38 +4,49 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
 
 // TestWireGoldenParity 用真实 TS oracle 对账请求体构造。
 //
-// 这是 wire 路径的核心判据——原计划误以为请求体走 stableStringify，
-// 实测确认走 JSON.stringify(effectiveBody)（openai-client.ts:783），
-// 保插入顺序。本测试验证 Go 的 OrderedMap 能复现该顺序。
+// oracle 由**真实 OpenAIClient** 经 mock fetch 捕获实际发送的字节
+// （go/testdata/wire/gen-oracle.ts），不是手抄字段序——手抄曾导致
+// golden 与 Go 实现自洽的假绿（两边都写成 messages→model→stream，
+// 真实为 model→messages→stream）。
 //
-// golden 生成：npx tsx go/testdata/wire/gen-oracle.ts
+// golden 生成：node_modules/.bin/tsx go/testdata/wire/gen-oracle.ts
 func TestWireGoldenParity(t *testing.T) {
 	goldenPath := filepath.Join("..", "..", "..", "testdata", "wire", "oracle.json")
 	raw, err := os.ReadFile(goldenPath)
 	if err != nil {
 		t.Fatalf("读取 golden 失败（%s）：%v\n生成命令见本测试注释", goldenPath, err)
 	}
-	var golden map[string]string
+	var golden map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &golden); err != nil {
 		t.Fatalf("解析 golden 失败：%v", err)
 	}
-	want, ok := golden["wire_json_stringify"]
-	if !ok {
-		t.Fatal("golden 缺少 wire_json_stringify 字段")
-	}
 
+	// 主判据：真实客户端发送的字节
+	var want string
+	if err := json.Unmarshal(golden["wire_raw"], &want); err != nil {
+		t.Fatalf("golden 缺少 wire_raw 字段（旧格式？需重新生成）：%v", err)
+	}
 	got := BuildDeepSeekBody()
 	if got != want {
-		// 定位首个差异，便于诊断
 		idx := firstDiff(got, want)
-		t.Errorf("请求体字节与 TS oracle 不一致（首差 @ %d）\n  got  ...%s...\n  want ...%s...",
+		t.Errorf("请求体字节与真实客户端不符（首差 @ %d）\n  got  ...%s...\n  want ...%s...",
 			idx, snippet(got, idx), snippet(want, idx))
+	}
+
+	// 诊断维度：顶层键序（提供更可读的失败信息）
+	var wantOrder []string
+	if err := json.Unmarshal(golden["key_order"], &wantOrder); err != nil {
+		t.Fatalf("解析 key_order 失败：%v", err)
+	}
+	if !reflect.DeepEqual(deepSeekBodyKeys(), wantOrder) {
+		t.Errorf("顶层键序不符\n  got:  %v\n  want: %v", deepSeekBodyKeys(), wantOrder)
 	}
 }
 
@@ -157,22 +168,39 @@ func TestUnsupportedTypePanics(t *testing.T) {
 
 // ── 测试辅助 ──
 
-// BuildDeepSeekBody 复现 src/api/openai-client.ts:430+ 的 body 构造顺序。
-// 这是被测目标——字段顺序即 wire 顺序，必须与 TS 侧一致。
+// BuildDeepSeekBody 复现 src/api/openai-client.ts:471-511 的 body 构造顺序。
+//
+// 顺序必须逐字照抄真实源码——这是本测试的全部价值所在。曾因写成
+// messages→model→stream（真实为 model→messages→stream）导致 golden 与
+// 实现自洽的假绿：两边都错，测试照绿。
 func BuildDeepSeekBody() string {
+	return buildDeepSeekBody().Marshal()
+}
+
+// deepSeekBodyKeys 返回顶层键的插入顺序（供键序断言）。
+func deepSeekBodyKeys() []string {
+	return buildDeepSeekBody().Keys()
+}
+
+func buildDeepSeekBody() *OrderedMap {
 	mt := 8192
 	temp := 0.7
 
 	body := NewOrderedMap()
-	body.Set("messages", deepSeekMessages())
+	// L474-L476：字面量内三字段
 	body.Set("model", "deepseek-v4-pro")
+	body.Set("messages", deepSeekMessages())
 	body.Set("stream", true)
+	// L479-L483
 	body.Set("max_tokens", mt)
+	// L487-L489
 	body.Set("stream_options", NewOrderedMap().Set("include_usage", true))
+	// L491-L494
 	body.Set("tools", deepSeekTools())
+	// L506-L511
 	body.Set("temperature", temp)
 
-	return body.Marshal()
+	return body
 }
 
 func deepSeekMessages() []any {

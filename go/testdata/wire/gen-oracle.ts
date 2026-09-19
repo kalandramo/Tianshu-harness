@@ -1,42 +1,29 @@
-// 关键修正探针：真实发送路径用的是 JSON.stringify(effectiveBody)，不是 stableStringify。
-// 必须对账真实序列化器，否则 Go/No-Go 判决锚错对象。
+// 端到端 wire oracle：用**真实 OpenAIClient** 捕获实际发送的请求体字节。
+//
+// 为什么不用手抄字段序：曾因手抄顺序写错（写成 messages→model→stream，
+// 真实为 model→messages→stream），导致 golden 与 Go 实现自洽的假绿——
+// 两边都错，测试照绿。真实客户端捕获是唯一可靠的 oracle。
 //
 // 运行：npx tsx go/testdata/wire/gen-oracle.ts
+// 产出：go/testdata/wire/oracle.json
 import { writeFileSync } from 'node:fs'
+import { OpenAIClient, type OpenAIClientConfig } from '../../../src/api/openai-client.js'
+import type { OaiChatRequest } from '../../../src/api/oai-types.js'
+import type { StreamCallbacks } from '../../../src/api/stream-client.js'
 
-// 复现 src/api/openai-client.ts:430+ 的 body 构造顺序（逐字段赋值 = 插入顺序固定）
-function buildBody(request: Record<string, unknown>, config: Record<string, unknown>): Record<string, unknown> {
-  const body: Record<string, unknown> = {}
-  // 顺序严格照抄 openai-client.ts 的赋值序
-  body.messages = request.messages
-  body.model = request.model || config.model
-  body.stream = true
-  if (config.maxCompletionTokens) {
-    body.max_completion_tokens = request.max_tokens ?? config.maxTokens
-  } else {
-    body.max_tokens = request.max_tokens ?? config.maxTokens
-  }
-  if (config.streamOptions) {
-    body.stream_options = { include_usage: true }
-  }
-  if (Array.isArray(request.tools) && request.tools.length > 0) {
-    body.tools = request.tools
-    if (request.tool_choice) body.tool_choice = request.tool_choice
-  }
-  if (request.response_format) {
-    body.response_format = request.response_format
-  } else if (config.supportsResponseFormat) {
-    body.response_format = { type: 'json_object' }
-  }
-  if (request.temperature !== undefined) {
-    body.temperature = request.temperature
-  } else if (config.temperature !== undefined) {
-    body.temperature = config.temperature
-  }
-  return body
+const CONFIG: OpenAIClientConfig = {
+  baseUrl: 'https://api.deepseek.com',
+  apiKey: 'sk-test',
+  model: 'deepseek-v4-pro',
+  maxTokens: 8192,
+  providerName: 'deepseek',
+  thinking: 'disabled', // 关闭 thinking，聚焦基础字段序
+  thinkingBlockType: 'enabled',
+  effortFormat: 'reasoning_effort',
+  preservedThinkingProtocol: true,
 }
 
-const request = {
+const REQUEST: OaiChatRequest = {
   model: 'deepseek-v4-pro',
   messages: [
     { role: 'system', content: '你是天枢。证据先行。' },
@@ -44,17 +31,23 @@ const request = {
     {
       role: 'assistant',
       content: 'ok',
-      tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.ts"}' } }],
+      tool_calls: [
+        { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.ts"}' } },
+      ],
     },
     { role: 'tool', tool_call_id: 'c1', content: 'line1\nline2' },
-  ],
+  ] as OaiChatRequest['messages'],
   tools: [
     {
       type: 'function',
       function: {
         name: 'read_file',
         description: 'Read a file',
-        parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+        parameters: {
+          type: 'object',
+          properties: { path: { type: 'string' } },
+          required: ['path'],
+        },
       },
     },
     {
@@ -62,7 +55,11 @@ const request = {
       function: {
         name: 'bash',
         description: 'Run a command <careful>',
-        parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
+        parameters: {
+          type: 'object',
+          properties: { command: { type: 'string' } },
+          required: ['command'],
+        },
       },
     },
   ],
@@ -70,22 +67,53 @@ const request = {
   max_tokens: 8192,
 }
 
-const config = {
-  model: 'deepseek-v4-pro',
-  maxTokens: 8192,
-  maxCompletionTokens: false,
-  streamOptions: true,
-  supportsResponseFormat: false,
-  temperature: 0.7,
+/** mock fetch，捕获客户端实际发送的原始 body 字符串（不经解析——保留字节序）。 */
+async function captureRawBody(config: OpenAIClientConfig, request: OaiChatRequest): Promise<string> {
+  const orig = globalThis.fetch
+  let raw = ''
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    raw = init.body as string
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
+        controller.close()
+      },
+    })
+    return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+  }) as unknown as typeof fetch
+  try {
+    const client = new OpenAIClient(config)
+    const noop: StreamCallbacks = {
+      onTextDelta: () => {},
+      onThinkingDelta: () => {},
+      onContentBlock: () => {},
+      onStopReason: () => {},
+      onError: () => {},
+    }
+    await client.stream(request, noop)
+  } finally {
+    globalThis.fetch = orig
+  }
+  return raw
 }
 
-const body = buildBody(request, config)
+const rawBody = await captureRawBody(CONFIG, REQUEST)
+const parsed = JSON.parse(rawBody) as Record<string, unknown>
 
-const out: Record<string, string> = {
-  // 真实发送路径
-  wire_json_stringify: JSON.stringify(body),
-  // 对照：若用 stableStringify 会是什么样（键序不同）
-  _contrast_stableStringify_keyOrder: JSON.stringify(Object.keys(body)),
+// 记录顶层键序（从原始字节解析顺序，用于诊断）
+const keyOrder = Object.keys(parsed)
+
+// 显式覆盖边界：thinking enabled + temperature 不注入
+const configWithThinking: OpenAIClientConfig = { ...CONFIG, thinking: 'enabled' }
+const rawWithThinking = await captureRawBody(configWithThinking, { ...REQUEST, temperature: undefined })
+
+const out = {
+  /** 真实客户端发送的请求体原始字节（本 oracle 的核心） */
+  wire_raw: rawBody,
+  /** 顶层键序（诊断用） */
+  key_order: keyOrder,
+  /** thinking=enabled 且 request.temperature 未设时的字节（验证 config.temperature 不被注入） */
+  wire_thinking_enabled_no_temp: rawWithThinking,
 }
 
 writeFileSync(new URL('oracle.json', import.meta.url), JSON.stringify(out, null, 2) + '\n')
