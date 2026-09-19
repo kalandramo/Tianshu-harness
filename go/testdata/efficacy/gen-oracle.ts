@@ -133,4 +133,3 @@ const out = {
 }
 
 writeFileSync(join(__dirname, 'oracle.json'), JSON.stringify(out, null, 2) + '\n', 'utf-8')
-console.log(`efficacy oracle: decay=${out.decay.length} prune=${out.prune.length} merge=${out.merge.length}`)
