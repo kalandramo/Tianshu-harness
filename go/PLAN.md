@@ -238,8 +238,47 @@ TS 的 undefined 调用在类型层就被兜住了。已加 `*Safe` 方法族（
 无 target 也触发 1 红 / 漏后缀分支 4 红 / 前后缀搞反 4 红 / 空 path 参与匹配 1 红 /
 用裸字段 panic 1 红 / 只标第一个 1 红 / phase 错标 2 红）。
 
-**下一步**：`todo-reminder`（下一个低依赖 hook），或 `advisory-bus` 本体
-（渲染 / 排序 / 去重——目前 hook 投递的 advisory 还没有消费者）。
+### 第五刀（已完成）：Pipeline 接入 agent loop —— 消除悬空（2026-09-19）
+
+⚠️ **发现真实缺口**：前两刀的 hook 只在定义文件与测试里出现，`loop.go` **零引用**
+（grep 确认）——Pipeline 没接进 loop，整条链是断的。「接 hook」当时只完成了
+「hook 接进 Pipeline」，没完成「Pipeline 接进 loop」。
+
+✅ `internal/agent/hook_snapshot.go`（152 行）+ loop.go 接线（+10 行调用点）
+
+- `Loop.Hooks *Pipeline` + `Loop.Effects RuntimeHookEffects`（nil = 跳过，增强而非必需）
+- 三个调用点：`Run` 循环开头（preTurn）/ 工具执行后（postTool，携带工具事件）/
+  轮末（postTurn）
+- `hookSnapshotState` 累积**任务级**标志（对账 TS 注释：`Task-level, not
+  windowed — survives a long turn where the edit scrolled out of
+  recentToolHistory`）；`recentToolHistory` 是 **5 条窗口**
+- 语义要点：写 TS 文件**重置** `sawTypecheck`（改了就要重新查）；失败的工具
+  调用**不置**任务级标志（没进磁盘）；`run_tests` **不算** typecheck（这正是
+  该 hook 存在的理由）
+
+**顺带修了一个既有缺陷**：`observeToolResult` 的 `read_file` 分支用
+`input["path"]`，但工具 schema 的字段名是 **`file_path`**——read 追踪静默失效。
+与早前 tool schema 对账时修正的是同一根因形态。
+
+**用户级验收（已执行）**：
+- `TestE2EHooksReachedFromRealLoop`——真实 `Loop.Run`（mock SSE server）跑一轮，
+  模型调 write_file 写 .ts + run_tests → typecheck-reminder 经 Pipeline 触发并
+  投递（sink 收到 1 条 + 管线 stats 记账）
+- `TestE2EConsistencyCheckReachedFromRealLoop`——真实 loop 里 write_file →
+  consistency-check 触发，`effects.MarkClaimStale` 回调被调用
+- 反向用例：已跑 typecheck 则不投递（不误报）
+- 生产可达性单独复核：`grep runHookPhase` 现出现于 `loop.go`
+
+**测试 10 个**（含 3 个端到端 + 窗口/任务级语义 6 个 + toolTarget 字段名）。
+变异反证 9 个：**全部有判别力**（postTurn 不接线 1 红 / postTool 不接线 2 红 /
+Hooks nil 检查去掉 1 红 / Effects 不透传 1 红 / 窗口不封顶 2 红 / 写 TS 不重置
+标志 1 红 / 失败写也置标志 1 红 / run_tests 当 typecheck 2 红 / toolTarget 字段名
+错 3 红），零编译失败。
+
+**仍未闭环**：advisory-bus 本体（渲染 / 排序 / 去重）未移植——hook 投递的条目
+**无处显示**。这是端到端可见性的最后一环。
+
+**下一步**：`advisory-bus` 渲染层（让投递可见），或 `todo-reminder` hook。
 
 **为什么是它而不是补工具**：
 

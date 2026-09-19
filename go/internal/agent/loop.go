@@ -84,6 +84,22 @@ type Loop struct {
 	// 对账 TS 的 `attachSessionPersistListener`。nil 时跳过。
 	Listener *session.PersistListener
 
+	// Hooks 是运行时 hook 管线（五阶段 CVM）。
+	//
+	// 对账 TS 侧 loop.ts 的 runtimeHooks。nil 时跳过全部 hook 调用——
+	// hook 是增强而非必需（headless 一次性跑或测试场景不装）。
+	Hooks *Pipeline
+	// hookState 是跨轮累积的 hook 快照状态。
+	//
+	// **为什么需要**：部分快照字段是**任务级**而非窗口级（如 TouchedTSFiles
+	// ——"本会话写过 TS 文件"），它们必须跨轮存活。TS 侧这些字段由
+	// buildRuntimeSnapshot 从 AgentLoop 的实例字段计算；Go 侧在此累积。
+	hookState hookSnapshotState
+	// Effects 是 hook 影响主流程的出口（注入消息 / 请求 theta / 标记 claim 等）。
+	//
+	// nil 时 hook 的 effect 调用退化为 no-op（*Safe 方法兜底）。
+	Effects RuntimeHookEffects
+
 	// toolDefsCache 缓存工具定义的构造结果。
 	//
 	// **为什么需要**：`toolDefs()` 原本每轮重建全部工具的 schema 并重新
@@ -177,6 +193,11 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 			return err
 		}
 
+		// ── preTurn hook ──
+		//
+		// 在调模型**之前**——hook 可注入消息 / 调整感知。
+		l.runHookPhase(ctx, PhasePreTurn, turn, nil)
+
 		// ── 调模型（流式）──
 		collector := &turnCollector{}
 		req := &api.ChatRequest{
@@ -226,6 +247,21 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 				Text: result.Content, IsError: result.IsError, Turn: turn,
 			})
 
+			// ── postTool hook ──
+			//
+			// 在工具结果回灌历史**之后**、下一轮之前。hook 在此看到完整的
+			// 工具事件（含 success / target / 结果内容）。
+			toolEvent := &RuntimeToolEvent{
+				Name:          tc.name,
+				Success:       !result.IsError,
+				Target:        toolTarget(tc.input),
+				Input:         tc.input,
+				IsError:       result.IsError,
+				ResultContent: result.Content,
+			}
+			l.recordToolForHooks(toolEvent)
+			l.runHookPhase(ctx, PhasePostTool, turn, toolEvent)
+
 			l.appendAndPersist(wire.NewOrderedMap().
 				Set("role", "tool").
 				Set("tool_call_id", tc.id).
@@ -237,6 +273,11 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 			Kind: "turn_end", Turn: turn,
 			Usage: &u, StopReason: collector.stopReason,
 		})
+
+		// ── postTurn hook ──
+		//
+		// 轮末——hook 在此做跨轮判断（如"改了 TS 但没 typecheck"）。
+		l.runHookPhase(ctx, PhasePostTurn, turn, nil)
 	}
 
 	return fmt.Errorf("已达最大轮数 %d——任务未完成（防无限循环）", maxTurns)
@@ -287,7 +328,9 @@ func (l *Loop) observeToolResult(name string, input map[string]any, res contract
 	}
 	switch name {
 	case "read_file":
-		if p, ok := input["path"].(string); ok && p != "" {
+		// **字段名是 file_path**（工具 schema 用的就是它）——曾误用 `path`
+		// 导致 read 追踪静默失效。与 hook_snapshot.go 的 toolTarget 同一约定。
+		if p, ok := input["file_path"].(string); ok && p != "" {
 			l.State.TrackFileRead(p, "")
 		}
 	case "write_file", "edit_file", "hash_edit":

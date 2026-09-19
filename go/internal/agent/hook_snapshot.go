@@ -1,0 +1,177 @@
+package agent
+
+import (
+	"context"
+	"path/filepath"
+	"strings"
+)
+
+// hookSnapshotState 是跨轮累积的 hook 快照状态。
+//
+// **为什么单独存**：部分快照字段是**任务级**（整个会话）而非**窗口级**
+// （近 N 条工具历史）。TS 侧的 RuntimeHookSnapshot 注释明确区分：
+//
+//	Component C (typecheck-reminder): a .ts/.tsx file was written this session.
+//	Task-level, not windowed — survives a long turn where the edit scrolled out
+//	of recentToolHistory.
+//
+// 若这些字段按窗口计算，长回合里编辑滚出窗口后提醒就失效了——这正是
+// TS 注释强调的坑。Go 侧在此显式累积。
+type hookSnapshotState struct {
+	// touchedTSFiles：本会话写过 .ts/.tsx。
+	touchedTSFiles bool
+	// sawTypecheck：自上次 TS 编辑后跑过真 typecheck。
+	sawTypecheck bool
+	// touchedUIFiles：本会话写过 UI 文件（.tsx/.jsx/.vue/.svelte/.css/.html）。
+	touchedUIFiles bool
+	// sawVisualVerify：本会话用过视觉验证工具。
+	sawVisualVerify bool
+	// recentToolHistory 是**窗口**（近 N 条），非任务级。
+	recentToolHistory []ToolHistoryEntry
+}
+
+// toolHistoryWindow 是 recentToolHistory 的保留条数。
+//
+// 对账 TS：窗口是 5 条（注释多处提及 "5-entry window"）。
+const toolHistoryWindow = 5
+
+// tsExtensions 是需要 typecheck 的扩展名。
+var tsExtensions = map[string]bool{".ts": true, ".tsx": true}
+
+// uiExtensions 是需要渲染验证的扩展名。
+var uiExtensions = map[string]bool{
+	".tsx": true, ".jsx": true, ".vue": true, ".svelte": true,
+	".css": true, ".html": true,
+}
+
+// visualVerifyTools 是视觉验证类工具。
+var visualVerifyTools = map[string]bool{
+	"browser_debug": true, "computer_use": true, "browser": true,
+}
+
+// typecheckTools 是真正的类型检查工具。
+var typecheckTools = map[string]bool{"typecheck": true}
+
+// recordToolForHooks 把一次工具调用记进 hook 快照状态。
+//
+// **任务级标志只在成功时更新**——失败的工具调用不该让"写过 TS 文件"成立
+// （写失败的文件没进磁盘，无需 typecheck 提醒）。
+func (l *Loop) recordToolForHooks(tool *RuntimeToolEvent) {
+	if tool == nil {
+		return
+	}
+
+	// 窗口：无条件推进（含失败——窗口反映"刚发生了什么"）
+	l.hookState.recentToolHistory = append(l.hookState.recentToolHistory, ToolHistoryEntry{
+		Tool:   tool.Name,
+		Status: statusOf(tool.Success),
+		Target: tool.Target,
+	})
+	if len(l.hookState.recentToolHistory) > toolHistoryWindow {
+		l.hookState.recentToolHistory =
+			l.hookState.recentToolHistory[len(l.hookState.recentToolHistory)-toolHistoryWindow:]
+	}
+
+	// 任务级：只在成功时置位
+	if !tool.Success {
+		return
+	}
+
+	switch tool.Name {
+	case "write_file", "edit_file", "hash_edit", "apply_patch":
+		ext := strings.ToLower(filepath.Ext(tool.Target))
+		if tsExtensions[ext] {
+			l.hookState.touchedTSFiles = true
+			// **写 TS 文件会重置 typecheck 标志**——自那次编辑后还没跑过。
+			l.hookState.sawTypecheck = false
+		}
+		if uiExtensions[ext] {
+			l.hookState.touchedUIFiles = true
+			l.hookState.sawVisualVerify = false
+		}
+	case "run_tests":
+		// run_tests **不算** typecheck——这是整个 hook 存在的理由：
+		// 测试运行器只转译不查类型。
+	default:
+		if typecheckTools[tool.Name] {
+			l.hookState.sawTypecheck = true
+		}
+		if visualVerifyTools[tool.Name] {
+			l.hookState.sawVisualVerify = true
+		}
+	}
+}
+
+// statusOf 把成功标志转成状态串。
+func statusOf(success bool) string {
+	if success {
+		return "ok"
+	}
+	return "error"
+}
+
+// toolTarget 从工具入参提取展示用的 target。
+//
+// 对账 TS 侧：target 来自工具结果的 `input.target`（工具自己产出）。
+// **Go 侧 contract.Result 没有 target 概念**（只有 RawPath = 原始输出文件路径，
+// 语义不同），故这里从入参推导——这是最小可用实现，不是精确对账。
+//
+// **字段名必须是 `file_path`**：工具 schema 用的是 `file_path`（见
+// internal/tools 的 schema 对账）。此处曾用 `path` 是个已知的同类缺陷形态
+// （read_file 的 schema 修正过），故显式列出并加注释。
+func toolTarget(input map[string]any) string {
+	if input == nil {
+		return ""
+	}
+	// 文件类工具：file_path
+	if p, ok := input["file_path"].(string); ok && p != "" {
+		return p
+	}
+	// bash：command（作为 target 便于「同一命令重复 3 次」检测）
+	if c, ok := input["command"].(string); ok && c != "" {
+		return c
+	}
+	// apply_patch：diff（真实 target 需解析 diff，此处留空——由
+	// consistency-check 的路径后缀匹配兜住）
+	return ""
+}
+
+// buildRuntimeSnapshot 构建 hook 快照。
+//
+// 对账 TS 的 buildRuntimeSnapshot。**当前只填 Go 侧已有数据的字段**——
+// sensorium / strategy / vigor / season 等认知状态依赖尚未移植的模块，
+// 留待后续（nil 时 hook 应自行跳过相关判断）。
+func (l *Loop) buildRuntimeSnapshot(turn int) *RuntimeHookSnapshot {
+	return &RuntimeHookSnapshot{
+		Cwd:               l.cfg.Cwd,
+		Turn:              turn,
+		RecentToolHistory: append([]ToolHistoryEntry(nil), l.hookState.recentToolHistory...),
+		TouchedTSFiles:    l.hookState.touchedTSFiles,
+		SawTypecheck:      l.hookState.sawTypecheck,
+		TouchedUIFiles:    l.hookState.touchedUIFiles,
+		SawVisualVerify:   l.hookState.sawVisualVerify,
+	}
+}
+
+// runHookPhase 执行某个 hook 阶段（Hooks 为 nil 时 no-op）。
+func (l *Loop) runHookPhase(ctx context.Context, phase RuntimeHookPhase, turn int, tool *RuntimeToolEvent) {
+	if l.Hooks == nil {
+		return
+	}
+	hctx := &RuntimeHookContext{
+		Snapshot: l.buildRuntimeSnapshot(turn),
+		Effects:  l.Effects,
+	}
+	switch phase {
+	case PhasePreTurn:
+		l.Hooks.RunPreTurn(ctx, hctx)
+	case PhaseAfterPerception:
+		l.Hooks.RunAfterPerception(ctx, hctx)
+	case PhasePostTool:
+		l.Hooks.RunPostTool(ctx, hctx, tool)
+	case PhasePostTurn:
+		l.Hooks.RunPostTurn(ctx, hctx)
+	case PhasePostSession:
+		l.Hooks.RunPostSession(ctx, hctx)
+	}
+}
