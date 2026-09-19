@@ -1,0 +1,639 @@
+{
+  "cases": {
+    "noOrphans": {
+      "note": "无孤儿——不插警告",
+      "rows": [
+        {
+          "role": "user",
+          "content": "hi"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "c1",
+              "type": "function",
+              "function": {
+                "name": "read_file",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "c1",
+          "content": "file content"
+        }
+      ],
+      "loaded": [
+        {
+          "role": "user",
+          "content": "hi",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "toolCallIds": [
+            "c1"
+          ],
+          "toolCallNames": [
+            "read_file"
+          ],
+          "toolCallId": null
+        },
+        {
+          "role": "tool",
+          "content": "file content",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": "c1"
+        }
+      ],
+      "hasReminder": false,
+      "reminder": null
+    },
+    "orphanToolUseEmptyContent": {
+      "note": "**孤儿 tool_use + 空 content → 整条 assistant 丢弃**",
+      "rows": [
+        {
+          "role": "user",
+          "content": "hi"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "c1",
+              "type": "function",
+              "function": {
+                "name": "read_file",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "next"
+        }
+      ],
+      "loaded": [
+        {
+          "role": "system",
+          "content": "<system-reminder>The previous session was interrupted mid-turn. Some tool calls from the last assistant message were stripped because their results were not recorded. Re-run any read-only/search steps you still need; verify state before assuming any side effects took hold.</system-reminder>",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "hi",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "next",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        }
+      ],
+      "hasReminder": true,
+      "reminder": "<system-reminder>The previous session was interrupted mid-turn. Some tool calls from the last assistant message were stripped because their results were not recorded. Re-run any read-only/search steps you still need; verify state before assuming any side effects took hold.</system-reminder>"
+    },
+    "orphanToolUseWithContent": {
+      "note": "孤儿 tool_use 但 assistant 有文本 content → 保留消息、剔除 tool_calls",
+      "rows": [
+        {
+          "role": "user",
+          "content": "hi"
+        },
+        {
+          "role": "assistant",
+          "content": "let me read that",
+          "tool_calls": [
+            {
+              "id": "c1",
+              "type": "function",
+              "function": {
+                "name": "read_file",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "next"
+        }
+      ],
+      "loaded": [
+        {
+          "role": "system",
+          "content": "<system-reminder>The previous session was interrupted mid-turn. Some tool calls from the last assistant message were stripped because their results were not recorded. Re-run any read-only/search steps you still need; verify state before assuming any side effects took hold.</system-reminder>",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "hi",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "assistant",
+          "content": "let me read that",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "next",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        }
+      ],
+      "hasReminder": true,
+      "reminder": "<system-reminder>The previous session was interrupted mid-turn. Some tool calls from the last assistant message were stripped because their results were not recorded. Re-run any read-only/search steps you still need; verify state before assuming any side effects took hold.</system-reminder>"
+    },
+    "orphanToolResult": {
+      "note": "**孤儿 tool 结果（无对应 tool_call）被丢弃**",
+      "rows": [
+        {
+          "role": "user",
+          "content": "hi"
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "ghost",
+          "content": "stale result"
+        },
+        {
+          "role": "user",
+          "content": "next"
+        }
+      ],
+      "loaded": [
+        {
+          "role": "system",
+          "content": "<system-reminder>The previous session was interrupted mid-turn. Some tool calls from the last assistant message were stripped because their results were not recorded. Re-run any read-only/search steps you still need; verify state before assuming any side effects took hold.</system-reminder>",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "hi",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "next",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        }
+      ],
+      "hasReminder": true,
+      "reminder": "<system-reminder>The previous session was interrupted mid-turn. Some tool calls from the last assistant message were stripped because their results were not recorded. Re-run any read-only/search steps you still need; verify state before assuming any side effects took hold.</system-reminder>"
+    },
+    "mixedPartialOrphan": {
+      "note": "部分有效 + 部分孤儿：保留有效的",
+      "rows": [
+        {
+          "role": "user",
+          "content": "hi"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "c1",
+              "type": "function",
+              "function": {
+                "name": "read_file",
+                "arguments": "{}"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "function",
+              "function": {
+                "name": "grep",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "c1",
+          "content": "result for c1"
+        },
+        {
+          "role": "user",
+          "content": "next"
+        }
+      ],
+      "loaded": [
+        {
+          "role": "system",
+          "content": "<system-reminder>The previous session was interrupted mid-turn. Some tool calls from the last assistant message were stripped because their results were not recorded. Re-run any read-only/search steps you still need; verify state before assuming any side effects took hold.</system-reminder>",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "hi",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "toolCallIds": [
+            "c1"
+          ],
+          "toolCallNames": [
+            "read_file"
+          ],
+          "toolCallId": null
+        },
+        {
+          "role": "tool",
+          "content": "result for c1",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": "c1"
+        },
+        {
+          "role": "user",
+          "content": "next",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        }
+      ],
+      "hasReminder": true,
+      "reminder": "<system-reminder>The previous session was interrupted mid-turn. Some tool calls from the last assistant message were stripped because their results were not recorded. Re-run any read-only/search steps you still need; verify state before assuming any side effects took hold.</system-reminder>"
+    },
+    "orphanWriteTool": {
+      "note": "**写类工具被剔除 → 非破坏性警告文案**",
+      "rows": [
+        {
+          "role": "user",
+          "content": "hi"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "w1",
+              "type": "function",
+              "function": {
+                "name": "write_file",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "next"
+        }
+      ],
+      "loaded": [
+        {
+          "role": "system",
+          "content": "<system-reminder>The previous session was interrupted mid-turn. A write/edit tool call from the last assistant message was stripped because its result was not recorded — but the interruption may have happened either before OR after the file was actually written, so the file may or may not already contain the intended changes. Do NOT blindly re-run the write. First verify the file's current state with read_file or grep, then only write what is still missing. This is host-process interruption recovery, NOT a tool malfunction — the write tools remain fully functional; keep using them normally instead of bash workarounds.</system-reminder>",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "hi",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "next",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        }
+      ],
+      "hasReminder": true,
+      "reminder": "<system-reminder>The previous session was interrupted mid-turn. A write/edit tool call from the last assistant message was stripped because its result was not recorded — but the interruption may have happened either before OR after the file was actually written, so the file may or may not already contain the intended changes. Do NOT blindly re-run the write. First verify the file's current state with read_file or grep, then only write what is still missing. This is host-process interruption recovery, NOT a tool malfunction — the write tools remain fully functional; keep using them normally instead of bash workarounds.</system-reminder>"
+    },
+    "orphanHashEditTool": {
+      "note": "hash_edit 也是写类工具",
+      "rows": [
+        {
+          "role": "user",
+          "content": "hi"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "h1",
+              "type": "function",
+              "function": {
+                "name": "hash_edit",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "next"
+        }
+      ],
+      "loaded": [
+        {
+          "role": "system",
+          "content": "<system-reminder>The previous session was interrupted mid-turn. A write/edit tool call from the last assistant message was stripped because its result was not recorded — but the interruption may have happened either before OR after the file was actually written, so the file may or may not already contain the intended changes. Do NOT blindly re-run the write. First verify the file's current state with read_file or grep, then only write what is still missing. This is host-process interruption recovery, NOT a tool malfunction — the write tools remain fully functional; keep using them normally instead of bash workarounds.</system-reminder>",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "hi",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "next",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        }
+      ],
+      "hasReminder": true,
+      "reminder": "<system-reminder>The previous session was interrupted mid-turn. A write/edit tool call from the last assistant message was stripped because its result was not recorded — but the interruption may have happened either before OR after the file was actually written, so the file may or may not already contain the intended changes. Do NOT blindly re-run the write. First verify the file's current state with read_file or grep, then only write what is still missing. This is host-process interruption recovery, NOT a tool malfunction — the write tools remain fully functional; keep using them normally instead of bash workarounds.</system-reminder>"
+    },
+    "orphanApplyPatchTool": {
+      "note": "apply_patch 也是写类工具",
+      "rows": [
+        {
+          "role": "user",
+          "content": "hi"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "a1",
+              "type": "function",
+              "function": {
+                "name": "apply_patch",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "next"
+        }
+      ],
+      "loaded": [
+        {
+          "role": "system",
+          "content": "<system-reminder>The previous session was interrupted mid-turn. A write/edit tool call from the last assistant message was stripped because its result was not recorded — but the interruption may have happened either before OR after the file was actually written, so the file may or may not already contain the intended changes. Do NOT blindly re-run the write. First verify the file's current state with read_file or grep, then only write what is still missing. This is host-process interruption recovery, NOT a tool malfunction — the write tools remain fully functional; keep using them normally instead of bash workarounds.</system-reminder>",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "hi",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "next",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        }
+      ],
+      "hasReminder": true,
+      "reminder": "<system-reminder>The previous session was interrupted mid-turn. A write/edit tool call from the last assistant message was stripped because its result was not recorded — but the interruption may have happened either before OR after the file was actually written, so the file may or may not already contain the intended changes. Do NOT blindly re-run the write. First verify the file's current state with read_file or grep, then only write what is still missing. This is host-process interruption recovery, NOT a tool malfunction — the write tools remain fully functional; keep using them normally instead of bash workarounds.</system-reminder>"
+    },
+    "orphanNonWriteTool": {
+      "note": "非写类工具 → 通用警告文案",
+      "rows": [
+        {
+          "role": "user",
+          "content": "hi"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "r1",
+              "type": "function",
+              "function": {
+                "name": "read_file",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "next"
+        }
+      ],
+      "loaded": [
+        {
+          "role": "system",
+          "content": "<system-reminder>The previous session was interrupted mid-turn. Some tool calls from the last assistant message were stripped because their results were not recorded. Re-run any read-only/search steps you still need; verify state before assuming any side effects took hold.</system-reminder>",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "hi",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "next",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        }
+      ],
+      "hasReminder": true,
+      "reminder": "<system-reminder>The previous session was interrupted mid-turn. Some tool calls from the last assistant message were stripped because their results were not recorded. Re-run any read-only/search steps you still need; verify state before assuming any side effects took hold.</system-reminder>"
+    },
+    "emptyToolCallsArray": {
+      "note": "**空 tool_calls 数组被移除**（normalizeOaiMessage）",
+      "rows": [
+        {
+          "role": "user",
+          "content": "hi"
+        },
+        {
+          "role": "assistant",
+          "content": "text only",
+          "tool_calls": []
+        },
+        {
+          "role": "user",
+          "content": "next"
+        }
+      ],
+      "loaded": [
+        {
+          "role": "user",
+          "content": "hi",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "assistant",
+          "content": "text only",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "next",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        }
+      ],
+      "hasReminder": false,
+      "reminder": null
+    },
+    "emptyToolCallsNullContent": {
+      "note": "空 tool_calls + content 缺失 → 补空串",
+      "rows": [
+        {
+          "role": "user",
+          "content": "hi"
+        },
+        {
+          "role": "assistant",
+          "tool_calls": []
+        },
+        {
+          "role": "user",
+          "content": "next"
+        }
+      ],
+      "loaded": [
+        {
+          "role": "user",
+          "content": "hi",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "next",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        }
+      ],
+      "hasReminder": false,
+      "reminder": null
+    },
+    "multipleOrphanBatches": {
+      "note": "多批孤儿",
+      "rows": [
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "o1",
+              "type": "function",
+              "function": {
+                "name": "read_file",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "mid"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "o2",
+              "type": "function",
+              "function": {
+                "name": "grep",
+                "arguments": "{}"
+              }
+            }
+          ]
+        }
+      ],
+      "loaded": [
+        {
+          "role": "system",
+          "content": "<system-reminder>The previous session was interrupted mid-turn. Some tool calls from the last assistant message were stripped because their results were not recorded. Re-run any read-only/search steps you still need; verify state before assuming any side effects took hold.</system-reminder>",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        },
+        {
+          "role": "user",
+          "content": "mid",
+          "toolCallIds": null,
+          "toolCallNames": null,
+          "toolCallId": null
+        }
+      ],
+      "hasReminder": true,
+      "reminder": "<system-reminder>The previous session was interrupted mid-turn. Some tool calls from the last assistant message were stripped because their results were not recorded. Re-run any read-only/search steps you still need; verify state before assuming any side effects took hold.</system-reminder>"
+    }
+  }
+}

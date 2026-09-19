@@ -350,6 +350,28 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **孤儿工具调用修复**：`internal/session/oaimessage.go`
+  - 对账 src/agent/session-persist.ts 的 `repairOrphanToolCalls`（压#7）
+    + `normalizeOaiMessage` + `isOaiMessage`
+  - **双向孤儿检测**：assistant 的 tool_call 无对应结果 → 剔除该 tool_call
+    （全部孤儿且 content 空 → 整条丢弃）；tool 结果无对应 tool_call → 丢弃该行
+  - **两条模型可见警告文案**（逐字对账）：`OrphanReminderWriteTool`（含写类
+    工具被剔除 → 非破坏性：文件可能已改，先核实再重写）与
+    `OrphanReminderGeneric`
+  - **发现并复刻了 `loadOai` 的三层链路**：`isOaiMessage` 过滤 →
+    `normalizeOaiMessages` → `repairOrphanToolCalls`。我首版只复刻了后两层，
+    oracle 的 `emptyToolCallsNullContent` 用例立刻红——`{role:'assistant',
+    tool_calls:[]}` 因**缺 content 键**（undefined 既非 string 也非 null）
+    在第一层就被跳过，根本没进 normalize
+  - **测试方法论的坑**：用 Go 结构体反序列化 oracle 无法区分「content 键缺失」
+    与「显式 null」（都是 nil 指针），而 `isOaiMessage` 恰恰依赖这个区分。
+    改为保留**原始 map 形态**才复刻成功
+  - **`NormalizeOaiMessage` 的语义**：assistant 的 `tool_calls: []` 空数组
+    必须移除（OpenAI 兼容 API 的 minItems:1 约束），content 为 null 时补空串
+  - 变异反证 5 个全部有判别力（写类集合漏 hash_edit 2 / 孤儿 result 不丢
+    **修正后** 2 / 全孤儿保留消息 1 / 空 tool_calls 不归一化 3 /
+    isOaiMessage 不查 content 键 1）。M2 首轮**编译失败**（`i` 变未使用）
+    ——本轮第 9 次遇到此成因
 - [x] **write-behind 批量写入器**：`internal/session/batchwriter.go`
   - 对账 src/agent/session-batch-writer.ts（129 行）
   - 行先排队在内存，成批 flush 为**一个 zstd 帧**；200ms 定时窗口 / 显式
@@ -543,6 +565,8 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   `klauspost/compress v1.20.0`，跨版本兼容双向验证通过
 - `internal/session/batchwriter.go`：**write-behind 批量写入器**——首行同步
   落盘 / mergePending / legacy 迁移 / 失败放回队列
+- `internal/session/oaimessage.go`：**孤儿工具调用修复 + 消息归一化**——
+  双向孤儿检测 / 两条警告文案 / loadOai 三层链路
 
 **本轮核心教训**：`orderedProps` 的数组型 schema 缺陷只在**接线后**暴露
 （单测工具全绿，接注册表立刻 panic）。这印证了「消费方核查」与
@@ -576,10 +600,12 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 1. **session 剩余（zstd 依赖已解决）**：
    - ✅ **transcript codec**（zstd 帧 encode/decode + torn tail）——本轮完成
    - ✅ **write-behind 批量写入器**（`session-batch-writer.ts`）——本轮完成
-   - **`SessionPersist` 类本体**（`session-persist.ts` 928 行）未移植：
-     它依赖消息序列化（`serializeSessionMessage` / `serializeOaiSessionMessage`
-     + `capJsonValue` 截断）、孤儿工具调用修复（`repairOrphanToolCalls`）、
-     会话元数据（`SessionMetadataStore`）。BatchWriter 是它的地基，已就位。
+   - ✅ **孤儿工具调用修复 + 消息归一化**（`repairOrphanToolCalls` /
+     `normalizeOaiMessage` / `isOaiMessage`）——本轮完成
+   - **`SessionPersist` 类本体**（`session-persist.ts` 928 行）剩余部分未移植：
+     消息序列化（`serializeSessionMessage` / `serializeOaiSessionMessage`
+     + `capJsonValue` 截断）、会话元数据（`SessionMetadataStore`）、
+     `loadOai` 的完整编排（读文件 → verifyLines → 逐行解析 → 三层链）。
    - **会话恢复**（`session-recovery.ts` 140 行）、**会话注册表**
      （`session-registry.ts` 589 行）未移植。
    - **依赖策略变更**：项目已从「零第三方依赖」改为「允许成熟生态」，
