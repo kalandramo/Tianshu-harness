@@ -21,12 +21,15 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/kalandramo/tianshu/go/internal/agent"
 	"github.com/kalandramo/tianshu/go/internal/api"
 	"github.com/kalandramo/tianshu/go/internal/client"
+	ctxstore "github.com/kalandramo/tianshu/go/internal/context"
 	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"github.com/kalandramo/tianshu/go/internal/retry"
 	"github.com/kalandramo/tianshu/go/internal/session"
@@ -182,28 +185,77 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	}
 	loop := agent.New(app.Agent, cl, reg)
 
-	// ── CVM 装配：hook 管线 + 劝导总线 ──
+	// ── CVM 装配：hook 管线 + 劝导总线 + claim store ──
 	//
 	// **为什么必须在 CLI 装**：hook 与 advisory 的逻辑再完备，不在这里装配
 	// 就完全不生效——真实会话走的是这条路径，不是测试里的手工注入。
 	//
-	// 装配三件：
+	// 装配四件：
 	//   1. AdvisoryBus——hook 投递的出口 + 渲染成 <星域-advisory> 块
 	//   2. Pipeline——五阶段 hook 管线（当前注册两个真实 hook）
-	//   3. Loop.Hooks / Loop.Advisories——把两者接进主循环
+	//   3. ClaimStore——consistency-check 的真实 claim 来源（认知层）
+	//   4. Loop.Hooks / Loop.Advisories / Loop.Effects——接进主循环
 	//
 	// 对账 TS 的 loop-factory / create-runtime-hooks 装配路径
 	// （TS 侧默认装配 ~18+ hook；这里只装已移植的两个）。
 	bus := agent.NewAdvisoryBus()
 	pipeline := agent.NewPipeline(agent.PipelineOptions{})
 	pipeline.Register(agent.NewTypecheckReminderHook(bus))
+
+	// claim store：落盘到 <cwd>/.rivet/claims/<sessionId>.claims.jsonl。
+	//
+	// **构造失败降级为空集**（不阻塞会话）——consistency-check 退化为 no-op，
+	// 其余功能不受影响。这是**显式降级**（错误走 stderr 可见）。
+	var claimStore *ctxstore.ClaimStore
+	claimsDir := filepath.Join(app.Agent.Cwd, ".rivet", "claims")
+	if err := os.MkdirAll(claimsDir, 0o755); err == nil {
+		cs, csErr := ctxstore.NewClaimStore(claimsDir, app.Agent.SessionID)
+		if csErr == nil {
+			claimStore = cs
+		} else {
+			fmt.Fprintf(os.Stderr, "claim store 不可用（consistency-check 降级）：%v\n", csErr)
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "claim 目录不可建（consistency-check 降级）：%v\n", err)
+	}
+
 	pipeline.Register(agent.NewConsistencyCheckHook(func() []agent.FileObservation {
-		// claim store 尚未移植——返回空集，hook 不产生副作用（no-op）。
-		// 这是**显式降级**而非静默失效：接上 claim store 后此处自动生效。
-		return nil
+		if claimStore == nil {
+			return nil // 显式降级：无 store 即无观察
+		}
+		// 对账 TS loop-factory.ts:691 的
+		// `contextClaimStore?.listClaims({ kind: ['file_observation'] })`
+		claims := claimStore.ListClaims(nil, []ctxstore.ContextClaimKind{ctxstore.ClaimFileObservation}, nil)
+		out := make([]agent.FileObservation, 0, len(claims))
+		for _, c := range claims {
+			fo := agent.FileObservation{ID: c.ID, Text: c.Text}
+			for _, e := range c.Evidence {
+				fo.Evidence = append(fo.Evidence, agent.EvidenceRef{Path: e.Path})
+			}
+			out = append(out, fo)
+		}
+		return out
 	}))
+
 	loop.Hooks = pipeline
 	loop.Advisories = bus
+
+	// effects：claim 过期标记的真实落点。
+	//
+	// 对账 TS tool-execution.ts:719 的 markClaimStale——
+	// `updateClaimStatus(claimId, 'stale', \`invalidated by ${tool} on ${target}\`)`。
+	// Go 侧 reason 格式由 hook 侧传入（见 consistency_check.go 的 effect 调用）。
+	loop.Effects = agent.RuntimeHookEffects{
+		MarkClaimStale: func(claimID string) {
+			if claimStore == nil {
+				return
+			}
+			if _, err := claimStore.UpdateClaimStatus(
+				claimID, ctxstore.StatusStale, "invalidated by file write", nowMs()); err != nil {
+				fmt.Fprintf(os.Stderr, "标记 claim 过期失败：%v\n", err)
+			}
+		},
+	}
 
 	loop.Emit = func(e agent.Event) {
 		if jsonOut {
@@ -346,3 +398,6 @@ func providerFromURL(url string) string {
 }
 
 func int64Ptr(i int64) *int64 { return &i }
+
+// nowMs 返回当前 epoch 毫秒。
+func nowMs() int64 { return time.Now().UnixMilli() }

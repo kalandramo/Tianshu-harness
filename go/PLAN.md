@@ -546,8 +546,37 @@ path 不省略 1 红 / seq 强制重分配 1 红 / 坏行中断 1 红 / markStal
    基准），需**连续两次** boost 才能判别。补
    `TestClaimStoreBoostAccumulatesCurrent`。
 
-**下一步**：把 claim store 接给 consistency-check hook（CLI 装配），
-消除第九刀留下的 blocked 验收项。
+### 第十三刀（已完成）：claim store 接进 CLI——闭环第九刀（2026-09-19）
+
+✅ `cmd/tianshu/main.go` 装配第四件（claim store）+ effects 接线
+（+约 60 行）+ 验收测试
+
+**闭环了第九刀留下的 blocked 验收项**：此前 `getFileObservations` 注入空集，
+consistency-check hook 无副作用。现在：
+
+- `ClaimStore` 落盘到 `<cwd>/.rivet/claims/<sessionId>.claims.jsonl`
+- `getFileObservations` 真实读 `listClaims({kind: ['file_observation']})`
+  （对账 TS `loop-factory.ts:691`）
+- `Loop.Effects.MarkClaimStale` 接上 `UpdateClaimStatus(id, 'stale', reason)`
+  （对账 TS `tool-execution.ts:719`）
+
+**降级是显式的**：claim store 构造失败（目录不可建 / sessionId 空）时走 stderr
+并退化为空集——consistency-check 变 no-op，其余功能不受影响。
+
+**用户级验收（已执行）**：`TestCLIClaimStoreWiring`——预置一条引用 foo.ts 的
+claim → 喂 postTool 的 write_file 事件 → 观察到 **claim 状态变 stale**、
+**反证被追加且 reason 格式正确**、**事件落盘 JSONL**。
+`TestCLIClaimStoreWiringNonWriteToolIgnored` 反向验证 read_file 不触发。
+
+**限制如实说明**：这不是「真实二进制从会话产生 claim」的端到端——Go 侧还没有
+claim 提取器（从会话事件产生 claim 的模块），故测试直接构造 CLI 所用的**同一
+装配**并喂事件。**验证的是装配正确性**，不是 claim 产生链路。
+
+**过程发现**：`internal/context` 包名与标准库 `context` 冲突，CLI 里需别名
+（`ctxstore`）。
+
+**下一步**：claim 提取器（从会话事件产生 claim）——那才是 claim 的产生端，
+补上后这条链就完整了。或 `AdvisoryReadback`（采纳率台账）。
 
 **为什么是它而不是补工具**：
 
