@@ -1,0 +1,246 @@
+{
+  "text_only": [
+    {
+      "kind": "text",
+      "value": "Hello"
+    },
+    {
+      "kind": "text",
+      "value": " world"
+    },
+    {
+      "kind": "stop",
+      "reason": "end_turn",
+      "usage": {
+        "input_tokens": 100,
+        "output_tokens": 5,
+        "cache_read_input_tokens": 80,
+        "cache_creation_input_tokens": 20
+      }
+    },
+    {
+      "kind": "block",
+      "blockType": "text",
+      "text": "Hello world"
+    }
+  ],
+  "reasoning_then_text": [
+    {
+      "kind": "thinking",
+      "value": "思考中"
+    },
+    {
+      "kind": "thinking",
+      "value": "..."
+    },
+    {
+      "kind": "text",
+      "value": "答案"
+    },
+    {
+      "kind": "block",
+      "blockType": "thinking",
+      "text": "思考中..."
+    },
+    {
+      "kind": "block",
+      "blockType": "text",
+      "text": "答案"
+    },
+    {
+      "kind": "stop",
+      "reason": "end_turn",
+      "usage": {}
+    }
+  ],
+  "reasoning_after_content": [
+    {
+      "kind": "text",
+      "value": "先说话"
+    },
+    {
+      "kind": "text",
+      "value": "后到的推理"
+    },
+    {
+      "kind": "block",
+      "blockType": "text",
+      "text": "先说话后到的推理"
+    },
+    {
+      "kind": "stop",
+      "reason": "end_turn",
+      "usage": {}
+    }
+  ],
+  "single_tool_call": [
+    {
+      "kind": "block",
+      "blockType": "tool_use",
+      "id": "call_1",
+      "name": "read_file",
+      "input": {
+        "path": "a.ts"
+      }
+    },
+    {
+      "kind": "stop",
+      "reason": "tool_use",
+      "usage": {}
+    }
+  ],
+  "parallel_tool_calls": [
+    {
+      "kind": "block",
+      "blockType": "tool_use",
+      "id": "c0",
+      "name": "read_file",
+      "input": {
+        "path": "a"
+      }
+    },
+    {
+      "kind": "block",
+      "blockType": "tool_use",
+      "id": "c1",
+      "name": "grep",
+      "input": {
+        "pattern": "x"
+      }
+    },
+    {
+      "kind": "stop",
+      "reason": "tool_use",
+      "usage": {}
+    }
+  ],
+  "trailing_args_after_finish": [
+    {
+      "kind": "block",
+      "blockType": "tool_use",
+      "id": "c0",
+      "name": "read_file",
+      "input": {
+        "path": "a.ts"
+      }
+    },
+    {
+      "kind": "stop",
+      "reason": "tool_use",
+      "usage": {}
+    }
+  ],
+  "ambiguous_continuation": [
+    {
+      "kind": "block",
+      "blockType": "tool_use",
+      "id": "c0",
+      "name": "read_file",
+      "input": {},
+      "argsTruncated": true
+    },
+    {
+      "kind": "block",
+      "blockType": "tool_use",
+      "id": "c1",
+      "name": "grep",
+      "input": {},
+      "argsTruncated": true
+    },
+    {
+      "kind": "stop",
+      "reason": "tool_use",
+      "usage": {}
+    }
+  ],
+  "truncated_args": [
+    {
+      "kind": "block",
+      "blockType": "tool_use",
+      "id": "c0",
+      "name": "bash",
+      "input": {},
+      "argsTruncated": true
+    },
+    {
+      "kind": "stop",
+      "reason": "tool_use",
+      "usage": {}
+    }
+  ],
+  "usage_with_finish": [
+    {
+      "kind": "text",
+      "value": "ok"
+    },
+    {
+      "kind": "stop",
+      "reason": "end_turn",
+      "usage": {
+        "input_tokens": 50,
+        "output_tokens": 3,
+        "cache_read_input_tokens": 40,
+        "cache_creation_input_tokens": 0
+      }
+    },
+    {
+      "kind": "block",
+      "blockType": "text",
+      "text": "ok"
+    }
+  ],
+  "split_across_chunks": [
+    {
+      "kind": "text",
+      "value": "分割"
+    },
+    {
+      "kind": "block",
+      "blockType": "text",
+      "text": "分割"
+    },
+    {
+      "kind": "stop",
+      "reason": "end_turn",
+      "usage": {}
+    }
+  ],
+  "heartbeat_lines": [
+    {
+      "kind": "text",
+      "value": "hi"
+    },
+    {
+      "kind": "block",
+      "blockType": "text",
+      "text": "hi"
+    },
+    {
+      "kind": "stop",
+      "reason": "end_turn",
+      "usage": {}
+    }
+  ],
+  "reasoning_tokens": [
+    {
+      "kind": "text",
+      "value": "x"
+    },
+    {
+      "kind": "stop",
+      "reason": "end_turn",
+      "usage": {
+        "input_tokens": 10,
+        "output_tokens": 20,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "reasoning_tokens": 15
+      }
+    },
+    {
+      "kind": "block",
+      "blockType": "text",
+      "text": "x"
+    }
+  ]
+}
