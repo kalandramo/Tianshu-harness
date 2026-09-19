@@ -1,0 +1,303 @@
+{
+  "status_429": {
+    "retryable": true,
+    "retryDelayMs": 2000,
+    "shouldReconnect": true,
+    "category": "rate_limit",
+    "maxRetries": 5,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "status_529": {
+    "retryable": true,
+    "retryDelayMs": 3000,
+    "shouldReconnect": true,
+    "category": "overloaded",
+    "maxRetries": 3,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "status_503": {
+    "retryable": true,
+    "retryDelayMs": 3000,
+    "shouldReconnect": true,
+    "category": "overloaded",
+    "maxRetries": 3,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "status_500": {
+    "retryable": true,
+    "retryDelayMs": 2000,
+    "shouldReconnect": true,
+    "category": "server_error",
+    "maxRetries": 3,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "status_502": {
+    "retryable": true,
+    "retryDelayMs": 2000,
+    "shouldReconnect": true,
+    "category": "server_error",
+    "maxRetries": 3,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "status_408": {
+    "retryable": true,
+    "retryDelayMs": 2000,
+    "shouldReconnect": true,
+    "category": "timeout",
+    "maxRetries": 3,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "status_425": {
+    "retryable": true,
+    "retryDelayMs": 2000,
+    "shouldReconnect": true,
+    "category": "overloaded",
+    "maxRetries": 3,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "status_401": {
+    "retryable": false,
+    "retryDelayMs": 0,
+    "shouldReconnect": false,
+    "category": "auth_error",
+    "maxRetries": 0,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "status_403": {
+    "retryable": false,
+    "retryDelayMs": 0,
+    "shouldReconnect": false,
+    "category": "auth_error",
+    "maxRetries": 0,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "status_404": {
+    "retryable": false,
+    "retryDelayMs": 0,
+    "shouldReconnect": false,
+    "category": "client_error",
+    "maxRetries": 0,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "status_400": {
+    "retryable": false,
+    "retryDelayMs": 0,
+    "shouldReconnect": false,
+    "category": "client_error",
+    "maxRetries": 0,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "status_501": {
+    "retryable": true,
+    "retryDelayMs": 2000,
+    "shouldReconnect": true,
+    "category": "server_error",
+    "maxRetries": 3,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "status_413_had_images": {
+    "retryable": true,
+    "retryDelayMs": 0,
+    "shouldReconnect": false,
+    "category": "image_strip",
+    "maxRetries": 1,
+    "stripImages": true,
+    "retryDelayFromServer": false
+  },
+  "status_413_no_images": {
+    "retryable": false,
+    "retryDelayMs": 0,
+    "shouldReconnect": false,
+    "category": "context_overflow",
+    "maxRetries": 0,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "status_413_unknown": {
+    "retryable": true,
+    "retryDelayMs": 0,
+    "shouldReconnect": false,
+    "category": "image_strip",
+    "maxRetries": 1,
+    "stripImages": true,
+    "retryDelayFromServer": false
+  },
+  "retry_after_override": {
+    "retryable": true,
+    "retryDelayMs": 7000,
+    "shouldReconnect": true,
+    "category": "rate_limit",
+    "maxRetries": 5,
+    "stripImages": false,
+    "retryDelayFromServer": true
+  },
+  "image_process_400": {
+    "retryable": true,
+    "retryDelayMs": 0,
+    "shouldReconnect": false,
+    "category": "image_strip",
+    "maxRetries": 1,
+    "stripImages": true,
+    "retryDelayFromServer": false
+  },
+  "image_process_500": {
+    "retryable": true,
+    "retryDelayMs": 0,
+    "shouldReconnect": false,
+    "category": "image_strip",
+    "maxRetries": 1,
+    "stripImages": true,
+    "retryDelayFromServer": false
+  },
+  "non_sse": {
+    "retryable": false,
+    "retryDelayMs": 0,
+    "shouldReconnect": false,
+    "category": "client_error",
+    "maxRetries": 0,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "network_econnrefused": {
+    "retryable": true,
+    "retryDelayMs": 2000,
+    "shouldReconnect": true,
+    "category": "timeout",
+    "maxRetries": 3,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "network_econnreset": {
+    "retryable": true,
+    "retryDelayMs": 2000,
+    "shouldReconnect": true,
+    "category": "timeout",
+    "maxRetries": 3,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "network_enotfound": {
+    "retryable": true,
+    "retryDelayMs": 2000,
+    "shouldReconnect": true,
+    "category": "timeout",
+    "maxRetries": 3,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "timeout_msg": {
+    "retryable": true,
+    "retryDelayMs": 3000,
+    "shouldReconnect": true,
+    "category": "timeout",
+    "maxRetries": 3,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "overloaded_msg": {
+    "retryable": true,
+    "retryDelayMs": 3000,
+    "shouldReconnect": true,
+    "category": "overloaded",
+    "maxRetries": 3,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "too_busy": {
+    "retryable": true,
+    "retryDelayMs": 3000,
+    "shouldReconnect": true,
+    "category": "overloaded",
+    "maxRetries": 3,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "empty_stream": {
+    "retryable": true,
+    "retryDelayMs": 2000,
+    "shouldReconnect": true,
+    "category": "server_error",
+    "maxRetries": 3,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "context_overflow": {
+    "retryable": false,
+    "retryDelayMs": 0,
+    "shouldReconnect": false,
+    "category": "context_overflow",
+    "maxRetries": 0,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "context_length_exceeded": {
+    "retryable": false,
+    "retryDelayMs": 0,
+    "shouldReconnect": false,
+    "category": "context_overflow",
+    "maxRetries": 0,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "stream_parse": {
+    "retryable": true,
+    "retryDelayMs": 1000,
+    "shouldReconnect": true,
+    "category": "stream_parse",
+    "maxRetries": 2,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "unknown_fallback": {
+    "retryable": true,
+    "retryDelayMs": 2000,
+    "shouldReconnect": false,
+    "category": "unknown",
+    "maxRetries": 2,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "status_in_message": {
+    "retryable": true,
+    "retryDelayMs": 2000,
+    "shouldReconnect": true,
+    "category": "rate_limit",
+    "maxRetries": 5,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "status_in_message_503": {
+    "retryable": true,
+    "retryDelayMs": 3000,
+    "shouldReconnect": true,
+    "category": "overloaded",
+    "maxRetries": 3,
+    "stripImages": false,
+    "retryDelayFromServer": false
+  },
+  "__retryAfter": {
+    "numeric_seconds": 5000,
+    "numeric_zero": 0,
+    "unparseable": null,
+    "fractional": 1500
+  },
+  "__guidance": {
+    "rate_limit": "限流/额度不足：稍等片刻再发，或 /model 切轻量档（如 deepseek-v4-flash）；持续 429 先查余额（桌面端 Insights 面板）",
+    "auth_error": "认证失败：/connect 检查 API Key；订阅型（codex）用 /login 重新授权",
+    "client_error": "请求被拒（模型 id 或端点路径错）：/model 确认模型；自定义端点检查 baseUrl 是否缺 /v1",
+    "context_overflow": "上下文超限：/compact 压缩，或 /handoff 交接后开新会话",
+    "unknown": "重发一次；持续失败：/doctor 体检 + /logs 看日志"
+  }
+}
