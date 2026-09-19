@@ -1,0 +1,624 @@
+{
+  "cases": {
+    "empty": {
+      "note": "空状态 → 空串（不是空壳）",
+      "rendered": "",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [],
+      "lastExtract": null,
+      "lastUpdate": null
+    },
+    "onlyModifiedFiles": {
+      "note": "只有改动文件",
+      "rendered": "<session-state>\nModified: src/a.ts, src/b.ts\n</session-state>",
+      "fileIndexKeys": [
+        "src/a.ts",
+        "src/b.ts"
+      ],
+      "modifiedFlags": {
+        "src/a.ts": true,
+        "src/b.ts": true
+      },
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [],
+      "lastExtract": null,
+      "lastUpdate": null
+    },
+    "readOnlyNotRendered": {
+      "note": "**只读文件不渲染**（modifiedByMe=false 被过滤）",
+      "rendered": "<session-state>\nModified: src/changed.ts\n</session-state>",
+      "fileIndexKeys": [
+        "src/read-only.ts",
+        "src/changed.ts"
+      ],
+      "modifiedFlags": {
+        "src/read-only.ts": false,
+        "src/changed.ts": true
+      },
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [],
+      "lastExtract": null,
+      "lastUpdate": null
+    },
+    "readThenModified": {
+      "note": "先读后改 → 渲染为 modified",
+      "rendered": "<session-state>\nModified: src/x.ts\n</session-state>",
+      "fileIndexKeys": [
+        "src/x.ts"
+      ],
+      "modifiedFlags": {
+        "src/x.ts": true
+      },
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [],
+      "lastExtract": null,
+      "lastUpdate": null
+    },
+    "decisionsOnly": {
+      "note": "只有 decisions",
+      "rendered": "<session-state>\nDecisions:\n  - 用 Go 重写\n</session-state>",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 1,
+      "verification": [],
+      "taskList": [],
+      "lastExtract": null,
+      "lastUpdate": null
+    },
+    "decisionsCappedAt5InRender": {
+      "note": "**渲染只取最后 5 条 decisions**（存储上限 20）",
+      "rendered": "<session-state>\nDecisions:\n  - 决策3\n  - 决策4\n  - 决策5\n  - 决策6\n  - 决策7\n</session-state>",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 8,
+      "verification": [],
+      "taskList": [],
+      "lastExtract": null,
+      "lastUpdate": null
+    },
+    "failedOnly": {
+      "note": "**只有 failed 的 verification 渲染**（passed 不渲染）",
+      "rendered": "<session-state>\nFailed: npm test\n</session-state>",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [
+        {
+          "target": "go test",
+          "status": "passed"
+        },
+        {
+          "target": "npm test",
+          "status": "failed"
+        },
+        {
+          "target": "lint",
+          "status": "not-run"
+        }
+      ],
+      "taskList": [],
+      "lastExtract": null,
+      "lastUpdate": null
+    },
+    "verificationDedup": {
+      "note": "同 target 的 verification 是**替换**（不追加）",
+      "rendered": "",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [
+        {
+          "target": "go test",
+          "status": "passed"
+        }
+      ],
+      "taskList": [],
+      "lastExtract": null,
+      "lastUpdate": null
+    },
+    "allThree": {
+      "note": "三类内容齐上",
+      "rendered": "<session-state>\nModified: src/a.ts\nDecisions:\n  - D1\nFailed: T1\n</session-state>",
+      "fileIndexKeys": [
+        "src/a.ts"
+      ],
+      "modifiedFlags": {
+        "src/a.ts": true
+      },
+      "decisionsCount": 1,
+      "verification": [
+        {
+          "target": "T1",
+          "status": "failed"
+        }
+      ],
+      "taskList": [],
+      "lastExtract": null,
+      "lastUpdate": null
+    },
+    "manyModifiedFiles": {
+      "note": "**改动文件最多渲染 10 个**",
+      "rendered": "<session-state>\nModified: src/file0.ts, src/file1.ts, src/file2.ts, src/file3.ts, src/file4.ts, src/file5.ts, src/file6.ts, src/file7.ts, src/file8.ts, src/file9.ts\n</session-state>",
+      "fileIndexKeys": [
+        "src/file0.ts",
+        "src/file1.ts",
+        "src/file2.ts",
+        "src/file3.ts",
+        "src/file4.ts",
+        "src/file5.ts",
+        "src/file6.ts",
+        "src/file7.ts",
+        "src/file8.ts",
+        "src/file9.ts",
+        "src/file10.ts",
+        "src/file11.ts",
+        "src/file12.ts",
+        "src/file13.ts",
+        "src/file14.ts"
+      ],
+      "modifiedFlags": {
+        "src/file0.ts": true,
+        "src/file1.ts": true,
+        "src/file2.ts": true,
+        "src/file3.ts": true,
+        "src/file4.ts": true,
+        "src/file5.ts": true,
+        "src/file6.ts": true,
+        "src/file7.ts": true,
+        "src/file8.ts": true,
+        "src/file9.ts": true,
+        "src/file10.ts": true,
+        "src/file11.ts": true,
+        "src/file12.ts": true,
+        "src/file13.ts": true,
+        "src/file14.ts": true
+      },
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [],
+      "lastExtract": null,
+      "lastUpdate": null
+    },
+    "longDecisionsTriggerTrim": {
+      "note": "**超 500 字符先砍 decisions 段**",
+      "rendered": "<session-state>\nModified: src/short.ts\nDecisions:\n  - 很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述3\n  - 很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述4\n  - 很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述5\n  - 很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述6\n  - 很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述很长的决策描述7\n</session-state>",
+      "fileIndexKeys": [
+        "src/short.ts"
+      ],
+      "modifiedFlags": {
+        "src/short.ts": true
+      },
+      "decisionsCount": 8,
+      "verification": [],
+      "taskList": [],
+      "lastExtract": null,
+      "lastUpdate": null
+    },
+    "veryLongSingleLine": {
+      "note": "单行超长 → 整体截断加省略号",
+      "rendered": "<session-state>\nModified: src/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\n</session-state>",
+      "fileIndexKeys": [
+        "src/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.ts"
+      ],
+      "modifiedFlags": {
+        "src/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.ts": true
+      },
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [],
+      "lastExtract": null,
+      "lastUpdate": null
+    },
+    "taskListBasic": {
+      "note": "基础提取（三种列表格式）",
+      "rendered": "",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [
+        {
+          "id": "P1",
+          "content": "修复认证 bug",
+          "status": "pending",
+          "turnCreated": 2,
+          "turnUpdated": 2
+        },
+        {
+          "id": "T2",
+          "content": "补充测试",
+          "status": "pending",
+          "turnCreated": 2,
+          "turnUpdated": 2
+        },
+        {
+          "id": "S1",
+          "content": "探索方案设计",
+          "status": "pending",
+          "turnCreated": 2,
+          "turnUpdated": 2
+        }
+      ],
+      "lastExtract": [
+        {
+          "id": "P1",
+          "content": "修复认证 bug",
+          "status": "pending",
+          "turnCreated": 2,
+          "turnUpdated": 2
+        },
+        {
+          "id": "T2",
+          "content": "补充测试",
+          "status": "pending",
+          "turnCreated": 2,
+          "turnUpdated": 2
+        },
+        {
+          "id": "S1",
+          "content": "探索方案设计",
+          "status": "pending",
+          "turnCreated": 2,
+          "turnUpdated": 2
+        }
+      ],
+      "lastUpdate": null
+    },
+    "taskListStatusMarkers": {
+      "note": "**状态标记留存在 content 里**（不剥离）",
+      "rendered": "",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [
+        {
+          "id": "P1",
+          "content": "完成的事情 ✓",
+          "status": "completed",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        },
+        {
+          "id": "T2",
+          "content": "卡住的事情 ⊗",
+          "status": "blocked",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        },
+        {
+          "id": "S1",
+          "content": "正在做的事情 ⏳",
+          "status": "in_progress",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastExtract": [
+        {
+          "id": "P1",
+          "content": "完成的事情 ✓",
+          "status": "completed",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        },
+        {
+          "id": "T2",
+          "content": "卡住的事情 ⊗",
+          "status": "blocked",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        },
+        {
+          "id": "S1",
+          "content": "正在做的事情 ⏳",
+          "status": "in_progress",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastUpdate": null
+    },
+    "taskListMerge": {
+      "note": "**合并语义**：第二轮保留旧 status/turnCreated",
+      "rendered": "",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [
+        {
+          "id": "P1",
+          "content": "这是更新后的描述文本",
+          "status": "completed",
+          "turnCreated": 1,
+          "turnUpdated": 5
+        },
+        {
+          "id": "T2",
+          "content": "这是新增的任务项",
+          "status": "pending",
+          "turnCreated": 5,
+          "turnUpdated": 5
+        }
+      ],
+      "lastExtract": [
+        {
+          "id": "P1",
+          "content": "这是更新后的描述文本",
+          "status": "completed",
+          "turnCreated": 1,
+          "turnUpdated": 5
+        },
+        {
+          "id": "T2",
+          "content": "这是新增的任务项",
+          "status": "pending",
+          "turnCreated": 5,
+          "turnUpdated": 5
+        }
+      ],
+      "lastUpdate": null
+    },
+    "taskListFilterThreshold": {
+      "note": "**过滤阈值 length>3**：中文三字被过滤（UTF-16 code unit 语义）",
+      "rendered": "",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [
+        {
+          "id": "P1",
+          "content": "原始任务描述",
+          "status": "pending",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastExtract": [
+        {
+          "id": "P1",
+          "content": "原始任务描述",
+          "status": "pending",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastUpdate": null
+    },
+    "taskListMergeStatusOverride": {
+      "note": "**显式状态标记覆盖旧 status**（第二轮带 ✓）",
+      "rendered": "",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [
+        {
+          "id": "P1",
+          "content": "这是任务的描述文本 ✓",
+          "status": "completed",
+          "turnCreated": 1,
+          "turnUpdated": 5
+        }
+      ],
+      "lastExtract": [
+        {
+          "id": "P1",
+          "content": "这是任务的描述文本 ✓",
+          "status": "completed",
+          "turnCreated": 1,
+          "turnUpdated": 5
+        }
+      ],
+      "lastUpdate": null
+    },
+    "taskListTooShort": {
+      "note": "**内容过短被过滤**（去符号后 <= 3 字符）",
+      "rendered": "",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [
+        {
+          "id": "T2",
+          "content": "这是有效内容",
+          "status": "pending",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastExtract": [
+        {
+          "id": "T2",
+          "content": "这是有效内容",
+          "status": "pending",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastUpdate": null
+    },
+    "taskListEmptyResult": {
+      "note": "**提取不到时返回现有列表的拷贝**（不清空）",
+      "rendered": "",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [
+        {
+          "id": "P1",
+          "content": "原有的任务项描述",
+          "status": "pending",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastExtract": [
+        {
+          "id": "P1",
+          "content": "原有的任务项描述",
+          "status": "pending",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastUpdate": null
+    },
+    "taskListUpdateItem": {
+      "note": "updateTaskListItem 改状态",
+      "rendered": "",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [
+        {
+          "id": "P1",
+          "content": "这是任务描述",
+          "status": "completed",
+          "turnCreated": 1,
+          "turnUpdated": 3
+        }
+      ],
+      "lastExtract": [
+        {
+          "id": "P1",
+          "content": "这是任务描述",
+          "status": "pending",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastUpdate": true
+    },
+    "taskListUpdateMissing": {
+      "note": "updateTaskListItem 对不存在的 id 返回 false",
+      "rendered": "",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [],
+      "lastExtract": null,
+      "lastUpdate": false
+    },
+    "taskListMarkerOrder": {
+      "note": "**顺序敏感**：同行含双标记时 completed 优先于 blocked",
+      "rendered": "",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [
+        {
+          "id": "P1",
+          "content": "完成的事情 ✓ 但被阻塞了",
+          "status": "completed",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastExtract": [
+        {
+          "id": "P1",
+          "content": "完成的事情 ✓ 但被阻塞了",
+          "status": "completed",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastUpdate": null
+    },
+    "taskListMarkerOrderWord": {
+      "note": "**顺序敏感（词边界）**：done 优先于 blocked",
+      "rendered": "",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [
+        {
+          "id": "P1",
+          "content": "this task is done and blocked",
+          "status": "completed",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastExtract": [
+        {
+          "id": "P1",
+          "content": "this task is done and blocked",
+          "status": "completed",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastUpdate": null
+    },
+    "taskListBoldFormat": {
+      "note": "**加粗格式** `**P1**: content`",
+      "rendered": "",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [
+        {
+          "id": "P1",
+          "content": "加粗格式的任务",
+          "status": "pending",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastExtract": [
+        {
+          "id": "P1",
+          "content": "加粗格式的任务",
+          "status": "pending",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastUpdate": null
+    },
+    "taskListContentTruncated160": {
+      "note": "content 截断到 160 字符",
+      "rendered": "",
+      "fileIndexKeys": [],
+      "modifiedFlags": {},
+      "decisionsCount": 0,
+      "verification": [],
+      "taskList": [
+        {
+          "id": "P1",
+          "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "status": "pending",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastExtract": [
+        {
+          "id": "P1",
+          "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "status": "pending",
+          "turnCreated": 1,
+          "turnUpdated": 1
+        }
+      ],
+      "lastUpdate": null
+    }
+  }
+}

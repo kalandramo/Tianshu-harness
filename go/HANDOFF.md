@@ -350,6 +350,28 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **会话状态容器**：`internal/session/`（新包）
+  - 对账 src/agent/session-state.ts（326 行，TS 侧**零 import**——完全自包含）
+  - `Manager`：状态管理（文件/决策/验证/事实/任务列表）+ `RenderForVolatile()`
+  - **两个反直觉行为（oracle 锁定）**：
+    1. 空状态返回**空串**而非 `<session-state></session-state>` 空壳
+       ——空壳会让下游 truthiness 检查误判「状态存在」（TS 注释记录了这个 bug）
+    2. 超 500 字符**先砍 decisions 段**；砍完只剩开标签则整体丢弃；仍超长才截断
+  - **FileIndex 必须保插入序**（不是 map）——TS 的 `Object.entries` 保插入序，
+    `Modified:` 行按插入序列出。首版用 map+排序，oracle 的 manyModifiedFiles
+    用例立刻红（字典序 file0,file1,file10 vs TS 的 file0..file9）
+  - **过滤阈值 `length > 3` 是 UTF-16 code unit 语义**——中文三字恰好 3 units
+    被过滤。首版 oracle 用例内容太短（"新描述"），把合并路径整个掩盖了
+  - `extractTaskList`：三正则（顺序敏感）+ 合并语义（保留旧 status/turnCreated）
+    + 状态标记（completed/blocked/in_progress，**顺序敏感**）
+  - **接线进 agent loop**：`Loop.State` + `observeToolResult`（read→TrackFileRead、
+    write/edit/hash_edit/apply_patch→TrackFileModified、run_tests→RecordVerification）
+  - **接线验证测试**（`TestStateWiring`）——单测 session 包全绿 ≠ 接线有效
+  - 变异反证 10 个全部有判别力（阈值 3 / decisions 3 / failed 3 / 空壳 18 /
+    合并 3 / 文件上限 2 / content 3 / 标记顺序 2 / verification 4 / UTF-16 1）
+  - **降级项**：JSONL 落盘（session-persist，928 行）未移植——它需要
+    zstd 压缩（`encodeBatch`/`decodeTranscriptText`），Go 标准库无 zstd
+    且项目约束零第三方依赖。本包只做**纯状态 + 渲染**
 - [x] **apply_patch 工具本体**：`internal/tools/applypatch.go`
   - 对账 src/tools/apply-patch.ts（423 行）。工具集 9 → 10
   - **核心是调 `git apply --3way`**——不自己实现 diff 解析（行为等价的
@@ -480,6 +502,8 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   纯函数层逐字节对账（含诊断文本），工具本体走真实 oracle 路径
 - `applypatch.go`：**apply_patch 工具本体**（工具集 9 → 10）——核心是调
   `git apply --3way`，oracle 用真实 git 仓库对账
+- `internal/session/`：**会话状态容器**（新包）——纯状态 + volatile 渲染，
+  已接进 agent loop；JSONL 落盘因 zstd 依赖未移植（见欠账 1）
 
 **本轮核心教训**：`orderedProps` 的数组型 schema 缺陷只在**接线后**暴露
 （单测工具全绿，接注册表立刻 panic）。这印证了「消费方核查」与
@@ -510,7 +534,15 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 
 ### 架构欠账（已知，非缺陷）
 
-1. **apply_patch 的 4 项降级**：
+1. **session 的 3 项降级**：
+   - **JSONL 落盘**（`session-persist.ts` 928 行）未移植——依赖 zstd 压缩
+     （`encodeBatch` / `decodeTranscriptText`），Go 标准库无 zstd 且项目
+     约束零第三方依赖。这是 Wave 4 里最大的一块。
+   - **会话恢复**（`session-recovery.ts` 140 行）、**会话注册表**
+     （`session-registry.ts` 589 行）未移植。
+   - **`session-transcript-codec` 的 zstd 帧**：帧扫描（`scanZstdFrames`）
+     已实现，但 encode/decode 需要压缩库。
+2. **apply_patch 的 4 项降级**：
    - **补丁前备份 + 失败回滚**（rollbackTargets / unstagePatchTargets）：
      TS 侧 `git apply --3way` 失败时状态已被动过（冲突标记落盘、干净文件
      已 staged、UU 索引条目），故主动回滚。Go 侧依赖 git 自身原子性，
@@ -518,7 +550,7 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
    - **应用后语法检查回滚**（firstFatalSyntax）：同 hash_edit。
    - **编辑失败计数门**、**client-delegate（apply_edit 通道）**。
    - **跨工具指针检测**：仅做 apply_patch 自己的前缀检查。
-2. **hash_edit 的 4 项降级**（对账 TS 时明确未移植，各自独立）：
+3. **hash_edit 的 4 项降级**（对账 TS 时明确未移植，各自独立）：
    - **指针回灌守卫**（pointer-guard）：依赖 4 个未移植的 arg-processor
      常量模块（write_file / edit_file / hash_edit / apply_patch）。风险：
      模型可能把历史里的指针文本当 `new_string` 传回来并被写进文件。
@@ -527,21 +559,27 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
    - **失败计数门**：连续 3 次失败后要求先重新 read_file。
    - **dry_run 的 diff 预览**（buildFileDiff / computeChangedLineRanges，
      185 行）：Go 侧只返回行数变更摘要，不含 unified diff。
-3. **工具 schema 键序未与 TS 对账**：`orderedProps` 主动对键**排序**（字母序），
+4. **工具 schema 键序未与 TS 对账**：`orderedProps` 主动对键**排序**（字母序），
    而 TS 侧 schema 由 zod 生成（**插入序**）。当前注释自称「只要每次生成
    顺序一致即可保证请求体稳定」——这保证了**确定性**，但**未保证与 TS 字节
    等价**。工具 schema 进请求体时（`tools` 字段）是缓存命中率风险。
    待办：对账 TS 的真实 schema 键序，决定是否改为保插入序。
-4. **frozen 块位置**：TS 是 trailer-merge 到 user message（`engine.ts:659`），
+5. **frozen 块位置**：TS 是 trailer-merge 到 user message（`engine.ts:659`），
    Go 侧拼在 system prompt 后——`full.go` 注释标了是「最小可用路径」。
    后续移植 trailer-merge 时应**替换**而非叠加。
-5. **三处「最小可用路径」待替换**：`BuildFullSystemPrompt`（拼法）、
+6. **三处「最小可用路径」待替换**：`BuildFullSystemPrompt`（拼法）、
    `RenderProjectInstructionsBlock`（无 `<context>` 包裹）、
    `BuildSystemPromptWithProject`（已被 `full.go` 取代但保留，因 11 个测试锁定它）。
-6. **未移植的行为差异**：TS 的信任门 `isProjectTrusted`（Go 侧无 trust store）；
+7. **未移植的行为差异**：TS 的信任门 `isProjectTrusted`（Go 侧无 trust store）；
    Windows 的 `resolveShellCommand`（需真实 Windows 环境验证）。
-7. **`main` 分支未合并**：`go-runtime` 有 47 个提交，`main` 仍在 `69b0381`；
-   分支**未 push**。
+8. **分支策略**：`go-runtime` 已 push 到 `origin`（2026-09-19）；
+   `main` 仍在 `69b0381` 未动（用户明确要求不合并）。Go 实现**将来要独立
+   仓库**——当前 `go/` 与 TS 源码同仓库是过渡状态。拆分可行性已核实：
+   52 个提交无交叉改动（无一个同时改 `go/` 与 `src/`）、所有 `.go` 都在
+   `go/` 下、`go/` 有独立 `go.mod`。**拆分时的约束**：`go/testdata/*/gen-oracle.ts`
+   用相对路径 import 父仓库 TS 源码（生成 golden 用），拆出后无法重新生成
+   golden——建议生成器留在 TS 仓库（它们是「对账工具」，本就该跟被对账对象
+   在一起），Go 仓库只保留 `oracle.json`。
 
 ## 建议的第一刀
 

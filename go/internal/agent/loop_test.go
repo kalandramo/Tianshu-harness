@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/kalandramo/tianshu/go/internal/api"
 	"github.com/kalandramo/tianshu/go/internal/client"
+	"github.com/kalandramo/tianshu/go/internal/contract"
 	"github.com/kalandramo/tianshu/go/internal/retry"
 	"github.com/kalandramo/tianshu/go/internal/tools"
 )
@@ -529,6 +531,11 @@ func TestToolDefsArraySchemaNoPanic(t *testing.T) {
 	}
 }
 
+// execToolForTest 直接执行一个工具调用（绕过模型，用于接线验证）。
+func (l *Loop) execToolForTest(ctx context.Context, name string, input map[string]any) contract.Result {
+	return l.executeTool(ctx, toolCall{name: name, input: input, id: "test"})
+}
+
 func containsSub(h, n string) bool {
 	for i := 0; i+len(n) <= len(h); i++ {
 		if h[i:i+len(n)] == n {
@@ -536,4 +543,56 @@ func containsSub(h, n string) bool {
 		}
 	}
 	return false
+}
+
+// TestStateWiring —— 会话状态被工具调用真实更新（接线验证）。
+//
+// 为什么必须测：单测 session 包全绿 ≠ 接线有效。上一轮的教训是
+// `orderedProps` 缺陷只在接线后暴露——本测试断言的是**调用链**，
+// 不是 session 包的内部行为。
+func TestStateWiring(t *testing.T) {
+	dir := t.TempDir()
+	reg := tools.NewRegistry()
+	reg.Register(tools.ReadFile(dir, nil))
+	reg.Register(tools.WriteFile(dir, nil))
+	reg.Register(tools.EditFile(dir, nil))
+
+	l := newTestLoopWithRegistry(t, nil, Config{
+		Model: "m", MaxTokens: 100, Cwd: dir, SessionID: "wiring-test",
+	}, reg)
+	if l.State == nil {
+		t.Fatal("有 SessionID 时 State 应被初始化")
+	}
+
+	// 建一个文件供读取
+	fp := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(fp, []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("建文件失败：%v", err)
+	}
+
+	// 直接调 execTool（绕过模型，只验接线）
+	ctx := context.Background()
+	_ = l.execToolForTest(ctx, "read_file", map[string]any{"path": fp})
+	_ = l.execToolForTest(ctx, "write_file", map[string]any{"file_path": fp, "content": "new\n"})
+
+	snap := l.State.Snapshot()
+	// write_file 应记进 modified
+	if v, ok := snap.FileIndex.Get(fp); !ok || !v.ModifiedByMe {
+		t.Errorf("write_file 后 %s 应标记 modifiedByMe，实际 %+v", fp, snap.FileIndex.Keys())
+	}
+
+	// 渲染应包含该文件
+	if got := l.State.RenderForVolatile(); !containsSub(got, "Modified:") {
+		t.Errorf("渲染应含 Modified 行：%q", got)
+	}
+}
+
+// TestStateNilWithoutSessionID —— 无 SessionID 时 State 为 nil（不 panic）。
+func TestStateNilWithoutSessionID(t *testing.T) {
+	l := newTestLoopWithRegistry(t, nil, Config{Model: "m", MaxTokens: 100}, tools.NewRegistry())
+	if l.State != nil {
+		t.Error("无 SessionID 时 State 应为 nil")
+	}
+	// 不 panic
+	l.observeToolResult("read_file", map[string]any{"path": "x"}, contract.Result{})
 }

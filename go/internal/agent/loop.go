@@ -19,6 +19,8 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/api/wire"
 	"github.com/kalandramo/tianshu/go/internal/client"
 	"github.com/kalandramo/tianshu/go/internal/contract"
+	"github.com/kalandramo/tianshu/go/internal/prompt"
+	"github.com/kalandramo/tianshu/go/internal/session"
 	"github.com/kalandramo/tianshu/go/internal/tools"
 )
 
@@ -68,11 +70,19 @@ type Loop struct {
 	Emit func(Event)
 	// ToolParams 是工具调用的基础参数（注入依赖）。
 	ToolParams *tools.CallParams
+	// State 是会话状态容器（跨轮的文件/验证/决策感知）。
+	//
+	// 对账 TS 侧 loop.ts:848 的 `new SessionStateManager(this.config.sessionId)`。
+	// nil 时跳过状态更新（最小可跑路径）。
+	State *session.Manager
 }
 
 // New 创建 agent loop。
 func New(cfg Config, cl *client.Client, reg *tools.Registry) *Loop {
 	l := &Loop{cfg: cfg, client: cl, registry: reg}
+	if cfg.SessionID != "" {
+		l.State = session.New(cfg.SessionID)
+	}
 	if cfg.SystemPrompt != "" {
 		l.messages = append(l.messages, wire.NewOrderedMap().
 			Set("role", "system").
@@ -197,7 +207,46 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 			IsError: true,
 		}
 	}
+	l.observeToolResult(tc.name, tc.input, result)
 	return result
+}
+
+// observeToolResult 把工具调用的结果记进会话状态。
+//
+// 对账 TS 侧的证据追踪（trackFileRead / trackFileModified / recordVerification）。
+// 只在工具**成功**时记账——失败的工具调用不该污染状态。
+func (l *Loop) observeToolResult(name string, input map[string]any, res contract.Result) {
+	if l.State == nil || res.IsError {
+		return
+	}
+	switch name {
+	case "read_file":
+		if p, ok := input["path"].(string); ok && p != "" {
+			l.State.TrackFileRead(p, "")
+		}
+	case "write_file", "edit_file", "hash_edit":
+		if p, ok := input["file_path"].(string); ok && p != "" {
+			l.State.TrackFileModified(p)
+		}
+	case "apply_patch":
+		// 目标路径从 diff 提取（与工具内部同一函数）
+		if d, ok := input["diff"].(string); ok {
+			for _, rel := range prompt.ExtractPatchTargetPaths(d) {
+				l.State.TrackFileModified(rel)
+			}
+		}
+	case "run_tests":
+		// 测试通过/失败记进 verification（target 用命令或固定标签）
+		target, _ := input["filter"].(string)
+		if target == "" {
+			target = "全部测试"
+		}
+		status := "passed"
+		if res.IsError {
+			status = "failed"
+		}
+		l.State.RecordVerification(target, status)
+	}
 }
 
 // toolDefs 返回工具声明（转为 wire 有序结构，保字节稳定）。
