@@ -20,8 +20,6 @@ import (
 var embedded []byte
 
 type promptData struct {
-	Source       string            `json:"_source"`
-	Regen        string            `json:"_regen"`
 	Base         string            `json:"base"`
 	BaseBytes    int               `json:"baseBytes"`
 	BaseSHA256   string            `json:"baseSha256"`

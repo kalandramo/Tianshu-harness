@@ -91,9 +91,7 @@ for (const fam of FAMILIES) {
 }
 
 const goData = {
-  // 数据来源与版本指纹（漂移可检测）
-  _source: 'go/testdata/prompt/gen-oracle.ts',
-  _regen: 'npx tsx go/testdata/prompt/gen-oracle.ts',
+  // 版本指纹（漂移可检测；由 TestEmbeddedDataIntegrity 消费）
   base: main,
   baseBytes: Buffer.byteLength(main, 'utf8'),
   baseSha256: sha256.main,
