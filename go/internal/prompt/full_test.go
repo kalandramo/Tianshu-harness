@@ -149,3 +149,39 @@ func TestBuildFullSystemPromptNoRuntimeEnv(t *testing.T) {
 		t.Errorf("空目录不应有 <runtime-env> 块，实际：%q", trunc2(got, 400))
 	}
 }
+
+// TestBuildFullSystemPromptRendersProjectInstructions —— **生产路径端到端**：
+// BuildFullSystemPrompt 必须把 cwd 下的项目指令渲染进 <context> 块。
+//
+// 这条链路容易断：`BuildSystemPromptWithProject`（Deprecated）直接渲染，
+// 而生产走 BuildFullSystemPrompt → vctx.RivetMd → volatile 层渲染。若中间
+// 某一环漏了，项目指令会**静默消失**（模型看不到 AGENTS.md）。
+func TestBuildFullSystemPromptRendersProjectInstructions(t *testing.T) {
+	dir := t.TempDir()
+	// 写一个可识别的项目指令文件（LoadProjectInstructions 读 AGENTS.md 等）
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# 项目约定\n\n这是测试用的项目指令标记 XYZMARKER。\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := BuildFullSystemPrompt(Context{}, dir, HostEnv{Platform: "linux", OSType: "Linux", OSRelease: "6.0"})
+
+	if !contains(got, "XYZMARKER") {
+		t.Errorf("生产路径必须渲染项目指令（模型要能看到 AGENTS.md）：\n%s", got)
+	}
+	// 应包裹在 <context> 内
+	if !contains(got, "<context>") {
+		t.Errorf("应含 <context> 外壳：\n%s", got)
+	}
+	if !contains(got, "</context>") {
+		t.Errorf("应含 </context> 闭合：\n%s", got)
+	}
+}
+
+// TestBuildFullSystemPromptNoProjectInstructions —— 无项目文件时不渲染该块。
+func TestBuildFullSystemPromptNoProjectInstructions(t *testing.T) {
+	dir := t.TempDir()
+	got := BuildFullSystemPrompt(Context{}, dir, HostEnv{Platform: "linux", OSType: "Linux", OSRelease: "6.0"})
+	if contains(got, "<project-instructions>") {
+		t.Errorf("无项目文件时不应有 project-instructions 块：\n%s", got)
+	}
+}

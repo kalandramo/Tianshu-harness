@@ -943,9 +943,16 @@ b
      ——`<context>` 是 **frozen 块的外壳**，由 `BuildStableVolatileBlock`
      提供（`return "<context>\n" + ... + "\n</context>"`），已有测试
      `full_test.go` 锁定
-   - `BuildSystemPromptWithProject`：**无生产消费方**（grep 确认只有注释
-     引用它），由 `full.go` 取代。11 个测试锁定它属于**遗留测试**——
-     可考虑迁移这些断言到 `BuildFullSystemPrompt` 后删除本函数。
+   - `BuildSystemPromptWithProject`：**无生产消费方**（生产走
+     `BuildFullSystemPrompt`）。**决定保留**并标 `Deprecated`——理由：
+     `project_test.go` 的 5 个测试通过它覆盖「加载 → 按节选取 → 渲染 → 截断」
+     的**集成路径**（`projinst_test.go` 只覆盖各环节单元行为），删函数会连带
+     丢失这层保障；保留一个无消费方的导出函数成本极低。
+   - **同时补了生产路径的端到端测试**：`BuildFullSystemPrompt` 是否真的把
+     cwd 下的项目指令渲染进 `<context>`（链路：
+     `LoadProjectInstructions` → `vctx.RivetMd` → volatile 层
+     `RenderProjectInstructionsBlock`）。这条链路易断——某环漏了会让项目指令
+     **静默消失**（模型看不到 AGENTS.md）。变异反证：把 `RivetMd` 置空 → 红
 9. **未移植的行为差异**（部分已修复）：
    - ✅ **信任门**（`isProjectTrusted` + trust store）——已完成（见顶部条目）
    - **Windows 的 `resolveShellCommand`**：需真实 Windows 环境验证，未移植。

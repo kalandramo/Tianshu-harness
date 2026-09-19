@@ -79,12 +79,18 @@ func RenderProjectInstructionsBlock(md string, cap int) string {
 // BuildSystemPromptWithProject 渲染 system prompt，并把项目指令按节选取后
 // 追加在尾部。
 //
-// 这是 projinst.go / truncate.go 的**生产消费路径**——没有它，按节选取算法
-// 与块截断就是悬空代码。
+// Deprecated: **生产路径已改用 `BuildFullSystemPrompt`**（`cmd/tianshu/main.go`
+// 唯一消费方）。后者通过 `RivetMd: LoadProjectInstructions(cwd)` 把项目指令
+// 交给 volatile 层，渲染进 `<context>` 块内的 `project-instructions`。
 //
-// 注意：TS 侧这部分由 buildVolatileBlockInternal 渲染进 <context> 块。此处是
-// **最小可用路径**——直接追加，不做 <context> 包裹。后续移植 volatile 层时应
-// 替换本函数，而非在其上叠加（否则会出现两处渲染同一内容的双写）。
+// 本函数**保留**的原因：`project_test.go` 的 5 个测试通过它覆盖
+// 「加载 → 按节选取 → 渲染 → 截断」的**集成路径**（`projinst_test.go` 只覆盖
+// 各环节的单元行为）。删除函数会连带丢失这层集成保障，而保留一个无消费方的
+// 导出函数成本极低。
+//
+// 注意：TS 侧这部分由 buildVolatileBlockInternal 渲染进 <context> 块。本函数
+// 直接追加、不做 <context> 包裹——**不要**在其上叠加 volatile 渲染（会造成
+// 两处渲染同一内容的双写）。
 func BuildSystemPromptWithProject(ctx Context, cwd string, cap int) string {
 	base := BuildSystemPrompt(ctx)
 	md := LoadProjectInstructions(cwd)
