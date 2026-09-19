@@ -210,6 +210,37 @@ ttl 1 红），零编译失败。
 **下一步**：接更多 hook（`todo-reminder` / `vigor` / `theta` / `lossy-observation`），
 或补 `advisory-bus` 本体。
 
+### 第四刀（已完成）：第二个 hook + effects 通道验证（2026-09-19）
+
+✅ `internal/agent/consistency_check.go`（98 行 + 249 行测试）
+
+对账 `src/agent/hooks/consistency-check-hook.ts`（39 行）——**原则 ⑤
+「有限规则无限涌现」**。这是 cross-store 耦合的第一条信号：
+evidence store（工具结果）→ claim store（知识）。
+
+- 只在 `write_file` / `edit_file` 后触发，且需有 target
+- 路径**双向后缀**匹配（三条分支：相等 / target 后缀 / claim 后缀）
+- 命中则调 `effects.markClaimStale`
+
+**顺带修了一个真实缺陷**：`RuntimeHookEffects` 的 Go struct 零值是 nil func，
+hook 直接调字段会 panic。TS 侧 `createRuntimeHookContext` 有 `?? noop` 兜底
+（未接线 → 安全 no-op），Go 无对应机制。**这是 Go 移植的特有陷阱**——
+TS 的 undefined 调用在类型层就被兜住了。已加 `*Safe` 方法族（nil-safe 包装），
+并写测试钉住（`TestConsistencyCheckEffectsNilDoesNotPanic`）。
+
+**发现 TS 的一处既有行为**（非缺陷，是事实）：`endsWith` 是**裸字符串后缀
+匹配**，不是路径段匹配——`src/nota.ts` 会被 `a.ts` 的 claim 误标。首轮我的
+测试期望写错了（以为应该是 false），用 `node -e` 实测 TS 后确认应为 true。
+**移植忠实复刻**，不顺手「修好」（改了会让 Go 与 TS 的标记结果分叉）。
+
+**测试 16 个**（含路径匹配 6 个分支 + effects 未接线不崩 + 端到端经管线）。
+变异反证 9 个：**全部有判别力**（去掉写工具守卫 1 红 / edit_file 不认 1 红 /
+无 target 也触发 1 红 / 漏后缀分支 4 红 / 前后缀搞反 4 红 / 空 path 参与匹配 1 红 /
+用裸字段 panic 1 红 / 只标第一个 1 红 / phase 错标 2 红）。
+
+**下一步**：`todo-reminder`（下一个低依赖 hook），或 `advisory-bus` 本体
+（渲染 / 排序 / 去重——目前 hook 投递的 advisory 还没有消费者）。
+
 **为什么是它而不是补工具**：
 
 - CVM（认知虚拟机）是天枢三大支柱之一——`RuntimeHookPipeline` 五阶段条件装配 60+ hook，拦截服从性漂移 / doom loop / 验证债务

@@ -61,7 +61,10 @@ type RuntimeToolEvent struct {
 
 // RuntimeHookEffects 是 hook 影响主流程的通道。
 //
-// 对账 RuntimeHookEffects。**默认全是 no-op**——未接线的 effect 不应让 hook 崩。
+// 对账 RuntimeHookEffects。**未接线的 effect 必须是安全的 no-op**——
+// TS 的 createRuntimeHookContext 把未提供的 effect 填成 noop
+// （`effects.markClaimStale ?? noop`），Go 侧 struct 零值是 nil func，
+// 直接调用会 panic。故**不要直接调字段，用下面的 *Safe 方法**。
 type RuntimeHookEffects struct {
 	InjectUserMessage func(message string)
 	RequestThetaCheck func(reason string)
@@ -69,6 +72,44 @@ type RuntimeHookEffects struct {
 	MarkClaimStale    func(claimID string)
 	EmitControlSignal func(signal any)
 	SetGitChangeRate  func(rate float64)
+}
+
+// MarkClaimStaleSafe 是 MarkClaimStale 的 nil-safe 调用。
+//
+// **为什么需要**：见 RuntimeHookEffects 的注释。hook 侧一律用这个，
+// 不用裸字段——否则在 effects 未接线（单元测试、headless 路径）时 panic。
+func (e *RuntimeHookEffects) MarkClaimStaleSafe(claimID string) {
+	if e != nil && e.MarkClaimStale != nil {
+		e.MarkClaimStale(claimID)
+	}
+}
+
+// InjectUserMessageSafe 是 InjectUserMessage 的 nil-safe 调用。
+func (e *RuntimeHookEffects) InjectUserMessageSafe(message string) {
+	if e != nil && e.InjectUserMessage != nil {
+		e.InjectUserMessage(message)
+	}
+}
+
+// EmitPhaseChangeSafe 是 EmitPhaseChange 的 nil-safe 调用。
+func (e *RuntimeHookEffects) EmitPhaseChangeSafe(phase string, detail map[string]any) {
+	if e != nil && e.EmitPhaseChange != nil {
+		e.EmitPhaseChange(phase, detail)
+	}
+}
+
+// RequestThetaCheckSafe 是 RequestThetaCheck 的 nil-safe 调用。
+func (e *RuntimeHookEffects) RequestThetaCheckSafe(reason string) {
+	if e != nil && e.RequestThetaCheck != nil {
+		e.RequestThetaCheck(reason)
+	}
+}
+
+// SetGitChangeRateSafe 是 SetGitChangeRate 的 nil-safe 调用。
+func (e *RuntimeHookEffects) SetGitChangeRateSafe(rate float64) {
+	if e != nil && e.SetGitChangeRate != nil {
+		e.SetGitChangeRate(rate)
+	}
 }
 
 // RuntimeHookContext 是传给每个 hook 的上下文。
