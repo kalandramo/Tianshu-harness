@@ -815,6 +815,141 @@
       ]
     ]
   },
+  "habituation_escalate": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"noisy\" priority=\"0.60\" category=\"discipline\">（此提醒已连续 2 次未见执行——若你有意跳过请在回复中说明理由）原始内容</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 1,
+      "rendered": 1,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "noisy"
+      ]
+    ]
+  },
+  "habituation_below_escalate": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"noisy\" priority=\"0.60\" category=\"discipline\">原始内容</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 1,
+      "rendered": 1,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "noisy"
+      ]
+    ]
+  },
+  "habituation_silence": {
+    "renders": [
+      "",
+      "",
+      "",
+      "",
+      "<星域-advisory>\n  <entry key=\"noisy\" priority=\"0.60\" category=\"discipline\">（此提醒已连续 3 次未见执行——若你有意跳过请在回复中说明理由）X</entry>\n</星域-advisory>",
+      "<星域-advisory>\n  <entry key=\"noisy\" priority=\"0.60\" category=\"discipline\">（此提醒已连续 3 次未见执行——若你有意跳过请在回复中说明理由）X</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 6,
+      "rendered": 2,
+      "dropped": 4,
+      "droppedKeys": [
+        "noisy"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [],
+      [],
+      [],
+      [],
+      [
+        "noisy"
+      ],
+      [
+        "noisy"
+      ]
+    ]
+  },
+  "habituation_constitutional_exempt": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"const-key\" priority=\"0.90\" category=\"constitutional\">宪法级</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 1,
+      "rendered": 1,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "const-key"
+      ]
+    ]
+  },
+  "habituation_mixed": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"clean\" priority=\"0.50\" category=\"repair\">C</entry>\n</星域-advisory>",
+      "<星域-advisory>\n  <entry key=\"clean\" priority=\"0.50\" category=\"repair\">C</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 4,
+      "rendered": 2,
+      "dropped": 2,
+      "droppedKeys": [
+        "noisy"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "clean"
+      ],
+      [
+        "clean"
+      ]
+    ]
+  },
   "immediate_exempt": {
     "renders": [
       "<星域-advisory>\n  <entry key=\"n1\" priority=\"0.90\" category=\"todo\">N1</entry>\n  <entry key=\"n2\" priority=\"0.80\" category=\"dedup\">N2</entry>\n  <entry key=\"n3\" priority=\"0.70\" category=\"immune\">N3</entry>\n</星域-advisory>"

@@ -53,6 +53,47 @@ type AdvisoryBus struct {
 	// 对账 lastDeliveredRenderByKey。只记 **KEY_COOLDOWN_TURNS 注册的 key**
 	// （对账 recordDeliveredRender 的 `if (KEY_COOLDOWN_TURNS.has(key))`）。
 	lastDeliveredRenderByKey map[string]int
+
+	// habituation 是习惯化查询源（注入）。
+	//
+	// nil 时不做习惯化对抗（对账 TS 的 `if (this.habituation)`）。
+	habituation HabituationPolicy
+	// silenceRemaining 是 key → 剩余静音渲染周期数。
+	silenceRemaining map[string]int
+	// lastSilencedStreak 是 key → 上次触发静音时的 ignoredStreak。
+	//
+	// **防止同一 streak 反复静音，保证 probation 放行**——若不复位，
+	// streak 不涨的情况下每轮都会重新触发静音。
+	lastSilencedStreak map[string]int
+	// ledgerDeferred / ledgerRevoked 等治理账本字段（本移植只保留必要项）。
+}
+
+// HabituationPolicy 是习惯化查询源。
+//
+// 对账 HabituationPolicy——只含 `getIgnoredStreak`（接口隔离：
+// bus 只需要这一个事实）。
+type HabituationPolicy interface {
+	GetIgnoredStreak(key string) int
+}
+
+// 习惯化对抗常量。
+//
+// 对账 HABITUATION_ESCALATE_STREAK / HABITUATION_SILENCE_STREAK /
+// HABITUATION_SILENCE_RENDERS。
+const (
+	// habituationEscalateStreak 是触发升级措辞的最低连续忽略次数。
+	habituationEscalateStreak = 2
+	// habituationSilenceStreak 是触发静音的最低连续忽略次数。
+	habituationSilenceStreak = 3
+	// habituationSilenceRenders 是每次静音持续的渲染周期数。
+	habituationSilenceRenders = 4
+)
+
+// SetHabituationPolicy 注入习惯化查询源。
+//
+// 对账 setHabituationPolicy。缺省 = 不做习惯化对抗。
+func (b *AdvisoryBus) SetHabituationPolicy(policy HabituationPolicy) {
+	b.habituation = policy
 }
 
 // keyCooldownTurns 是 key 级送达冷却表（轮数）。
@@ -275,6 +316,65 @@ func (b *AdvisoryBus) Render(activeStarDomain string, turn int) string {
 		}
 	}
 
+	// ── 1c. 习惯化对抗（constitutional 豁免）──
+	//
+	// 对账 TS 的 P1b 习惯化对抗段。**两级反应**（TS 注释）：
+	//   streak >= 2 → 升级措辞：在条目前标注「已连续 N 次未见执行」——
+	//     被忽略的事实本身是新信息，比原文重复更能穿透注意力习惯化。
+	//   streak >= 3 → 有界静音：连续无效的提醒是纯噪音，静音 N 个渲染周期。
+	//     期满放行一次（probation）：若那次被采纳则 streak 清零恢复正常；
+	//     仍被忽略（streak 增长）才再次静音。**constitutional tier 永不静音**。
+	if b.habituation != nil {
+		// 静音计时按渲染周期流逝（**无论该 key 本轮是否被投递**）
+		for k, v := range b.silenceRemaining {
+			if v <= 1 {
+				delete(b.silenceRemaining, k)
+			} else {
+				b.silenceRemaining[k] = v - 1
+			}
+		}
+
+		var droppedSilenced []string
+		kept := make([]AdvisoryEntry, 0, len(all))
+		for _, e := range all {
+			if e.Tier == TierConstitutional {
+				kept = append(kept, e)
+				continue
+			}
+			if _, silenced := b.silenceRemaining[e.Key]; silenced {
+				droppedSilenced = append(droppedSilenced, e.Key)
+				continue
+			}
+			streak := b.habituation.GetIgnoredStreak(e.Key)
+			// streak 加深才触发新静音——期满 probation 放行一次，采纳则 streak 清零
+			if streak >= habituationSilenceStreak && streak > b.lastSilencedStreak[e.Key] {
+				if b.lastSilencedStreak == nil {
+					b.lastSilencedStreak = map[string]int{}
+				}
+				b.lastSilencedStreak[e.Key] = streak
+				if b.silenceRemaining == nil {
+					b.silenceRemaining = map[string]int{}
+				}
+				b.silenceRemaining[e.Key] = habituationSilenceRenders
+				droppedSilenced = append(droppedSilenced, e.Key)
+				continue
+			}
+			if streak >= habituationEscalateStreak {
+				// 升级措辞：「被忽略」这个事实本身是新信息
+				upgraded := e
+				upgraded.Content = "（此提醒已连续 " + strconv.Itoa(streak) +
+					" 次未见执行——若你有意跳过请在回复中说明理由）" + e.Content
+				kept = append(kept, upgraded)
+				continue
+			}
+			kept = append(kept, e)
+		}
+		if len(droppedSilenced) > 0 {
+			b.recordDropped(droppedSilenced)
+		}
+		all = kept
+	}
+
 	// ── 2. 按 tier 分流 ──
 	var constitutional, nonConstitutional []AdvisoryEntry
 	for _, e := range all {
@@ -449,6 +549,9 @@ func (b *AdvisoryBus) Reset() {
 	// 且 renderEpoch 归零会让 `renderEpoch - last` 变成负数（永远 < cooldown），
 	// 该 key 被永久静默。对账 TS reset() 的 lastDeliveredRenderByKey.clear()。
 	b.lastDeliveredRenderByKey = nil
+	// 习惯化状态也要清——否则 Reset 后旧静音/streak 记录残留
+	b.silenceRemaining = nil
+	b.lastSilencedStreak = nil
 }
 
 // recordDropped 记 dropped 账本（去重 key，封顶）。

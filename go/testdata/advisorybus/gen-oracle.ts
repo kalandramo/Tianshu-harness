@@ -16,6 +16,8 @@ interface CaseSpec {
   batches: Array<{ entries: any[]; domain?: string }>
   /** 渲染轮数（每次 render 消耗一个批次；批次用尽则不再 submit 只 render） */
   renders: number
+  /** 习惯化：key → 连续忽略次数（模拟 readback 的 getIgnoredStreak） */
+  streaks?: Record<string, number>
 }
 
 // 用例：覆盖去重 / 排序 / 类别上限 / 预算 / TTL / 转义 / 星域预算。
@@ -324,6 +326,59 @@ const cases: Record<string, CaseSpec> = {
     renders: 1,
   },
 
+  // ── 习惯化对抗：升级措辞（streak >= 2）──
+  habituation_escalate: {
+    streaks: { 'noisy': 2 },
+    batches: [{ entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: '原始内容' }] }],
+    renders: 1,
+  },
+
+  // ── 习惯化：streak = 1 不升级（阈值 2）──
+  habituation_below_escalate: {
+    streaks: { 'noisy': 1 },
+    batches: [{ entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: '原始内容' }] }],
+    renders: 1,
+  },
+
+  // ── 习惯化：静音（streak >= 3 → 静音 4 个渲染周期）──
+  habituation_silence: {
+    streaks: { 'noisy': 3 },
+    batches: [
+      { entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: 'X' }] },
+      { entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: 'X' }] },
+      { entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: 'X' }] },
+      { entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: 'X' }] },
+      { entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: 'X' }] },
+      { entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: 'X' }] },
+    ],
+    renders: 6,
+  },
+
+  // ── 习惯化：constitutional 豁免静音 ──
+  habituation_constitutional_exempt: {
+    streaks: { 'const-key': 10 },
+    batches: [{ entries: [
+      { key: 'const-key', priority: 0.9, category: 'constitutional', tier: 'constitutional', content: '宪法级' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 习惯化：静音只影响被静音的 key，不牵连同批其他 key ──
+  habituation_mixed: {
+    streaks: { 'noisy': 5 },
+    batches: [
+      { entries: [
+        { key: 'noisy', priority: 0.6, category: 'discipline', content: 'N' },
+        { key: 'clean', priority: 0.5, category: 'repair', content: 'C' },
+      ] },
+      { entries: [
+        { key: 'noisy', priority: 0.6, category: 'discipline', content: 'N' },
+        { key: 'clean', priority: 0.5, category: 'repair', content: 'C' },
+      ] },
+    ],
+    renders: 2,
+  },
+
   // ── immediate 条目豁免 CVM 注入预算 ──
   immediate_exempt: {
     batches: [{ entries: [
@@ -350,6 +405,9 @@ interface OracleEntry {
 const out: Record<string, OracleEntry> = {}
 for (const [name, spec] of Object.entries(cases)) {
   const bus = new AdvisoryBus()
+  if (spec.streaks) {
+    bus.setHabituationPolicy({ getIgnoredStreak: (key: string) => spec.streaks![key] ?? 0 })
+  }
   const renders: string[] = []
   const deliveredKeys: string[][] = []
 

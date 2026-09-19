@@ -698,7 +698,56 @@ postSession `flushAtSessionEnd`），再接四个治理子系统。
 序号），Go 侧 `buildRequestMessages` 当前无 turn 参数。这会**低估多轮场景下的
 时间跨度**（窗口判定偏保守）。已在代码注释标注，见 HANDOFF 的 turn 时钟统一项。
 
-**下一步**：习惯化对抗（消费 `getIgnoredStreak`——连续被忽略则静音 + 升级措辞）。
+### 第十七刀（已完成）：习惯化对抗——readback 的下游消费者（2026-09-19）
+
+✅ bus 的两级反应 + readback 接线 + 5 个 oracle 用例
+
+**消除第十六刀遗留的 blocked 验收**：readback 提供了 `GetIgnoredStreak`，但无人
+消费——「连续被忽略的提醒被静音」这个用户级行为不存在。现在接上了。
+
+对账 TS 的 P1b 习惯化对抗段，**两级反应**：
+
+| 条件 | 反应 | 理由（TS 注释） |
+|---|---|---|
+| `streak >= 2` | 升级措辞：条目前加「此提醒已连续 N 次未见执行——若你有意跳过请在回复中说明理由」 | **被忽略的事实本身是新信息**，比原文重复更能穿透注意力习惯化 |
+| `streak >= 3` | 有界静音 N=4 个渲染周期 | 连续无效的提醒是纯噪音 |
+| `tier == constitutional` | 永不静音 | 宪法级条目不受习惯化抑制 |
+
+**probation 放行**（`streak > lastSilencedStreak[key]`）：静音期满放行一次，
+若那次被采纳则 streak 清零恢复正常；仍被忽略（streak 增长）才再次静音。
+**没有这个条件会陷入永久静音**——streak 不涨时每轮重新触发静音。
+
+**接线**：`bus.SetHabituationPolicy(readback)`——readback 的
+`GetIgnoredStreak(key) int` **精确匹配** `HabituationPolicy` 接口，无需适配器。
+
+**用户级验收（已执行）**：`TestHabituationInRealRequests`——模型连续 8 轮不执行
+被提醒的动作，观察**真实请求体**里该 advisory 的出现模式，实测：
+
+```
+present  =[false true true true false false false false true]
+escalated=[false false false true false false false false true]
+stats={Delivered:4 Adopted:0 Ignored:4 IgnoredStreak:4}
+```
+
+第 1-3 轮出现（第 3 轮起带升级措辞）→ **第 4-7 轮消失**（静音）→ 第 8 轮回归
+（probation）。静音轮不计入 Delivered（没渲染就不该记送达）。
+
+**变异反证 5 个：全部有判别力**（不升级措辞 / 不静音 / constitutional 不豁免 /
+去掉 probation / 静音永不到期——各红 1~4）。
+
+**一次变异反证的自纠**：H3/H4/H5 首轮红 0，我误判为「测试缺口」。实际是
+`-run 'TestHabituation'` **漏了 oracle 测试**（用例名是
+`TestAdvisoryBus*Parity/habituation_*`）。改用 `-run 'TestHabituation|TestAdvisoryBus'`
+后各红 4。**教训：变异红 0 先查 -run 模式是否覆盖了全部相关测试**，再下「测试
+有缺口」的结论——这是「变异未生效」之外的第九类红 0 成因。
+
+**oracle**：`advisorybus` 数据集 32 → **37 用例**（+5：escalate / below_escalate /
+silence / constitutional_exempt / mixed）。生成器新增 `streaks` 字段模拟
+`getIgnoredStreak`。
+
+**下一步**：efficacy 负反馈环（`getAdoptionRate` 消费者——低采纳率条目降权）
+或 lift 消费（`getLift` 负值静音，`LIFT_MUTE_RENDERS = 10`）。两者都以 readback
+为前置，现已可用。
 
 **为什么是它而不是补工具**：
 

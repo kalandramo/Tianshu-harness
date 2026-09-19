@@ -842,6 +842,169 @@
     ],
     "renders": 1
   },
+  "habituation_escalate": {
+    "streaks": {
+      "noisy": 2
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "原始内容"
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
+  "habituation_below_escalate": {
+    "streaks": {
+      "noisy": 1
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "原始内容"
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
+  "habituation_silence": {
+    "streaks": {
+      "noisy": 3
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "X"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "X"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "X"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "X"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "X"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "X"
+          }
+        ]
+      }
+    ],
+    "renders": 6
+  },
+  "habituation_constitutional_exempt": {
+    "streaks": {
+      "const-key": 10
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "const-key",
+            "priority": 0.9,
+            "category": "constitutional",
+            "tier": "constitutional",
+            "content": "宪法级"
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
+  "habituation_mixed": {
+    "streaks": {
+      "noisy": 5
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          },
+          {
+            "key": "clean",
+            "priority": 0.5,
+            "category": "repair",
+            "content": "C"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          },
+          {
+            "key": "clean",
+            "priority": 0.5,
+            "category": "repair",
+            "content": "C"
+          }
+        ]
+      }
+    ],
+    "renders": 2
+  },
   "immediate_exempt": {
     "batches": [
       {

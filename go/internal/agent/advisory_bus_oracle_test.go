@@ -33,7 +33,16 @@ type busCaseSpec struct {
 		Domain  string         `json:"domain"`
 	} `json:"batches"`
 	Renders int `json:"renders"`
+	// Streaks 是习惯化：key → 连续忽略次数（模拟 readback 的 getIgnoredStreak）
+	Streaks map[string]int `json:"streaks"`
 }
+
+// fakeHabituation 是测试用的习惯化策略。
+type fakeHabituation struct {
+	streaks map[string]int
+}
+
+func (f *fakeHabituation) GetIgnoredStreak(key string) int { return f.streaks[key] }
 
 // busEntrySpec 是 oracle 用例里的一条 advisory。
 type busEntrySpec struct {
@@ -110,6 +119,9 @@ func TestAdvisoryBusOracleParity(t *testing.T) {
 			}
 
 			bus := NewAdvisoryBus()
+			if len(spec.Streaks) > 0 {
+				bus.SetHabituationPolicy(&fakeHabituation{streaks: spec.Streaks})
+			}
 			for i := 0; i < spec.Renders; i++ {
 				if i < len(spec.Batches) {
 					b := spec.Batches[i]
@@ -155,6 +167,9 @@ func TestAdvisoryBusLedgerParity(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			spec := cases[name]
 			bus := NewAdvisoryBus()
+			if len(spec.Streaks) > 0 {
+				bus.SetHabituationPolicy(&fakeHabituation{streaks: spec.Streaks})
+			}
 			for i := 0; i < spec.Renders; i++ {
 				if i < len(spec.Batches) {
 					for _, es := range spec.Batches[i].Entries {

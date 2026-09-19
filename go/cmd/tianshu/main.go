@@ -258,6 +258,15 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	})
 	loop.Readback = readback
 
+	// 习惯化对抗接线——**这是 readback 的下游消费者**。
+	//
+	// 对账 TS loop-factory 的 `bus.setHabituationPolicy(readback)`。
+	// bus 据此做两级反应：streak >= 2 升级措辞、streak >= 3 有界静音。
+	//
+	// **接口精确匹配**——readback 的 `GetIgnoredStreak(key) int` 直接满足
+	// `agent.HabituationPolicy`，无需适配器。
+	bus.SetHabituationPolicy(readback)
+
 	// claim 提取器装配——**这是 claim 的产生端**。
 	//
 	// 对账 TS 的工具执行后提取：`extractClaimsFromToolResult(ctx, meta)` →
