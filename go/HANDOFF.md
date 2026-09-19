@@ -350,6 +350,33 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **trust 子系统**（新建 `internal/trust/`）——项目级信任门
+  - 对账 `src/config/project-trust.ts`。**SECURITY.md 的信任边界**：仓库内容
+    （含项目内 `.rivet/hooks.json` 与 `.rivet-config.json`）**不能单独构成执行
+    动作的授权**——未授信前项目 hooks 不执行、安全敏感键被剥离（fail-closed）
+  - **安全要点（逐条有测试 + 变异反证）**：
+    - 信任文件写 `<rivetHome>/project-trust.json`，**绝不写进仓库目录**
+      （否则克隆一个仓库就等于授信它）——`TestTrustStoreNeverInRepo`
+    - 按 **realpath** 键控——不归一化就存在「授信 A 路径、B 路径绕过」的
+      符号链接漏洞——`TestRealpathKeying`
+    - 权限 **0o600**（用户私有）
+    - **坏信任文件按未授信处理**（fail-closed）——`TestCorruptStoreIsUntrusted`
+    - **`dismiss` ≠ 授信**（关闭提示不改变剥离行为）——`TestDismissPromptDoesNotTrust`
+    - `RIVET_TRUST_PROJECT` env 覆盖**优先于**信任文件（`1` 授信 / `0` 强制
+      未授信 / 其他值回落文件）
+  - **剥离清单**（12 个顶层键 + 5 个嵌套键）：每个都能旁路 SECURITY.md 声明的
+    审批/边界/出口控制——写盘授权、bash 预授权、静默 YOLO、MCP 拉进程、
+    baseUrl+key 重定向、statusline 命令执行、**MCP 子进程出口改向**、
+    **web_fetch 正文抽取改向**等
+  - **`agent.permissions` 是 schema 的真实位置**（顶层 `permissions` 实际不
+    存在，保留在集合里仅作纵深）
+  - **对账时发现并修掉一个顺序缺陷**：`findSensitiveProjectKeys` 的输出顺序
+    是 TS 的**集合声明序**（`permissions, mcp, hooks, ...`），我首版用了
+    `sort.Strings`——oracle 立刻暴露。改用显式 `untrustedTopLevelKeyOrder`
+  - oracle：`go/testdata/trust/`（7 剥离 + 7 敏感键 + 6 赌注），三次 sha256 一致
+  - 变异反证 7 个：**全部有判别力**（fail-open 1 红 / env 覆盖失效 1 红 /
+    不做 realpath 1 红 / dismiss 也授信 1 红 / 不剥离顶层键 4 红 /
+    不剥离 agent.permissions 6 红 / 权限 0o644 1 红）
 - [x] **filediff 子系统**（新建 `internal/filediff/`）——unified diff 生成
   - 对账 `edit-diff.ts`（185 行）+ cpu-tasks 的 `diffUnifiedRaw` /
     `diffStructuredRaw`（底层 jsdiff）
@@ -782,6 +809,8 @@ b
   wire 桥接（`OaiMessageFromWire`）
 - `internal/tools/schema.go`：**schema 有序序列化**——`OrderedProps` /
   `OrderValue`（从 agent 包移入，schema 序列化属 tools 领域）
+- `internal/trust/`：**项目级信任门**——SECURITY.md 信任边界；
+  未授信时剥离敏感配置键（fail-closed）
 - `internal/filediff/`：**unified diff 生成**——自写 Myers；展示用（uiContent）
 - `internal/tools/editfail.go`：**编辑失败计数门**——连续失败 ≥3 时前置
   read_file 提示
@@ -884,8 +913,9 @@ b
 8. **三处「最小可用路径」待替换**：`BuildFullSystemPrompt`（拼法）、
    `RenderProjectInstructionsBlock`（无 `<context>` 包裹）、
    `BuildSystemPromptWithProject`（已被 `full.go` 取代但保留，因 11 个测试锁定它）。
-9. **未移植的行为差异**：TS 的信任门 `isProjectTrusted`（Go 侧无 trust store）；
-   Windows 的 `resolveShellCommand`（需真实 Windows 环境验证）。
+9. **未移植的行为差异**（部分已修复）：
+   - ✅ **信任门**（`isProjectTrusted` + trust store）——已完成（见顶部条目）
+   - **Windows 的 `resolveShellCommand`**：需真实 Windows 环境验证，未移植。
 10. **分支策略**：`go-runtime` 已 push 到 `origin`（2026-09-19）；
    `main` 仍在 `69b0381` 未动（用户明确要求不合并）。Go 实现**将来要独立
    仓库**——当前 `go/` 与 TS 源码同仓库是过渡状态。拆分可行性已核实：
