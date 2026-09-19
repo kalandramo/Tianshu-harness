@@ -45,8 +45,20 @@
 git clone <repo> Tianshu-harness
 cd Tianshu-harness
 git checkout go-runtime        # 工作分支，不是 main
-npm install                    # 装 TS 依赖（oracle 生成器需要）
+npm install                    # **必需**——node_modules 不在 git 里
 ```
+
+**`npm install` 是必需步骤，不是可选**：`node_modules/` 不在版本控制内，
+干净 clone 后**不存在**。没有它：
+
+- ✅ Go 侧**照常可用**（`go test ./...` 全绿，16 包 ok）
+- ❌ **oracle 生成器跑不了**（`node_modules/.bin/tsx: No such file or directory`）
+
+即：**只做 Go 开发可以不装**；**要重新生成 oracle 必须装**。
+
+> **实测记录（2026-09-19，干净 clone 验证）**：`npm install` exit 0 →
+> `node_modules/.bin/tsx` 可用 → `tsx go/testdata/recovery/gen-oracle.ts` 输出
+> `sha256 efee0f5aaf65594c`，**与开发机一致**（跨设备可复现）。
 
 **目录约束**：Go 代码在 `go/` 子目录，但它**不是独立仓库**——`go/testdata/*/gen-oracle.ts` 用 `../../../src/...` **相对路径 import 父仓库 TS 源码**。
 
@@ -72,9 +84,12 @@ go test ./... -count=1                           # 全量测试
 ### 2.4 生成 oracle（仅当需要重新对账时）
 
 ```bash
-cd <repo-root>                                   # 回父仓库根
+cd <repo-root>                                   # **必须回父仓库根**（不是 go/）
 node_modules/.bin/tsx go/testdata/<name>/gen-oracle.ts
 ```
+
+**路径注意**：`node_modules/.bin/tsx` 在**仓库根**，不在 `go/` 下。在 `go/` 里跑
+会报 `No such file or directory`。
 
 每个生成器会打印 `sha256 <前16位>`——**同一输入下应可复现**（若不一致，说明生成器引入了时间戳等非确定性，见 §6）。
 
