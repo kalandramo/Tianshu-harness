@@ -152,6 +152,38 @@ node_modules/.bin/tsx go/testdata/<name>/gen-oracle.ts
 
 **下一步**：具体 hook 移植（依赖 `internal/context` 认知层）。
 
+### 第二刀（已完成）：`internal/context` 的 rounds 分组（2026-09-19）
+
+✅ `internal/context/rounds.go`——OAI 轮次分组（352 行 + 237 行测试）
+
+对账 `src/context/rounds.ts` 的三个导出函数：
+
+- `GroupIntoRoundsOai`——五种分组形态（user 单条成轮 / assistant 无 tool_calls
+  单条成轮 / assistant 带 tool_calls **贪心吸收**后续 tool 消息 / 孤儿 tool /
+  其余）+ 不变量三态判定（ok / repaired / broken）
+- `CountRoundsOai`——快路径计数（TS 注释：400 轮时占 37ms 构建里的 21ms，
+  本函数只要 0.2ms）。**与分组必须 parity**，测试钉住
+- `ComputeOaiInvariantStatus`——汇总（含孤儿 use/result 的轮 id 列表）
+- `EstimateOaiMessageTokens`——token 启发式（CJK 三区间 + `ceil(n/4)` / `ceil(n/1.5)`）
+
+**oracle 对账**：`testdata/rounds/` 14 个用例（覆盖五种形态 + 不变量三态 +
+token 边界），**42 个子测试全绿**。生成器**同时导出 `cases.json`**（输入的唯一
+真源）——避免「Go 测的是另一组输入」的漂移。
+
+**oracle 抓到的真实缺陷**（自洽假绿的典型）：首版 `stringifyToolCalls` 丢弃
+tool_call 的额外字段（如 `index`），而 TS 的 `JSON.stringify` 会带上——
+`toolcall_extra_fields` 用例红（Go=19 / TS=25）。已修：透传 `Extra`。
+**若没做 oracle 对账，此缺陷会静默留存**。
+
+变异反证 9 个：**全部有判别力**。
+
+**未移植**：`EstimateOaiMessageTokens` 的 user parts 分支（多模态，含
+`estimateImageTokens`——需解析 PNG base64 头的 IHDR 宽高）。Go 侧该分支退化
+为把 content 当字符串。见 HANDOFF。
+
+**下一步**：`internal/context` 其余模块（claim-store / cognitive-ledger /
+stigmergy / task-contract），或具体 hook 移植。
+
 **为什么是它而不是补工具**：
 
 - CVM（认知虚拟机）是天枢三大支柱之一——`RuntimeHookPipeline` 五阶段条件装配 60+ hook，拦截服从性漂移 / doom loop / 验证债务

@@ -1,0 +1,517 @@
+{
+  "simple": {
+    "rounds": [
+      {
+        "id": "round_0",
+        "startMessageIndex": 0,
+        "endMessageIndex": 1,
+        "turnNumber": 0,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 4,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_1",
+        "startMessageIndex": 1,
+        "endMessageIndex": 2,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 2,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_2",
+        "startMessageIndex": 2,
+        "endMessageIndex": 3,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 2,
+        "apiInvariant": "ok"
+      }
+    ],
+    "count": 3,
+    "invariant": {
+      "totalRounds": 3,
+      "okRounds": 3,
+      "repairedRounds": 0,
+      "brokenRounds": 0,
+      "orphanToolUse": [],
+      "orphanToolResult": []
+    }
+  },
+  "tool_ok": {
+    "rounds": [
+      {
+        "id": "round_0",
+        "startMessageIndex": 0,
+        "endMessageIndex": 1,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 2,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_1",
+        "startMessageIndex": 1,
+        "endMessageIndex": 4,
+        "turnNumber": 1,
+        "hasToolCalls": true,
+        "hasToolResults": true,
+        "tokenEstimate": 53,
+        "apiInvariant": "ok"
+      }
+    ],
+    "count": 2,
+    "invariant": {
+      "totalRounds": 2,
+      "okRounds": 2,
+      "repairedRounds": 0,
+      "brokenRounds": 0,
+      "orphanToolUse": [],
+      "orphanToolResult": []
+    }
+  },
+  "tool_broken": {
+    "rounds": [
+      {
+        "id": "round_0",
+        "startMessageIndex": 0,
+        "endMessageIndex": 1,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 1,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_1",
+        "startMessageIndex": 1,
+        "endMessageIndex": 3,
+        "turnNumber": 1,
+        "hasToolCalls": true,
+        "hasToolResults": true,
+        "tokenEstimate": 41,
+        "apiInvariant": "broken"
+      }
+    ],
+    "count": 2,
+    "invariant": {
+      "totalRounds": 2,
+      "okRounds": 1,
+      "repairedRounds": 0,
+      "brokenRounds": 1,
+      "orphanToolUse": [],
+      "orphanToolResult": []
+    }
+  },
+  "tool_repaired": {
+    "rounds": [
+      {
+        "id": "round_0",
+        "startMessageIndex": 0,
+        "endMessageIndex": 1,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 1,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_1",
+        "startMessageIndex": 1,
+        "endMessageIndex": 4,
+        "turnNumber": 1,
+        "hasToolCalls": true,
+        "hasToolResults": true,
+        "tokenEstimate": 23,
+        "apiInvariant": "repaired"
+      }
+    ],
+    "count": 2,
+    "invariant": {
+      "totalRounds": 2,
+      "okRounds": 1,
+      "repairedRounds": 1,
+      "brokenRounds": 0,
+      "orphanToolUse": [],
+      "orphanToolResult": []
+    }
+  },
+  "orphan_tool": {
+    "rounds": [
+      {
+        "id": "round_0",
+        "startMessageIndex": 0,
+        "endMessageIndex": 1,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 1,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_1",
+        "startMessageIndex": 1,
+        "endMessageIndex": 2,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": true,
+        "tokenEstimate": 4,
+        "apiInvariant": "repaired"
+      }
+    ],
+    "count": 2,
+    "invariant": {
+      "totalRounds": 2,
+      "okRounds": 1,
+      "repairedRounds": 1,
+      "brokenRounds": 0,
+      "orphanToolUse": [],
+      "orphanToolResult": [
+        "round_1"
+      ]
+    }
+  },
+  "systems_only": {
+    "rounds": [
+      {
+        "id": "round_0",
+        "startMessageIndex": 0,
+        "endMessageIndex": 1,
+        "turnNumber": 0,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 1,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_1",
+        "startMessageIndex": 1,
+        "endMessageIndex": 2,
+        "turnNumber": 0,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 1,
+        "apiInvariant": "ok"
+      }
+    ],
+    "count": 2,
+    "invariant": {
+      "totalRounds": 2,
+      "okRounds": 2,
+      "repairedRounds": 0,
+      "brokenRounds": 0,
+      "orphanToolUse": [],
+      "orphanToolResult": []
+    }
+  },
+  "cjk_tokens": {
+    "rounds": [
+      {
+        "id": "round_0",
+        "startMessageIndex": 0,
+        "endMessageIndex": 1,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 3,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_1",
+        "startMessageIndex": 1,
+        "endMessageIndex": 2,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 6,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_2",
+        "startMessageIndex": 2,
+        "endMessageIndex": 3,
+        "turnNumber": 2,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 4,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_3",
+        "startMessageIndex": 3,
+        "endMessageIndex": 4,
+        "turnNumber": 2,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 6,
+        "apiInvariant": "ok"
+      }
+    ],
+    "count": 4,
+    "invariant": {
+      "totalRounds": 4,
+      "okRounds": 4,
+      "repairedRounds": 0,
+      "brokenRounds": 0,
+      "orphanToolUse": [],
+      "orphanToolResult": []
+    }
+  },
+  "assistant_reasoning": {
+    "rounds": [
+      {
+        "id": "round_0",
+        "startMessageIndex": 0,
+        "endMessageIndex": 1,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 1,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_1",
+        "startMessageIndex": 1,
+        "endMessageIndex": 3,
+        "turnNumber": 1,
+        "hasToolCalls": true,
+        "hasToolResults": true,
+        "tokenEstimate": 29,
+        "apiInvariant": "ok"
+      }
+    ],
+    "count": 2,
+    "invariant": {
+      "totalRounds": 2,
+      "okRounds": 2,
+      "repairedRounds": 0,
+      "brokenRounds": 0,
+      "orphanToolUse": [],
+      "orphanToolResult": []
+    }
+  },
+  "toolcall_extra_fields": {
+    "rounds": [
+      {
+        "id": "round_0",
+        "startMessageIndex": 0,
+        "endMessageIndex": 1,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 1,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_1",
+        "startMessageIndex": 1,
+        "endMessageIndex": 3,
+        "turnNumber": 1,
+        "hasToolCalls": true,
+        "hasToolResults": true,
+        "tokenEstimate": 25,
+        "apiInvariant": "ok"
+      }
+    ],
+    "count": 2,
+    "invariant": {
+      "totalRounds": 2,
+      "okRounds": 2,
+      "repairedRounds": 0,
+      "brokenRounds": 0,
+      "orphanToolUse": [],
+      "orphanToolResult": []
+    }
+  },
+  "escapes_in_args": {
+    "rounds": [
+      {
+        "id": "round_0",
+        "startMessageIndex": 0,
+        "endMessageIndex": 1,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 1,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_1",
+        "startMessageIndex": 1,
+        "endMessageIndex": 3,
+        "turnNumber": 1,
+        "hasToolCalls": true,
+        "hasToolResults": true,
+        "tokenEstimate": 25,
+        "apiInvariant": "ok"
+      }
+    ],
+    "count": 2,
+    "invariant": {
+      "totalRounds": 2,
+      "okRounds": 2,
+      "repairedRounds": 0,
+      "brokenRounds": 0,
+      "orphanToolUse": [],
+      "orphanToolResult": []
+    }
+  },
+  "empty": {
+    "rounds": [],
+    "count": 0,
+    "invariant": {
+      "totalRounds": 0,
+      "okRounds": 0,
+      "repairedRounds": 0,
+      "brokenRounds": 0,
+      "orphanToolUse": [],
+      "orphanToolResult": []
+    }
+  },
+  "multi_turn": {
+    "rounds": [
+      {
+        "id": "round_0",
+        "startMessageIndex": 0,
+        "endMessageIndex": 1,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 1,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_1",
+        "startMessageIndex": 1,
+        "endMessageIndex": 2,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 1,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_2",
+        "startMessageIndex": 2,
+        "endMessageIndex": 3,
+        "turnNumber": 2,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 1,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_3",
+        "startMessageIndex": 3,
+        "endMessageIndex": 5,
+        "turnNumber": 2,
+        "hasToolCalls": true,
+        "hasToolResults": true,
+        "tokenEstimate": 19,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_4",
+        "startMessageIndex": 5,
+        "endMessageIndex": 6,
+        "turnNumber": 3,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 1,
+        "apiInvariant": "ok"
+      }
+    ],
+    "count": 5,
+    "invariant": {
+      "totalRounds": 5,
+      "okRounds": 5,
+      "repairedRounds": 0,
+      "brokenRounds": 0,
+      "orphanToolUse": [],
+      "orphanToolResult": []
+    }
+  },
+  "tool_then_user": {
+    "rounds": [
+      {
+        "id": "round_0",
+        "startMessageIndex": 0,
+        "endMessageIndex": 2,
+        "turnNumber": 0,
+        "hasToolCalls": true,
+        "hasToolResults": true,
+        "tokenEstimate": 19,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_1",
+        "startMessageIndex": 2,
+        "endMessageIndex": 3,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 1,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_2",
+        "startMessageIndex": 3,
+        "endMessageIndex": 4,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": true,
+        "tokenEstimate": 1,
+        "apiInvariant": "repaired"
+      }
+    ],
+    "count": 3,
+    "invariant": {
+      "totalRounds": 3,
+      "okRounds": 2,
+      "repairedRounds": 1,
+      "brokenRounds": 0,
+      "orphanToolUse": [],
+      "orphanToolResult": [
+        "round_2"
+      ]
+    }
+  },
+  "special_chars": {
+    "rounds": [
+      {
+        "id": "round_0",
+        "startMessageIndex": 0,
+        "endMessageIndex": 1,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 3,
+        "apiInvariant": "ok"
+      },
+      {
+        "id": "round_1",
+        "startMessageIndex": 1,
+        "endMessageIndex": 2,
+        "turnNumber": 1,
+        "hasToolCalls": false,
+        "hasToolResults": false,
+        "tokenEstimate": 5,
+        "apiInvariant": "ok"
+      }
+    ],
+    "count": 2,
+    "invariant": {
+      "totalRounds": 2,
+      "okRounds": 2,
+      "repairedRounds": 0,
+      "brokenRounds": 0,
+      "orphanToolUse": [],
+      "orphanToolResult": []
+    }
+  }
+}

@@ -1,0 +1,312 @@
+{
+  "simple": [
+    {
+      "role": "system",
+      "content": "你是天枢。"
+    },
+    {
+      "role": "user",
+      "content": "hello"
+    },
+    {
+      "role": "assistant",
+      "content": "world"
+    }
+  ],
+  "tool_ok": [
+    {
+      "role": "user",
+      "content": "读文件"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"file_path\":\"a.ts\"}"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "function",
+          "function": {
+            "name": "bash",
+            "arguments": "{\"command\":\"ls\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "c1",
+      "content": "line1\nline2"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "c2",
+      "content": "ok"
+    }
+  ],
+  "tool_broken": [
+    {
+      "role": "user",
+      "content": "go"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{}"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "function",
+          "function": {
+            "name": "bash",
+            "arguments": "{}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "c1",
+      "content": "only one"
+    }
+  ],
+  "tool_repaired": [
+    {
+      "role": "user",
+      "content": "go"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "c1",
+      "content": "ok"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "cX",
+      "content": "extra"
+    }
+  ],
+  "orphan_tool": [
+    {
+      "role": "user",
+      "content": "x"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "ghost",
+      "content": "nothing led me"
+    }
+  ],
+  "systems_only": [
+    {
+      "role": "system",
+      "content": "a"
+    },
+    {
+      "role": "system",
+      "content": "b"
+    }
+  ],
+  "cjk_tokens": [
+    {
+      "role": "user",
+      "content": "中文测试"
+    },
+    {
+      "role": "assistant",
+      "content": "ひらがなカタカナ"
+    },
+    {
+      "role": "user",
+      "content": "한국어테스트"
+    },
+    {
+      "role": "assistant",
+      "content": "mixed 中文 and ascii"
+    }
+  ],
+  "assistant_reasoning": [
+    {
+      "role": "user",
+      "content": "q"
+    },
+    {
+      "role": "assistant",
+      "content": "answer",
+      "reasoning_content": "思考过程 with reasoning",
+      "tool_calls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "f",
+            "arguments": "{\"a\":1}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "c1",
+      "content": "r"
+    }
+  ],
+  "toolcall_extra_fields": [
+    {
+      "role": "user",
+      "content": "q"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "f",
+            "arguments": "{}"
+          },
+          "extra": "x",
+          "index": 0
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "c1",
+      "content": "r"
+    }
+  ],
+  "escapes_in_args": [
+    {
+      "role": "user",
+      "content": "q"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "f",
+            "arguments": "{\"s\":\"a\\\"b\\nc\\td\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "c1",
+      "content": "r"
+    }
+  ],
+  "empty": [],
+  "multi_turn": [
+    {
+      "role": "user",
+      "content": "u1"
+    },
+    {
+      "role": "assistant",
+      "content": "a1"
+    },
+    {
+      "role": "user",
+      "content": "u2"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "f",
+            "arguments": "{}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "c1",
+      "content": "r1"
+    },
+    {
+      "role": "user",
+      "content": "u3"
+    }
+  ],
+  "tool_then_user": [
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "f",
+            "arguments": "{}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "c1",
+      "content": "r"
+    },
+    {
+      "role": "user",
+      "content": "next"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "orphan",
+      "content": "late"
+    }
+  ],
+  "special_chars": [
+    {
+      "role": "user",
+      "content": "a\tb\nc\"d\\e \u0000\u001f"
+    },
+    {
+      "role": "assistant",
+      "content": "   emoji 🎉 中文"
+    }
+  ]
+}
