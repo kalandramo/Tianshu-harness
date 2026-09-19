@@ -83,6 +83,16 @@ type Loop struct {
 	//
 	// 对账 TS 的 `attachSessionPersistListener`。nil 时跳过。
 	Listener *session.PersistListener
+
+	// toolDefsCache 缓存工具定义的构造结果。
+	//
+	// **为什么需要**：`toolDefs()` 原本每轮重建全部工具的 schema 并重新
+	// 序列化——N 个工具 × M 轮的无谓开销。工具集在 Loop 生命周期内**不变**
+	// （Registry 有 Register/Remove，但 loop 不调用）。
+	//
+	// **契约**：缓存值是**只读**的——调用方（client.Stream）不得修改切片或
+	// 其中的 OrderedMap。`toolDefs()` 每次返回同一个切片指针。
+	toolDefsCache []*wire.OrderedMap
 }
 
 // New 创建 agent loop。
@@ -307,6 +317,18 @@ func (l *Loop) observeToolResult(name string, input map[string]any, res contract
 
 // toolDefs 返回工具声明（转为 wire 有序结构，保字节稳定）。
 func (l *Loop) toolDefs() []*wire.OrderedMap {
+	// 工具集在 Loop 生命周期内不变 → 构造一次后复用。
+	// 缓存命中时直接返回（避免每轮重建 schema + 重新序列化）。
+	if l.toolDefsCache != nil {
+		return l.toolDefsCache
+	}
+	out := l.buildToolDefs()
+	l.toolDefsCache = out
+	return out
+}
+
+// buildToolDefs 实际构造工具定义（缓存未命中时调用一次）。
+func (l *Loop) buildToolDefs() []*wire.OrderedMap {
 	defs := l.registry.Definitions()
 	out := make([]*wire.OrderedMap, 0, len(defs))
 	for _, d := range defs {

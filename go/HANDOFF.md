@@ -350,6 +350,17 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **toolDefs 缓存**（`internal/agent/loop.go`）
+  - **问题**：`toolDefs()` 原本**每轮重建**全部工具的 schema 并重新序列化
+    ——N 个工具 × M 轮的无谓开销
+  - **为什么可以缓存**：工具集在 Loop 生命周期内不变（Registry 有
+    Register/Remove，但 loop 不调用）
+  - **契约**：缓存值**只读**——调用方（client.Stream）不得修改切片或其中的
+    OrderedMap；`toolDefs()` 每次返回同一底层数组
+  - **正确性前提**（有测试锁定）：缓存命中与重新构造必须产出**完全相同的
+    序列化字节**——否则前缀缓存会失效。`TestToolDefsCachedBytesIdentical`
+    用一个 Loop 走缓存、另一个强制重建，逐工具比对 `Marshal()`
+  - 变异反证 2 个：**全部有判别力**（缓存不生效 1 红 / 缓存返回空 1 红）
 - [x] **trust 子系统**（新建 `internal/trust/`）——项目级信任门
   - 对账 `src/config/project-trust.ts`。**SECURITY.md 的信任边界**：仓库内容
     （含项目内 `.rivet/hooks.json` 与 `.rivet-config.json`）**不能单独构成执行

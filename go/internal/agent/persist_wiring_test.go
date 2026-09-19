@@ -228,3 +228,76 @@ func TestSessionPersistAcrossLoopInstances(t *testing.T) {
 	}
 	_ = session.SessionDir(dir) // 引用保证 session 包被使用
 }
+
+// TestToolDefsCached —— toolDefs 缓存：多次调用返回同一实例（避免每轮重建）。
+func TestToolDefsCached(t *testing.T) {
+	dir := t.TempDir()
+	reg := tools.NewDefaultRegistry(tools.Options{Cwd: dir})
+	loop := New(Config{SessionID: "td", Cwd: dir, Model: "m"}, client.New(client.Config{}), reg)
+
+	first := loop.toolDefs()
+	if len(first) == 0 {
+		t.Fatal("应有工具定义")
+	}
+	second := loop.toolDefs()
+	if len(first) != len(second) {
+		t.Fatalf("长度应一致：%d vs %d", len(first), len(second))
+	}
+	// **关键断言**：同一底层数组（缓存命中）
+	if &first[0] != &second[0] {
+		t.Error("第二次调用应返回缓存（同一底层数组）")
+	}
+}
+
+// TestToolDefsCachedBytesIdentical —— **缓存不改变字节**（前缀缓存的底线）。
+//
+// 这是缓存的正确性前提：命中缓存与重新构造必须产出完全相同的序列化结果。
+func TestToolDefsCachedBytesIdentical(t *testing.T) {
+	dir := t.TempDir()
+	reg := tools.NewDefaultRegistry(tools.Options{Cwd: dir})
+
+	// 一个 Loop 用缓存，另一个强制重建——比对字节
+	cached := New(Config{SessionID: "a", Cwd: dir, Model: "m"}, client.New(client.Config{}), reg)
+	fresh := New(Config{SessionID: "b", Cwd: dir, Model: "m"}, client.New(client.Config{}), reg)
+
+	// 预热 cached 的缓存
+	_ = cached.toolDefs()
+
+	gotCached := cached.toolDefs()
+	gotFresh := fresh.toolDefs()
+
+	if len(gotCached) != len(gotFresh) {
+		t.Fatalf("工具数不符：%d vs %d", len(gotCached), len(gotFresh))
+	}
+	for i := range gotCached {
+		if gotCached[i].Marshal() != gotFresh[i].Marshal() {
+			t.Errorf("[%d] 缓存与重建字节不符：\n  缓存=%s\n  重建=%s",
+				i, gotCached[i].Marshal(), gotFresh[i].Marshal())
+		}
+	}
+}
+
+// TestToolDefsCacheStableAcrossManyCalls —— 多次调用字节恒定（确定性）。
+func TestToolDefsCacheStableAcrossManyCalls(t *testing.T) {
+	dir := t.TempDir()
+	reg := tools.NewDefaultRegistry(tools.Options{Cwd: dir})
+	loop := New(Config{SessionID: "stab", Cwd: dir, Model: "m"}, client.New(client.Config{}), reg)
+
+	first := loop.toolDefs()
+	var baseline []string
+	for _, d := range first {
+		baseline = append(baseline, d.Marshal())
+	}
+
+	for i := 0; i < 5; i++ {
+		got := loop.toolDefs()
+		if len(got) != len(baseline) {
+			t.Fatalf("第 %d 次长度不符", i)
+		}
+		for j := range got {
+			if got[j].Marshal() != baseline[j] {
+				t.Errorf("第 %d 次 [%d] 字节漂移", i, j)
+			}
+		}
+	}
+}
