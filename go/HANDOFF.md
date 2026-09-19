@@ -350,6 +350,27 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **会话消息序列化**：`internal/session/serialize.go`
+  - 对账 `serializeSessionMessage` / `serializeOaiSessionMessage` /
+    `capJsonValue` / `truncateString` / `serializeSessionJsonValue`
+  - **三层截断**：① 原样 JSON ≤ 上限 → 返回；② 用 `max(1000, floor(上限*0.8))`
+    递归 cap 后重序列化；③ 仍超长 → fallback（整条消息 JSON 截断塞进 content）
+  - **截断 marker 逐字对账**：`original_chars` 是**原始值长度**、
+    `kept_chars` 是**传入的 maxChars**（不是实际保留数——实际保留的是
+    `maxChars - marker长度`）。这是 TS 原样行为，不要"修正"
+  - **反直觉但必须复刻**：额度小于 marker 长度时 `keep` 归 0，输出**只有 marker**
+    且**总长超过 maxChars**（marker 本身就有长度）
+  - **重大发现：键序必须保留**。`JSON.stringify` 保插入序，而插入序由对象构造
+    决定——oracle 新增 4 个键序用例（`keyOrderContentRole` /
+    `keyOrderToolCallIdFirst` 等）证实「同字段集、不同书写序 → 不同输出」。
+    首版 `oaiToWire` 用固定序重建，`oaiToolRole` 用例当场红。已给
+    `OaiMessage` 加 `KeyOrder []string`（从 JSON 解析时记录原始序）
+  - **三处测试期望是我算错的**（oracle 已证明实现正确）：① 截断后可能**超过**
+    maxChars（marker 长度所致）；② 第 2 层用例的 maxChars 太小会**跳过第 2 层
+    直接走 fallback**（cap 预算有 1000 下限）；③ fallback 的 content 在额度
+    远小于 marker 时只剩 marker
+  - 变异反证 7 个全部有判别力（预算下限 1 / 0.8 系数 2 / UTF-16 计长 2 /
+    marker 扣额度 3 / 数组递归 1 / KeyOrder 1 / 归一化 2）
 - [x] **孤儿工具调用修复**：`internal/session/oaimessage.go`
   - 对账 src/agent/session-persist.ts 的 `repairOrphanToolCalls`（压#7）
     + `normalizeOaiMessage` + `isOaiMessage`
@@ -567,6 +588,8 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   落盘 / mergePending / legacy 迁移 / 失败放回队列
 - `internal/session/oaimessage.go`：**孤儿工具调用修复 + 消息归一化**——
   双向孤儿检测 / 两条警告文案 / loadOai 三层链路
+- `internal/session/serialize.go`：**消息序列化 + 三层截断**——capJsonValue
+  递归截断 / truncateString marker / KeyOrder 保插入序
 
 **本轮核心教训**：`orderedProps` 的数组型 schema 缺陷只在**接线后**暴露
 （单测工具全绿，接注册表立刻 panic）。这印证了「消费方核查」与
@@ -602,10 +625,13 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
    - ✅ **write-behind 批量写入器**（`session-batch-writer.ts`）——本轮完成
    - ✅ **孤儿工具调用修复 + 消息归一化**（`repairOrphanToolCalls` /
      `normalizeOaiMessage` / `isOaiMessage`）——本轮完成
+   - ✅ **消息序列化 + 三层截断**（`serializeSessionMessage` /
+     `serializeOaiSessionMessage` / `capJsonValue` / `truncateString`）——本轮完成
    - **`SessionPersist` 类本体**（`session-persist.ts` 928 行）剩余部分未移植：
-     消息序列化（`serializeSessionMessage` / `serializeOaiSessionMessage`
-     + `capJsonValue` 截断）、会话元数据（`SessionMetadataStore`）、
-     `loadOai` 的完整编排（读文件 → verifyLines → 逐行解析 → 三层链）。
+     会话元数据（`SessionMetadataStore`）、`loadOai`/`append` 的完整编排
+     （读文件 → verifyLines → 逐行解析 → 三层链 → BatchWriter）。
+     **地基已全部就位**：BatchWriter（写）+ transcript codec（压缩）+
+     孤儿修复（完整性）+ 序列化（截断）+ 状态容器（渲染）。
    - **会话恢复**（`session-recovery.ts` 140 行）、**会话注册表**
      （`session-registry.ts` 589 行）未移植。
    - **依赖策略变更**：项目已从「零第三方依赖」改为「允许成熟生态」，

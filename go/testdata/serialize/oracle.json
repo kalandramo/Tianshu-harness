@@ -1,0 +1,125 @@
+{
+  "defaultMaxChars": 100000,
+  "cases": {
+    "shortSession": {
+      "note": "短消息 → 原样 JSON",
+      "kind": "session",
+      "maxChars": 100000,
+      "output": "{\"role\":\"user\",\"content\":\"hello\"}"
+    },
+    "shortOai": {
+      "note": "短 OAI 消息 → 原样 JSON",
+      "kind": "oai",
+      "maxChars": 100000,
+      "output": "{\"role\":\"user\",\"content\":\"hello\"}"
+    },
+    "oaiWithToolCalls": {
+      "note": "OAI 带 tool_calls → 原样 JSON（键序保留）",
+      "kind": "oai",
+      "maxChars": 100000,
+      "output": "{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a\\\"}\"}}]}"
+    },
+    "oaiToolRole": {
+      "note": "tool 角色 → 带 tool_call_id",
+      "kind": "oai",
+      "maxChars": 100000,
+      "output": "{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"result\"}"
+    },
+    "keyOrderRoleContent": {
+      "note": "键序 role → content（最常见）",
+      "kind": "oai",
+      "maxChars": 100000,
+      "output": "{\"role\":\"user\",\"content\":\"hi\"}"
+    },
+    "keyOrderContentRole": {
+      "note": "**键序 content → role**（逆序也应保持）",
+      "kind": "oai",
+      "maxChars": 100000,
+      "output": "{\"content\":\"hi\",\"role\":\"user\"}"
+    },
+    "keyOrderToolCallIdFirst": {
+      "note": "**键序 tool_call_id → role → content**",
+      "kind": "oai",
+      "maxChars": 100000,
+      "output": "{\"tool_call_id\":\"c1\",\"role\":\"tool\",\"content\":\"r\"}"
+    },
+    "keyOrderAssistant": {
+      "note": "assistant 的 role → content → tool_calls 序",
+      "kind": "oai",
+      "maxChars": 100000,
+      "output": "{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{}\"}}]}"
+    },
+    "longStringCap": {
+      "note": "**第 2 层**：长字符串被 cap 到 maxChars*0.8",
+      "kind": "session",
+      "maxChars": 1500,
+      "output": "{\"role\":\"user\",\"content\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\n<session-message-truncated original_chars=\\\"2000\\\" kept_chars=\\\"1200\\\" />\"}"
+    },
+    "nestedCap": {
+      "note": "嵌套结构的字符串都被 cap",
+      "kind": "session",
+      "maxChars": 1200,
+      "output": "{\"role\":\"user\",\"content\":\"{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\n<session-message-truncated original_chars=\\\"6048\\\" kept_chars=\\\"1200\\\" />\"}"
+    },
+    "arrayCap": {
+      "note": "数组元素被逐个 cap",
+      "kind": "session",
+      "maxChars": 1300,
+      "output": "{\"role\":\"user\",\"content\":\"{\\\"role\\\":\\\"user\\\",\\\"content\\\":[\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n<session-message-truncated original_chars=\\\"4033\\\" kept_chars=\\\"1300\\\" />\"}"
+    },
+    "fallbackTriggered": {
+      "note": "**第 3 层**：cap 后仍超长 → fallback",
+      "kind": "session",
+      "maxChars": 30,
+      "output": "{\"role\":\"user\",\"content\":\"\\n<session-message-truncated original_chars=\\\"437\\\" kept_chars=\\\"30\\\" />\"}"
+    },
+    "fallbackOai": {
+      "note": "OAI 的 fallback（tool 角色带 tool_call_id）",
+      "kind": "oai",
+      "maxChars": 30,
+      "output": "{\"role\":\"tool\",\"content\":\"\\n<session-message-truncated original_chars=\\\"348\\\" kept_chars=\\\"30\\\" />\",\"tool_call_id\":\"c9\"}"
+    },
+    "fallbackNonTool": {
+      "note": "OAI 的 fallback（非 tool 角色不带 tool_call_id）",
+      "kind": "oai",
+      "maxChars": 30,
+      "output": "{\"role\":\"user\",\"content\":\"\\n<session-message-truncated original_chars=\\\"328\\\" kept_chars=\\\"30\\\" />\"}"
+    },
+    "exactlyAtLimit": {
+      "note": "恰好等于 maxChars → 不截断",
+      "kind": "session",
+      "maxChars": 31,
+      "output": "{\"role\":\"user\",\"content\":\"abc\"}"
+    },
+    "oneOverLimit": {
+      "note": "超出 1 字符 → 触发截断",
+      "kind": "session",
+      "maxChars": 31,
+      "output": "{\"role\":\"user\",\"content\":\"\\n<session-message-truncated original_chars=\\\"32\\\" kept_chars=\\\"31\\\" />\"}"
+    },
+    "tinyBudget": {
+      "note": "极小 maxChars → marker 比额度还长（keep 归 0）",
+      "kind": "session",
+      "maxChars": 10,
+      "output": "{\"role\":\"user\",\"content\":\"\\n<session-message-truncated original_chars=\\\"128\\\" kept_chars=\\\"10\\\" />\"}"
+    },
+    "emojiLength": {
+      "note": "**UTF-16 语义**：emoji 计 2",
+      "kind": "session",
+      "maxChars": 100,
+      "output": "{\"role\":\"user\",\"content\":\"{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"😀😀😀\\n<session-message-truncated original_chars=\\\"128\\\" kept_chars=\\\"100\\\" />\"}"
+    },
+    "emptyToolCallsNormalized": {
+      "note": "空 tool_calls 数组被归一化移除后再序列化",
+      "kind": "oai",
+      "maxChars": 100000,
+      "output": "{\"role\":\"assistant\",\"content\":\"text\"}"
+    },
+    "nullContent": {
+      "note": "content 为 null → 归一化补空串",
+      "kind": "oai",
+      "maxChars": 100000,
+      "output": "{\"role\":\"assistant\",\"content\":\"\"}"
+    }
+  }
+}

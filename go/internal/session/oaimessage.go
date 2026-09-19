@@ -15,6 +15,16 @@ type OaiMessage struct {
 	ToolCallID string
 	// 其余字段原样保留（透传，不解析）
 	Extra map[string]any
+
+	// KeyOrder 是**原始 JSON 的键序**。
+	//
+	// 为什么必须保留：TS 的 `JSON.stringify(message)` 保**插入序**，而插入序
+	// 由对象构造决定（从 JSON.parse 得来的是文件序、代码字面量是书写序）。
+	// 用固定序重建会产出与 TS 不同的字节——oracle 的 keyOrderContentRole /
+	// keyOrderToolCallIdFirst 用例锁定这一点。
+	//
+	// 为 nil 时退化为「role → content → tool_calls → tool_call_id」的默认序。
+	KeyOrder []string
 }
 
 // OaiToolCall 是一次工具调用。
