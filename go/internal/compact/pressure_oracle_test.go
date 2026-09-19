@@ -1,0 +1,361 @@
+package compact
+
+import (
+	"encoding/json"
+	"math"
+	"os"
+	"path/filepath"
+	"strconv"
+	"testing"
+)
+
+type pressureOracle struct {
+	Constants struct {
+		LargeContextWindowTokens int `json:"largeContextWindowTokens"`
+	} `json:"constants"`
+	Strategies []struct {
+		Name   string              `json:"name"`
+		Ratios CompactPolicyRatios `json:"ratios"`
+	} `json:"strategies"`
+	Adaptive []struct {
+		HitRate         float64             `json:"hitRate"`
+		Balanced        CompactPolicyRatios `json:"balanced"`
+		CachePreserving CompactPolicyRatios `json:"cachePreserving"`
+	} `json:"adaptive"`
+	Ceilings []struct {
+		Window   int      `json:"window"`
+		Override *float64 `json:"override"`
+		Want     float64  `json:"want"`
+	} `json:"ceilings"`
+	Tiers []struct {
+		Name    string   `json:"name"`
+		Ratio   float64  `json:"ratio"`
+		HitRate *float64 `json:"hitRate"`
+		Ceiling *float64 `json:"ceiling"`
+		Want    int      `json:"want"`
+	} `json:"tiers"`
+	Checks []struct {
+		Name   string `json:"name"`
+		Window int    `json:"window"`
+		Want   []struct {
+			Turn              int      `json:"turn"`
+			Tokens            int      `json:"tokens"`
+			Tier              int      `json:"tier"`
+			ShouldCompact     bool     `json:"shouldCompact"`
+			Thrashing         bool     `json:"thrashing"`
+			FastGrowth        bool     `json:"fastGrowth"`
+			Ratio             float64  `json:"ratio"`
+			GrowthRate        float64  `json:"growthRate"`
+			CvmOverheadRatio  float64  `json:"cvmOverheadRatio"`
+			ShouldThrottleCvm bool     `json:"shouldThrottleCvm"`
+			PressureRelative  *float64 `json:"pressureRelative"`
+			Suggestion        *string  `json:"suggestion"`
+		} `json:"want"`
+	} `json:"checks"`
+	Cvm []struct {
+		Name   string `json:"name"`
+		Window int    `json:"window"`
+		Want   []struct {
+			Injected   int     `json:"injected"`
+			Ratio      float64 `json:"ratio"`
+			Throttling bool    `json:"throttling"`
+			Ceiling    bool    `json:"ceiling"`
+		} `json:"want"`
+	} `json:"cvm"`
+	Thrashing []struct {
+		Name        string `json:"name"`
+		Compactions []int  `json:"compactions"`
+		Turn        int    `json:"turn"`
+		Want        bool   `json:"want"`
+	} `json:"thrashing"`
+}
+
+func loadPressureOracle(t *testing.T) pressureOracle {
+	t.Helper()
+	p := filepath.Join("..", "..", "testdata", "pressure", "oracle.json")
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("读 oracle 失败（先跑 node_modules/.bin/tsx go/testdata/pressure/gen-oracle.ts）：%v", err)
+	}
+	var out pressureOracle
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("解析 oracle 失败：%v", err)
+	}
+	return out
+}
+
+func near(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
+
+func ratiosEqual(a, b CompactPolicyRatios) bool {
+	return near(a.Watch, b.Watch) && near(a.Compact, b.Compact) &&
+		near(a.Reactive, b.Reactive) && near(a.Ceiling, b.Ceiling)
+}
+
+// TestPressureConstants —— 常量与 TS 一致。
+func TestPressureConstants(t *testing.T) {
+	o := loadPressureOracle(t)
+	if LargeContextWindowTokens != o.Constants.LargeContextWindowTokens {
+		t.Errorf("LargeContextWindowTokens：Go=%d TS=%d",
+			LargeContextWindowTokens, o.Constants.LargeContextWindowTokens)
+	}
+}
+
+// TestCompactPolicyRatiosParity —— **三策略分层的比值逐例对账**。
+func TestCompactPolicyRatiosParity(t *testing.T) {
+	o := loadPressureOracle(t)
+	for _, c := range o.Strategies {
+		t.Run(c.Name, func(t *testing.T) {
+			// 由用例名推导 profile（与生成器的 strategies 表对应）
+			var profile *CompactRatioProfile
+			switch c.Name {
+			case "none-persistent":
+				profile = &CompactRatioProfile{CacheType: CacheNone, Persistent: true}
+			case "none-ephemeral":
+				profile = &CompactRatioProfile{CacheType: CacheNone, Persistent: false}
+			case "exact-prefix-persistent":
+				profile = &CompactRatioProfile{CacheType: CacheExactPrefix, Persistent: true}
+			case "exact-prefix-ephemeral":
+				profile = &CompactRatioProfile{CacheType: CacheExactPrefix, Persistent: false}
+			case "explicit-breakpoint":
+				profile = &CompactRatioProfile{CacheType: CacheExplicitBreakpoint, Persistent: false}
+			case "partial-prefix":
+				profile = &CompactRatioProfile{CacheType: CachePartialPrefix, Persistent: true}
+			case "block-kv":
+				profile = &CompactRatioProfile{CacheType: CacheBlockKV, Persistent: false}
+			case "no-profile":
+				profile = nil
+			default:
+				t.Fatalf("未知用例 %q", c.Name)
+			}
+			got := CompactPolicyRatiosFor(profile)
+			if !ratiosEqual(got, c.Ratios) {
+				t.Errorf("比值不符：\nGo=%+v\nTS=%+v", got, c.Ratios)
+			}
+		})
+	}
+}
+
+// TestAdaptiveRatiosParity —— **缓存命中率自适应调整**（含两个边界 0.85 / 0.3）。
+func TestAdaptiveRatiosParity(t *testing.T) {
+	o := loadPressureOracle(t)
+	cpProfile := &CompactRatioProfile{CacheType: CacheExactPrefix, Persistent: true}
+	for _, c := range o.Adaptive {
+		t.Run(itoaF(c.HitRate), func(t *testing.T) {
+			if got := AdaptiveCompactPolicyRatios(nil, c.HitRate); !ratiosEqual(got, c.Balanced) {
+				t.Errorf("balanced 不符：Go=%+v TS=%+v", got, c.Balanced)
+			}
+			if got := AdaptiveCompactPolicyRatios(cpProfile, c.HitRate); !ratiosEqual(got, c.CachePreserving) {
+				t.Errorf("cache-preserving 不符：Go=%+v TS=%+v", got, c.CachePreserving)
+			}
+		})
+	}
+}
+
+// TestPrecisionCeilingParity —— **精度天花板**（含 override 的合法性判据）。
+func TestPrecisionCeilingParity(t *testing.T) {
+	o := loadPressureOracle(t)
+	for _, c := range o.Ceilings {
+		name := itoa(c.Window)
+		if c.Override != nil {
+			name += "/override=" + itoaF(*c.Override)
+		}
+		t.Run(name, func(t *testing.T) {
+			if got := PrecisionCeilingRatio(c.Window, c.Override); !near(got, c.Want) {
+				t.Errorf("天花板不符：Go=%v TS=%v", got, c.Want)
+			}
+		})
+	}
+}
+
+// TestTierForRatioParity —— **五档判定逐值对账**。
+//
+// 关键用例是 `precision-ceiling-floor`：0.71 落在 cache-preserving 的
+// watch(0.72) 之下、天花板(0.70) 之上 → **必须是 tier 2**（地板语义）。
+// 若写成回退分支（`return 1` 在前），0.71 会变成 1，而 0.75 是 2——
+// ladder 非单调。
+func TestTierForRatioParity(t *testing.T) {
+	o := loadPressureOracle(t)
+	cpProfile := &CompactRatioProfile{CacheType: CacheExactPrefix, Persistent: true}
+	noneProfile := &CompactRatioProfile{CacheType: CacheNone, Persistent: false}
+	for _, c := range o.Tiers {
+		t.Run(c.Name, func(t *testing.T) {
+			var profile *CompactRatioProfile
+			switch c.Name {
+			case "cache-preserving-0.71", "cache-preserving-0.72", "cache-preserving-0.86",
+				"precision-ceiling-floor", "precision-ceiling-above", "precision-ceiling-not-hit":
+				profile = cpProfile
+			case "aggressive-0.5", "aggressive-0.7":
+				profile = noneProfile
+			}
+			got := TierForRatio(c.Ratio, profile, c.HitRate, c.Ceiling)
+			if int(got) != c.Want {
+				t.Errorf("tier 不符：ratio=%v Go=%d TS=%d", c.Ratio, got, c.Want)
+			}
+		})
+	}
+}
+
+// TestPressureCheckParity —— **check 的八字段逐轮对账**（四条 token 序列）。
+func TestPressureCheckParity(t *testing.T) {
+	o := loadPressureOracle(t)
+	for _, seq := range o.Checks {
+		t.Run(seq.Name, func(t *testing.T) {
+			m := NewPressureMonitor(seq.Window)
+			for i, w := range seq.Want {
+				got := m.Check(w.Tokens, w.Turn)
+				if int(got.Tier) != w.Tier {
+					t.Errorf("第 %d 轮 tier：Go=%d TS=%d", i, got.Tier, w.Tier)
+				}
+				if got.ShouldCompact != w.ShouldCompact {
+					t.Errorf("第 %d 轮 shouldCompact：Go=%v TS=%v", i, got.ShouldCompact, w.ShouldCompact)
+				}
+				if got.Thrashing != w.Thrashing {
+					t.Errorf("第 %d 轮 thrashing：Go=%v TS=%v", i, got.Thrashing, w.Thrashing)
+				}
+				if got.FastGrowth != w.FastGrowth {
+					t.Errorf("第 %d 轮 fastGrowth：Go=%v TS=%v", i, got.FastGrowth, w.FastGrowth)
+				}
+				if !near(got.Ratio, w.Ratio) {
+					t.Errorf("第 %d 轮 ratio：Go=%v TS=%v", i, got.Ratio, w.Ratio)
+				}
+				if !near(got.GrowthRate, w.GrowthRate) {
+					t.Errorf("第 %d 轮 growthRate：Go=%v TS=%v", i, got.GrowthRate, w.GrowthRate)
+				}
+				if !near(got.CvmOverheadRatio, w.CvmOverheadRatio) {
+					t.Errorf("第 %d 轮 cvmOverheadRatio：Go=%v TS=%v", i, got.CvmOverheadRatio, w.CvmOverheadRatio)
+				}
+				if got.ShouldThrottleCvm != w.ShouldThrottleCvm {
+					t.Errorf("第 %d 轮 shouldThrottleCvm：Go=%v TS=%v", i, got.ShouldThrottleCvm, w.ShouldThrottleCvm)
+				}
+				// pressureRelative：nil 与非 nil 必须严格区分
+				if (got.PressureRelative == nil) != (w.PressureRelative == nil) {
+					t.Errorf("第 %d 轮 pressureRelative 的 nil 性不符：Go=%v TS=%v",
+						i, got.PressureRelative, w.PressureRelative)
+				} else if got.PressureRelative != nil && !near(*got.PressureRelative, *w.PressureRelative) {
+					t.Errorf("第 %d 轮 pressureRelative：Go=%v TS=%v", i, *got.PressureRelative, *w.PressureRelative)
+				}
+				// suggestion
+				gotSug := got.Suggestion
+				wantSug := ""
+				if w.Suggestion != nil {
+					wantSug = *w.Suggestion
+				}
+				if gotSug != wantSug {
+					t.Errorf("第 %d 轮 suggestion：Go=%q TS=%q", i, gotSug, wantSug)
+				}
+			}
+		})
+	}
+}
+
+// TestCvmThrottlingParity —— **CVM 节流阈值（5%）与天花板（8%）**。
+func TestCvmThrottlingParity(t *testing.T) {
+	o := loadPressureOracle(t)
+	for _, c := range o.Cvm {
+		t.Run(c.Name, func(t *testing.T) {
+			m := NewPressureMonitor(c.Window)
+			for i, w := range c.Want {
+				m.RecordCvmInjection(w.Injected, SourceProjection)
+				if !near(m.CvmOverheadRatio(), w.Ratio) {
+					t.Errorf("第 %d 次 ratio：Go=%v TS=%v", i, m.CvmOverheadRatio(), w.Ratio)
+				}
+				if m.IsCvmThrottling() != w.Throttling {
+					t.Errorf("第 %d 次 throttling：Go=%v TS=%v", i, m.IsCvmThrottling(), w.Throttling)
+				}
+				if m.IsCvmThrottlingCeiling() != w.Ceiling {
+					t.Errorf("第 %d 次 ceiling：Go=%v TS=%v", i, m.IsCvmThrottlingCeiling(), w.Ceiling)
+				}
+			}
+		})
+	}
+}
+
+// TestThrashingDetectionParity —— **抖动检测**（近 4 轮内压缩 ≥ 3 次）。
+func TestThrashingDetectionParity(t *testing.T) {
+	o := loadPressureOracle(t)
+	for _, c := range o.Thrashing {
+		t.Run(c.Name, func(t *testing.T) {
+			m := NewPressureMonitor(1_000_000)
+			for _, turn := range c.Compactions {
+				m.RecordCompaction(turn)
+			}
+			got := m.Check(100_000, c.Turn).Thrashing
+			if got != c.Want {
+				t.Errorf("thrashing：Go=%v TS=%v（compactions=%v turn=%d）",
+					got, c.Want, c.Compactions, c.Turn)
+			}
+		})
+	}
+}
+
+// TestP90Semantics —— **p90 是「排序后按下标取」而非插值分位**。
+//
+// TS 用 `sorted[floor(len * 0.9)]`——Go 侧若用插值（如 gonum 的
+// stat.Quantile）会得到不同值，进而让 pressureRelative 漂移。
+func TestP90Semantics(t *testing.T) {
+	cases := []struct {
+		in   []float64
+		want float64
+	}{
+		{[]float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, 10}, // floor(10*0.9)=9 → 第 10 个
+		{[]float64{1, 2, 3, 4, 5}, 5},                  // floor(5*0.9)=4 → 第 5 个
+		{[]float64{5, 1, 3}, 5},                        // floor(3*0.9)=2 → 最大
+		{[]float64{1}, 1},
+		{[]float64{}, 0},
+		{[]float64{2, 1}, 2}, // floor(2*0.9)=1 → 第 2 个
+	}
+	for _, c := range cases {
+		if got := p90(c.in); !near(got, c.want) {
+			t.Errorf("p90(%v) = %v，期望 %v", c.in, got, c.want)
+		}
+	}
+}
+
+// TestReasonForTierParity —— 档位原因文本（逐字对账）。
+func TestReasonForTierParity(t *testing.T) {
+	want := map[CompactTier]string{
+		TierNone:     "context usage below watch threshold",
+		TierWatch:    "tool results exceeded watch threshold",
+		TierCompact:  "session memory compact recommended",
+		TierReactive: "reactive round summarization required",
+		TierCeiling:  "context ceiling exceeded; checkpoint-resume required",
+	}
+	for tier, w := range want {
+		if got := ReasonForTier(tier); got != w {
+			t.Errorf("ReasonForTier(%d)：Go=%q TS=%q", tier, got, w)
+		}
+	}
+}
+
+// TestCvmBySourceInvariant —— **不变量：各来源之和 == 累计值**。
+func TestCvmBySourceInvariant(t *testing.T) {
+	m := NewPressureMonitor(1_000_000)
+	m.RecordCvmInjection(100, SourceProjection)
+	m.RecordCvmInjection(200, SourceSystemReminder)
+	m.RecordCvmInjection(50, SourceProjection)
+
+	sum := 0
+	for _, v := range m.CvmInjectionBySource() {
+		sum += v
+	}
+	if sum != m.cvmTokenAccumulator {
+		t.Errorf("来源之和 %d ≠ 累计值 %d（不变量被破坏）", sum, m.cvmTokenAccumulator)
+	}
+	if m.cvmTokenAccumulator != 350 {
+		t.Errorf("累计值应为 350，得到 %d", m.cvmTokenAccumulator)
+	}
+
+	// Reset 后应全清
+	m.ResetCvmOverhead()
+	if m.cvmTokenAccumulator != 0 || len(m.CvmInjectionBySource()) != 0 {
+		t.Error("ResetCvmOverhead 未清空状态")
+	}
+}
+
+func itoa(n int) string {
+	return strconv.Itoa(n)
+}
+
+func itoaF(f float64) string {
+	return strconv.FormatFloat(f, 'g', -1, 64)
+}

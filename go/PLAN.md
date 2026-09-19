@@ -1052,9 +1052,59 @@ per-key 统计随会话死亡，每个新会话都要从零攒（holdout 资格�
 
 **oracle**：`advisorybus` 60 → **68 用例**（+8）。
 
-**下一步**：`internal/context` 剩余子系统（CognitiveLedger / Stigmergy /
-PressureMonitor / task-contract / compact-policy），或未移植的工具
-（`plan` / `job` / `git` / `web_fetch` / `repo_map` 等 11 个）。
+### 第二十四刀（已完成）：compact 策略层 + PressureMonitor（2026-09-19）
+
+✅ 新包 `internal/compact`——三策略分层 + 五档判定 + 压力监控（19 包）
+
+**这一刀为「前缀缓存」支柱打地基**：`PressureMonitor` 是边界压缩的决策输入，
+而压缩时机直接影响缓存命中率。
+
+**为什么独立成包**：`PressureMonitor` 依赖压缩策略，而 `internal/agent` 不该
+反向依赖它——两者是并列的消费方。
+
+**对账范围**（`src/compact/constants.ts` + `src/context/compact-policy.ts` +
+`src/context/pressure-monitor.ts` 的策略判定部分）：
+
+| 组件 | 语义 |
+|---|---|
+| `StrategyForCacheType` | `exact-prefix && persistent` → cache-preserving；`none` → aggressive；其余 balanced |
+| `CompactPolicyRatiosFor` | 三策略各四档比值（如 cache-preserving 是 0.72/0.86/0.92/0.95） |
+| `AdaptiveCompactPolicyRatios` | 命中率 ≥0.85 各档上移、<0.3 下移；**ceiling 恒不调整** |
+| `PrecisionCeilingRatio` | 大窗口 0.7 / 中窗口 0.55 / 小窗口 1（无天花板） |
+| `TierForRatio` | 五档判定 |
+| `PressureMonitor.Check` | 八字段 + pressureRelative + suggestion |
+
+**三处易错点（都有 oracle 锁定）**：
+
+1. **精度天花板必须是地板，不是回退分支**。当它（0.70）低于 cache-preserving
+   的 watch（0.72）时，早先的 `return 1` 会遮蔽它，让 ladder **非单调**——
+   ratio 0.71 压缩而 0.75 只 watch。oracle 的 `precision-ceiling-floor`
+   用例锁定：0.71 → **tier 2**。
+2. **相对压力必须取 log2**（TS 注释原文）：`min(1, ratio/p90)` 在单调增长时
+   恒被钉死在 1.0——实测 901 轮里 662 轮（73.5%）pressure 恰为 0.50，该维度
+   不再携带信息。改用「超出倍数」的 log2：持平基线 0，2 倍为 1.0。
+3. **p90 是「排序后按下标取」而非插值分位**（`sorted[floor(len*0.9)]`）——
+   用插值会让 pressureRelative 漂移。
+
+**用户级验收（已执行）**：oracle 对账 8 组共 60+ 子用例全绿：
+
+- `TestCompactPolicyRatiosParity`——8 种 profile 组合
+- `TestAdaptiveRatiosParity`——9 个命中率（含 0.85 / 0.3 两边界）
+- `TestPrecisionCeilingParity`——10 个窗口/override 组合
+- `TestTierForRatioParity`——17 个 ratio（含非单调性用例）
+- `TestPressureCheckParity`——4 条 token 序列 × 八字段
+- `TestCvmThrottlingParity`——5% 阈值 + 8% 天花板
+- `TestThrashingDetectionParity`——5 个用例（含 4 轮边界）
+- `TestP90Semantics` / `TestReasonForTierParity` / `TestCvmBySourceInvariant`
+
+**变异反证 6 个有判别力**（精度天花板失效红 3 / ceiling 档失效红 5 /
+策略分层失效红 15 / 相对压力不取 log2 红 3 / 抖动检测失效红 3 / fastGrowth 失效红 4）。
+
+**oracle**：新增 `pressure` 数据集。
+
+**下一步**：`internal/compact` 的**压缩执行**部分（`decideCompactAction` +
+熔断器状态机 + `CompactThresholds`），或 `internal/context` 其余子系统
+（CognitiveLedger / Stigmergy / task-contract）。
 
 **为什么是它而不是补工具**：
 

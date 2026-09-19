@@ -1,0 +1,786 @@
+{
+  "constants": {
+    "largeContextWindowTokens": 500000
+  },
+  "strategies": [
+    {
+      "name": "none-persistent",
+      "ratios": {
+        "watch": 0.5,
+        "compact": 0.7,
+        "reactive": 0.84,
+        "ceiling": 0.95
+      }
+    },
+    {
+      "name": "none-ephemeral",
+      "ratios": {
+        "watch": 0.5,
+        "compact": 0.7,
+        "reactive": 0.84,
+        "ceiling": 0.95
+      }
+    },
+    {
+      "name": "exact-prefix-persistent",
+      "ratios": {
+        "watch": 0.72,
+        "compact": 0.86,
+        "reactive": 0.92,
+        "ceiling": 0.95
+      }
+    },
+    {
+      "name": "exact-prefix-ephemeral",
+      "ratios": {
+        "watch": 0.6,
+        "compact": 0.78,
+        "reactive": 0.88,
+        "ceiling": 0.95
+      }
+    },
+    {
+      "name": "explicit-breakpoint",
+      "ratios": {
+        "watch": 0.6,
+        "compact": 0.78,
+        "reactive": 0.88,
+        "ceiling": 0.95
+      }
+    },
+    {
+      "name": "partial-prefix",
+      "ratios": {
+        "watch": 0.6,
+        "compact": 0.78,
+        "reactive": 0.88,
+        "ceiling": 0.95
+      }
+    },
+    {
+      "name": "block-kv",
+      "ratios": {
+        "watch": 0.6,
+        "compact": 0.78,
+        "reactive": 0.88,
+        "ceiling": 0.95
+      }
+    },
+    {
+      "name": "no-profile",
+      "ratios": {
+        "watch": 0.6,
+        "compact": 0.78,
+        "reactive": 0.88,
+        "ceiling": 0.95
+      }
+    }
+  ],
+  "adaptive": [
+    {
+      "hitRate": 0,
+      "balanced": {
+        "watch": 0.5,
+        "compact": 0.7000000000000001,
+        "reactive": 0.83,
+        "ceiling": 0.95
+      },
+      "cachePreserving": {
+        "watch": 0.62,
+        "compact": 0.78,
+        "reactive": 0.87,
+        "ceiling": 0.95
+      }
+    },
+    {
+      "hitRate": 0.2,
+      "balanced": {
+        "watch": 0.5,
+        "compact": 0.7000000000000001,
+        "reactive": 0.83,
+        "ceiling": 0.95
+      },
+      "cachePreserving": {
+        "watch": 0.62,
+        "compact": 0.78,
+        "reactive": 0.87,
+        "ceiling": 0.95
+      }
+    },
+    {
+      "hitRate": 0.29,
+      "balanced": {
+        "watch": 0.5,
+        "compact": 0.7000000000000001,
+        "reactive": 0.83,
+        "ceiling": 0.95
+      },
+      "cachePreserving": {
+        "watch": 0.62,
+        "compact": 0.78,
+        "reactive": 0.87,
+        "ceiling": 0.95
+      }
+    },
+    {
+      "hitRate": 0.3,
+      "balanced": {
+        "watch": 0.6,
+        "compact": 0.78,
+        "reactive": 0.88,
+        "ceiling": 0.95
+      },
+      "cachePreserving": {
+        "watch": 0.72,
+        "compact": 0.86,
+        "reactive": 0.92,
+        "ceiling": 0.95
+      }
+    },
+    {
+      "hitRate": 0.5,
+      "balanced": {
+        "watch": 0.6,
+        "compact": 0.78,
+        "reactive": 0.88,
+        "ceiling": 0.95
+      },
+      "cachePreserving": {
+        "watch": 0.72,
+        "compact": 0.86,
+        "reactive": 0.92,
+        "ceiling": 0.95
+      }
+    },
+    {
+      "hitRate": 0.84,
+      "balanced": {
+        "watch": 0.6,
+        "compact": 0.78,
+        "reactive": 0.88,
+        "ceiling": 0.95
+      },
+      "cachePreserving": {
+        "watch": 0.72,
+        "compact": 0.86,
+        "reactive": 0.92,
+        "ceiling": 0.95
+      }
+    },
+    {
+      "hitRate": 0.85,
+      "balanced": {
+        "watch": 0.65,
+        "compact": 0.81,
+        "reactive": 0.9,
+        "ceiling": 0.95
+      },
+      "cachePreserving": {
+        "watch": 0.77,
+        "compact": 0.89,
+        "reactive": 0.9400000000000001,
+        "ceiling": 0.95
+      }
+    },
+    {
+      "hitRate": 0.9,
+      "balanced": {
+        "watch": 0.65,
+        "compact": 0.81,
+        "reactive": 0.9,
+        "ceiling": 0.95
+      },
+      "cachePreserving": {
+        "watch": 0.77,
+        "compact": 0.89,
+        "reactive": 0.9400000000000001,
+        "ceiling": 0.95
+      }
+    },
+    {
+      "hitRate": 1,
+      "balanced": {
+        "watch": 0.65,
+        "compact": 0.81,
+        "reactive": 0.9,
+        "ceiling": 0.95
+      },
+      "cachePreserving": {
+        "watch": 0.77,
+        "compact": 0.89,
+        "reactive": 0.9400000000000001,
+        "ceiling": 0.95
+      }
+    }
+  ],
+  "ceilings": [
+    {
+      "window": 1000,
+      "want": 1
+    },
+    {
+      "window": 199999,
+      "want": 1
+    },
+    {
+      "window": 200000,
+      "want": 0.55
+    },
+    {
+      "window": 499999,
+      "want": 0.55
+    },
+    {
+      "window": 500000,
+      "want": 0.7
+    },
+    {
+      "window": 1000000,
+      "want": 0.7
+    },
+    {
+      "window": 1000000,
+      "override": 0.42,
+      "want": 0.42
+    },
+    {
+      "window": 1000000,
+      "override": 0,
+      "want": 0.7
+    },
+    {
+      "window": 1000000,
+      "override": 1,
+      "want": 0.7
+    },
+    {
+      "window": 1000000,
+      "override": 1.5,
+      "want": 0.7
+    }
+  ],
+  "tiers": [
+    {
+      "name": "balanced-0.0",
+      "ratio": 0,
+      "want": 0
+    },
+    {
+      "name": "balanced-watch-boundary",
+      "ratio": 0.6,
+      "want": 1
+    },
+    {
+      "name": "balanced-compact-boundary",
+      "ratio": 0.78,
+      "want": 2
+    },
+    {
+      "name": "balanced-reactive-boundary",
+      "ratio": 0.88,
+      "want": 3
+    },
+    {
+      "name": "balanced-ceiling-boundary",
+      "ratio": 0.95,
+      "want": 4
+    },
+    {
+      "name": "balanced-above-ceiling",
+      "ratio": 0.99,
+      "want": 4
+    },
+    {
+      "name": "cache-preserving-0.71",
+      "ratio": 0.71,
+      "profile": {
+        "cacheType": "exact-prefix",
+        "persistent": true
+      },
+      "want": 0
+    },
+    {
+      "name": "cache-preserving-0.72",
+      "ratio": 0.72,
+      "profile": {
+        "cacheType": "exact-prefix",
+        "persistent": true
+      },
+      "want": 1
+    },
+    {
+      "name": "cache-preserving-0.86",
+      "ratio": 0.86,
+      "profile": {
+        "cacheType": "exact-prefix",
+        "persistent": true
+      },
+      "want": 2
+    },
+    {
+      "name": "aggressive-0.5",
+      "ratio": 0.5,
+      "profile": {
+        "cacheType": "none",
+        "persistent": false
+      },
+      "want": 1
+    },
+    {
+      "name": "aggressive-0.7",
+      "ratio": 0.7,
+      "profile": {
+        "cacheType": "none",
+        "persistent": false
+      },
+      "want": 2
+    },
+    {
+      "name": "hot-cache-delays",
+      "ratio": 0.65,
+      "hitRate": 0.9,
+      "want": 1
+    },
+    {
+      "name": "cold-cache-advances",
+      "ratio": 0.65,
+      "hitRate": 0.1,
+      "want": 1
+    },
+    {
+      "name": "null-hitrate-falls-back",
+      "ratio": 0.65,
+      "hitRate": null,
+      "want": 1
+    },
+    {
+      "name": "precision-ceiling-floor",
+      "ratio": 0.71,
+      "profile": {
+        "cacheType": "exact-prefix",
+        "persistent": true
+      },
+      "ceiling": 0.7,
+      "want": 2
+    },
+    {
+      "name": "precision-ceiling-above",
+      "ratio": 0.75,
+      "profile": {
+        "cacheType": "exact-prefix",
+        "persistent": true
+      },
+      "ceiling": 0.7,
+      "want": 2
+    },
+    {
+      "name": "precision-ceiling-not-hit",
+      "ratio": 0.65,
+      "profile": {
+        "cacheType": "exact-prefix",
+        "persistent": true
+      },
+      "ceiling": 0.7,
+      "want": 0
+    }
+  ],
+  "checks": [
+    {
+      "name": "steady-growth",
+      "window": 1000000,
+      "want": [
+        {
+          "turn": 1,
+          "tokens": 100000,
+          "tier": 0,
+          "shouldCompact": false,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.1,
+          "growthRate": 0,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        },
+        {
+          "turn": 2,
+          "tokens": 120000,
+          "tier": 0,
+          "shouldCompact": false,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.12,
+          "growthRate": 0.01999999999999999,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        },
+        {
+          "turn": 3,
+          "tokens": 140000,
+          "tier": 0,
+          "shouldCompact": false,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.14,
+          "growthRate": 0.020000000000000018,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        },
+        {
+          "turn": 4,
+          "tokens": 160000,
+          "tier": 0,
+          "shouldCompact": false,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.16,
+          "growthRate": 0.01999999999999999,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        },
+        {
+          "turn": 5,
+          "tokens": 180000,
+          "tier": 0,
+          "shouldCompact": false,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.18,
+          "growthRate": 0.01999999999999999,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        },
+        {
+          "turn": 6,
+          "tokens": 200000,
+          "tier": 0,
+          "shouldCompact": false,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.2,
+          "growthRate": 0.020000000000000018,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": 0.15200309344505006,
+          "suggestion": null
+        },
+        {
+          "turn": 7,
+          "tokens": 220000,
+          "tier": 0,
+          "shouldCompact": false,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.22,
+          "growthRate": 0.01999999999999999,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": 0.13750352374993474,
+          "suggestion": null
+        }
+      ]
+    },
+    {
+      "name": "fast-growth-spike",
+      "window": 1000000,
+      "want": [
+        {
+          "turn": 1,
+          "tokens": 100000,
+          "tier": 0,
+          "shouldCompact": false,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.1,
+          "growthRate": 0,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        },
+        {
+          "turn": 2,
+          "tokens": 300000,
+          "tier": 0,
+          "shouldCompact": false,
+          "thrashing": false,
+          "fastGrowth": true,
+          "ratio": 0.3,
+          "growthRate": 0.19999999999999998,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        },
+        {
+          "turn": 3,
+          "tokens": 320000,
+          "tier": 0,
+          "shouldCompact": false,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.32,
+          "growthRate": 0.020000000000000018,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        }
+      ]
+    },
+    {
+      "name": "crossing-tiers",
+      "window": 1000000,
+      "want": [
+        {
+          "turn": 1,
+          "tokens": 100000,
+          "tier": 0,
+          "shouldCompact": false,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.1,
+          "growthRate": 0,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        },
+        {
+          "turn": 2,
+          "tokens": 600000,
+          "tier": 1,
+          "shouldCompact": true,
+          "thrashing": false,
+          "fastGrowth": true,
+          "ratio": 0.6,
+          "growthRate": 0.5,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        },
+        {
+          "turn": 3,
+          "tokens": 720000,
+          "tier": 1,
+          "shouldCompact": true,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.72,
+          "growthRate": 0.12,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        },
+        {
+          "turn": 4,
+          "tokens": 860000,
+          "tier": 2,
+          "shouldCompact": true,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.86,
+          "growthRate": 0.14,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        },
+        {
+          "turn": 5,
+          "tokens": 920000,
+          "tier": 3,
+          "shouldCompact": true,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.92,
+          "growthRate": 0.06000000000000005,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        },
+        {
+          "turn": 6,
+          "tokens": 960000,
+          "tier": 4,
+          "shouldCompact": true,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.96,
+          "growthRate": 0.039999999999999925,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": 0.06140054466414327,
+          "suggestion": null
+        }
+      ]
+    },
+    {
+      "name": "small-window",
+      "window": 1000,
+      "want": [
+        {
+          "turn": 1,
+          "tokens": 100,
+          "tier": 0,
+          "shouldCompact": false,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.1,
+          "growthRate": 0,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        },
+        {
+          "turn": 2,
+          "tokens": 600,
+          "tier": 1,
+          "shouldCompact": true,
+          "thrashing": false,
+          "fastGrowth": true,
+          "ratio": 0.6,
+          "growthRate": 0.5,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        },
+        {
+          "turn": 3,
+          "tokens": 700,
+          "tier": 1,
+          "shouldCompact": true,
+          "thrashing": false,
+          "fastGrowth": false,
+          "ratio": 0.7,
+          "growthRate": 0.09999999999999998,
+          "cvmOverheadRatio": 0,
+          "shouldThrottleCvm": false,
+          "pressureRelative": null,
+          "suggestion": null
+        }
+      ]
+    }
+  ],
+  "cvm": [
+    {
+      "name": "below-threshold",
+      "window": 1000000,
+      "want": [
+        {
+          "injected": 10000,
+          "ratio": 0.01,
+          "throttling": false,
+          "ceiling": false
+        },
+        {
+          "injected": 20000,
+          "ratio": 0.03,
+          "throttling": false,
+          "ceiling": false
+        }
+      ]
+    },
+    {
+      "name": "crossing-5pct",
+      "window": 1000000,
+      "want": [
+        {
+          "injected": 30000,
+          "ratio": 0.03,
+          "throttling": false,
+          "ceiling": false
+        },
+        {
+          "injected": 30000,
+          "ratio": 0.06,
+          "throttling": true,
+          "ceiling": false
+        }
+      ]
+    },
+    {
+      "name": "crossing-8pct",
+      "window": 1000000,
+      "want": [
+        {
+          "injected": 30000,
+          "ratio": 0.03,
+          "throttling": false,
+          "ceiling": false
+        },
+        {
+          "injected": 60000,
+          "ratio": 0.09,
+          "throttling": true,
+          "ceiling": true
+        }
+      ]
+    }
+  ],
+  "thrashing": [
+    {
+      "name": "three-within-4",
+      "compactions": [
+        1,
+        2,
+        3
+      ],
+      "turn": 4,
+      "want": true
+    },
+    {
+      "name": "three-but-spread",
+      "compactions": [
+        1,
+        2,
+        10
+      ],
+      "turn": 11,
+      "want": false
+    },
+    {
+      "name": "two-only",
+      "compactions": [
+        1,
+        2
+      ],
+      "turn": 3,
+      "want": false
+    },
+    {
+      "name": "boundary-exactly-4",
+      "compactions": [
+        0,
+        1,
+        2
+      ],
+      "turn": 4,
+      "want": true
+    },
+    {
+      "name": "boundary-5-away",
+      "compactions": [
+        0,
+        1,
+        2
+      ],
+      "turn": 5,
+      "want": false
+    }
+  ]
+}
