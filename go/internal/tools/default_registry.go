@@ -30,6 +30,7 @@ func NewDefaultRegistry(opts Options) *Registry {
 	r.Register(WriteFile(cwd, opts.Grants))
 	r.Register(EditFile(cwd, opts.Grants))
 	r.Register(HashEdit(cwd, opts.Grants))
+	r.Register(ApplyPatch(cwd, opts.Grants))
 
 	// ── 检索 ──
 	r.Register(Glob(cwd))

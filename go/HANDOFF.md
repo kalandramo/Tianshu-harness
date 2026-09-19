@@ -350,6 +350,26 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **apply_patch 工具本体**：`internal/tools/applypatch.go`
+  - 对账 src/tools/apply-patch.ts（423 行）。工具集 9 → 10
+  - **核心是调 `git apply --3way`**——不自己实现 diff 解析（行为等价的
+    本质是同一个 git 实现）
+  - `normalizeDiffPaths`：**只**归一化 `--- `/`+++ `/`diff --git` 头部行
+    （内容行里的反斜杠是数据，不能动）
+  - `truncateDiffForUI`：超 600 行截断 + 提示行
+  - 路径逃逸预检 + 指针守卫（仅本工具前缀）
+  - **oracle 用真实 git 仓库**（`git init` + commit 基线，`--3way` 需要）
+  - **对账暴露一处已声明降级**：TS 在 git apply 失败时主动回滚（备份 +
+    unstage），故文案含「已回滚到补丁前状态」；Go 无回滚故**不含该前缀**
+    ——不虚假声称已回滚。测试显式承认该差异
+  - **M5 首轮红 0 是测试缺口**：`TestApplyPatchPathEscape` 只断言 IsError，
+    但去掉预检后 git 自身也报错（两条防线都拦）——输出文本完全不同
+    （预检给明确的路径错误 vs git 给「outside a repository」）。补强断言
+    检查**具体错误来源**后有判别力
+  - **M6 首轮红 0 是变异未生效**（shell 转义把 python 脚本搞坏，文件未改）
+    ——改用 `cat > /tmp/m.py` 写脚本方式后红 1。本轮第 5 次遇到这类假红 0
+  - 变异反证 7 个全部有判别力（空 diff 2 / 指针守卫 3 / --3way 2 /
+    --check 2 / 路径预检 1 / normalize 1 / truncate 1）
 - [x] **hash_edit 工具本体**：`internal/tools/hashedit.go` + `eol.go`
   - 对账 src/tools/hash-edit.ts（572 行）。工具集 8 → 9
   - 纯函数层：`ParseAnchor`（完整格式先试，否则 "L5:hash" 会被位置正则截成 L5）、
@@ -458,6 +478,8 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 - `zstdframe.go`：zstd 帧扫描（跨版本兼容基础）
 - `hashedit.go` + `eol.go`：**hash_edit 工具本体**（工具集 8 → 9）——
   纯函数层逐字节对账（含诊断文本），工具本体走真实 oracle 路径
+- `applypatch.go`：**apply_patch 工具本体**（工具集 9 → 10）——核心是调
+  `git apply --3way`，oracle 用真实 git 仓库对账
 
 **本轮核心教训**：`orderedProps` 的数组型 schema 缺陷只在**接线后**暴露
 （单测工具全绿，接注册表立刻 panic）。这印证了「消费方核查」与
@@ -488,7 +510,15 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 
 ### 架构欠账（已知，非缺陷）
 
-1. **hash_edit 的 4 项降级**（对账 TS 时明确未移植，各自独立）：
+1. **apply_patch 的 4 项降级**：
+   - **补丁前备份 + 失败回滚**（rollbackTargets / unstagePatchTargets）：
+     TS 侧 `git apply --3way` 失败时状态已被动过（冲突标记落盘、干净文件
+     已 staged、UU 索引条目），故主动回滚。Go 侧依赖 git 自身原子性，
+     失败时**可能留下部分改动**——这是与 TS 最显著的行为差异。
+   - **应用后语法检查回滚**（firstFatalSyntax）：同 hash_edit。
+   - **编辑失败计数门**、**client-delegate（apply_edit 通道）**。
+   - **跨工具指针检测**：仅做 apply_patch 自己的前缀检查。
+2. **hash_edit 的 4 项降级**（对账 TS 时明确未移植，各自独立）：
    - **指针回灌守卫**（pointer-guard）：依赖 4 个未移植的 arg-processor
      常量模块（write_file / edit_file / hash_edit / apply_patch）。风险：
      模型可能把历史里的指针文本当 `new_string` 传回来并被写进文件。
@@ -497,20 +527,20 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
    - **失败计数门**：连续 3 次失败后要求先重新 read_file。
    - **dry_run 的 diff 预览**（buildFileDiff / computeChangedLineRanges，
      185 行）：Go 侧只返回行数变更摘要，不含 unified diff。
-2. **工具 schema 键序未与 TS 对账**：`orderedProps` 主动对键**排序**（字母序），
+3. **工具 schema 键序未与 TS 对账**：`orderedProps` 主动对键**排序**（字母序），
    而 TS 侧 schema 由 zod 生成（**插入序**）。当前注释自称「只要每次生成
    顺序一致即可保证请求体稳定」——这保证了**确定性**，但**未保证与 TS 字节
    等价**。工具 schema 进请求体时（`tools` 字段）是缓存命中率风险。
    待办：对账 TS 的真实 schema 键序，决定是否改为保插入序。
-3. **frozen 块位置**：TS 是 trailer-merge 到 user message（`engine.ts:659`），
+4. **frozen 块位置**：TS 是 trailer-merge 到 user message（`engine.ts:659`），
    Go 侧拼在 system prompt 后——`full.go` 注释标了是「最小可用路径」。
    后续移植 trailer-merge 时应**替换**而非叠加。
-4. **三处「最小可用路径」待替换**：`BuildFullSystemPrompt`（拼法）、
+5. **三处「最小可用路径」待替换**：`BuildFullSystemPrompt`（拼法）、
    `RenderProjectInstructionsBlock`（无 `<context>` 包裹）、
    `BuildSystemPromptWithProject`（已被 `full.go` 取代但保留，因 11 个测试锁定它）。
-5. **未移植的行为差异**：TS 的信任门 `isProjectTrusted`（Go 侧无 trust store）；
+6. **未移植的行为差异**：TS 的信任门 `isProjectTrusted`（Go 侧无 trust store）；
    Windows 的 `resolveShellCommand`（需真实 Windows 环境验证）。
-6. **`main` 分支未合并**：`go-runtime` 有 47 个提交，`main` 仍在 `69b0381`；
+7. **`main` 分支未合并**：`go-runtime` 有 47 个提交，`main` 仍在 `69b0381`；
    分支**未 push**。
 
 ## 建议的第一刀

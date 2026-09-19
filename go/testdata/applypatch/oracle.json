@@ -1,0 +1,114 @@
+{
+  "cases": {
+    "cleanApply": {
+      "note": "干净应用",
+      "diff": "--- a/a.txt\n+++ b/a.txt\n@@ -1,3 +1,3 @@\n line1\n-line2\n+LINE-TWO\n line3\n",
+      "checkOnly": false,
+      "result": {
+        "content": "补丁应用成功。",
+        "isError": false
+      },
+      "finals": {
+        "a.txt": "line1\nLINE-TWO\nline3\n",
+        "new.txt": "<ABSENT>"
+      }
+    },
+    "cleanApplyCheckOnly": {
+      "note": "check_only 不写盘",
+      "diff": "--- a/a.txt\n+++ b/a.txt\n@@ -1,3 +1,3 @@\n line1\n-line2\n+LINE-TWO\n line3\n",
+      "checkOnly": true,
+      "result": {
+        "content": "补丁可干净应用（仅校验；未修改文件）。",
+        "isError": false
+      },
+      "finals": {
+        "a.txt": "line1\nline2\nline3\n",
+        "new.txt": "<ABSENT>"
+      }
+    },
+    "badContext": {
+      "note": "上下文不匹配 → 失败",
+      "diff": "--- a/a.txt\n+++ b/a.txt\n@@ -1,3 +1,3 @@\n NOTHING\n-NOTHING\n+X\n NOTHING\n",
+      "checkOnly": false,
+      "result": {
+        "content": "补丁应用失败（已回滚到补丁前状态）：error: repository lacks the necessary blob to perform 3-way merge.\nFalling back to direct application...\nerror: patch failed: a.txt:1\nerror: a.txt: patch does not apply",
+        "isError": true
+      },
+      "finals": {
+        "a.txt": "line1\nline2\nline3\n",
+        "new.txt": "<ABSENT>"
+      }
+    },
+    "newFile": {
+      "note": "新增文件（+++ 非 /dev/null）",
+      "diff": "--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1,2 @@\n+hello\n+world\n",
+      "checkOnly": false,
+      "result": {
+        "content": "补丁应用成功。",
+        "isError": false
+      },
+      "finals": {
+        "new.txt": "hello\nworld\n"
+      }
+    },
+    "deleteFile": {
+      "note": "删除文件（+++ /dev/null → 目标集合为空）",
+      "diff": "--- a/a.txt\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-line1\n-line2\n-line3\n",
+      "checkOnly": false,
+      "result": {
+        "content": "补丁应用成功。",
+        "isError": false
+      },
+      "finals": {
+        "a.txt": "<ABSENT>",
+        "new.txt": "<ABSENT>"
+      }
+    },
+    "multiFile": {
+      "note": "多文件",
+      "diff": "--- a/a.txt\n+++ b/a.txt\n@@ -1,3 +1,3 @@\n line1\n-line2\n+A2\n line3\n--- a/b.txt\n+++ b/b.txt\n@@ -1,1 +1,1 @@\n-old\n+new\n",
+      "checkOnly": false,
+      "result": {
+        "content": "补丁应用成功。",
+        "isError": false
+      },
+      "finals": {
+        "a.txt": "line1\nA2\nline3\n",
+        "b.txt": "new\n",
+        "new.txt": "<ABSENT>"
+      }
+    },
+    "emptyDiff": {
+      "note": "空 diff → 参数错误",
+      "diff": "",
+      "checkOnly": false,
+      "result": {
+        "content": "apply_patch 需要非空的 \"diff\" 字符串。",
+        "isError": true
+      },
+      "finals": {
+        "new.txt": "<ABSENT>"
+      }
+    },
+    "pointerDiff": {
+      "note": "指针占位符 → 拦截",
+      "diff": "[patch applied to …]",
+      "checkOnly": false,
+      "result": {
+        "content": "错误：\"diff\" 是历史消息里的显示指针（\"[patch applied to …\"），不是真正的 unified diff。该占位符只在大内容写入/应用后的历史消息中出现——从来不是合法输入。请提供实际的 unified diff，或先用 read_file / git diff 查看当前状态。\n\n[pointer placeholder from message history]",
+        "isError": true
+      },
+      "finals": {
+        "new.txt": "<ABSENT>"
+      }
+    },
+    "notARepo": {
+      "note": "非 git 仓库",
+      "diff": "--- a/a.txt\n+++ b/a.txt\n@@ -1,3 +1,3 @@\n line1\n-line2\n+LINE-TWO\n line3\n",
+      "result": {
+        "ok": false,
+        "error": "error: '--3way' outside a repository"
+      }
+    }
+  }
+}
