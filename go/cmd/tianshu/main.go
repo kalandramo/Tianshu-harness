@@ -16,6 +16,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -23,6 +25,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/kalandramo/tianshu/go/internal/agent"
 	"github.com/kalandramo/tianshu/go/internal/api"
@@ -65,7 +68,10 @@ func main() {
 
 	if *prompt != "" {
 		// headless 单次提示
-		if err := loop.Run(ctx, *prompt); err != nil {
+		err := loop.Run(ctx, *prompt)
+		// 收尾 flush：确保不留未写尾部（落盘失败不改变退出码）
+		loop.FlushSession()
+		if err != nil {
 			reportError(err, *jsonOut)
 			os.Exit(1)
 		}
@@ -95,6 +101,8 @@ func main() {
 		}
 		fmt.Fprintln(os.Stderr)
 	}
+	// 会话结束：排空落盘缓冲
+	loop.FlushSession()
 }
 
 // 系统提示词由 internal/prompt 按模型家族渲染（对账 src/prompt/static.ts，
@@ -167,9 +175,23 @@ func loadConfig(model, baseURL, approval string, maxTurns int, systemPrompt stri
 	}, nil
 }
 
+// newSessionID 生成会话 ID（时间戳 + 随机后缀，无需引入 UUID 依赖）。
+//
+// 格式对账 TS 的 session ID（`<时间戳>-<随机>`），用作文件名——
+// 必须**文件系统安全**（无路径分隔符）。
+func newSessionID() string {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	return fmt.Sprintf("%d-%s", time.Now().UnixMilli(), hex.EncodeToString(b[:]))
+}
+
 func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	cl := client.New(app.Client)
 	reg := tools.NewDefaultRegistry(tools.Options{Cwd: app.Agent.Cwd})
+	// 会话 ID：启用状态容器 + 持久化（缺省时 Loop.State/Persist 恒为 nil）
+	if app.Agent.SessionID == "" {
+		app.Agent.SessionID = newSessionID()
+	}
 	loop := agent.New(app.Agent, cl, reg)
 
 	loop.Emit = func(e agent.Event) {

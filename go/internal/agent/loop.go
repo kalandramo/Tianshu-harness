@@ -75,6 +75,14 @@ type Loop struct {
 	// 对账 TS 侧 loop.ts:848 的 `new SessionStateManager(this.config.sessionId)`。
 	// nil 时跳过状态更新（最小可跑路径）。
 	State *session.Manager
+	// Persist 是会话持久化器（transcript 落盘 + 元数据）。
+	//
+	// nil 时跳过落盘（headless 一次性跑或测试场景）。
+	Persist *session.Persist
+	// Listener 把内存消息变更镜像到 Persist（落盘 + 元数据更新）。
+	//
+	// 对账 TS 的 `attachSessionPersistListener`。nil 时跳过。
+	Listener *session.PersistListener
 }
 
 // New 创建 agent loop。
@@ -82,6 +90,12 @@ func New(cfg Config, cl *client.Client, reg *tools.Registry) *Loop {
 	l := &Loop{cfg: cfg, client: cl, registry: reg}
 	if cfg.SessionID != "" {
 		l.State = session.New(cfg.SessionID)
+		// 会话持久化：落盘到 <cwd>/.rivet/sessions/<id>.jsonl。
+		// 构造失败不阻塞会话（降级为无持久化）——持久化是增强而非必需。
+		if p, err := session.NewPersist(cfg.SessionID, cfg.Cwd); err == nil {
+			l.Persist = p
+			l.Listener = session.NewPersistListener(p, l.State)
+		}
 	}
 	if cfg.SystemPrompt != "" {
 		l.messages = append(l.messages, wire.NewOrderedMap().
@@ -89,6 +103,45 @@ func New(cfg Config, cl *client.Client, reg *tools.Registry) *Loop {
 			Set("content", cfg.SystemPrompt))
 	}
 	return l
+}
+
+// appendAndPersist 追加消息到历史并镜像到持久化存储。
+//
+// 对账 TS 的 `session.append()` → mutation listener → persist。
+// 落盘失败不阻塞主循环（内存态仍是权威）——错误走 stderr。
+func (l *Loop) appendAndPersist(msg *wire.OrderedMap) {
+	l.messages = append(l.messages, msg)
+	if l.Listener != nil {
+		l.Listener.OnAppend(session.OaiMessageFromWire(msg))
+	}
+}
+
+// FlushSession 排空会话落盘缓冲（会话结束时调用，确保不留未写尾部）。
+func (l *Loop) FlushSession() {
+	if l.Listener != nil {
+		_ = l.Listener.Drain()
+	}
+}
+
+// recordUsage 把本轮 API 计量累加到会话状态。
+//
+// 对账 TS 的 `session.addUsage(usage)`。**InputTokens 是 cache-inclusive**，
+// 不再叠加 cache_read/cache_creation（见 contract.Usage 的约定）。
+func (l *Loop) recordUsage(u contract.Usage) {
+	if l.State == nil {
+		return
+	}
+	tu := session.TotalUsage{
+		InputTokens:              u.InputTokens,
+		OutputTokens:             u.OutputTokens,
+		CacheReadInputTokens:     u.CacheReadInputTokens,
+		CacheCreationInputTokens: u.CacheCreationInputTokens,
+	}
+	if u.ReasoningTokens != nil {
+		tu.ReasoningTokens = *u.ReasoningTokens
+		tu.HasReasoning = true
+	}
+	l.State.AddUsage(tu)
 }
 
 // Messages 返回当前会话历史（只读副本的浅拷贝）。
@@ -100,7 +153,7 @@ func (l *Loop) Messages() []*wire.OrderedMap {
 
 // Run 执行一轮用户交互，直到模型给出终答或触及预算。
 func (l *Loop) Run(ctx context.Context, userMessage string) error {
-	l.messages = append(l.messages, wire.NewOrderedMap().
+	l.appendAndPersist(wire.NewOrderedMap().
 		Set("role", "user").
 		Set("content", userMessage))
 
@@ -133,9 +186,12 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 			return err
 		}
 
+		// ── 累加本轮 token 计量（对账 session.addUsage）──
+		l.recordUsage(collector.usage)
+
 		// ── 把 assistant 回合追加到历史 ──
 		assistantMsg := l.buildAssistantMessage(collector)
-		l.messages = append(l.messages, assistantMsg)
+		l.appendAndPersist(assistantMsg)
 
 		// ── 无工具调用 → 终答，结束 ──
 		if len(collector.toolCalls) == 0 {
@@ -160,7 +216,7 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 				Text: result.Content, IsError: result.IsError, Turn: turn,
 			})
 
-			l.messages = append(l.messages, wire.NewOrderedMap().
+			l.appendAndPersist(wire.NewOrderedMap().
 				Set("role", "tool").
 				Set("tool_call_id", tc.id).
 				Set("content", result.Content))

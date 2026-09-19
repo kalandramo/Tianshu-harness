@@ -152,10 +152,25 @@ var statusMarkers = []statusMarker{
 	{"in_progress", []string{"◼", "⏳", "[~]", "进行中", "正在"}},
 }
 
+// TotalUsage 是会话累计的 token 计量（对账 TS 的 `state.totalUsage`）。
+//
+// **InputTokens 是 cache-INCLUSIVE 的总量**（= uncached + cacheRead +
+// cacheCreation）。不要再叠加 CacheRead/CacheCreation——DeepSeek 下会
+// 恰好翻倍（cache-log 6bfc4465: meta 11.34M vs real 5.67M）。
+type TotalUsage struct {
+	InputTokens              int
+	OutputTokens             int
+	CacheReadInputTokens     int
+	CacheCreationInputTokens int
+	ReasoningTokens          int
+	HasReasoning             bool
+}
+
 // Manager 是会话状态管理器。
 type Manager struct {
 	state SessionState
 	now   func() int64 // 可注入时钟（测试用）
+	usage TotalUsage
 }
 
 // New 构造一个会话状态管理器。
@@ -171,6 +186,38 @@ func New(sessionID string) *Manager {
 		now: func() int64 { return time.Now().UnixMilli() },
 	}
 }
+
+// AddUsage 累加一次 API 响应的 token 计量。
+//
+// 对账 TS 的 `addUsage`——但**只取累计部分**。TS 版还夹带了上下文占用
+// 估算（`lastRealPromptTokens` / `tailEstimate` / `contextCalibrationRatio`
+// 的 EMA 校准），那属于 `internal/context` 层（Wave 4），此处不做。
+//
+// 累计语义（对账 TS）：
+//   - 四个计数器都是**条件累加**——值为 0/falsy 时跳过（不是无脑加）
+//   - `reasoning_tokens` 特殊：它是 OutputTokens 的**子集**（不叠加到
+//     output），且用 `?? 0` 语义——一旦提供商报过就持续累加
+func (m *Manager) AddUsage(u TotalUsage) {
+	if u.InputTokens != 0 {
+		m.usage.InputTokens += u.InputTokens
+	}
+	if u.OutputTokens != 0 {
+		m.usage.OutputTokens += u.OutputTokens
+	}
+	if u.CacheReadInputTokens != 0 {
+		m.usage.CacheReadInputTokens += u.CacheReadInputTokens
+	}
+	if u.CacheCreationInputTokens != 0 {
+		m.usage.CacheCreationInputTokens += u.CacheCreationInputTokens
+	}
+	if u.HasReasoning {
+		m.usage.ReasoningTokens += u.ReasoningTokens
+		m.usage.HasReasoning = true
+	}
+}
+
+// TotalUsage 返回累计计量的副本。
+func (m *Manager) TotalUsage() TotalUsage { return m.usage }
 
 // Snapshot 返回状态的深拷贝（调用方不可改内部状态）。
 func (m *Manager) Snapshot() SessionState {

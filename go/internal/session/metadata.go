@@ -199,6 +199,16 @@ func applyPatch(target, patch *SessionMetadata) {
 	if patch.Status != "" {
 		target.Status = patch.Status
 	}
+	// **计数类字段的零值语义**：`turnCount` / `toolCallCount` 的 0 是**合法
+	// 值**（新会话尚无回合），不能像字符串那样「非零才覆盖」——否则
+	// 首次累加（0 → 1）会被当成「未设置」而丢弃。
+	// 判据改用 PresentKeys（调用方显式声明该键存在）。
+	if hasPresentKey(patch, "turnCount") {
+		target.TurnCount = patch.TurnCount
+	}
+	if hasPresentKey(patch, "toolCallCount") {
+		target.ToolCallCount = patch.ToolCallCount
+	}
 	if patch.CompactEvents != nil {
 		target.CompactEvents = patch.CompactEvents
 	}
@@ -213,6 +223,16 @@ func applyPatch(target, patch *SessionMetadata) {
 			target.Extra[k] = v
 		}
 	}
+}
+
+// hasPresentKey 判定 patch 是否显式声明了某键（用于零值合法字段）。
+func hasPresentKey(patch *SessionMetadata, key string) bool {
+	for _, k := range patch.PresentKeys {
+		if k == key {
+			return true
+		}
+	}
+	return false
 }
 
 // Flush 在 dirty 时持久化内存元数据（批量 flush 节拍）。

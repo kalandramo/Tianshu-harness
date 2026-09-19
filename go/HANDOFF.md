@@ -350,6 +350,31 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **会话落盘接线（悬空消除）**：`internal/session/listener.go` + `loop.go`/`main.go`
+  - **背景**：上一轮完成 `Persist` 后核查发现 `internal/session` 的组件
+    **全部零生产调用**——能力已实现但从未接线。本轮消除悬空。
+  - **架构决策**：落盘走**事件监听器**模式（对账
+    `attachSessionPersistListener`），不是主循环内联调用——持久化是独立关注点
+  - **flush 策略**（崩溃恢复的核心）：`user`/`tool` 无条件立即落盘；
+    `assistant` **仅当带 `tool_calls`** 时立即落盘，纯文本走批量节拍。
+    把硬杀损失窗口压到「在途记录」
+  - **元数据增量**：每次 append 更新 title（仅首次，前 120 字符）/
+    turnCount / toolCallCount / tokenUsage。**`<system-reminder>` 开头的
+    user 消息不算真实回合**（TTSR 护栏注入，历史回放也排除）
+  - `Manager.AddUsage`：token 累计。**InputTokens 是 cache-inclusive**，
+    不再叠加 cacheRead/cacheCreation（否则 DeepSeek 下恰好翻倍）。
+    TS 版 `addUsage` 还夹带上下文占用估算（EMA 校准），属 Wave 4 的
+    `internal/context`，未移植
+  - CLI 接线：`newSessionID()`（时间戳 + 随机，无 UUID 依赖）+
+    `FlushSession()` 收尾排空
+  - **修掉两个真实缺陷**：
+    1. `applyPatch` **不处理 `turnCount`/`toolCallCount`**——这两个字段的
+       0 是合法值，不能像字符串那样「非零才覆盖」，否则首次累加被丢弃。
+       改用 `PresentKeys` 显式声明键存在
+    2. `<system-reminder>` 判定用字节切片 `[:16]`——前缀实际 **17** 字符，
+       off-by-one 导致判定恒假。改用 `strings.HasPrefix`
+  - 变异反证 10 个：9 个有判别力；**M7 经查证为等价变异**——`AddUsage`
+    对零值「无脑累加」与「跳过」数值等价（`+= 0`），且该函数无副作用
 - [x] **会话持久化编排层**：`internal/session/persist.go` + `legacy.go`
   - 对账 `SessionPersist` 类的**编排核心**（928 行里只取编排，不取压缩/清理）
   - `LoadOai` 完整链路：读 transcript（zstd 解码 + pending 合并）→
@@ -629,6 +654,8 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   手写缩进器 / write 与 update 的键序差异
 - `internal/session/persist.go` + `legacy.go`：**持久化编排层**——`loadOai`
   完整链路 / legacy 迁移 / 审计行跳过
+- `internal/session/listener.go`：**落盘接线**——flush 策略 / 元数据增量 /
+  wire 桥接（`OaiMessageFromWire`）
 
 **本轮核心教训**：`orderedProps` 的数组型 schema 缺陷只在**接线后**暴露
 （单测工具全绿，接注册表立刻 panic）。这印证了「消费方核查」与
