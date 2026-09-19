@@ -85,9 +85,19 @@ func unameField(flag, fallback string) string {
 //	<frozen 稳定块 <context>...</context>>
 //
 // 注：TS 侧 frozen 块是 **trailer-merge 到 user message**（engine.ts:659），
-// 不是拼进 system prompt。此处拼在后面是**最小可用路径**——与 Go 现有
-// 单 SystemPrompt 字段的架构一致；后续移植 trailer-merge 时应**替换**本函数，
-// 而非在其上叠加（否则会出现两处渲染同一内容的双写）。
+// 不是拼进 system prompt。此处拼在后面是**有意的架构选择**（见 HANDOFF #7）：
+//
+//   - TS 把 volatile 内容移到 user message 尾部，使 system prompt **完全冻结**、
+//     历史消息尾部也可增量缓存
+//   - Go 拼在 system prompt 内——**同样稳定可缓存**（缓存 system+tools 前缀），
+//     但 volatile 变化会打断整个前缀
+//
+// 移植 trailer-merge 需重构 prompt 组装架构（TS 的 frozen 体系是 engine.ts
+// 1700+ 行的核心：frozenUserMerged / frozenFetchIndex / eviction clamp /
+// 重复消息各占独立快照）。这是**方向性改动**，收益需实测缓存命中率支撑——
+// 在拿到数据前**不硬推**。
+//
+// 若将来移植：应**替换**本函数而非叠加（否则两处渲染同一内容造成双写）。
 //
 // 与 BuildSystemPromptWithProject 的分工：
 //   - 后者：static + project-instructions（无项目文件时返回纯 static）

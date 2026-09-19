@@ -918,12 +918,34 @@ b
 6. **schema 描述文本的漂移风险**：工具 schema 的 `description` 现已与 TS
    逐字节对账，但 TS 侧改描述时 Go 不会自动跟随——需重跑 `gen-oracle.ts`
    并修 Go 文本。这是**有意的**（显式失败优于静默漂移）。
-7. **frozen 块位置**：TS 是 trailer-merge 到 user message（`engine.ts:659`），
-   Go 侧拼在 system prompt 后——`full.go` 注释标了是「最小可用路径」。
-   后续移植 trailer-merge 时应**替换**而非叠加。
-8. **三处「最小可用路径」待替换**：`BuildFullSystemPrompt`（拼法）、
-   `RenderProjectInstructionsBlock`（无 `<context>` 包裹）、
-   `BuildSystemPromptWithProject`（已被 `full.go` 取代但保留，因 11 个测试锁定它）。
+7. **frozen 块位置——架构边界，非「未完成」**（**经调研后的判断变更**）：
+   - **原记录**：「TS 是 trailer-merge 到 user message，Go 侧拼在 system
+     prompt 后，后续应替换」——措辞把它当成待办。
+   - **调研后的实情**：`engine.ts` 有 **1700+ 行**，frozen 体系是它的核心
+     （`frozenUserMerged` / `frozenFetchIndex` / `frozenPendingMerged` /
+     eviction clamp / 重复消息各占独立快照 / `getNextFrozen` 的索引推进）。
+     移植它**不是照抄一个函数**，而是要重构 Go 的 prompt 组装架构
+     （TS：messages 数组 + trailer-merge；Go：单 `SystemPrompt` 字段拼接）。
+   - **当前 Go 架构的缓存特性**：system prompt 拼接同样**稳定可缓存**
+     （缓存的是 system+tools 前缀）。差别在于 TS 把 volatile 内容移到
+     user message 尾部，使 **system prompt 完全冻结**、历史消息尾部也可
+     增量缓存；Go 的 volatile 在 system prompt 内，volatile 变化会打断
+     整个前缀。
+   - **判断**：这是**方向性架构改动**，收益（缓存命中率提升）需要实测数据
+     支撑，成本（重构 prompt 组装 + 回归全部 prompt oracle）很高。
+     **不硬推**——记录判断，等有缓存命中率实测数据再决策。
+   - 相关：`full.go` 的注释应更新（当前措辞暗示「待替换」）。
+8. **「三处最小可用路径」——经核实全部过时或有误**（**记录更正**）：
+   - `BuildFullSystemPrompt` 的**拼法**：已在 #7 重新定性为**架构选择**
+     （非「待替换」）
+   - `RenderProjectInstructionsBlock` 的 **`<context>` 包裹**：**记录有误**。
+     该函数渲染 `<project-instructions>` 块，**本就不该**有 `<context>` 包裹
+     ——`<context>` 是 **frozen 块的外壳**，由 `BuildStableVolatileBlock`
+     提供（`return "<context>\n" + ... + "\n</context>"`），已有测试
+     `full_test.go` 锁定
+   - `BuildSystemPromptWithProject`：**无生产消费方**（grep 确认只有注释
+     引用它），由 `full.go` 取代。11 个测试锁定它属于**遗留测试**——
+     可考虑迁移这些断言到 `BuildFullSystemPrompt` 后删除本函数。
 9. **未移植的行为差异**（部分已修复）：
    - ✅ **信任门**（`isProjectTrusted` + trust store）——已完成（见顶部条目）
    - **Windows 的 `resolveShellCommand`**：需真实 Windows 环境验证，未移植。
