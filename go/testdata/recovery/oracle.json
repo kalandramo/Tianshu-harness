@@ -1,0 +1,122 @@
+{
+  "basicWrite": {
+    "lines": [
+      "{\"file\":\"a.ts\",\"action\":\"edit\",\"linesLost\":5,\"ts\":\"<TS>\"}",
+      "{\"file\":\"b.ts\",\"action\":\"git checkout HEAD\",\"linesLost\":22,\"ts\":\"<TS>\",\"sessionId\":\"sess-1\"}"
+    ],
+    "keyOrders": [
+      [
+        "file",
+        "action",
+        "linesLost",
+        "ts"
+      ],
+      [
+        "file",
+        "action",
+        "linesLost",
+        "ts",
+        "sessionId"
+      ]
+    ]
+  },
+  "tsFormat": {
+    "samples": [
+      "<TS>",
+      "<TS>",
+      "<TS>",
+      "<TS>",
+      "<TS>"
+    ],
+    "regex": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+  },
+  "readScope": {
+    "all": [
+      "legacy.ts",
+      "mine.ts",
+      "other.ts"
+    ],
+    "onlyMine": [
+      "mine.ts"
+    ],
+    "onlyThem": [
+      "other.ts"
+    ]
+  },
+  "afterAckMine": {
+    "all": [
+      "legacy.ts",
+      "other.ts"
+    ],
+    "onlyMine": [],
+    "rawKeys": [
+      [
+        "file",
+        "action",
+        "linesLost",
+        "ts"
+      ],
+      [
+        "file",
+        "action",
+        "linesLost",
+        "ts",
+        "sessionId",
+        "acknowledged"
+      ],
+      [
+        "file",
+        "action",
+        "linesLost",
+        "ts",
+        "sessionId"
+      ]
+    ],
+    "raw": [
+      "{\"file\":\"legacy.ts\",\"action\":\"edit\",\"linesLost\":1,\"ts\":\"<TS>\"}",
+      "{\"file\":\"mine.ts\",\"action\":\"edit\",\"linesLost\":2,\"ts\":\"<TS>\",\"sessionId\":\"me\",\"acknowledged\":true}",
+      "{\"file\":\"other.ts\",\"action\":\"edit\",\"linesLost\":3,\"ts\":\"<TS>\",\"sessionId\":\"them\"}"
+    ]
+  },
+  "afterHandoffThem": {
+    "onlyThem": [],
+    "rawKeys": [
+      [
+        "file",
+        "action",
+        "linesLost",
+        "ts"
+      ],
+      [
+        "file",
+        "action",
+        "linesLost",
+        "ts",
+        "sessionId",
+        "acknowledged"
+      ],
+      [
+        "file",
+        "action",
+        "linesLost",
+        "ts",
+        "sessionId",
+        "handedOff"
+      ]
+    ],
+    "raw": [
+      "{\"file\":\"legacy.ts\",\"action\":\"edit\",\"linesLost\":1,\"ts\":\"<TS>\"}",
+      "{\"file\":\"mine.ts\",\"action\":\"edit\",\"linesLost\":2,\"ts\":\"<TS>\",\"sessionId\":\"me\",\"acknowledged\":true}",
+      "{\"file\":\"other.ts\",\"action\":\"edit\",\"linesLost\":3,\"ts\":\"<TS>\",\"sessionId\":\"them\",\"handedOff\":true}"
+    ]
+  },
+  "emptyJournal": {
+    "entries": []
+  },
+  "corruptTolerance": {
+    "files": [
+      "ok.ts",
+      "ok2.ts"
+    ]
+  }
+}

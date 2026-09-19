@@ -350,6 +350,35 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **recovery 子系统 + apply_patch 失败回滚**（新建 `internal/recovery/`）
+  - **背景**：上轮判定「数据损坏风险 > 新增工具」，`apply_patch` 失败回滚是
+    与 TS 最显著的行为差异。调研发现它不是局部补丁——**依赖整个
+    recovery-stack 子系统**（TS 侧被 write_file/edit_file/hash_edit/
+    apply_patch **4 个写工具**共用），Go 侧完全没有。故先建地基。
+  - **`internal/recovery/`**（独立包，非 session——文件操作的横切关注点，
+    与「会话」概念正交）：
+    - `journal.go`：恢复事件日志（`.rivet/recovery-journal.jsonl`）。
+      **手写序列化器**——键序由 TS 的对象展开顺序决定
+      （`file,action,linesLost,ts[,sessionId]`，探针实测），
+      且 `ts` 必须是 **`toISOString()` 的固定 3 位毫秒**——Go 的
+      `RFC3339Nano` 会省略尾随零（860ms → `.86`），字节不等价
+    - `stack.go`：备份栈（`TrackFileChange` / `RestoreLatestBackup` /
+      `EvictOldBackups`）。**核心不变量**：旧内容必须在覆写**前**捕获
+  - **apply_patch 接入**：targets 快照 + 补丁前备份 + 失败时
+    `rollbackTargets`（工作树内容从备份恢复 / 新建文件删除）+
+    `unstagePatchTargets`（索引收回 HEAD）。文案区分「已回滚」与
+    「未回滚」——后者是对结果的保证，不声称「曾发生半套用」
+  - **`RIVET_APPLY_PATCH_VERIFY=0`** 退回 legacy 行为（不备份、不回滚）
+  - **oracle**：`go/testdata/recovery/`，**时间戳已 scrub**（含时间的
+    oracle 不可复现——首版三次 sha256 不一致，这是 oracle 纪律的漏洞）
+  - **关键诊断**：索引污染的触发条件是 `--3way` **真走合并路径**。
+    我最初三次构造的场景都走了「回退直接应用」（"lacks the necessary
+    blob"），那条路径**本就什么都不留下**——所以 `unstagePatchTargets`
+    当时看似等价变异。用**带 `index` 行的合法 patch**（`git diff` 产出）
+    + 冲突内容才复现出 `UU a.txt`，M3 随即变红
+  - 变异反证 7 个：**全部有判别力**（不回滚 1 / 不删新建文件 1 /
+    不收回索引 1 / check_only 也备份 1 / journal 键序错 4 /
+    ts 格式错 1 / 备份时序错 7）
 - [x] **工具 schema 与 TS 逐字节对账（缓存命中率防线）**
   - **背景**：Go 侧 `orderedProps` **字典序排序**属性键，TS 是**声明序**
     ——而工具定义变化「打的是整个前缀（system+tools 段）」
@@ -674,6 +703,8 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   wire 桥接（`OaiMessageFromWire`）
 - `internal/tools/schema.go`：**schema 有序序列化**——`OrderedProps` /
   `OrderValue`（从 agent 包移入，schema 序列化属 tools 领域）
+- `internal/recovery/`：**备份与恢复**——journal（事件日志）+ stack
+  （备份栈）。写工具的共享地基
 
 **本轮核心教训**：`orderedProps` 的数组型 schema 缺陷只在**接线后**暴露
 （单测工具全绿，接注册表立刻 panic）。这印证了「消费方核查」与
@@ -732,13 +763,10 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
    - **依赖策略变更**：项目已从「零第三方依赖」改为「允许成熟生态」，
      后续 `go.mod` 会有更多依赖——注意保持 `go.sum` 提交完整（他人
      拉取需能复现构建，已用 `-mod=readonly` 验证）。
-3. **apply_patch 的 4 项降级**：
-   - **补丁前备份 + 失败回滚**（rollbackTargets / unstagePatchTargets）：
-     TS 侧 `git apply --3way` 失败时状态已被动过（冲突标记落盘、干净文件
-     已 staged、UU 索引条目），故主动回滚。Go 侧依赖 git 自身原子性，
-     失败时**可能留下部分改动**——这是与 TS 最显著的行为差异。
-   - **应用后语法检查回滚**（firstFatalSyntax）：同 hash_edit。
-   - **编辑失败计数门**、**client-delegate（apply_edit 通道）**。
+3. **apply_patch 的降级**（部分已修复）：
+   - ✅ **补丁前备份 + 失败回滚**——本轮完成（见顶部条目）
+   - **应用后语法检查回滚**（firstFatalSyntax）：同 hash_edit，未移植。
+   - **编辑失败计数门**、**client-delegate（apply_edit 通道）**：未移植。
    - **跨工具指针检测**：仅做 apply_patch 自己的前缀检查。
 4. **hash_edit 的 4 项降级**（对账 TS 时明确未移植，各自独立）：
    - **指针回灌守卫**（pointer-guard）：依赖 4 个未移植的 arg-processor
