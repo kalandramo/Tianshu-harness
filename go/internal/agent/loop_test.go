@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -54,9 +55,10 @@ type scriptedServer struct {
 func (s *scriptedServer) handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		n := atomic.AddInt64(&s.calls, 1)
-		buf := make([]byte, 1<<20)
-		read, _ := r.Body.Read(buf)
-		s.bodies = append(s.bodies, string(buf[:read]))
+		// 用 io.ReadAll 完整读取：单次 Read 未必读满大 body（工具 schema 可达数十 KB），
+		// 用 Read 会让断言在大请求体上随机失败。
+		body, _ := io.ReadAll(r.Body)
+		s.bodies = append(s.bodies, string(body))
 
 		idx := int(n) - 1
 		if idx >= len(s.responses) {

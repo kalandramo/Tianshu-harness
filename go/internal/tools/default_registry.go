@@ -34,6 +34,9 @@ func NewDefaultRegistry(opts Options) *Registry {
 	r.Register(Glob(cwd))
 	r.Register(Grep(cwd))
 
+	// ── 执行 ──
+	r.Register(Bash(cwd))
+
 	// ── 装配注入 ──
 	for _, t := range opts.Extra {
 		r.Register(t)
