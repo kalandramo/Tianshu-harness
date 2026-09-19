@@ -1,0 +1,104 @@
+{
+  "table": {
+    "basic": {
+      "in": "## 标题\n正文\n> 顶层目录索引\n| a | b |\n| - | - |\n| 1 | 2 |\n\n后续内容",
+      "out": "## 标题\n正文\n后续内容"
+    },
+    "noTable": {
+      "in": "## 标题\n正文\n更多正文",
+      "out": "## 标题\n正文\n更多正文"
+    },
+    "tableFirst": {
+      "in": "| a | b |\n| - | - |\n| 1 | 2 |\n后续",
+      "out": "后续"
+    },
+    "noTrailingBlank": {
+      "in": "前文\n| a | b |\n| - | - |\n紧接内容",
+      "out": "前文\n紧接内容"
+    },
+    "quoteThenTable": {
+      "in": "> 引用\n| a | b |\n| - | - |",
+      "out": ""
+    },
+    "indentedTable": {
+      "in": "前文\n  | a | b |\n  | - | - |\n后续",
+      "out": "前文\n后续"
+    },
+    "twoTables": {
+      "in": "| a |\n| - |\n中间\n| b |\n| - |",
+      "out": "中间\n| b |\n| - |"
+    },
+    "empty": {
+      "in": "",
+      "out": ""
+    },
+    "onlyTable": {
+      "in": "| a |\n| - |",
+      "out": ""
+    },
+    "emojiTable": {
+      "in": "> 索引\n| 😀 | b |\n| - | - |\n\n后续",
+      "out": "后续"
+    },
+    "quoteFarAway": {
+      "in": "> 引用\n普通行\n| a |\n| - |",
+      "out": "> 引用\n普通行"
+    }
+  },
+  "truncate": {
+    "plainOver": {
+      "kind": "project-memory",
+      "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "cap": 20,
+      "out": "xxxxxxxxxxxxxxxxxxxx\n<!-- project-memory truncated: 50 → 20 chars -->"
+    },
+    "plainUnder": {
+      "kind": "project-memory",
+      "text": "short",
+      "cap": 100,
+      "out": "short"
+    },
+    "xmlOver": {
+      "kind": "seed-capsule",
+      "text": "<seed-capsule>\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n</seed-capsule>",
+      "cap": 40,
+      "out": "<seed-capsule>\n\nyyyyy\n<!-- truncated: 111 → 40 chars -->\n</seed-capsule>"
+    },
+    "xmlEmoji": {
+      "kind": "seed-capsule",
+      "text": "<seed-capsule>\n😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\n</seed-capsule>",
+      "cap": 30,
+      "out": "<seed-capsule>\n\n😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\ud83d\n<!-- truncated: 91 → 30 chars -->\n</seed-capsule>"
+    },
+    "codebaseOver": {
+      "kind": "codebase-index",
+      "text": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "cap": 20,
+      "out": "zzzzzzzzzzzzzzzzzzzz\n<!-- codebase index truncated (50 chars → 20); use repo_map/repo_graph tools for details -->"
+    },
+    "codebaseUnder": {
+      "kind": "codebase-index",
+      "text": "zzzzzzzzzz",
+      "cap": 50,
+      "out": "zzzzzzzzzz"
+    },
+    "multiRoot": {
+      "kind": "seed-capsule",
+      "text": "<a>1</a>\n<b>2</b>\nwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+      "cap": 30,
+      "out": "<a>\n1\n<!-- truncated: 68 → 30 chars -->\n</a>"
+    },
+    "utf16OnlyOver": {
+      "kind": "project-memory",
+      "text": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "cap": 30,
+      "out": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\n<!-- project-memory truncated: 40 → 30 chars -->"
+    },
+    "multiClose": {
+      "kind": "seed-capsule",
+      "text": "<a>xxxxxxxxxx</a>\n<a>yyyyyyyyyy</a>",
+      "cap": 25,
+      "out": "<a>\nxxxxxxxxxx</a\n<!-- truncated: 35 → 25 chars -->\n</a>"
+    }
+  }
+}

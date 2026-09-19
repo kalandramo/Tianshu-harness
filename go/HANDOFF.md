@@ -166,25 +166,48 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   - 端到端验证：真实端点下模型确认读到了 AGENTS.md 的「高危命令纪律」章节
   - 注：这是**最小可用路径**（不做 XML 转义外的 <context> 包裹）。后续移植
     volatile 层时应**替换**本函数，而非在其上叠加（避免双写）
-### ⚠ 移植前瞻：UTF-16 语义的两个高危位点
+### ✅ 已完成：truncateBlock / stripFirstMarkdownTable
 
-本层踩到了 `String.length`（UTF-16 code unit）vs Go 码点的分叉（见上文缺陷
-修复）。**继续移植时还有两类同源陷阱**，提前记录：
+`internal/prompt/truncate.go`。这是上轮预告的"最微妙的一处"，实际踩到的
+坑比预告的更多：
 
-1. **`truncateBlock`（volatile.ts:1195）有三重 UTF-16 语义**
-   - `block.length <= maxChars` 比较（code unit）
-   - `block.slice(0, maxChars)` —— **JS 的 slice 会切断代理对**，产生
-     孤立代理码元！Go 的 `[]rune` 切片不会。要复刻必须按 code unit 切，
-     而不是按 rune 切。这是字节等价最微妙的一处。
-   - 截断标记里嵌入 `block.length`（code unit 数，进最终字节）
-2. **其余以 `.length` 计预算/计数的位点**（移植时逐个核对）：
-   - `volatile.ts:1003` `content.length > maxChars`（selectTopKBlocks）
-   - `engine.ts:806, 998-1001` 的 `rawChars` / 预览截断
-   - `prefix-budget.ts:48` `Math.ceil(text.length / 4)`
+1. **`truncateBlock` 的三重 UTF-16 语义全部要复刻**
+   - `block.length <= maxChars` → 用 `UTF16Len`
+   - `content.slice(0, N)` → **必须切断代理对**（`sliceByUTF16`，探针验证
+     Go 侧可达：`"ab😀cd"` 切到 3 → `61 62 ef bf bd`）
+   - 截断标记里的 `block.length` → code unit 数进最终字节
 
-判据：TS 侧凡出现 `.length`、`.slice(`、`.substring(`、`.charCodeAt(` 的
-文本处理，都要问"这里是 code unit 还是码点/字节"。oracle 用例必须含
-代理对字符（emoji）才能锁住——纯中文用例会全部掩盖。
+2. **JS 的负 slice 语义**：`slice(0, n)` 当 `n<0` 时从末尾倒数
+   （`"abcdef".slice(0,-4)` = `"ab"`，超出则为空）。`xmlEmoji` 用例
+   的 `limit = 30 - 12*2 - 10 = -4` 正是负值。
+
+3. **单根 XML 匹配的正则无法用 Go regexp 表达**（三个叠加原因）：
+   - 无反向引用（`\1`）
+   - RE2 的贪婪语义与 JS 回溯不同（`(?s)(?m)` 组合会跨行吃到错误位置）
+   - `m` 标志下 `$` 匹配行尾 + 贪婪 → 取**最后一个**满足行尾的同名闭合
+     （实测 `<a>x</a>\n<a>y</a>` → content=`x</a>\n<a>y`）
+   → 最终用手工 `matchSingleRoot` 实现，逐条对账上述语义。
+
+4. **测试夹具自身也踩了坑**：首版 `extractBlock` 按 `\n\n` 分段找目标块，
+   把 XML 开标签并入了前一段——golden 缺了开标签，我一度误判为**实现**缺陷。
+   教训：oracle 生成器的提取逻辑本身也要验证（用"只含目标块"的 ctx 构造）。
+
+**变异反证 6 个**（前 2 个首轮红 0 处，补用例后才有判别力）：
+预算比较用码点（2 红）、slice 按 rune 切（2 红）、负 limit 当 0（3 红）、
+闭合找第一个（2 红）、不校验闭合后行尾（2 红）、不删前置 `>` 行（4 红）。
+
+> **补用例的方法论**：M1（预算比较）首轮 0 红的根因是唯一的码点≠UTF16
+> 用例（`xmlEmoji`）**两种计费都判超预算**，判定结果相同。补一个"码点不超
+> 但 UTF16 超"的用例（20 个 emoji，码点 20 < cap 30 < UTF16 40）才暴露。
+> 这类"变异生效但不改变行为"的盲区，只能靠针对性的边界用例消除。
+
+**剩余同类位点**（继续移植时逐个核对）：
+- `volatile.ts:1003` `content.length > maxChars`（selectTopKBlocks）
+- `engine.ts:806, 998-1001` 的 `rawChars` / 预览截断
+- `prefix-budget.ts:48` `Math.ceil(text.length / 4)`
+
+判据：TS 侧凡 `.length`、`.slice(`、`.substring(`、`.charCodeAt(` 的文本处理，
+都要问"code unit 还是码点/字节"。oracle 用例必须含代理对字符（emoji）。
 
 - [ ] volatile 层剩余：`buildVolatileBlockInternal`（148 行）的平台行/sober/
   locus/working-set/session-memory/star-domain 拼接，以及
