@@ -430,10 +430,22 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 - `hashLine` / `buildFreshAnchors`（hash_edit 的地基）
 - `extractPatchTargetPaths`（apply_patch 的地基）
 
+**本轮（工具落地轮）** —— 把地基变成可用工具：
+- `checksum.go`：会话行校验和（legacy 兼容三判定 + lastIndexOf）
+- `todofmt.go`：todo 清单渲染（icon 三元组 / 计数 / 两处空清单差异）
+- `todo.go`：**todo 工具本体**，接上 default_registry（工具集 7 → 8）
+  —— 本轮唯一有生产调用方的新增能力，并连带修复了数组型 schema 的
+  序列化 panic（见下方架构欠账 1 与教训）
+- `zstdframe.go`：zstd 帧扫描（跨版本兼容基础）
+
+**本轮核心教训**：`orderedProps` 的数组型 schema 缺陷只在**接线后**暴露
+（单测工具全绿，接注册表立刻 panic）。这印证了「消费方核查」与
+「端到端验证」的必要性——`type-without-consumer` 会掩盖真实缺陷。
+
 ### 验证状态
 
-`go test ./...`（11 包、615 PASS、0 FAIL）、`-race`（0 FAIL）、`go vet`（OK）、
-`gofmt`（零违规）。**干净检出复验**（`git archive HEAD`）同样全绿——证明提交自包含。
+`go test ./...`（11 包全绿、0 FAIL）、`-race`（0 FAIL）、`go vet`（OK）、
+`gofmt`（零违规）。分支 `go-runtime` 共 49 个提交，**未 push**。
 
 ### 未完成（后续会话的起点）
 
