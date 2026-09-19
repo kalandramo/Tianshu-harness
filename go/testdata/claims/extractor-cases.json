@@ -1,0 +1,270 @@
+{
+  "skip_grep": {
+    "ctx": {
+      "toolName": "grep",
+      "input": {},
+      "result": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "isError": false
+    }
+  },
+  "skip_glob": {
+    "ctx": {
+      "toolName": "glob",
+      "input": {},
+      "result": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "isError": false
+    }
+  },
+  "skip_diff": {
+    "ctx": {
+      "toolName": "diff",
+      "input": {},
+      "result": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "isError": false
+    }
+  },
+  "skip_inspect_project": {
+    "ctx": {
+      "toolName": "inspect_project",
+      "input": {},
+      "result": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "isError": false
+    }
+  },
+  "skip_repo_map": {
+    "ctx": {
+      "toolName": "repo_map",
+      "input": {},
+      "result": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "isError": false
+    }
+  },
+  "skip_related_tests": {
+    "ctx": {
+      "toolName": "related_tests",
+      "input": {},
+      "result": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "isError": false
+    }
+  },
+  "skip_recall": {
+    "ctx": {
+      "toolName": "recall",
+      "input": {},
+      "result": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "isError": false
+    }
+  },
+  "skip_short_result": {
+    "ctx": {
+      "toolName": "read_file",
+      "input": {
+        "file_path": "a.ts"
+      },
+      "result": "short",
+      "isError": false
+    }
+  },
+  "read_with_symbols": {
+    "ctx": {
+      "toolName": "read_file",
+      "input": {
+        "file_path": "src/a.ts"
+      },
+      "result": "export function foo() {}\nexport const bar = 1;\nexport class Baz {}\n",
+      "isError": false
+    }
+  },
+  "read_no_symbols": {
+    "ctx": {
+      "toolName": "read_file",
+      "input": {
+        "file_path": "src/b.ts"
+      },
+      "result": "const x = 1;\nfunction internal() {}\n// 一堆普通代码\n",
+      "isError": false
+    }
+  },
+  "read_error": {
+    "ctx": {
+      "toolName": "read_file",
+      "input": {
+        "file_path": "src/c.ts"
+      },
+      "result": "错误信息错误信息错误信息错误信息错误信息错误信息错误信息错误信息错误信息错误信息错误信息错误信息错误信息错误信息错误信息错误信息错误信息错误信息错误信息错误信息",
+      "isError": true
+    }
+  },
+  "read_existing_dedup": {
+    "ctx": {
+      "toolName": "read_file",
+      "input": {
+        "file_path": "src/dedup.ts"
+      },
+      "result": "export const x = 1;\nexport const x = 1;\nexport const x = 1;\nexport const x = 1;\nexport const x = 1;\n",
+      "isError": false
+    },
+    "existing": [
+      "src/dedup.ts"
+    ]
+  },
+  "read_many_symbols": {
+    "ctx": {
+      "toolName": "read_file",
+      "input": {
+        "file_path": "src/many.ts"
+      },
+      "result": "export const s0 = 0;\nexport const s1 = 1;\nexport const s2 = 2;\nexport const s3 = 3;\nexport const s4 = 4;\nexport const s5 = 5;\nexport const s6 = 6;\nexport const s7 = 7;\nexport const s8 = 8;\nexport const s9 = 9;\nexport const s10 = 10;\nexport const s11 = 11;\nexport const s12 = 12;\nexport const s13 = 13;\nexport const s14 = 14;\n",
+      "isError": false
+    }
+  },
+  "read_export_list": {
+    "ctx": {
+      "toolName": "read_file",
+      "input": {
+        "file_path": "src/list.ts"
+      },
+      "result": "const a = 1, b = 2;\nexport { a, b as cc };\n// padding padding padding\n",
+      "isError": false
+    }
+  },
+  "tests_pass": {
+    "ctx": {
+      "toolName": "run_tests",
+      "input": {},
+      "result": "Tests: 12 passed, 0 failed\nAll good\n",
+      "isError": false
+    }
+  },
+  "tests_fail": {
+    "ctx": {
+      "toolName": "run_tests",
+      "input": {},
+      "result": "FAIL: 3 tests failed\n  expected 1 got 2\n",
+      "isError": true
+    }
+  },
+  "tests_pass_no_number": {
+    "ctx": {
+      "toolName": "run_tests",
+      "input": {},
+      "result": "ok, everything works fine here\n",
+      "isError": false
+    }
+  },
+  "bash_test_cmd": {
+    "ctx": {
+      "toolName": "bash",
+      "input": {
+        "command": "npx jest --silent"
+      },
+      "result": "Tests: 5 passing in 1.2s\n",
+      "isError": false
+    }
+  },
+  "bash_non_test": {
+    "ctx": {
+      "toolName": "bash",
+      "input": {
+        "command": "ls -la"
+      },
+      "result": "total 42\ndrwxr-xr-x ...\n",
+      "isError": false
+    }
+  },
+  "bash_security": {
+    "ctx": {
+      "toolName": "bash",
+      "input": {
+        "command": "npm audit"
+      },
+      "result": "found 3 vulnerabilities (CVE-2024-1234)\n",
+      "isError": true
+    }
+  },
+  "git_commit_feat": {
+    "ctx": {
+      "toolName": "git",
+      "input": {
+        "action": "commit",
+        "message": "feat: add thing"
+      },
+      "result": "[main abc1234] feat: add thing\n 3 files changed, 10 insertions(+)\n src/a.ts | 5 +\n src/b.ts | 3 +\n src/c.ts | 2 +\n",
+      "isError": false
+    }
+  },
+  "git_commit_routine": {
+    "ctx": {
+      "toolName": "git",
+      "input": {
+        "action": "commit",
+        "message": "update readme"
+      },
+      "result": "[main def5678] update readme\n 1 file changed, 1 insertion(+)\n README.md | 1 +\n",
+      "isError": false
+    }
+  },
+  "git_commit_fix": {
+    "ctx": {
+      "toolName": "git",
+      "input": {
+        "action": "commit",
+        "message": "fix: crash on empty input"
+      },
+      "result": "[main 111aaaa] fix: crash\n 1 file changed\n",
+      "isError": false
+    }
+  },
+  "git_commit_show_format": {
+    "ctx": {
+      "toolName": "git",
+      "input": {
+        "action": "commit",
+        "message": "feat: x"
+      },
+      "result": "abc9999 (HEAD -> main) feat: x\n 4 files changed\n a | 1\n b | 2\n c | 3\n d | 4\n",
+      "isError": false
+    }
+  },
+  "deliver_commit": {
+    "ctx": {
+      "toolName": "deliver_task",
+      "input": {
+        "commit": true,
+        "message": "feat: big change"
+      },
+      "result": "[main fedcba9] feat: big change\n 3 files changed\n x | 1\n y | 2\n z | 3\n",
+      "isError": false
+    }
+  },
+  "deliver_no_commit": {
+    "ctx": {
+      "toolName": "deliver_task",
+      "input": {
+        "commit": false,
+        "message": "feat: x"
+      },
+      "result": "[main aaa1111] feat: x\n",
+      "isError": false
+    }
+  },
+  "unknown_tool": {
+    "ctx": {
+      "toolName": "some_other_tool",
+      "input": {},
+      "result": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "isError": false
+    }
+  },
+  "commit_body_other_hash": {
+    "ctx": {
+      "toolName": "git",
+      "input": {
+        "action": "commit",
+        "message": "feat: revert"
+      },
+      "result": "[main real123] feat: revert\n reverts deadbeef1234 (previous)\n 3 files changed\n a | 1\n b | 2\n c | 3\n",
+      "isError": false
+    }
+  }
+}

@@ -1,0 +1,438 @@
+{
+  "skip_grep": {
+    "proposals": []
+  },
+  "skip_glob": {
+    "proposals": []
+  },
+  "skip_diff": {
+    "proposals": []
+  },
+  "skip_inspect_project": {
+    "proposals": []
+  },
+  "skip_repo_map": {
+    "proposals": []
+  },
+  "skip_related_tests": {
+    "proposals": []
+  },
+  "skip_recall": {
+    "proposals": []
+  },
+  "skip_short_result": {
+    "proposals": []
+  },
+  "read_with_symbols": {
+    "proposals": [
+      {
+        "kind": "file_observation",
+        "scope": "session",
+        "text": "a.ts (4L): foo, bar, Baz",
+        "confidence": 0.6,
+        "fitness": 2,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-x",
+          "turn": 3,
+          "eventId": "ev-42"
+        },
+        "tags": [
+          "tool",
+          "read_file"
+        ],
+        "ttl": 1800000,
+        "evidence": [
+          {
+            "id": "ev-42:read",
+            "kind": "tool_result",
+            "summary": "read_file a.ts",
+            "path": "src/a.ts"
+          }
+        ]
+      }
+    ]
+  },
+  "read_no_symbols": {
+    "proposals": [
+      {
+        "kind": "file_observation",
+        "scope": "session",
+        "text": "Read b.ts (4 lines)",
+        "confidence": 0.6,
+        "fitness": 2,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-x",
+          "turn": 3,
+          "eventId": "ev-42"
+        },
+        "tags": [
+          "tool",
+          "read_file"
+        ],
+        "ttl": 1800000,
+        "evidence": [
+          {
+            "id": "ev-42:read",
+            "kind": "tool_result",
+            "summary": "read_file b.ts",
+            "path": "src/b.ts"
+          }
+        ]
+      }
+    ]
+  },
+  "read_error": {
+    "proposals": []
+  },
+  "read_existing_dedup": {
+    "proposals": []
+  },
+  "read_many_symbols": {
+    "proposals": [
+      {
+        "kind": "file_observation",
+        "scope": "session",
+        "text": "many.ts (16L): s0, s1, s2, s3, s4, s5, s6, s7",
+        "confidence": 0.6,
+        "fitness": 2,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-x",
+          "turn": 3,
+          "eventId": "ev-42"
+        },
+        "tags": [
+          "tool",
+          "read_file"
+        ],
+        "ttl": 1800000,
+        "evidence": [
+          {
+            "id": "ev-42:read",
+            "kind": "tool_result",
+            "summary": "read_file many.ts",
+            "path": "src/many.ts"
+          }
+        ]
+      }
+    ]
+  },
+  "read_export_list": {
+    "proposals": [
+      {
+        "kind": "file_observation",
+        "scope": "session",
+        "text": "list.ts (4L): a, cc",
+        "confidence": 0.6,
+        "fitness": 2,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-x",
+          "turn": 3,
+          "eventId": "ev-42"
+        },
+        "tags": [
+          "tool",
+          "read_file"
+        ],
+        "ttl": 1800000,
+        "evidence": [
+          {
+            "id": "ev-42:read",
+            "kind": "tool_result",
+            "summary": "read_file list.ts",
+            "path": "src/list.ts"
+          }
+        ]
+      }
+    ]
+  },
+  "tests_pass": {
+    "proposals": [
+      {
+        "kind": "verification_fact",
+        "scope": "session",
+        "text": "Tests: 12 pass",
+        "confidence": 0.9,
+        "fitness": 3,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-x",
+          "turn": 3,
+          "eventId": "ev-42"
+        },
+        "tags": [
+          "tool",
+          "test_pass"
+        ],
+        "ttl": 3600000,
+        "evidence": [
+          {
+            "id": "ev-42:verify",
+            "kind": "test",
+            "summary": "Tests: 12 pass"
+          }
+        ]
+      }
+    ]
+  },
+  "tests_fail": {
+    "proposals": [
+      {
+        "kind": "failure_pattern",
+        "scope": "session",
+        "text": "FAIL: 3 tests failed   expected 1 got 2 ",
+        "confidence": 0.8,
+        "fitness": 5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-x",
+          "turn": 3,
+          "eventId": "ev-42"
+        },
+        "tags": [
+          "tool",
+          "test_failure"
+        ],
+        "ttl": 7200000,
+        "evidence": [
+          {
+            "id": "ev-42:fail",
+            "kind": "test",
+            "summary": "FAIL: 3 tests failed   expected 1 got 2 "
+          }
+        ]
+      }
+    ]
+  },
+  "tests_pass_no_number": {
+    "proposals": []
+  },
+  "bash_test_cmd": {
+    "proposals": [
+      {
+        "kind": "verification_fact",
+        "scope": "session",
+        "text": "Tests: 5 pass",
+        "confidence": 0.9,
+        "fitness": 3,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-x",
+          "turn": 3,
+          "eventId": "ev-42"
+        },
+        "tags": [
+          "tool",
+          "test_pass"
+        ],
+        "ttl": 3600000,
+        "evidence": [
+          {
+            "id": "ev-42:verify",
+            "kind": "test",
+            "summary": "Tests: 5 pass"
+          }
+        ]
+      }
+    ]
+  },
+  "bash_non_test": {
+    "proposals": []
+  },
+  "bash_security": {
+    "proposals": [
+      {
+        "kind": "security_finding",
+        "scope": "session",
+        "text": "found 3 vulnerabilities (CVE-2024-1234) ",
+        "confidence": 0.75,
+        "fitness": 6,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-x",
+          "turn": 3,
+          "eventId": "ev-42"
+        },
+        "tags": [
+          "tool",
+          "security"
+        ],
+        "ttl": 14400000,
+        "evidence": [
+          {
+            "id": "ev-42:security",
+            "kind": "tool_result",
+            "summary": "found 3 vulnerabilities (CVE-2024-1234) "
+          }
+        ]
+      }
+    ]
+  },
+  "git_commit_feat": {
+    "proposals": [
+      {
+        "kind": "decision",
+        "scope": "project",
+        "text": "Commit abc1234 (turn 3): \"feat: add thing\" (src/a.ts, src/b.ts, src/c.ts)",
+        "confidence": 0.95,
+        "fitness": 8,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-x",
+          "turn": 3,
+          "eventId": "ev-42"
+        },
+        "tags": [
+          "tool",
+          "commit",
+          "git",
+          "commit_fact"
+        ],
+        "ttl": null,
+        "evidence": [
+          {
+            "id": "ev-42:commit",
+            "kind": "tool_result",
+            "summary": "Commit abc1234 (turn 3): \"feat: add thing\" (src/a.ts, src/b.ts, src/c.ts)"
+          }
+        ]
+      }
+    ]
+  },
+  "git_commit_routine": {
+    "proposals": []
+  },
+  "git_commit_fix": {
+    "proposals": [
+      {
+        "kind": "decision",
+        "scope": "project",
+        "text": "Commit 111aaaa (turn 3): \"fix: crash on empty input\" (unknown files)",
+        "confidence": 0.95,
+        "fitness": 8,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-x",
+          "turn": 3,
+          "eventId": "ev-42"
+        },
+        "tags": [
+          "tool",
+          "commit",
+          "git",
+          "commit_fact"
+        ],
+        "ttl": null,
+        "evidence": [
+          {
+            "id": "ev-42:commit",
+            "kind": "tool_result",
+            "summary": "Commit 111aaaa (turn 3): \"fix: crash on empty input\" (unknown files)"
+          }
+        ]
+      }
+    ]
+  },
+  "git_commit_show_format": {
+    "proposals": [
+      {
+        "kind": "decision",
+        "scope": "project",
+        "text": "Commit abc9999 (turn 3): \"feat: x\" (a, b, c, d)",
+        "confidence": 0.95,
+        "fitness": 8,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-x",
+          "turn": 3,
+          "eventId": "ev-42"
+        },
+        "tags": [
+          "tool",
+          "commit",
+          "git",
+          "commit_fact"
+        ],
+        "ttl": null,
+        "evidence": [
+          {
+            "id": "ev-42:commit",
+            "kind": "tool_result",
+            "summary": "Commit abc9999 (turn 3): \"feat: x\" (a, b, c, d)"
+          }
+        ]
+      }
+    ]
+  },
+  "deliver_commit": {
+    "proposals": [
+      {
+        "kind": "decision",
+        "scope": "project",
+        "text": "Commit fedcba9 (turn 3): \"feat: big change\" (x, y, z)",
+        "confidence": 0.95,
+        "fitness": 8,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-x",
+          "turn": 3,
+          "eventId": "ev-42"
+        },
+        "tags": [
+          "tool",
+          "commit",
+          "git",
+          "commit_fact"
+        ],
+        "ttl": null,
+        "evidence": [
+          {
+            "id": "ev-42:commit",
+            "kind": "tool_result",
+            "summary": "Commit fedcba9 (turn 3): \"feat: big change\" (x, y, z)"
+          }
+        ]
+      }
+    ]
+  },
+  "deliver_no_commit": {
+    "proposals": []
+  },
+  "unknown_tool": {
+    "proposals": []
+  },
+  "commit_body_other_hash": {
+    "proposals": [
+      {
+        "kind": "decision",
+        "scope": "project",
+        "text": "Commit unknown (turn 3): \"feat: revert\" (a, b, c)",
+        "confidence": 0.95,
+        "fitness": 8,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-x",
+          "turn": 3,
+          "eventId": "ev-42"
+        },
+        "tags": [
+          "tool",
+          "commit",
+          "git",
+          "commit_fact"
+        ],
+        "ttl": null,
+        "evidence": [
+          {
+            "id": "ev-42:commit",
+            "kind": "tool_result",
+            "summary": "Commit unknown (turn 3): \"feat: revert\" (a, b, c)"
+          }
+        ]
+      }
+    ]
+  }
+}

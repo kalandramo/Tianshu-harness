@@ -118,6 +118,17 @@ type Loop struct {
 	// setHarnessAdvisoryBlock）。那是独立模块，见 HANDOFF。
 	Advisories *AdvisoryBus
 
+	// OnToolResult 是工具结果的观察回调（claim 提取的接入点）。
+	//
+	// **为什么用回调而非直接 import**：`internal/agent` 不该依赖
+	// `internal/context`（认知层）——分层方向相反。回调让装配留在 CLI，
+	// agent 包保持独立（与 consistency-check 的 getFileObservations 同模式）。
+	//
+	// 对账 TS 侧的 claim 提取触发点：工具执行完成后调用
+	// `extractClaimsFromToolResult(ctx, meta)` 并把提案 propose 进 claim store。
+	// nil 时跳过（认知层未装配）。
+	OnToolResult func(ev *RuntimeToolEvent, turn int)
+
 	// toolDefsCache 缓存工具定义的构造结果。
 	//
 	// **为什么需要**：`toolDefs()` 原本每轮重建全部工具的 schema 并重新
@@ -279,6 +290,14 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 			}
 			l.recordToolForHooks(toolEvent)
 			l.runHookPhase(ctx, PhasePostTool, turn, toolEvent)
+
+			// ── claim 提取（认知层）──
+			//
+			// 在 postTool hook 之后——hook 可能已改状态（如标记 claim 过期），
+			// 提取看到的是最新状态。对账 TS 的工具执行后提取触发点。
+			if l.OnToolResult != nil {
+				l.OnToolResult(toolEvent, turn)
+			}
 
 			l.appendAndPersist(wire.NewOrderedMap().
 				Set("role", "tool").

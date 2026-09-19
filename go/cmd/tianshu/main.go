@@ -240,6 +240,52 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	loop.Hooks = pipeline
 	loop.Advisories = bus
 
+	// claim 提取器装配——**这是 claim 的产生端**。
+	//
+	// 对账 TS 的工具执行后提取：`extractClaimsFromToolResult(ctx, meta)` →
+	// `claimStore.propose(proposal)`。
+	//
+	// **去重**：对 read_file，已观察过的路径不再重复提取（对账 TS 的
+	// `existingFileObservations` 参数）。
+	if claimStore != nil {
+		turnCounter := 0
+		loop.OnToolResult = func(ev *agent.RuntimeToolEvent, turn int) {
+			if turn != turnCounter {
+				turnCounter = turn
+			}
+			// 已有的 file_observation 路径集（去重）
+			existing := map[string]bool{}
+			for _, c := range claimStore.ListClaims(nil, []ctxstore.ContextClaimKind{ctxstore.ClaimFileObservation}, nil) {
+				for _, e := range c.Evidence {
+					if e.Path != "" {
+						existing[e.Path] = true
+					}
+				}
+			}
+
+			proposals := ctxstore.ExtractClaimsFromToolResult(
+				ctxstore.ToolResultContext{
+					ToolName: ev.Name,
+					Input:    ev.Input,
+					Result:   ev.ResultContent,
+					IsError:  ev.IsError,
+				},
+				ctxstore.ClaimExtractionMeta{
+					SessionID: app.Agent.SessionID,
+					Turn:      turn,
+					EventID:   fmt.Sprintf("t%d:%s", turn, ev.Name),
+				},
+				existing,
+				nowMs(),
+			)
+			for _, p := range proposals {
+				if _, err := claimStore.Propose(p); err != nil {
+					fmt.Fprintf(os.Stderr, "claim 提取落盘失败：%v\n", err)
+				}
+			}
+		}
+	}
+
 	// effects：claim 过期标记的真实落点。
 	//
 	// 对账 TS tool-execution.ts:719 的 markClaimStale——

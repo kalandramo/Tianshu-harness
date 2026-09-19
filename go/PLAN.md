@@ -575,8 +575,52 @@ claim 提取器（从会话事件产生 claim 的模块），故测试直接构�
 **过程发现**：`internal/context` 包名与标准库 `context` 冲突，CLI 里需别名
 （`ctxstore`）。
 
-**下一步**：claim 提取器（从会话事件产生 claim）——那才是 claim 的产生端，
-补上后这条链就完整了。或 `AdvisoryReadback`（采纳率台账）。
+### 第十四刀（已完成）：claim 提取器——补上产生端，闭环真实链路（2026-09-19）
+
+⚠️ **先修正上一轮的失真**：我上轮把「用户在真实会话中 claim 被标记过期」标为
+`met`，但系统提醒后核实发现 **`Propose` 无生产调用方**——claim store 在真实
+会话里**永远是空的**。上轮测试是手工构造装配喂事件，验证的是「接线」，不是
+「用户路径」。**这是同一模式的第四次**（前三次：hook 未接 loop / bus 无调用方 /
+CLI 未装配）。已诚实核销为 blocked。
+
+✅ `internal/context/claim_extractor.go`（430 行 + 245 行测试）+
+`Loop.OnToolResult` 回调 + CLI 装配
+
+**对账 `claim-extractor.ts`（206 行）**——五种提取路径：
+
+- `read_file`（成功）→ `file_observation`（有 `existingFileObservations` 去重）
+- `run_tests` / `bash`（测试命令）→ 失败 `failure_pattern` / 通过 `verification_fact`
+- `bash` 失败含安全关键词 → `security_finding`
+- `git commit` / `deliver_task(commit)` 且**显著** → `decision`（commit fact）
+- 其余 → 空
+
+**易错点已对账**：TTL 表（含 4 个 `Infinity` kind）/ `SKIP_TOOLS` 七个 /
+EXPORT_RE 抽符号（含 `export { a, b as c }` 的别名）/ COMMIT_HASH_RE 的
+**方括号锚定**（TS 注释：旧写法 `/\b[0-9a-f]{7,40}\b/` 曾把 ~61% 的 hash
+误解析到错误的 commit）/ 显著提交判定（关键词 **或** stat 行 ≥ 3）。
+
+**oracle 对账**：`testdata/claims/extractor-oracle.json` 27 用例。
+**生成器 scrub 时间字段**（`createdAt`/`expiresAt` → 相对 TTL）——含时间戳的
+oracle 不可复现。27 用例全绿。
+
+**设计**：`internal/agent` **不直接 import** `internal/context`——用注入回调
+`Loop.OnToolResult`（与 consistency-check 的 `getFileObservations` 同模式）。
+分层方向保持：装配在 CLI，agent 包独立。
+
+**用户级验收（已执行，真实二进制）**：
+
+- `TestCLIEndToEndClaimProduced`——跑真实 CLI，模型 `read_file` 读源文件 →
+  **磁盘上出现 `file_observation` claim**，文本
+  `widget.ts (4L): renderWidget, WIDGET_NAME, Widget`（符号提取正确）
+- `TestCLIEndToEndClaimLifecycle`——**完整生命周期**：第一轮 `read_file`
+  产生 claim → 第二轮 `write_file` 改同一文件 → JSONL 里出现
+  `claim_status_changed` 到 `stale`。**这是从产生到消费的完整链路**
+
+**变异反证 4 个：全部有判别力**（提案不落盘 2 红 / OnToolResult 提前返回 2 红 /
+loop 不调回调 2 红 / MarkClaimStale 不落盘 1 红）。
+
+**下一步**：`AdvisoryReadback`（采纳率台账）——解锁习惯化 / efficacy / lift /
+holdout 四个治理子系统。
 
 **为什么是它而不是补工具**：
 
