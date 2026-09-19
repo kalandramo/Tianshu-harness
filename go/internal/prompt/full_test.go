@@ -115,3 +115,37 @@ func TestDetectHostEnv(t *testing.T) {
 		t.Error("OSType 不应为空")
 	}
 }
+
+// TestBuildFullSystemPromptRuntimeEnv —— 生产路径必须真的探测 runtime-env。
+//
+// 这是端到端验证暴露的缺口：BuildStableVolatileBlock 支持 ctx.RuntimeEnv
+// 注入，但 BuildFullSystemPrompt（生产入口）**没有调用** DetectRuntimeEnvBlock
+// ——字段恒空，块从不出现。Go-only 测试只测了注入位置，测不出这个。
+//
+// 断言：cwd 含 go.mod 时，输出应含 <runtime-env> 块。
+func TestBuildFullSystemPromptRuntimeEnv(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module x\n\ngo 1.22.0\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	host := HostEnv{Platform: "darwin", OSType: "Darwin", OSRelease: "25.6.0"}
+	got := BuildFullSystemPrompt(Context{}, dir, host)
+
+	if !contains(got, "<runtime-env>") {
+		t.Errorf("cwd 含 go.mod 时应含 <runtime-env> 块（生产路径必须调 DetectRuntimeEnvBlock）\n实际输出：%q",
+			trunc2(got, 400))
+	}
+	if !contains(got, "go: declared 1.22.0 via go.mod") {
+		t.Errorf("应探测到 go 版本声明，实际：%q", trunc2(got, 400))
+	}
+}
+
+// TestBuildFullSystemPromptNoRuntimeEnv —— 无 marker 文件时不产生该块。
+func TestBuildFullSystemPromptNoRuntimeEnv(t *testing.T) {
+	dir := t.TempDir()
+	host := HostEnv{Platform: "darwin", OSType: "Darwin", OSRelease: "25.6.0"}
+	got := BuildFullSystemPrompt(Context{}, dir, host)
+	if contains(got, "<runtime-env>") {
+		t.Errorf("空目录不应有 <runtime-env> 块，实际：%q", trunc2(got, 400))
+	}
+}

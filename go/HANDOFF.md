@@ -263,6 +263,11 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   （`detectRuntimeEnvBlock(ctx.cwd)`），Go 做成注入字段 `ctx.RuntimeEnv`
   以保纯度。故该接线点由 Go-only 测试覆盖（oracle 覆盖不了——固定假 cwd
   探测不出东西，真实 fixture 目录的临时路径不可复现）
+  - **补漏（端到端验证暴露）**：首版接线只做了「插块位置」，漏了
+    `BuildFullSystemPrompt` 里调 `DetectRuntimeEnvBlock`——字段恒空、
+    块从不出现。Go-only 测试只测注入位置，测不出这个；是**真实端点验证**
+    （问模型"有没有 runtime-env 块"）暴露的。已补测试
+    `TestBuildFullSystemPromptRuntimeEnv` 锁定生产路径
 
 > **教训（golden 复现性）**：首版 runtime-env 用例用 `mkdtempSync` 生成
 > fixture 目录，**临时路径进了 golden** → 每次生成都不同 → 对账必然失败。
