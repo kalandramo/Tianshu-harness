@@ -280,6 +280,26 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	// bus 视为中性、不静音。这避免了冷启动阶段误杀有效提醒。
 	bus.SetLiftProvider(readback.GetMatureLift)
 
+	// holdout 反事实抽样——**shadow 样本的产生端**（对账 loop.ts:773）。
+	//
+	// 这是 lift 消费的**数据源**：没有它，readback 的 shadowHeld/shadowSatisfied
+	// 永远为 0，GetMatureLift 恒返回 nil（成熟度门未过）→ 负 lift 静音永不触发。
+	//
+	// **为什么需要反事实**：采纳率度量的是**相关性**——「送达后 2 轮内出现验证」
+	// 可能只是模型本来就要做。按小概率静默扣留（不渲染但照常核销）得到「没提醒
+	// 也会做」的基线，lift = 投递组采纳率 - 扣留组自发完成率，才是**因果**增益。
+	//
+	// 资格门（HOLDOUT_MIN_DELIVERED=3）：冷 key 先积累投递组基数——没有足够的
+	// 投递组样本，差值的分母为零。
+	//
+	// `RIVET_ADVISORY_HOLDOUT=0` 可关闭抽样（缺省 0.1）。
+	bus.SetHoldoutPolicy(agent.HoldoutPolicy{
+		Rate: agent.ParseHoldoutRate(os.Getenv("RIVET_ADVISORY_HOLDOUT")),
+		IsEligible: func(key string) bool {
+			return readback.GetDeliveredCount(key) >= agent.HoldoutMinDelivered
+		},
+	})
+
 	// claim 提取器装配——**这是 claim 的产生端**。
 	//
 	// 对账 TS 的工具执行后提取：`extractClaimsFromToolResult(ctx, meta)` →

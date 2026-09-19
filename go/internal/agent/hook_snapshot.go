@@ -223,11 +223,16 @@ func (l *Loop) buildRequestMessages() []*wire.OrderedMap {
 	}
 
 	block := l.Advisories.Render(l.cfg.StarDomain, 0)
-	if block == "" {
-		return l.messages
-	}
 
 	// 送达快照交给 readback（核销闭环的起点）。
+	//
+	// **必须无条件执行**——不能在 `block == ""` 时提前 return。
+	// 对账 TS turn-step-producer.ts:690：`drainDelivered()` + `track()` 在
+	// `render()` 之后**无条件**调用。
+	//
+	// **为什么关键**：holdout 把条目扣留时 block 为空，但那些 shadow 条目
+	// **照常进 delivered**（核销闭环）。若此处提前 return，shadow 样本全部丢失
+	// → GetMatureLift 恒 nil → 负 lift 静音永不触发。这是本刀修掉的既有缺陷。
 	//
 	// **必须 drain**——不 drain 会让 delivered 无限累积。drain 出的快照同时
 	// 喂给 Track（送达跟踪）与未来的 control adapter（TS 的控制面 tee 模式：
@@ -241,6 +246,10 @@ func (l *Loop) buildRequestMessages() []*wire.OrderedMap {
 		// run 局部序号，会与 postTool/postTurn 的 session turn 错位，
 		// course_changed 永远无法核销。见 Loop.SessionTurn 的说明。
 		l.Readback.Track(delivered, l.SessionTurn())
+	}
+
+	if block == "" {
+		return l.messages
 	}
 
 	out := make([]*wire.OrderedMap, 0, len(l.messages)+1)

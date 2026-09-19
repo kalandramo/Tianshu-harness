@@ -1372,6 +1372,284 @@
     ],
     "renders": 2
   },
+  "holdout_held": {
+    "holdout": {
+      "rate": 0.5,
+      "rng": [
+        0.1
+      ],
+      "eligible": [
+        "k"
+      ]
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "k",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "X",
+            "expect": {
+              "kind": "tool_appears",
+              "tools": [
+                "bash"
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
+  "holdout_not_hit": {
+    "holdout": {
+      "rate": 0.5,
+      "rng": [
+        0.9
+      ],
+      "eligible": [
+        "k"
+      ]
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "k",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "X",
+            "expect": {
+              "kind": "tool_appears",
+              "tools": [
+                "bash"
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
+  "holdout_ineligible": {
+    "holdout": {
+      "rate": 1,
+      "rng": [
+        0
+      ],
+      "eligible": []
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "k",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "X",
+            "expect": {
+              "kind": "tool_appears",
+              "tools": [
+                "bash"
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
+  "holdout_no_expect": {
+    "holdout": {
+      "rate": 1,
+      "rng": [
+        0
+      ],
+      "eligible": [
+        "k"
+      ]
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "k",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "X"
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
+  "holdout_constitutional_exempt": {
+    "holdout": {
+      "rate": 1,
+      "rng": [
+        0
+      ],
+      "eligible": [
+        "c"
+      ]
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "c",
+            "priority": 0.9,
+            "category": "constitutional",
+            "tier": "constitutional",
+            "content": "C",
+            "expect": {
+              "kind": "tool_appears",
+              "tools": [
+                "bash"
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
+  "holdout_immediate_exempt": {
+    "holdout": {
+      "rate": 1,
+      "rng": [
+        0
+      ],
+      "eligible": [
+        "i"
+      ]
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "i",
+            "priority": 0.7,
+            "category": "guard",
+            "immediate": true,
+            "content": "I",
+            "expect": {
+              "kind": "tool_appears",
+              "tools": [
+                "bash"
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
+  "holdout_star_exempt": {
+    "holdout": {
+      "rate": 1,
+      "rng": [
+        0
+      ],
+      "eligible": [
+        "s"
+      ]
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "s",
+            "priority": 0.5,
+            "category": "star_domain",
+            "content": "S",
+            "expect": {
+              "kind": "tool_appears",
+              "tools": [
+                "bash"
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
+  "holdout_rate_zero": {
+    "holdout": {
+      "rate": 0,
+      "rng": [
+        0
+      ],
+      "eligible": [
+        "k"
+      ]
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "k",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "X",
+            "expect": {
+              "kind": "tool_appears",
+              "tools": [
+                "bash"
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
+  "holdout_mixed": {
+    "holdout": {
+      "rate": 0.5,
+      "rng": [
+        0.1,
+        0.9
+      ],
+      "eligible": [
+        "a",
+        "b"
+      ]
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "a",
+            "priority": 0.7,
+            "category": "discipline",
+            "content": "A",
+            "expect": {
+              "kind": "tool_appears",
+              "tools": [
+                "bash"
+              ]
+            }
+          },
+          {
+            "key": "b",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "B",
+            "expect": {
+              "kind": "tool_appears",
+              "tools": [
+                "bash"
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
   "immediate_exempt": {
     "batches": [
       {

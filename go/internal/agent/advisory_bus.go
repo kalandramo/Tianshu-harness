@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"math"
+	"math/rand"
 	"sort"
 	"strconv"
 	"strings"
@@ -83,6 +85,13 @@ type AdvisoryBus struct {
 	// 与习惯化的 probation 机制同构但**独立**：lift 仍 ≤0 才再静音，
 	// 避免数据不更新导致永久静音。
 	liftProbation map[string]bool
+
+	// holdout 是反事实抽样策略（注入）。
+	//
+	// nil 时不做抽样（对账 TS 的 `if (this.holdout && this.holdout.rate > 0)`）。
+	holdout *HoldoutPolicy
+	// ledgerHeldOut 是 holdout 扣留的累计条目数（对账 ledgerHeldOut）。
+	ledgerHeldOut int
 	// ledgerDeferred / ledgerRevoked 等治理账本字段（本移植只保留必要项）。
 }
 
@@ -116,13 +125,66 @@ const (
 	// 对账 LIFT_MUTE_THRESHOLD（= 0）。**lift <= 0 都静音**：
 	// 正 lift = 提醒有真实增益；lift≈0 = 模型本来就会做（纯噪音）。
 	liftMuteThreshold = 0.0
+
+	// defaultHoldoutRate 是 holdout 缺省抽样率。
+	//
+	// 对账 DEFAULT_HOLDOUT_RATE。**10% 是个平衡点**——太低则 shadow 样本
+	// 积累过慢（lift 永远过不了成熟度门），太高则有效提醒被过多扣留。
+	defaultHoldoutRate = 0.1
+	// HoldoutMinDelivered 是开始抽样的最低历史送达次数。
+	//
+	// 对账 HOLDOUT_MIN_DELIVERED。**冷 key 先积累投递组基数**——没有足够的
+	// 投递组样本，lift 的差值算不出来（分母为零）。
+	HoldoutMinDelivered = 3
 )
+
+// HoldoutPolicy 是反事实抽样策略。
+//
+// 对账 HoldoutPolicy。**资格历史判定由调用方注入**（readback 的
+// getDeliveredCount / 效能先验）——bus 不持有历史数据。
+type HoldoutPolicy struct {
+	// Rate 是抽样率 [0,1]，0 = 关闭。
+	Rate float64
+	// IsEligible 是 key 级资格判定（如历史送达 >= HOLDOUT_MIN_DELIVERED）。
+	IsEligible func(key string) bool
+	// RNG 是可注入的随机源（测试确定性用），nil 时用全局 rand。
+	RNG func() float64
+}
+
+// ParseHoldoutRate 解析 RIVET_ADVISORY_HOLDOUT 环境变量。
+//
+// 对账 parseHoldoutRate：合法 [0,1] 数字生效，'0' 关闭，
+// 非法/缺省用默认率。**空串与未设置都走默认**（不视为 0）。
+func ParseHoldoutRate(raw string) float64 {
+	if raw == "" {
+		return defaultHoldoutRate
+	}
+	n, err := strconv.ParseFloat(raw, 64)
+	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) || n < 0 || n > 1 {
+		return defaultHoldoutRate
+	}
+	return n
+}
 
 // SetHabituationPolicy 注入习惯化查询源。
 //
 // 对账 setHabituationPolicy。缺省 = 不做习惯化对抗。
 func (b *AdvisoryBus) SetHabituationPolicy(policy HabituationPolicy) {
 	b.habituation = policy
+}
+
+// SetHoldoutPolicy 注入反事实抽样策略。
+//
+// 对账 setHoldoutPolicy（advisory-bus.ts:508）。生产装配（对账 loop.ts:773）：
+//
+//	bus.SetHoldoutPolicy(agent.HoldoutPolicy{
+//	    Rate:       agent.ParseHoldoutRate(os.Getenv("RIVET_ADVISORY_HOLDOUT")),
+//	    IsEligible: func(k string) bool { return readback.GetDeliveredCount(k) >= 3 },
+//	})
+//
+// 缺省 = 不做抽样。**rate <= 0 等价于关闭**。
+func (b *AdvisoryBus) SetHoldoutPolicy(policy HoldoutPolicy) {
+	b.holdout = &policy
 }
 
 // SetLiftProvider 注入成熟 lift 查询源。
@@ -269,12 +331,13 @@ func (b *AdvisoryBus) DrainLedger() AdvisoryLedgerDelta {
 		DroppedKeys: dedupStrings(b.ledgerDroppedKeys),
 		Deferred:    0,
 		Revoked:     0,
-		HeldOut:     0,
+		HeldOut:     b.ledgerHeldOut,
 		LiftMuted:   0,
 	}
 	b.ledgerSubmitted = 0
 	b.ledgerRendered = 0
 	b.ledgerDropped = 0
+	b.ledgerHeldOut = 0
 	b.ledgerDroppedKeys = nil
 	return delta
 }
@@ -552,6 +615,48 @@ func (b *AdvisoryBus) Render(activeStarDomain string, turn int) string {
 		taken = append(taken, e)
 	}
 
+	// ── 6a. holdout 反事实抽样 ──
+	//
+	// 对账 TS 的「Holdout 反事实抽样」（advisory-bus.ts:1138-1155）。
+	//
+	// **为什么需要**：采纳率度量的是**相关性**——「送达后 2 轮内出现验证」可能
+	// 是模型本来就要做。按小概率把赢得渲染位的条目静默扣留（不渲染，**照常核销
+	// expect**），得到「没提醒也会做」的基线。lift = 投递组采纳率 - 扣留组自发
+	// 完成率，才是**因果**增益。
+	//
+	// **资格白名单**（与习惯化静音豁免同构）：
+	//   - constitutional / immediate / star_domain 永不扣留
+	//   - **必须带 expect 谓词**——无谓词无法核销，扣留没有度量意义
+	//   - key 级历史资格由注入方判定（冷 key 先积累投递组基数）
+	var heldOut []AdvisoryEntry
+	if b.holdout != nil && b.holdout.Rate > 0 {
+		rng := b.holdout.RNG
+		if rng == nil {
+			rng = rand.Float64
+		}
+		// **倒序遍历 + 原地删除**（对账 TS 的 `for (let i = taken.length - 1; i >= 0; i--)`）
+		// ——正序遍历时 splice 会让后续元素前移，漏掉紧随其后的那条。
+		kept := make([]AdvisoryEntry, 0, len(taken))
+		for i := len(taken) - 1; i >= 0; i-- {
+			e := taken[i]
+			eligible := !e.Immediate &&
+				e.Tier != TierConstitutional &&
+				e.Category != CategoryStarDomain &&
+				e.Expect != nil &&
+				b.holdout.IsEligible != nil && b.holdout.IsEligible(e.Key)
+			if eligible && rng() < b.holdout.Rate {
+				heldOut = append(heldOut, e)
+				continue
+			}
+			kept = append(kept, e)
+		}
+		// kept 是倒序收集的，反转回原序
+		for i, j := 0, len(kept)-1; i < j; i, j = i+1, j-1 {
+			kept[i], kept[j] = kept[j], kept[i]
+		}
+		taken = kept
+	}
+
 	// ── 6. 合并：constitutional 在前，其余按 priority ──
 	sorted := make([]AdvisoryEntry, 0, len(constDeduped)+len(taken))
 	constList := make([]AdvisoryEntry, 0, len(constDeduped))
@@ -589,14 +694,21 @@ func (b *AdvisoryBus) Render(activeStarDomain string, turn int) string {
 	for _, e := range sorted {
 		renderedKeys[e.Key] = true
 	}
+	// **holdout 扣留 ≠ 丢弃**（对账 TS 的 `!heldKeys.has(k)`）——单独计 heldOut，
+	// 且照常进 delivered 核销。双记会让 ledger.dropped 虚高。
+	heldKeys := map[string]bool{}
+	for _, e := range heldOut {
+		heldKeys[e.Key] = true
+	}
 	var dropped []string
 	for _, e := range deduped {
-		if !renderedKeys[e.Key] {
+		if !renderedKeys[e.Key] && !heldKeys[e.Key] {
 			dropped = append(dropped, e.Key)
 		}
 	}
 	b.recordDropped(dropped)
 	b.ledgerRendered += len(sorted)
+	b.ledgerHeldOut += len(heldOut)
 
 	// ── P1a 核销闭环：记录实际送达 ──
 	for _, e := range sorted {
@@ -616,6 +728,18 @@ func (b *AdvisoryBus) Render(activeStarDomain string, turn int) string {
 			}
 			b.lastDeliveredRenderByKey[e.Key] = b.renderEpoch
 		}
+	}
+
+	// ── holdout 反事实组：扣留但照常核销（shadow 桶，自发完成率基线）──
+	//
+	// **必须进 delivered**——这是 shadow 样本的唯一来源。readback 的 Track 会
+	// 按 Shadow 字段把它们计入 shadowHeld（而非 delivered），谓词满足时计入
+	// shadowSatisfied。没有这一步，GetMatureLift 永远拿不到会话内数据。
+	for _, e := range heldOut {
+		b.delivered = append(b.delivered, DeliveredAdvisory{
+			Key: e.Key, Category: e.Category, Tier: e.Tier, Expect: e.Expect,
+			Shadow: true,
+		})
 	}
 
 	if len(sorted) == 0 {
@@ -671,6 +795,7 @@ func (b *AdvisoryBus) Reset() {
 	b.liftMuteRemaining = nil
 	b.liftProbation = nil
 	b.ledgerLiftMuted = 0
+	b.ledgerHeldOut = 0
 }
 
 // recordDropped 记 dropped 账本（去重 key，封顶）。

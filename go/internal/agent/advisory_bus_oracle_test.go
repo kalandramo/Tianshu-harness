@@ -37,6 +37,12 @@ type busCaseSpec struct {
 	Streaks map[string]int `json:"streaks"`
 	// Lifts 是 lift 消费：key → 成熟 lift（null 模拟样本不足 = 中性）
 	Lifts map[string]*float64 `json:"lifts"`
+	// Holdout 是反事实抽样：抽样率 + 固定 RNG 序列 + 资格 key 集
+	Holdout *struct {
+		Rate     float64   `json:"rate"`
+		RNG      []float64 `json:"rng"`
+		Eligible []string  `json:"eligible"`
+	} `json:"holdout"`
 }
 
 // fakeHabituation 是测试用的习惯化策略。
@@ -55,6 +61,16 @@ type busEntrySpec struct {
 	Tier      string  `json:"tier"`
 	TTL       *int    `json:"ttl"`
 	Immediate bool    `json:"immediate"`
+	// Expect 是核销谓词——**holdout 抽样要求非 nil**（无谓词的扣留无法度量）。
+	Expect *struct {
+		Kind           string   `json:"kind"`
+		Tools          []string `json:"tools"`
+		TargetIncludes string   `json:"targetIncludes"`
+		Paths          []string `json:"paths"`
+		Path           string   `json:"path"`
+		Needles        []string `json:"needles"`
+		WithinTurns    int      `json:"withinTurns"`
+	} `json:"expect"`
 }
 
 func loadBusOracle(t *testing.T) map[string]busOracleEntry {
@@ -101,6 +117,17 @@ func (s busEntrySpec) toEntry() AdvisoryEntry {
 	if s.TTL != nil {
 		e.TTL = *s.TTL
 	}
+	if s.Expect != nil {
+		e.Expect = &AdvisoryExpectation{
+			Kind:           ExpectKind(s.Expect.Kind),
+			Tools:          s.Expect.Tools,
+			TargetIncludes: s.Expect.TargetIncludes,
+			Paths:          s.Expect.Paths,
+			Path:           s.Expect.Path,
+			Needles:        s.Expect.Needles,
+			WithinTurns:    s.Expect.WithinTurns,
+		}
+	}
 	return e
 }
 
@@ -130,6 +157,30 @@ func TestAdvisoryBusOracleParity(t *testing.T) {
 						return v
 					}
 					return nil
+				})
+			}
+			if spec.Holdout != nil {
+				h := spec.Holdout
+				ri := 0
+				bus.SetHoldoutPolicy(HoldoutPolicy{
+					Rate: h.Rate,
+					IsEligible: func(key string) bool {
+						for _, k := range h.Eligible {
+							if k == key {
+								return true
+							}
+						}
+						return false
+					},
+					// 固定序列 RNG：耗尽后返回 1（永不命中），保证可复现
+					RNG: func() float64 {
+						if ri < len(h.RNG) {
+							v := h.RNG[ri]
+							ri++
+							return v
+						}
+						return 1
+					},
 				})
 			}
 			for i := 0; i < spec.Renders; i++ {
@@ -186,6 +237,30 @@ func TestAdvisoryBusLedgerParity(t *testing.T) {
 						return v
 					}
 					return nil
+				})
+			}
+			if spec.Holdout != nil {
+				h := spec.Holdout
+				ri := 0
+				bus.SetHoldoutPolicy(HoldoutPolicy{
+					Rate: h.Rate,
+					IsEligible: func(key string) bool {
+						for _, k := range h.Eligible {
+							if k == key {
+								return true
+							}
+						}
+						return false
+					},
+					// 固定序列 RNG：耗尽后返回 1（永不命中），保证可复现
+					RNG: func() float64 {
+						if ri < len(h.RNG) {
+							v := h.RNG[ri]
+							ri++
+							return v
+						}
+						return 1
+					},
 				})
 			}
 			for i := 0; i < spec.Renders; i++ {

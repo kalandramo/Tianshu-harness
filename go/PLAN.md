@@ -863,9 +863,55 @@ FAIL。**教训：变异脚本的备份/恢复必须覆盖该轮所有被改文�
 **oracle**：`advisorybus` 37 → **43 用例**（+6：mute_negative / mute_zero /
 positive_no_mute / null_neutral / exempt_tiers / mixed）。
 
-**下一步**：efficacy 负反馈环（`getAdoptionRate` 消费者——低采纳率条目降权，
-`EFFICACY_SPAN` 调权）或 holdout 反事实抽样本身（`shadowHeld` 的产生端——
-目前 Go 侧只消费 shadow 计数，抽样逻辑未移植）。
+### 第二十刀（已完成）：holdout 反事实抽样——shadow 样本的产生端（2026-09-19）
+
+✅ bus 的抽样逻辑 + 资格白名单 + CLI 装配 + **修掉一个既有接线缺陷**
+
+**这解除了第十九刀标 blocked 的那条验收**：上一刀的 lift 静音机制虽已实现并
+接线，但 **shadow 样本恒为 0**（抽样未移植 + 先验无播种）→ `GetMatureLift`
+恒返回 nil → 静音永不触发。本刀补上**产生端**。
+
+**为什么需要反事实**：采纳率度量的是**相关性**——「送达后 2 轮内出现验证」
+可能只是模型本来就要做。按小概率静默扣留（不渲染但**照常核销**）得到「没提醒
+也会做」的基线，`lift = 投递组采纳率 - 扣留组自发完成率` 才是**因果**增益。
+
+**三处对账点**：
+
+| 项 | TS 来源 | 值 |
+|---|---|---|
+| 抽样率 | `DEFAULT_HOLDOUT_RATE` | 0.1（`RIVET_ADVISORY_HOLDOUT` 覆盖） |
+| 资格门 | `HOLDOUT_MIN_DELIVERED` | 3（冷 key 先积累投递组基数） |
+| 资格白名单 | `advisory-bus.ts:1147-1151` | constitutional / immediate / star_domain / 无 expect 谓词 |
+
+**修掉的既有缺陷（本刀最有价值的发现）**：
+
+`hook_snapshot.go` 的 `buildRequestMessages` 在 `block == ""` 时**提前 return**，
+导致 `Track` 从未执行。而 holdout 把唯一条目扣留后 block 恰为空——
+**shadow 样本全部丢失**。对账 TS（`turn-step-producer.ts:690`）：
+`drainDelivered()` + `track()` 在 `render()` 之后**无条件**调用。
+
+这个缺陷**只有在 holdout 存在时才会显形**——之前没有任何条目会被扣留，
+block 空时也确实没有 delivered 可 drain，所以一直没暴露。
+
+**用户级验收（已执行）**：
+
+- `TestHoldoutProducesShadowSamples`——真实 loop 实测
+  `stats={Delivered:0 ShadowHeld:2}`（抽样率 100%，扣留 2 次且无真实送达）
+- `TestHoldoutEligibilityWhitelist`——6 个子用例（普通合格 / constitutional /
+  immediate / star_domain / 无谓词 / isEligible=false），Rate=1.0 隔离资格判定
+- `TestHoldoutDisabledByRateZero`——rate=0 时正常送达、无 shadow
+- `TestParseHoldoutRate`——9 个边界（空 / 0 / 0.5 / 1 / 越界 / 负 / 非法 / NaN / Inf）
+
+**变异反证 5 个有判别力**（不做抽样红 7 / 无谓词也抽样红 2 / 扣留计入 dropped
+红 3 / block 空时提前 return 红 1 / immediate 不豁免红 2 / star_domain 不豁免红 1）。
+constitutional 那条红 0 是**等价变异**——constitutional 在更早的 tier 分流就走
+`constDeduped` 独立路径，从不进入 `taken`，故该条件不可达（冗余防御）。
+
+**oracle**：`advisorybus` 43 → **52 用例**（+9 holdout）。
+
+**下一步**：跨会话先验播种（`SeedPriors` 的生产调用方——TS 用
+`AdvisoryEfficacyStore` 做 EWMA 衰减持久化，Go 侧未移植）。补上后 lift 的
+冷启动数据源才完整。
 
 **为什么是它而不是补工具**：
 

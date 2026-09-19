@@ -20,6 +20,8 @@ interface CaseSpec {
   streaks?: Record<string, number>
   /** lift 消费：key → 成熟 lift（null 模拟样本不足 = 中性） */
   lifts?: Record<string, number | null>
+  /** holdout 抽样：抽样率 + 固定 RNG 序列（模拟确定性抽样）+ 资格 key 集 */
+  holdout?: { rate: number; rng: number[]; eligible: string[] }
 }
 
 // 用例：覆盖去重 / 排序 / 类别上限 / 预算 / TTL / 转义 / 星域预算。
@@ -440,6 +442,86 @@ const cases: Record<string, CaseSpec> = {
     renders: 2,
   },
 
+  // ── holdout：rng 命中 → 扣留（不渲染，但进 delivered 的 shadow 桶）──
+  holdout_held: {
+    holdout: { rate: 0.5, rng: [0.1], eligible: ['k'] },
+    batches: [{ entries: [
+      { key: 'k', priority: 0.6, category: 'discipline', content: 'X', expect: { kind: 'tool_appears', tools: ['bash'] } },
+    ] }],
+    renders: 1,
+  },
+
+  // ── holdout：rng 未命中 → 正常渲染 ──
+  holdout_not_hit: {
+    holdout: { rate: 0.5, rng: [0.9], eligible: ['k'] },
+    batches: [{ entries: [
+      { key: 'k', priority: 0.6, category: 'discipline', content: 'X', expect: { kind: 'tool_appears', tools: ['bash'] } },
+    ] }],
+    renders: 1,
+  },
+
+  // ── holdout：不合格 key（历史送达不足）永不抽样 ──
+  holdout_ineligible: {
+    holdout: { rate: 1.0, rng: [0.0], eligible: [] },
+    batches: [{ entries: [
+      { key: 'k', priority: 0.6, category: 'discipline', content: 'X', expect: { kind: 'tool_appears', tools: ['bash'] } },
+    ] }],
+    renders: 1,
+  },
+
+  // ── holdout：无 expect 谓词不抽样（扣留无法核销 = 无度量意义）──
+  holdout_no_expect: {
+    holdout: { rate: 1.0, rng: [0.0], eligible: ['k'] },
+    batches: [{ entries: [{ key: 'k', priority: 0.6, category: 'discipline', content: 'X' }] }],
+    renders: 1,
+  },
+
+  // ── holdout：constitutional 永不扣留 ──
+  holdout_constitutional_exempt: {
+    holdout: { rate: 1.0, rng: [0.0], eligible: ['c'] },
+    batches: [{ entries: [
+      { key: 'c', priority: 0.9, category: 'constitutional', tier: 'constitutional', content: 'C', expect: { kind: 'tool_appears', tools: ['bash'] } },
+    ] }],
+    renders: 1,
+  },
+
+  // ── holdout：immediate 永不扣留 ──
+  holdout_immediate_exempt: {
+    holdout: { rate: 1.0, rng: [0.0], eligible: ['i'] },
+    batches: [{ entries: [
+      { key: 'i', priority: 0.7, category: 'guard', immediate: true, content: 'I', expect: { kind: 'tool_appears', tools: ['bash'] } },
+    ] }],
+    renders: 1,
+  },
+
+  // ── holdout：star_domain 永不扣留 ──
+  holdout_star_exempt: {
+    holdout: { rate: 1.0, rng: [0.0], eligible: ['s'] },
+    batches: [{ entries: [
+      { key: 's', priority: 0.5, category: 'star_domain', content: 'S', expect: { kind: 'tool_appears', tools: ['bash'] } },
+    ] }],
+    renders: 1,
+  },
+
+  // ── holdout：rate = 0 关闭抽样 ──
+  holdout_rate_zero: {
+    holdout: { rate: 0, rng: [0.0], eligible: ['k'] },
+    batches: [{ entries: [
+      { key: 'k', priority: 0.6, category: 'discipline', content: 'X', expect: { kind: 'tool_appears', tools: ['bash'] } },
+    ] }],
+    renders: 1,
+  },
+
+  // ── holdout：同批多条，只扣留命中的那条 ──
+  holdout_mixed: {
+    holdout: { rate: 0.5, rng: [0.1, 0.9], eligible: ['a', 'b'] },
+    batches: [{ entries: [
+      { key: 'a', priority: 0.7, category: 'discipline', content: 'A', expect: { kind: 'tool_appears', tools: ['bash'] } },
+      { key: 'b', priority: 0.6, category: 'discipline', content: 'B', expect: { kind: 'tool_appears', tools: ['bash'] } },
+    ] }],
+    renders: 1,
+  },
+
   // ── immediate 条目豁免 CVM 注入预算 ──
   immediate_exempt: {
     batches: [{ entries: [
@@ -471,6 +553,16 @@ for (const [name, spec] of Object.entries(cases)) {
   }
   if (spec.lifts) {
     bus.setLiftProvider((key: string) => spec.lifts![key] ?? null)
+  }
+  if (spec.holdout) {
+    let ri = 0
+    const seq = spec.holdout.rng
+    bus.setHoldoutPolicy({
+      rate: spec.holdout.rate,
+      isEligible: (key: string) => spec.holdout!.eligible.includes(key),
+      // 固定序列 RNG：耗尽后返回 1（永不命中），保证可复现
+      rng: () => (ri < seq.length ? seq[ri++]! : 1),
+    })
   }
   const renders: string[] = []
   const deliveredKeys: string[][] = []
