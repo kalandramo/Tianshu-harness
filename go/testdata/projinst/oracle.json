@@ -1,0 +1,255 @@
+{
+  "split": {
+    "fencesAndLevels": {
+      "md": "# 文档一\n前言散文\n```md\n## 这是代码块里的伪标题\n```\n## 真标题\n### 三级不算边界\n正文\n# 文档二\n结尾",
+      "sections": [
+        {
+          "heading": "# 文档一",
+          "title": "文档一",
+          "text": "# 文档一\n前言散文\n```md\n## 这是代码块里的伪标题\n```",
+          "tier": 0
+        },
+        {
+          "heading": "## 真标题",
+          "title": "真标题",
+          "text": "## 真标题\n### 三级不算边界\n正文",
+          "tier": 1
+        },
+        {
+          "heading": "# 文档二",
+          "title": "文档二",
+          "text": "# 文档二\n结尾",
+          "tier": 0
+        }
+      ]
+    },
+    "noHeadings": {
+      "md": "只有散文\n没有标题",
+      "sections": [
+        {
+          "title": "(前言)",
+          "text": "只有散文\n没有标题",
+          "tier": 0
+        }
+      ]
+    },
+    "empty": {
+      "md": "",
+      "sections": []
+    },
+    "whitespace": {
+      "md": "   \n\n  ",
+      "sections": []
+    },
+    "noLead": {
+      "md": "## 首节\n内容",
+      "sections": [
+        {
+          "heading": "## 首节",
+          "title": "首节",
+          "text": "## 首节\n内容",
+          "tier": 1
+        }
+      ]
+    },
+    "unclosedFence": {
+      "md": "## 真标题\n```\n## 伪标题",
+      "sections": [
+        {
+          "heading": "## 真标题",
+          "title": "真标题",
+          "text": "## 真标题\n```\n## 伪标题",
+          "tier": 1
+        }
+      ]
+    }
+  },
+  "select": {
+    "ample": {
+      "md": "# 项目 X\n\n| 目录 | 说明 |\n| --- | --- |\n| src | 源码 |\n| test | 测试 |\n\n## 高危命令纪律\n用户让你查看时不要动手，必须等待确认。\n\n## 说明性章节\n这是一段普通的散文说明，不含门禁词也不含表格。\n\n## 更多参考\n| a | b |\n| - | - |\n| 1 | 2 |",
+      "budget": 100000,
+      "measureEscaped": false,
+      "text": "# 项目 X\n\n| 目录 | 说明 |\n| --- | --- |\n| src | 源码 |\n| test | 测试 |\n\n## 高危命令纪律\n用户让你查看时不要动手，必须等待确认。\n\n## 说明性章节\n这是一段普通的散文说明，不含门禁词也不含表格。\n\n## 更多参考\n| a | b |\n| - | - |\n| 1 | 2 |",
+      "omitted": []
+    },
+    "tight": {
+      "md": "# 项目 X\n\n| 目录 | 说明 |\n| --- | --- |\n| src | 源码 |\n| test | 测试 |\n\n## 高危命令纪律\n用户让你查看时不要动手，必须等待确认。\n\n## 说明性章节\n这是一段普通的散文说明，不含门禁词也不含表格。\n\n## 更多参考\n| a | b |\n| - | - |\n| 1 | 2 |",
+      "budget": 260,
+      "measureEscaped": false,
+      "text": "# 项目 X\n\n| 目录 | 说明 |\n| --- | --- |\n| src | 源码 |\n| test | 测试 |\n\n## 高危命令纪律\n用户让你查看时不要动手，必须等待确认。\n\n## 说明性章节\n这是一段普通的散文说明，不含门禁词也不含表格。\n\n## 更多参考\n| a | b |\n| - | - |\n| 1 | 2 |",
+      "omitted": []
+    },
+    "veryTight": {
+      "md": "# 项目 X\n\n| 目录 | 说明 |\n| --- | --- |\n| src | 源码 |\n| test | 测试 |\n\n## 高危命令纪律\n用户让你查看时不要动手，必须等待确认。\n\n## 说明性章节\n这是一段普通的散文说明，不含门禁词也不含表格。\n\n## 更多参考\n| a | b |\n| - | - |\n| 1 | 2 |",
+      "budget": 130,
+      "measureEscaped": false,
+      "text": "## 高危命令纪律\n用户让你查看时不要动手，必须等待确认。\n\n[本块超出前缀预算，已略去 3 节：项目 X、说明性章节、更多参考。需要时直接读 AGENTS.md / .rivet.md 原文。]",
+      "omitted": [
+        "项目 X",
+        "说明性章节",
+        "更多参考"
+      ]
+    },
+    "impossible": {
+      "md": "# 项目 X\n\n| 目录 | 说明 |\n| --- | --- |\n| src | 源码 |\n| test | 测试 |\n\n## 高危命令纪律\n用户让你查看时不要动手，必须等待确认。\n\n## 说明性章节\n这是一段普通的散文说明，不含门禁词也不含表格。\n\n## 更多参考\n| a | b |\n| - | - |\n| 1 | 2 |",
+      "budget": 5,
+      "measureEscaped": false,
+      "text": "# 项目 X\n\n| 目录 | 说明 |\n| --- | --- |\n| src | 源码 |\n| test | 测试 |\n\n## 高危命令纪律\n用户让你查看时不要动手，必须等待确认。\n\n## 说明性章节\n这是一段普通的散文说明，不含门禁词也不含表格。\n\n## 更多参考\n| a | b |\n| - | - |\n| 1 | 2 |",
+      "omitted": []
+    },
+    "escaped": {
+      "md": "# 项目 X\n\n| 目录 | 说明 |\n| --- | --- |\n| src | 源码 |\n| test | 测试 |\n\n## 高危命令纪律\n用户让你查看时不要动手，必须等待确认。\n\n## 说明性章节\n这是一段普通的散文说明，不含门禁词也不含表格。\n\n## 更多参考\n| a | b |\n| - | - |\n| 1 | 2 |",
+      "budget": 400,
+      "measureEscaped": true,
+      "text": "# 项目 X\n\n| 目录 | 说明 |\n| --- | --- |\n| src | 源码 |\n| test | 测试 |\n\n## 高危命令纪律\n用户让你查看时不要动手，必须等待确认。\n\n## 说明性章节\n这是一段普通的散文说明，不含门禁词也不含表格。\n\n## 更多参考\n| a | b |\n| - | - |\n| 1 | 2 |",
+      "omitted": []
+    },
+    "emptyDoc": {
+      "md": "",
+      "budget": 100,
+      "measureEscaped": false,
+      "text": "",
+      "omitted": []
+    },
+    "conflict140": {
+      "md": "## 安全规范\n| 项 | 说明 |\n| - | - |\n| 必须 | 甲 |\n| 必须 | 乙 |\n| 必须 | 丙 |\n| 必须 | 丁 |\n\n## 普通说明\n一段不含门禁词的散文内容。一段不含门禁词的散文内容。一段不含门禁词的散文内容。一段不含门禁词的散文内容。\n\n## 参考索引\n| k | v |\n| - | - |\n| 1 | 2 |\n| 3 | 4 |\n| 5 | 6 |",
+      "budget": 140,
+      "measureEscaped": false,
+      "text": "## 普通说明\n一段不含门禁词的散文内容。一段不含门禁词的散文内容。一段不含门禁词的散文内容。一段不含门禁词的散文内容。\n\n[本块超出前缀预算，已略去 2 节：安全规范、参考索引。需要时直接读 AGENTS.md / .rivet.md 原文。]",
+      "omitted": [
+        "安全规范",
+        "参考索引"
+      ]
+    },
+    "conflict160": {
+      "md": "## 安全规范\n| 项 | 说明 |\n| - | - |\n| 必须 | 甲 |\n| 必须 | 乙 |\n| 必须 | 丙 |\n| 必须 | 丁 |\n\n## 普通说明\n一段不含门禁词的散文内容。一段不含门禁词的散文内容。一段不含门禁词的散文内容。一段不含门禁词的散文内容。\n\n## 参考索引\n| k | v |\n| - | - |\n| 1 | 2 |\n| 3 | 4 |\n| 5 | 6 |",
+      "budget": 160,
+      "measureEscaped": false,
+      "text": "## 普通说明\n一段不含门禁词的散文内容。一段不含门禁词的散文内容。一段不含门禁词的散文内容。一段不含门禁词的散文内容。\n\n[本块超出前缀预算，已略去 2 节：安全规范、参考索引。需要时直接读 AGENTS.md / .rivet.md 原文。]",
+      "omitted": [
+        "安全规范",
+        "参考索引"
+      ]
+    },
+    "conflict180": {
+      "md": "## 安全规范\n| 项 | 说明 |\n| - | - |\n| 必须 | 甲 |\n| 必须 | 乙 |\n| 必须 | 丙 |\n| 必须 | 丁 |\n\n## 普通说明\n一段不含门禁词的散文内容。一段不含门禁词的散文内容。一段不含门禁词的散文内容。一段不含门禁词的散文内容。\n\n## 参考索引\n| k | v |\n| - | - |\n| 1 | 2 |\n| 3 | 4 |\n| 5 | 6 |",
+      "budget": 180,
+      "measureEscaped": false,
+      "text": "## 普通说明\n一段不含门禁词的散文内容。一段不含门禁词的散文内容。一段不含门禁词的散文内容。一段不含门禁词的散文内容。\n\n[本块超出前缀预算，已略去 2 节：安全规范、参考索引。需要时直接读 AGENTS.md / .rivet.md 原文。]",
+      "omitted": [
+        "安全规范",
+        "参考索引"
+      ]
+    },
+    "twoPass171": {
+      "md": "## 标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标标标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标标标标标标标标标标标标标标标标标标标标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标标标标标标标标标标标标标标标标标\nxxxxxxxxxxxxxxxxxxxxxxx",
+      "budget": 171,
+      "measureEscaped": false,
+      "text": "## 标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n[本块超出前缀预算，已略去 4 节：标、标标标标标标、标标标标标标标标标标标标标标标标标标标标标标标、标标标标标标标标标标标标标标标标标。需要时直接读 AGENTS.md / .rivet.md 原文。]",
+      "omitted": [
+        "标",
+        "标标标标标标",
+        "标标标标标标标标标标标标标标标标标标标标标标标",
+        "标标标标标标标标标标标标标标标标标"
+      ]
+    },
+    "twoPass175": {
+      "md": "## 标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标标标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标标标标标标标标标标标标标标标标标标标标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标标标标标标标标标标标标标标标标标\nxxxxxxxxxxxxxxxxxxxxxxx",
+      "budget": 175,
+      "measureEscaped": false,
+      "text": "## 标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n[本块超出前缀预算，已略去 4 节：标、标标标标标标、标标标标标标标标标标标标标标标标标标标标标标标、标标标标标标标标标标标标标标标标标。需要时直接读 AGENTS.md / .rivet.md 原文。]",
+      "omitted": [
+        "标",
+        "标标标标标标",
+        "标标标标标标标标标标标标标标标标标标标标标标标",
+        "标标标标标标标标标标标标标标标标标"
+      ]
+    },
+    "twoPass190": {
+      "md": "## 标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标标标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标标标标标标标标标标标标标标标标标标标标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标标标标标标标标标标标标标标标标标\nxxxxxxxxxxxxxxxxxxxxxxx",
+      "budget": 190,
+      "measureEscaped": false,
+      "text": "## 标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n[本块超出前缀预算，已略去 4 节：标、标标标标标标、标标标标标标标标标标标标标标标标标标标标标标标、标标标标标标标标标标标标标标标标标。需要时直接读 AGENTS.md / .rivet.md 原文。]",
+      "omitted": [
+        "标",
+        "标标标标标标",
+        "标标标标标标标标标标标标标标标标标标标标标标标",
+        "标标标标标标标标标标标标标标标标标"
+      ]
+    },
+    "twoPass220": {
+      "md": "## 标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标标标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标标标标标标标标标标标标标标标标标标标标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n## 标标标标标标标标标标标标标标标标标\nxxxxxxxxxxxxxxxxxxxxxxx",
+      "budget": 220,
+      "measureEscaped": false,
+      "text": "## 标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n## 标标标标标标\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n[本块超出前缀预算，已略去 3 节：标、标标标标标标标标标标标标标标标标标标标标标标标、标标标标标标标标标标标标标标标标标。需要时直接读 AGENTS.md / .rivet.md 原文。]",
+      "omitted": [
+        "标",
+        "标标标标标标标标标标标标标标标标标标标标标标标",
+        "标标标标标标标标标标标标标标标标标"
+      ]
+    }
+  },
+  "greedy": {
+    "0": {
+      "text": "",
+      "omitted": [
+        "甲",
+        "乙",
+        "丙"
+      ]
+    },
+    "10": {
+      "text": "",
+      "omitted": [
+        "甲",
+        "乙",
+        "丙"
+      ]
+    },
+    "55": {
+      "text": "## 甲\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "omitted": [
+        "乙",
+        "丙"
+      ]
+    },
+    "56": {
+      "text": "## 甲\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "omitted": [
+        "乙",
+        "丙"
+      ]
+    },
+    "60": {
+      "text": "## 甲\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "omitted": [
+        "乙",
+        "丙"
+      ]
+    },
+    "120": {
+      "text": "## 甲\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n\n## 乙\nBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+      "omitted": [
+        "丙"
+      ]
+    },
+    "170": {
+      "text": "## 甲\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n\n## 乙\nBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\n\n## 丙\nCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+      "omitted": []
+    },
+    "300": {
+      "text": "## 甲\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n\n## 乙\nBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\n\n## 丙\nCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+      "omitted": []
+    }
+  },
+  "escape": {
+    "plain": "plain",
+    "a & b": "a &amp; b",
+    "<tag>": "&lt;tag&gt;",
+    "\"quoted\"": "&quot;quoted&quot;",
+    "'single'": "'single'",
+    "&<\"": "&amp;&lt;&quot;",
+    "&&&": "&amp;&amp;&amp;",
+    "中文 & 符号 <测试>": "中文 &amp; 符号 &lt;测试&gt;"
+  }
+}

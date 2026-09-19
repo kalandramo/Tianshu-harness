@@ -141,8 +141,22 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   - 端到端：CLI 实际发出的 system prompt（捕获自 mock 端点）与 oracle
     逐字节一致，31,723 = 31,355 + 2 + 366
   - 变异反证 4 个全部触发红灯（分隔符 / 优先级 / 未知家族 / base 篡改）
-- [ ] volatile 层：`src/prompt/volatile.ts`（1,263 行）——git 快照、工具历史、
-  待办、星域提示。**依赖会话状态容器，建议先做最小 session 状态**
+- [x] **project-instructions 按节选取**：`internal/prompt/projinst.go`
+  - 对账 `src/prompt/project-instructions.ts`（184 行纯函数）
+  - 13 个 select + 6 个 split + 8 个 greedy + 8 个 escape 用例，逐字节等价
+  - 变异反证 6 个全部有判别力（表格优先/`#`边界/首项分隔符/`&`转义顺序/
+    围栏处理/两轮预留）
+  - **踩坑记录（重要）**：两轮预留的区分点用了**三版用例才找到**。前两版
+    变异后仍全绿——根因是用例文档不够极端，且 TS 侧"单轮"对照物自身写错
+    （note 用全部标题 vs 实际略去集），产生假差异信号。最终在 **Go 侧穷举
+    搜索**（3000 文档 × 全预算）定位，并以 JSON 字面量原样嵌入文档。
+    教训：变异 0 红 → 先怀疑用例无效与对照物有 bug，再怀疑测试无判别力；
+    连续两轮 0 红就换穷举搜索，不要继续猜。
+- [ ] volatile 层剩余：`buildVolatileBlockInternal`（148 行）的平台行/sober/
+  locus/working-set/session-memory/star-domain 拼接，以及
+  `buildDynamicAppendixParts`（动态 appendix）。**动态部分依赖会话状态容器，
+  建议先做最小 session 状态**；稳定块的其余部分依赖 runtime-env /
+  verify-config / git-status-summary 等外部模块，需逐个移植
 - [ ] appendixDelta / 动态 appendix 的分段与冻结边界
 - [ ] `internal/compact`：边界压缩（仅 `turn===0` 重写历史）
 - [ ] `internal/cache`：命中率统计与 advisor
