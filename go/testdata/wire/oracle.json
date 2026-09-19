@@ -1,13 +1,186 @@
 {
-  "wire_raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"system\",\"content\":\"你是天枢。证据先行。\"},{\"role\":\"user\",\"content\":\"refactor this function\"},{\"role\":\"assistant\",\"content\":\"ok\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"line1\\nline2\"}],\"stream\":true,\"max_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"temperature\":0.7}",
-  "key_order": [
-    "model",
-    "messages",
-    "stream",
-    "max_tokens",
-    "stream_options",
-    "tools",
-    "temperature"
-  ],
-  "wire_thinking_enabled_no_temp": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"system\",\"content\":\"你是天枢。证据先行。\\n\\n请在内部思考链中使用中文进行推理。不要在回复中输出你的推理过程，只输出最终答案或工具调用。\"},{\"role\":\"user\",\"content\":\"refactor this function\"},{\"role\":\"assistant\",\"content\":\"ok\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\"}}],\"reasoning_content\":\"\"},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"line1\\nline2\"}],\"stream\":true,\"max_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"thinking\":{\"type\":\"enabled\"}}"
+  "base": {
+    "raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"system\",\"content\":\"你是天枢。证据先行。\"},{\"role\":\"user\",\"content\":\"refactor this function\"},{\"role\":\"assistant\",\"content\":\"ok\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"line1\\nline2\"}],\"stream\":true,\"max_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"temperature\":0.7}",
+    "key_order": [
+      "model",
+      "messages",
+      "stream",
+      "max_tokens",
+      "stream_options",
+      "tools",
+      "temperature"
+    ]
+  },
+  "no_tools": {
+    "raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"system\",\"content\":\"你是天枢。证据先行。\"},{\"role\":\"user\",\"content\":\"refactor this function\"},{\"role\":\"assistant\",\"content\":\"ok\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"line1\\nline2\"}],\"stream\":true,\"max_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"temperature\":0.7}",
+    "key_order": [
+      "model",
+      "messages",
+      "stream",
+      "max_tokens",
+      "stream_options",
+      "temperature"
+    ]
+  },
+  "thinking_enabled_with_effort": {
+    "raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"system\",\"content\":\"你是天枢。证据先行。\\n\\n请在内部思考链中使用中文进行推理。不要在回复中输出你的推理过程，只输出最终答案或工具调用。\"},{\"role\":\"user\",\"content\":\"refactor this function\"},{\"role\":\"assistant\",\"content\":\"ok\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\"}}],\"reasoning_content\":\"\"},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"line1\\nline2\"}],\"stream\":true,\"max_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"thinking\":{\"type\":\"enabled\"},\"reasoning_effort\":\"max\"}",
+    "key_order": [
+      "model",
+      "messages",
+      "stream",
+      "max_tokens",
+      "stream_options",
+      "tools",
+      "thinking",
+      "reasoning_effort"
+    ]
+  },
+  "thinking_enabled_no_block": {
+    "raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"system\",\"content\":\"你是天枢。证据先行。\\n\\n请在内部思考链中使用中文进行推理。不要在回复中输出你的推理过程，只输出最终答案或工具调用。\"},{\"role\":\"user\",\"content\":\"refactor this function\"},{\"role\":\"assistant\",\"content\":\"ok\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\"}}],\"reasoning_content\":\"\"},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"line1\\nline2\"}],\"stream\":true,\"max_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"reasoning_effort\":\"high\"}",
+    "key_order": [
+      "model",
+      "messages",
+      "stream",
+      "max_tokens",
+      "stream_options",
+      "tools",
+      "reasoning_effort"
+    ]
+  },
+  "effort_cap_clamp": {
+    "raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"system\",\"content\":\"你是天枢。证据先行。\\n\\n请在内部思考链中使用中文进行推理。不要在回复中输出你的推理过程，只输出最终答案或工具调用。\"},{\"role\":\"user\",\"content\":\"refactor this function\"},{\"role\":\"assistant\",\"content\":\"ok\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\"}}],\"reasoning_content\":\"\"},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"line1\\nline2\"}],\"stream\":true,\"max_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"reasoning_effort\":\"xhigh\"}",
+    "key_order": [
+      "model",
+      "messages",
+      "stream",
+      "max_tokens",
+      "stream_options",
+      "tools",
+      "reasoning_effort"
+    ]
+  },
+  "max_completion_tokens": {
+    "raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"system\",\"content\":\"你是天枢。证据先行。\"},{\"role\":\"user\",\"content\":\"refactor this function\"},{\"role\":\"assistant\",\"content\":\"ok\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"line1\\nline2\"}],\"stream\":true,\"max_completion_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"temperature\":0.7}",
+    "key_order": [
+      "model",
+      "messages",
+      "stream",
+      "max_completion_tokens",
+      "stream_options",
+      "tools",
+      "temperature"
+    ]
+  },
+  "no_stream_options": {
+    "raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"system\",\"content\":\"你是天枢。证据先行。\"},{\"role\":\"user\",\"content\":\"refactor this function\"},{\"role\":\"assistant\",\"content\":\"ok\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"line1\\nline2\"}],\"stream\":true,\"max_tokens\":8192,\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"temperature\":0.7}",
+    "key_order": [
+      "model",
+      "messages",
+      "stream",
+      "max_tokens",
+      "tools",
+      "temperature"
+    ]
+  },
+  "json_mode": {
+    "raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"system\",\"content\":\"你是天枢。证据先行。\"},{\"role\":\"user\",\"content\":\"refactor this function\"},{\"role\":\"assistant\",\"content\":\"ok\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"line1\\nline2\"}],\"stream\":true,\"max_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"response_format\":{\"type\":\"json_object\"},\"temperature\":0.7}",
+    "key_order": [
+      "model",
+      "messages",
+      "stream",
+      "max_tokens",
+      "stream_options",
+      "tools",
+      "response_format",
+      "temperature"
+    ]
+  },
+  "request_response_format_wins": {
+    "raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"system\",\"content\":\"你是天枢。证据先行。\"},{\"role\":\"user\",\"content\":\"refactor this function\"},{\"role\":\"assistant\",\"content\":\"ok\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"line1\\nline2\"}],\"stream\":true,\"max_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"response_format\":{\"type\":\"json_schema\",\"name\":\"x\"},\"temperature\":0.7}",
+    "key_order": [
+      "model",
+      "messages",
+      "stream",
+      "max_tokens",
+      "stream_options",
+      "tools",
+      "response_format",
+      "temperature"
+    ]
+  },
+  "system_suffix": {
+    "raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"system\",\"content\":\"你是天枢。证据先行。\"},{\"role\":\"user\",\"content\":\"refactor this function\"},{\"role\":\"assistant\",\"content\":\"ok\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"line1\\nline2\"}],\"stream\":true,\"max_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"temperature\":0.7}",
+    "key_order": [
+      "model",
+      "messages",
+      "stream",
+      "max_tokens",
+      "stream_options",
+      "tools",
+      "temperature"
+    ]
+  },
+  "tool_choice": {
+    "raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"system\",\"content\":\"你是天枢。证据先行。\"},{\"role\":\"user\",\"content\":\"refactor this function\"},{\"role\":\"assistant\",\"content\":\"ok\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"line1\\nline2\"}],\"stream\":true,\"max_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"tool_choice\":\"required\",\"temperature\":0.7}",
+    "key_order": [
+      "model",
+      "messages",
+      "stream",
+      "max_tokens",
+      "stream_options",
+      "tools",
+      "tool_choice",
+      "temperature"
+    ]
+  },
+  "reasoning_split": {
+    "raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"system\",\"content\":\"你是天枢。证据先行。\"},{\"role\":\"user\",\"content\":\"refactor this function\"},{\"role\":\"assistant\",\"content\":\"ok\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"line1\\nline2\"}],\"stream\":true,\"max_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"temperature\":0.7,\"reasoning_split\":true}",
+    "key_order": [
+      "model",
+      "messages",
+      "stream",
+      "max_tokens",
+      "stream_options",
+      "tools",
+      "temperature",
+      "reasoning_split"
+    ]
+  },
+  "preserved_thinking_missing_reasoning": {
+    "raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"},{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{}\"}}],\"reasoning_content\":\"\"}],\"stream\":true,\"max_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"thinking\":{\"type\":\"enabled\"}}",
+    "key_order": [
+      "model",
+      "messages",
+      "stream",
+      "max_tokens",
+      "stream_options",
+      "tools",
+      "thinking"
+    ]
+  },
+  "strip_reasoning_non_preserved": {
+    "raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"},{\"role\":\"assistant\",\"content\":\"answer\"}],\"stream\":true,\"max_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"temperature\":0.7}",
+    "key_order": [
+      "model",
+      "messages",
+      "stream",
+      "max_tokens",
+      "stream_options",
+      "tools",
+      "temperature"
+    ]
+  },
+  "budget_tokens": {
+    "raw": "{\"model\":\"deepseek-v4-pro\",\"messages\":[{\"role\":\"system\",\"content\":\"你是天枢。证据先行。\\n\\n请在内部思考链中使用中文进行推理。不要在回复中输出你的推理过程，只输出最终答案或工具调用。\"},{\"role\":\"user\",\"content\":\"refactor this function\"},{\"role\":\"assistant\",\"content\":\"ok\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.ts\\\"}\"}}],\"reasoning_content\":\"\"},{\"role\":\"tool\",\"tool_call_id\":\"c1\",\"content\":\"line1\\nline2\"}],\"stream\":true,\"max_tokens\":8192,\"stream_options\":{\"include_usage\":true},\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"description\":\"Read a file\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"bash\",\"description\":\"Run a command <careful>\",\"parameters\":{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}}}],\"thinking\":{\"type\":\"enabled\",\"budget_tokens\":4915},\"reasoning_effort\":\"high\"}",
+    "key_order": [
+      "model",
+      "messages",
+      "stream",
+      "max_tokens",
+      "stream_options",
+      "tools",
+      "thinking",
+      "reasoning_effort"
+    ]
+  }
 }
