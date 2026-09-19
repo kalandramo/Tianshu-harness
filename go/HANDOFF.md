@@ -279,8 +279,21 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 > Go 编译不过 → 测试根本没跑）。变异反证必须确认测试**真的执行了**
 > （看输出有无 `build failed`），而不只看 FAIL 计数。
 
-- [ ] **剩余未移植的 IO 块**：
-  - `renderDeclaredVerify`（读 .rivet-config.json 的 verify 节 + 信任门）
+- [x] **`renderDeclaredVerify`**：`internal/prompt/verifycmds.go`
+  - **拆分设计**：`LoadDeclaredVerify`（读取，向上 20 层查找）+ 
+    `RenderDeclaredVerify`（渲染，纯函数，12 个 oracle 用例逐字节对账）
+  - 渲染对账点：四种 kind 的**固定顺序** test→build→typecheck→lint
+    （与 config 书写顺序无关）、trim 后空项过滤、routes 追加在后、
+    整体 escapeXml、无声明返回空串
+  - **oracle 走真实路径**：`RIVET_TRUST_PROJECT=1` 绕过信任门 + fixture 目录
+    （生成器里不手抄渲染逻辑——首版手抄过，自查后改掉）
+  - 接线：块在 project-instructions 之后、project-memory 之前
+    （对账 volatile.ts:1129），**不过 truncateBlock**（TS 侧无 cap）
+  - 边界测试：向上查找的 20 层上限（M4 变异首轮红 0 处→补 19/20 层用例后
+    双向可判别：20→1 红、20→30 红）
+  - **未移植**：TS 的信任门（isProjectTrusted）——Go 侧无 trust store，
+    故未授信项目也会返回声明。已知行为差异，记于此
+- [ ] **剩余未移植**：
   - Windows 相关：`windowsShellNote` / path-style-note / platform-note
 - [ ] `buildDynamicAppendixParts`（动态 appendix）——**依赖会话状态容器，
   建议先做最小 session 状态**

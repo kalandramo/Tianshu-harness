@@ -24,10 +24,11 @@
  * 调用**真实** buildStableVolatileBlock，不手抄期望值。
  * 每个用例的 ctx 都显式设 `blockCaps`，避免依赖宿主默认值。
  */
-import { writeFileSync, mkdirSync } from 'node:fs'
+import { writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { createHash } from 'node:crypto'
+import { tmpdir } from 'node:os'
 import { buildStableVolatileBlock, type VolatileContext } from '../../../src/prompt/volatile.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -188,6 +189,17 @@ for (const c of cases) {
   const out = buildStableVolatileBlock(ctx)
   results[c.name] = { ctx, out, note: c.note }
 }
+
+// **verify-commands 与 runtime-env 同样无法在此对账**（架构分歧，有意为之）：
+//
+// TS 侧由 renderDeclaredVerify(ctx.cwd) **内部读取**产生，不是 ctx 字段。
+// Go 侧为保纯度做成注入字段 ctx.DeclaredVerify。
+//
+// 尝试过用 fixture 目录触发真实读取，但失败：cwd 的临时路径会进
+// <environment> 行 → 整个 <context> 输出不可复现（实测三次 sha 各异）。
+// 故不造这个 oracle 用例，改用 Go-only 测试覆盖位置
+// （见 volatile_test.go 的 TestDeclaredVerifyInjectionPosition）。
+// 块内容本身由 verifycmds_test.go 的 12 个 oracle 用例覆盖。
 
 // **runtime-env 无法在此对账**（架构分歧，有意为之）：
 //

@@ -68,6 +68,10 @@ type VolatileContext struct {
 	// 空串表示无该块。由调用方用 DetectRuntimeEnvBlock 生成后传入——
 	// 这样 BuildStableVolatileBlock 保持纯函数（不 spawn 子进程）。
 	RuntimeEnv string
+	// DeclaredVerify 是 <verify-commands> 块的内容（对账 TS 的 renderDeclaredVerify）。
+	// 空串表示无该块。由调用方用 DetectDeclaredVerifyBlock 生成后传入——
+	// 同样为保持纯函数（不读文件系统）。
+	DeclaredVerify string
 	// BlockCaps 覆盖默认 caps（对齐 TS 的 `{...FROZEN_BLOCK_CAPS, ...ctx.blockCaps}`）。
 	BlockCaps map[string]int
 }
@@ -152,6 +156,13 @@ func BuildStableVolatileBlock(ctx VolatileContext, host HostEnv) string {
 		}
 		ordered = append(ordered, RenderProjectInstructionsBlock(md, caps.ProjectInstructions))
 	}
+	// verify-commands 在 project-instructions **之后**、project-memory 之前
+	// （对账 volatile.ts:1129 的位置）。它**不过 truncateBlock**——TS 侧直接
+	// push，没有 cap。
+	if ctx.DeclaredVerify != "" {
+		ordered = append(ordered, ctx.DeclaredVerify)
+	}
+
 	if ctx.ProjectMemoryBlock != "" {
 		ordered = append(ordered, TruncateBlock(ctx.ProjectMemoryBlock, caps.ProjectMemory, "project-memory"))
 	}

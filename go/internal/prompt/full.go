@@ -85,6 +85,9 @@ func BuildFullSystemPrompt(ctx Context, cwd string, host HostEnv) string {
 		// **必须在这里调**——BuildStableVolatileBlock 只负责把它插入正确位置，
 		// 不自己探测（保持纯函数）。漏了这一步则字段恒空、块从不出现。
 		RuntimeEnv: DetectRuntimeEnvBlock(RealRuntimeEnvDeps(cwd)),
+		// verify-commands：对账 TS 的 renderDeclaredVerify(cwd)。
+		// 同 RuntimeEnv，**必须在这里调**——BuildStableVolatileBlock 只插位置。
+		DeclaredVerify: DetectDeclaredVerifyBlock(cwd),
 	}
 	frozen := BuildStableVolatileBlock(vctx, host)
 	if frozen == "" {

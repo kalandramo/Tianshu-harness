@@ -183,3 +183,76 @@ func TestStripTableWiring(t *testing.T) {
 		t.Error("无 projectIndexBlock 时表格应保留")
 	}
 }
+
+// TestDeclaredVerifyInjectionPosition —— verify-commands 块的注入位置。
+//
+// **Go-only 测试**（oracle 覆盖不了，原因见 gen-oracle.ts 注释）：
+// TS 侧由 renderDeclaredVerify(ctx.cwd) 内部读取产生，Go 侧做成注入字段。
+// 尝试过 fixture 触发但 cwd 临时路径进 <environment> 导致不可复现。
+//
+// 断言：块应在 project-instructions 之后、project-memory 之前
+// （对账 volatile.ts:1129）。
+func TestDeclaredVerifyInjectionPosition(t *testing.T) {
+	host := HostEnv{Platform: "darwin", OSType: "Darwin", OSRelease: "25.6.0"}
+	ctx := VolatileContext{
+		Cwd:                "/fixture",
+		RivetMd:            "## 项目\n内容",
+		DeclaredVerify:     "<verify-commands source=\".rivet-config.json\">\ntest: npm test\n</verify-commands>",
+		ProjectMemoryBlock: "<project-memory>\n记忆\n</project-memory>",
+	}
+	got := BuildStableVolatileBlock(ctx, host)
+
+	idxProj := indexOf(got, "<project-instructions>")
+	idxVerify := indexOf(got, "<verify-commands")
+	idxMem := indexOf(got, "<project-memory>")
+
+	if idxVerify < 0 {
+		t.Fatalf("verify-commands 块应出现，实际 %q", got)
+	}
+	if !(idxProj < idxVerify && idxVerify < idxMem) {
+		t.Errorf("顺序应为 project-instructions → verify-commands → project-memory，实际位置 %d/%d/%d",
+			idxProj, idxVerify, idxMem)
+	}
+}
+
+// TestDeclaredVerifyAbsent —— DeclaredVerify 为空时不产生该块。
+func TestDeclaredVerifyAbsent(t *testing.T) {
+	host := HostEnv{Platform: "darwin", OSType: "Darwin", OSRelease: "25.6.0"}
+	got := BuildStableVolatileBlock(VolatileContext{Cwd: "/fixture"}, host)
+	if contains(got, "<verify-commands") {
+		t.Errorf("DeclaredVerify 为空时不应有该块，实际 %q", got)
+	}
+}
+
+// TestDeclaredVerifyNotTruncated —— verify-commands **不过 truncateBlock**。
+//
+// 对账 TS：该块直接 push，无 cap。若误加截断会在超长时改变字节。
+func TestDeclaredVerifyNotTruncated(t *testing.T) {
+	host := HostEnv{Platform: "darwin", OSType: "Darwin", OSRelease: "25.6.0"}
+	long := "<verify-commands source=\".rivet-config.json\">\ntest: " + rep("x", 500) + "\n</verify-commands>"
+	got := BuildStableVolatileBlock(VolatileContext{Cwd: "/fixture", DeclaredVerify: long}, host)
+	if !contains(got, rep("x", 500)) {
+		t.Error("verify-commands 不应被截断")
+	}
+}
+
+// TestBuildFullSystemPromptDeclaredVerify —— 生产路径必须真的读取 verify 声明。
+//
+// 同 runtime-env 的教训：BuildStableVolatileBlock 只插位置，探测/读取
+// 必须在 BuildFullSystemPrompt 里调——否则字段恒空、块从不出现。
+func TestBuildFullSystemPromptDeclaredVerify(t *testing.T) {
+	dir := t.TempDir()
+	cfg := `{"verify":{"test":"go test ./...","typecheck":"go vet ./..."}}`
+	if err := os.WriteFile(filepath.Join(dir, projectConfigFile), []byte(cfg), 0644); err != nil {
+		t.Fatal(err)
+	}
+	host := HostEnv{Platform: "darwin", OSType: "Darwin", OSRelease: "25.6.0"}
+	got := BuildFullSystemPrompt(Context{}, dir, host)
+
+	if !contains(got, "<verify-commands") {
+		t.Errorf("cwd 有 verify 声明时应含该块\n实际：%q", trunc2(got, 400))
+	}
+	if !contains(got, "test: go test ./...") {
+		t.Errorf("应含 test 声明，实际：%q", trunc2(got, 400))
+	}
+}

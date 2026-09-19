@@ -1,0 +1,136 @@
+{
+  "cases": {
+    "empty": {
+      "verify": {},
+      "out": null,
+      "note": "空 config → null（无声明）"
+    },
+    "testOnly": {
+      "verify": {
+        "test": "npm test"
+      },
+      "out": "<verify-commands source=\".rivet-config.json\">\ntest: npm test\n</verify-commands>",
+      "note": "只有 test"
+    },
+    "allFour": {
+      "verify": {
+        "test": "npm test",
+        "build": "npm run build",
+        "typecheck": "tsc --noEmit",
+        "lint": "eslint ."
+      },
+      "out": "<verify-commands source=\".rivet-config.json\">\ntest: npm test\nbuild: npm run build\ntypecheck: tsc --noEmit\nlint: eslint .\n</verify-commands>",
+      "note": "四种 kind 齐上——顺序固定 test→build→typecheck→lint"
+    },
+    "orderIndependent": {
+      "verify": {
+        "lint": "L",
+        "typecheck": "T",
+        "build": "B",
+        "test": "X"
+      },
+      "out": "<verify-commands source=\".rivet-config.json\">\ntest: X\nbuild: B\ntypecheck: T\nlint: L\n</verify-commands>",
+      "note": "**顺序区分点**：config 里 key 的书写顺序不影响输出（过滤按固定数组）"
+    },
+    "blankStrings": {
+      "verify": {
+        "test": "   ",
+        "build": "\t",
+        "typecheck": "tsc"
+      },
+      "out": "<verify-commands source=\".rivet-config.json\">\ntypecheck: tsc\n</verify-commands>",
+      "note": "空白串应被过滤（trim 后为空）"
+    },
+    "whitespaceTrimmed": {
+      "verify": {
+        "test": "  npm test  ",
+        "build": "\nmake\n"
+      },
+      "out": "<verify-commands source=\".rivet-config.json\">\ntest: npm test\nbuild: make\n</verify-commands>",
+      "note": "前后空白应被 trim"
+    },
+    "escaping": {
+      "verify": {
+        "test": "echo \"<x>\" && true",
+        "build": "a & b"
+      },
+      "out": "<verify-commands source=\".rivet-config.json\">\ntest: echo &quot;&lt;x&gt;&quot; &amp;&amp; true\nbuild: a &amp; b\n</verify-commands>",
+      "note": "含需转义字符（< > & \"）"
+    },
+    "routesOnly": {
+      "verify": {
+        "routes": [
+          {
+            "match": "desktop/**",
+            "run": "tsc -p desktop",
+            "kind": "typecheck"
+          }
+        ]
+      },
+      "out": "<verify-commands source=\".rivet-config.json\">\ntypecheck [desktop/**]: tsc -p desktop\n</verify-commands>",
+      "note": "只有 routes（无四种 kind）"
+    },
+    "routesWithKinds": {
+      "verify": {
+        "test": "npm test",
+        "routes": [
+          {
+            "match": "src/**",
+            "run": "eslint",
+            "kind": "lint"
+          },
+          {
+            "match": "go/**",
+            "run": "go test",
+            "kind": "test"
+          }
+        ]
+      },
+      "out": "<verify-commands source=\".rivet-config.json\">\ntest: npm test\nlint [src/**]: eslint\ntest [go/**]: go test\n</verify-commands>",
+      "note": "kind 与 routes 并存——routes 追加在四种之后"
+    },
+    "emptyRoutes": {
+      "verify": {
+        "test": "npm test",
+        "routes": []
+      },
+      "out": "<verify-commands source=\".rivet-config.json\">\ntest: npm test\n</verify-commands>",
+      "note": "routes 为空数组 → 不追加"
+    },
+    "routeEscaping": {
+      "verify": {
+        "routes": [
+          {
+            "match": "a<b>&\"c\"",
+            "run": "x && y",
+            "kind": "build"
+          }
+        ]
+      },
+      "out": "<verify-commands source=\".rivet-config.json\">\nbuild [a&lt;b&gt;&amp;&quot;c&quot;]: x &amp;&amp; y\n</verify-commands>",
+      "note": "route 的 match/run 含需转义字符"
+    },
+    "fourKindsWithRoutes": {
+      "verify": {
+        "test": "npm test",
+        "build": "npm run build",
+        "typecheck": "tsc --noEmit",
+        "lint": "eslint .",
+        "routes": [
+          {
+            "match": "desktop/**",
+            "run": "tsc -p desktop",
+            "kind": "typecheck"
+          },
+          {
+            "match": "**/*.go",
+            "run": "go test ./...",
+            "kind": "test"
+          }
+        ]
+      },
+      "out": "<verify-commands source=\".rivet-config.json\">\ntest: npm test\nbuild: npm run build\ntypecheck: tsc --noEmit\nlint: eslint .\ntypecheck [desktop/**]: tsc -p desktop\ntest [**/*.go]: go test ./...\n</verify-commands>",
+      "note": "四种 kind + 多个 routes——完整组合"
+    }
+  }
+}
