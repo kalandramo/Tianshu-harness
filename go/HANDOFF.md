@@ -69,6 +69,8 @@ go/
      在 `ctx.Done()` 时 `kill(-pid)`，与 `Wait` 并行（主进程死后 pgid 会被回收）
    - 变异反证若引入编译错误，测试报 `build failed` 而非 `FAIL`——别把
      构建失败误判为「测试未生效」
+   - 新工具的 `blocked` 结果**不设 IsError**：它是中性门禁信号（门禁已重置），
+     与 `failed`（测试红了）性质不同。混淆会让下游把「项目没测试」当「代码有问题」
 
 ## 环境注意
 
@@ -123,7 +125,8 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 
 ### Wave 2 剩余（工具内核）
 - [x] ~~`bash`~~ 已完成（超时 / 进程组清理 / 破坏性硬闸门 / 输出截断标记）
-- [ ] `run_tests`（项目测试运行器探测）——**优先级最高**，让「跑验证」不必手拼命令
+- [x] ~~`run_tests`~~ 已完成（运行器探测 + blocked/failed 语义区分 + 结构化结果）；
+  真实端点验证：模型自主调用 run_tests 完成「读→改→验证」闭环
 - [ ] `apply_patch` / `hash_edit`（结构化编辑）
 - [ ] `ast_grep`（需 tree-sitter 绑定）
 - [ ] `todo` / `job` / `git` / `diff` / `repo_map`
@@ -150,12 +153,18 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 
 ## 建议的第一刀
 
-**接 `run_tests` 工具**。理由：闭环已通，但模型要跑验证得手拼
-`go test ./... 2>&1 | tail -3` 这类命令——而 `run_tests` 的价值在于
-**项目测试运行器探测**（package.json scripts / pytest / go test / cargo test
-自动识别）+ 结构化结果（passed/failed/blocked 与 blockedReason），
-让「跑验证」变成可靠动作而非拼字符串。
+**接 `internal/prompt`（Wave 3）**。理由：Wave 1（模型接入）已完整收口并
+经真实端点验证（缓存命中 93.7%–95.5%），Wave 2 的工具已覆盖
+「读→改→跑验证」闭环（bash + run_tests + 文件工具），Wave 4 的 agent 循环
+最小版可跑。
 
-之后建议补 `internal/prompt`（Wave 3）——那是字节等价的下一个主战场：
-system prompt 的冻结锚 + volatile + appendixDelta 三段拼接，判据是
-同会话状态下 Go 渲染结果与 TS 逐字节相同。
+下一个主战场是**提示词引擎的字节等价**：`src/prompt/engine.ts` 的
+static(frozen) + volatile + appendixDelta 三段拼接。判据是同会话状态下
+Go 渲染的 system prompt 与 TS 逐字节相同——这是缓存命中率从当前的
+93.7% 推向 95%+ 的关键（当前 system prompt 是硬编码的最小版，不是真正的
+认知资产）。
+
+配套需要把提示词文本从 `src/prompt/static.ts` 外置为 `assets/prompt/*.txt`，
+让 TS/Go 共读同一份（单一事实来源，避免两边漂移）。
+
+其余待办见下方 Wave 2/3/4/5 清单。
