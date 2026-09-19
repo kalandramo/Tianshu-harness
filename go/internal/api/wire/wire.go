@@ -74,6 +74,48 @@ func (m *OrderedMap) Get(key string) (any, bool) {
 	return v, ok
 }
 
+// Has 报告键是否存在（区别于值为 nil）。
+func (m *OrderedMap) Has(key string) bool {
+	if m.values == nil {
+		return false
+	}
+	_, ok := m.values[key]
+	return ok
+}
+
+// Delete 删除键，保持其余键的相对顺序。
+func (m *OrderedMap) Delete(key string) {
+	if m.values == nil {
+		return
+	}
+	if _, ok := m.values[key]; !ok {
+		return
+	}
+	delete(m.values, key)
+	for i, k := range m.keys {
+		if k == key {
+			m.keys = append(m.keys[:i], m.keys[i+1:]...)
+			break
+		}
+	}
+}
+
+// Clone 浅拷贝（值共享引用，键序复制）。
+//
+// 用于消息变换：TS 侧用 `{ ...m }` 展开创建新对象，绝不原地改共享消息
+// （原地改会导致重入时双写——2026-07-06 wireDiverged idx 0 事故）。
+func (m *OrderedMap) Clone() *OrderedMap {
+	out := &OrderedMap{
+		keys:   make([]string, len(m.keys)),
+		values: make(map[string]any, len(m.values)),
+	}
+	copy(out.keys, m.keys)
+	for k, v := range m.values {
+		out.values[k] = v
+	}
+	return out
+}
+
 // Keys 返回键的插入顺序（副本）。
 func (m *OrderedMap) Keys() []string {
 	out := make([]string, len(m.keys))
