@@ -16,8 +16,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -25,13 +23,13 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/kalandramo/tianshu/go/internal/agent"
 	"github.com/kalandramo/tianshu/go/internal/api"
 	"github.com/kalandramo/tianshu/go/internal/client"
 	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"github.com/kalandramo/tianshu/go/internal/retry"
+	"github.com/kalandramo/tianshu/go/internal/session"
 	"github.com/kalandramo/tianshu/go/internal/tools"
 )
 
@@ -175,22 +173,12 @@ func loadConfig(model, baseURL, approval string, maxTurns int, systemPrompt stri
 	}, nil
 }
 
-// newSessionID 生成会话 ID（时间戳 + 随机后缀，无需引入 UUID 依赖）。
-//
-// 格式对账 TS 的 session ID（`<时间戳>-<随机>`），用作文件名——
-// 必须**文件系统安全**（无路径分隔符）。
-func newSessionID() string {
-	var b [4]byte
-	_, _ = rand.Read(b[:])
-	return fmt.Sprintf("%d-%s", time.Now().UnixMilli(), hex.EncodeToString(b[:]))
-}
-
 func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	cl := client.New(app.Client)
 	reg := tools.NewDefaultRegistry(tools.Options{Cwd: app.Agent.Cwd})
 	// 会话 ID：启用状态容器 + 持久化（缺省时 Loop.State/Persist 恒为 nil）
 	if app.Agent.SessionID == "" {
-		app.Agent.SessionID = newSessionID()
+		app.Agent.SessionID = session.NewID()
 	}
 	loop := agent.New(app.Agent, cl, reg)
 

@@ -1,10 +1,14 @@
 package session
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kalandramo/tianshu/go/internal/prompt"
 )
@@ -253,4 +257,17 @@ func orderKeys(keys []string) []string {
 		}
 	}
 	return out
+}
+
+// NewID 生成一个会话 ID（时间戳 + 随机后缀）。
+//
+// 对账 TS 的会话 ID 格式。**必须文件系统安全**——它被用作文件名
+// （`<id>.jsonl`），不能含路径分隔符。
+//
+// 不引入 UUID 依赖：8 位十六进制随机后缀对单机会话已足够避免碰撞
+// （同毫秒内需 2^32 次生成才有 50% 碰撞率）。
+func NewID() string {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	return fmt.Sprintf("%d-%s", time.Now().UnixMilli(), hex.EncodeToString(b[:]))
 }

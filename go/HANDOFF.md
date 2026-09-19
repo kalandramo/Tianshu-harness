@@ -375,6 +375,12 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
        off-by-one 导致判定恒假。改用 `strings.HasPrefix`
   - 变异反证 10 个：9 个有判别力；**M7 经查证为等价变异**——`AddUsage`
     对零值「无脑累加」与「跳过」数值等价（`+= 0`），且该函数无副作用
+  - **端到端接线测试**（`internal/agent/persist_wiring_test.go`，7 个用例）：
+    不碰网络，直接构造 Loop + 手动 `appendAndPersist`，验证消息真落到
+    `<cwd>/.rivet/sessions/<id>.jsonl`、元数据真更新、跨 Loop 实例真能读回。
+    **这补上了单元测试抓不到的接线缺口**——变异反证 5/5 全部有判别力
+    （断开 Listener 构造 / 断开 append 调用 / 不累加 usage / 不排空 / Cwd 用错）
+  - `session.NewID()`：会话 ID 生成移到 session 包（原在 main 包不可被测试引用）
 - [x] **会话持久化编排层**：`internal/session/persist.go` + `legacy.go`
   - 对账 `SessionPersist` 类的**编排核心**（928 行里只取编排，不取压缩/清理）
   - `LoadOai` 完整链路：读 transcript（zstd 解码 + pending 合并）→
