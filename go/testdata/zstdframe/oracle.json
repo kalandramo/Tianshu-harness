@@ -1,0 +1,237 @@
+{
+  "_note": "hex 是输入字节；frames/tornStart/error 是 TS 真实 scanZstdFrames 的产出",
+  "magicLE": 4247762216,
+  "cases": {
+    "empty": {
+      "note": "空 buffer → 无帧、无 torn",
+      "hex": "",
+      "isZstd": false,
+      "frames": [],
+      "tornStart": null,
+      "error": null
+    },
+    "plainTextNotZstd": {
+      "note": "普通文本 → isZstd=false，扫描应抛错（无魔数）",
+      "hex": "7b2261223a317d0a7b2262223a327d0a",
+      "isZstd": false,
+      "frames": null,
+      "tornStart": null,
+      "error": "corrupt session transcript: invalid frame magic at byte 0"
+    },
+    "singleFrameChecksum": {
+      "note": "单个带校验位的帧",
+      "hex": "28b52ffd240631000068656c6c6f0a5388bd91",
+      "isZstd": true,
+      "frames": [
+        {
+          "start": 0,
+          "end": 19
+        }
+      ],
+      "tornStart": null,
+      "error": null
+    },
+    "singleFrameNoChecksum": {
+      "note": "单个不带校验位的帧（descriptor 的 checksum 位为 0）",
+      "hex": "28b52ffd200631000068656c6c6f0a",
+      "isZstd": true,
+      "frames": [
+        {
+          "start": 0,
+          "end": 15
+        }
+      ],
+      "tornStart": null,
+      "error": null
+    },
+    "twoFrames": {
+      "note": "两帧拼接——应扫出 2 个 frame range",
+      "hex": "28b52ffd24073900006261746368310a221fd92928b52ffd24073900006261746368320a57a44387",
+      "isZstd": true,
+      "frames": [
+        {
+          "start": 0,
+          "end": 20
+        },
+        {
+          "start": 20,
+          "end": 40
+        }
+      ],
+      "tornStart": null,
+      "error": null
+    },
+    "threeFrames": {
+      "note": "三帧拼接",
+      "hex": "28b52ffd2402110000610a55c8cc1e28b52ffd240319000062620acd4163ec28b52ffd24042100006363630af9d81f20",
+      "isZstd": true,
+      "frames": [
+        {
+          "start": 0,
+          "end": 15
+        },
+        {
+          "start": 15,
+          "end": 31
+        },
+        {
+          "start": 31,
+          "end": 48
+        }
+      ],
+      "tornStart": null,
+      "error": null
+    },
+    "emptyFrame": {
+      "note": "**空输入的帧**（13 字节，无内容块）",
+      "hex": "28b52ffd240001000099e9d851",
+      "isZstd": true,
+      "frames": [
+        {
+          "start": 0,
+          "end": 13
+        }
+      ],
+      "tornStart": null,
+      "error": null
+    },
+    "tornInMagic": {
+      "note": "**torn tail**：只剩 2 字节魔数（< 4）→ 首帧起点作 tornStart",
+      "hex": "28b52ffd2402110000780aaefde92228b5",
+      "isZstd": true,
+      "frames": [
+        {
+          "start": 0,
+          "end": 15
+        }
+      ],
+      "tornStart": 15,
+      "error": null
+    },
+    "tornInDescriptor": {
+      "note": "**torn tail**：魔数完整但 descriptor 缺失",
+      "hex": "28b52ffd2402110000780aaefde92228b52ffd",
+      "isZstd": true,
+      "frames": [
+        {
+          "start": 0,
+          "end": 15
+        }
+      ],
+      "tornStart": 15,
+      "error": null
+    },
+    "tornInBlockData": {
+      "note": "**torn tail**：帧头完整但块数据截断",
+      "hex": "28b52ffd241291000068656c6c6f20776f726c642068656c6c6f0a0f828c2128b52ffd24073900007365636f6e64",
+      "isZstd": true,
+      "frames": [
+        {
+          "start": 0,
+          "end": 31
+        }
+      ],
+      "tornStart": 31,
+      "error": null
+    },
+    "badMagicAfterGoodFrame": {
+      "note": "**损坏**：首帧完整但后续魔数错误 → 应抛错",
+      "hex": "28b52ffd2402110000780aaefde922deadbeef0000",
+      "isZstd": true,
+      "frames": null,
+      "tornStart": null,
+      "error": "corrupt session transcript: invalid frame magic at byte 15"
+    },
+    "reservedBlockType": {
+      "note": "**M6 区分点**：保留块类型 0x03 → 应抛错（手工构造，真实 zstd 不产出）",
+      "hex": "28b52ffd2400060000",
+      "isZstd": true,
+      "frames": null,
+      "tornStart": null,
+      "error": "corrupt session transcript: reserved block type at byte 6"
+    },
+    "multiSegmentFrame": {
+      "note": "**M5 区分点**：非单段帧（singleSegment=0）→ 帧头多 1 字节 window descriptor",
+      "hex": "28b52ffd0400090000aa",
+      "isZstd": true,
+      "frames": [],
+      "tornStart": 0,
+      "error": null
+    },
+    "contentSizeFlagSet": {
+      "note": "**M5 区分点**：contentSizeFlag=1 → contentSize 占 2 字节",
+      "hex": "28b52ffd600500090000aa",
+      "isZstd": true,
+      "frames": [
+        {
+          "start": 0,
+          "end": 11
+        }
+      ],
+      "tornStart": null,
+      "error": null
+    },
+    "largeFrame": {
+      "note": "大内容帧（多块）",
+      "hex": "28b52ffda4a086010055000010787801009b8639c0025b345b02",
+      "isZstd": true,
+      "frames": [
+        {
+          "start": 0,
+          "end": 26
+        }
+      ],
+      "tornStart": null,
+      "error": null
+    },
+    "manySmallFrames": {
+      "note": "10 个小帧拼接",
+      "hex": "28b52ffd24063100006c696e65300a57cf7d3928b52ffd24063100006c696e65310a98aa203b28b52ffd24063100006c696e65320a2aafcd1928b52ffd24063100006c696e65330a0ca8456928b52ffd24063100006c696e65340a28974c9928b52ffd24063100006c696e65350a7ea5384328b52ffd24063100006c696e65360a742320f528b52ffd24063100006c696e65370aecee641828b52ffd24063100006c696e65380acd3fdac028b52ffd24063100006c696e65390af8dd6c1d",
+      "isZstd": true,
+      "frames": [
+        {
+          "start": 0,
+          "end": 19
+        },
+        {
+          "start": 19,
+          "end": 38
+        },
+        {
+          "start": 38,
+          "end": 57
+        },
+        {
+          "start": 57,
+          "end": 76
+        },
+        {
+          "start": 76,
+          "end": 95
+        },
+        {
+          "start": 95,
+          "end": 114
+        },
+        {
+          "start": 114,
+          "end": 133
+        },
+        {
+          "start": 133,
+          "end": 152
+        },
+        {
+          "start": 152,
+          "end": 171
+        },
+        {
+          "start": 171,
+          "end": 190
+        }
+      ],
+      "tornStart": null,
+      "error": null
+    }
+  }
+}

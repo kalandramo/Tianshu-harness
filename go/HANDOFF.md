@@ -334,6 +334,14 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **zstd 帧扫描**：`internal/prompt/zstdframe.go`
+  - 对账 src/agent/session-transcript-codec.ts 的 `scanZstdFrames` /
+    `isZstdFrameStream` —— 会话 transcript 的跨版本兼容基础（Wave 5 判据）
+  - **纯字节逻辑**（RFC 8878 帧头走查，不解压块），16 个 oracle 用例
+  - **torn tail 语义**：崩溃截断的末帧应被**丢弃**（返回其起点）而非报错
+    ——这是崩溃恢复的核心，错一位整条会话读不出来
+  - 损坏（魔数错 / 保留位 / 保留块类型）→ 抛错，与 torn 明确区分
+  - **未做**：encode/decode（需 zstd 压缩库；项目至今零依赖，Go 标准库无 zstd）
 - [x] **`extractPatchTargetPaths`**：`internal/prompt/patchpath.go`
   - 对账 src/tools/apply-patch.ts:34 —— 从 unified diff 提取目标路径
   - 语义：只看 `+++ ` 行、trim、tab 截断、跳过 `/dev/null`、去成对引号、
