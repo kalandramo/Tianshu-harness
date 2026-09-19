@@ -1637,6 +1637,138 @@
       }
     },
     {
+      "name": "collapse-path-grep",
+      "contextWindow": 200000,
+      "estimatedTokens": 100000,
+      "msgs": [
+        {
+          "role": "user",
+          "content": "turn 1"
+        },
+        {
+          "role": "assistant",
+          "content": "a1",
+          "tool_calls": [
+            {
+              "id": "grep_abc",
+              "type": "function",
+              "function": {
+                "name": "grep",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "content": "src/f0.ts:0:hit\nsrc/f1.ts:1:hit\nsrc/f2.ts:2:hit\nsrc/f3.ts:3:hit\nsrc/f4.ts:4:hit\nsrc/f0.ts:5:hit\nsrc/f1.ts:6:hit\nsrc/f2.ts:7:hit\nsrc/f3.ts:8:hit\nsrc/f4.ts:9:hit\nsrc/f0.ts:10:hit\nsrc/f1.ts:11:hit\nsrc/f2.ts:12:hit\nsrc/f3.ts:13:hit\nsrc/f4.ts:14:hit\nsrc/f0.ts:15:hit\nsrc/f1.ts:16:hit\nsrc/f2.ts:17:hit\nsrc/f3.ts:18:hit\nsrc/f4.ts:19:hit\nsrc/f0.ts:20:hit\nsrc/f1.ts:21:hit\nsrc/f2.ts:22:hit\nsrc/f3.ts:23:hit\nsrc/f4.ts:24:hit\nsrc/f0.ts:25:hit\nsrc/f1.ts:26:hit\nsrc/f2.ts:27:hit\nsrc/f3.ts:28:hit\nsrc/f4.ts:29:hit\nsrc/f0.ts:30:hit\nsrc/f1.ts:31:hit\nsrc/f2.ts:32:hit\nsrc/f3.ts:33:hit\nsrc/f4.ts:34:hit\nsrc/f0.ts:35:hit\nsrc/f1.ts:36:hit\nsrc/f2.ts:37:hit\nsrc/f3.ts:38:hit\nsrc/f4.ts:39:hit\nzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+          "tool_call_id": "grep_abc"
+        },
+        {
+          "role": "assistant",
+          "content": "a2"
+        },
+        {
+          "role": "user",
+          "content": "turn 3"
+        },
+        {
+          "role": "assistant",
+          "content": "a3"
+        },
+        {
+          "role": "user",
+          "content": "turn 4"
+        },
+        {
+          "role": "assistant",
+          "content": "a4"
+        },
+        {
+          "role": "user",
+          "content": "turn 5"
+        },
+        {
+          "role": "assistant",
+          "content": "a5"
+        },
+        {
+          "role": "user",
+          "content": "turn 6"
+        },
+        {
+          "role": "assistant",
+          "content": "a6"
+        }
+      ],
+      "want": {
+        "truncated": 1,
+        "messageCount": 12,
+        "shapes": [
+          {
+            "role": "user",
+            "len": 6,
+            "startsWithTag": false
+          },
+          {
+            "role": "assistant",
+            "len": 2,
+            "startsWithTag": false
+          },
+          {
+            "role": "tool",
+            "len": 94,
+            "startsWithTag": false
+          },
+          {
+            "role": "assistant",
+            "len": 2,
+            "startsWithTag": false
+          },
+          {
+            "role": "user",
+            "len": 6,
+            "startsWithTag": false
+          },
+          {
+            "role": "assistant",
+            "len": 2,
+            "startsWithTag": false
+          },
+          {
+            "role": "user",
+            "len": 6,
+            "startsWithTag": false
+          },
+          {
+            "role": "assistant",
+            "len": 2,
+            "startsWithTag": false
+          },
+          {
+            "role": "user",
+            "len": 6,
+            "startsWithTag": false
+          },
+          {
+            "role": "assistant",
+            "len": 2,
+            "startsWithTag": false
+          },
+          {
+            "role": "user",
+            "len": 6,
+            "startsWithTag": false
+          },
+          {
+            "role": "assistant",
+            "len": 2,
+            "startsWithTag": false
+          }
+        ]
+      }
+    },
+    {
       "name": "tier2-guard-band",
       "contextWindow": 100000,
       "estimatedTokens": 120000,
@@ -1790,6 +1922,226 @@
             "startsWithTag": false
           }
         ]
+      }
+    }
+  ],
+  "collapse": [
+    {
+      "name": "too-small",
+      "tool": "grep",
+      "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "turnAge": 5,
+      "want": null
+    },
+    {
+      "name": "too-new",
+      "tool": "grep",
+      "content": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "turnAge": 1,
+      "want": null
+    },
+    {
+      "name": "at-boundary-200",
+      "tool": "grep",
+      "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "turnAge": 5,
+      "want": {
+        "toolName": "grep",
+        "summary": "[collapsed grep: 0 matches in 0 files: ]",
+        "originalTokens": 50,
+        "collapsedTokens": 10
+      }
+    },
+    {
+      "name": "grep-basic",
+      "tool": "grep",
+      "content": "src/a.ts:1:foo\nsrc/a.ts:2:foo\nsrc/b.ts:3:foo\nsrc/c.ts:4:bar\nzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "turnAge": 5,
+      "want": {
+        "toolName": "grep",
+        "summary": "[collapsed grep: 4 matches in 3 files: src/a.ts, src/b.ts, src/c.ts]",
+        "originalTokens": 65,
+        "collapsedTokens": 17
+      }
+    },
+    {
+      "name": "grep-many-files",
+      "tool": "grep",
+      "content": "src/f0.ts:0:hit\nsrc/f1.ts:1:hit\nsrc/f2.ts:2:hit\nsrc/f3.ts:3:hit\nsrc/f4.ts:4:hit\nsrc/f5.ts:5:hit\nsrc/f6.ts:6:hit\nsrc/f7.ts:7:hit\nsrc/f8.ts:8:hit\nsrc/f9.ts:9:hit\nsrc/f10.ts:10:hit\nsrc/f11.ts:11:hit\nzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "turnAge": 5,
+      "want": {
+        "toolName": "grep",
+        "summary": "[collapsed grep: 12 matches in 12 files: src/f0.ts, src/f1.ts, src/f2.ts, src/f3.ts, src/f4.ts, src/f5.ts, src/f6.ts, src/f7.ts (+4 more)]",
+        "originalTokens": 99,
+        "collapsedTokens": 35
+      }
+    },
+    {
+      "name": "grep-with-artifact-statline",
+      "tool": "grep",
+      "content": "grep \"foo\": 65 matches in 20 files\nzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\n[artifact:abc_123]",
+      "turnAge": 5,
+      "want": {
+        "toolName": "grep",
+        "summary": "[collapsed grep: grep \"foo\": 65 matches in 20 files | read_section artifact:abc_123]",
+        "originalTokens": 64,
+        "collapsedTokens": 21
+      }
+    },
+    {
+      "name": "grep-with-artifact-nostat",
+      "tool": "grep",
+      "content": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\n[artifact:xyz]",
+      "turnAge": 5,
+      "want": {
+        "toolName": "grep",
+        "summary": "[collapsed grep: 正文已截断，完整匹配列表见 artifact | read_section artifact:xyz]",
+        "originalTokens": 67,
+        "collapsedTokens": 17
+      }
+    },
+    {
+      "name": "read-file-with-funcs",
+      "tool": "read_file",
+      "content": "export function alpha() {}\nfunction beta() {}\nclass Gamma {}\nconst x = 1\nzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "turnAge": 5,
+      "want": {
+        "toolName": "read_file",
+        "summary": "[collapsed read_file: 5 lines, classes: Gamma, functions: alpha, beta]",
+        "originalTokens": 69,
+        "collapsedTokens": 18
+      }
+    },
+    {
+      "name": "read-file-exports-only",
+      "tool": "read_file",
+      "content": "export const a = 1\nexport const b = 2\nexport const c = 3\nzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "turnAge": 5,
+      "want": {
+        "toolName": "read_file",
+        "summary": "[collapsed read_file: 4 lines, 3 exports]",
+        "originalTokens": 65,
+        "collapsedTokens": 11
+      }
+    },
+    {
+      "name": "bash-with-exit-and-fails",
+      "tool": "bash",
+      "content": "line one\nFAIL something broke\nmore output\nexit code: 1\nlast line\nzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "turnAge": 5,
+      "want": {
+        "toolName": "bash",
+        "summary": "[collapsed bash: 6 lines output, exit 1, fails: FAIL something broke, tail: exit code: 1 | last line | zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz]",
+        "originalTokens": 67,
+        "collapsedTokens": 41
+      }
+    },
+    {
+      "name": "bash-success-lines-excluded",
+      "tool": "bash",
+      "content": "✓ passed test\n✗ failed test\noutput\nexit code: 0\nzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "turnAge": 5,
+      "want": {
+        "toolName": "bash",
+        "summary": "[collapsed bash: 5 lines output, exit 0, fails: ✗ failed test, tail: output | exit code: 0 | zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz]",
+        "originalTokens": 62,
+        "collapsedTokens": 39
+      }
+    },
+    {
+      "name": "bash-success-with-error-word",
+      "tool": "bash",
+      "content": "✓ 0 errors found\n✓ all checks passed\n✗ real failure here\ndone\nzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "turnAge": 5,
+      "want": {
+        "toolName": "bash",
+        "summary": "[collapsed bash: 5 lines output, fails: ✗ real failure here, tail: ✗ real failure here | done | zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz]",
+        "originalTokens": 66,
+        "collapsedTokens": 40
+      }
+    },
+    {
+      "name": "write-file",
+      "tool": "write_file",
+      "content": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+      "turnAge": 5,
+      "want": {
+        "toolName": "write_file",
+        "summary": "[collapsed write_file: 300 chars written]",
+        "originalTokens": 75,
+        "collapsedTokens": 11
+      }
+    },
+    {
+      "name": "edit-file",
+      "tool": "edit_file",
+      "content": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "turnAge": 5,
+      "want": {
+        "toolName": "edit_file",
+        "summary": "[collapsed edit_file: 300 chars written]",
+        "originalTokens": 75,
+        "collapsedTokens": 10
+      }
+    },
+    {
+      "name": "run-tests-chinese",
+      "tool": "run_tests",
+      "content": "退出码：1\n3 通过，1 失败，0 跳过\n失败项：\n  ✖ my test name\nzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "turnAge": 5,
+      "want": {
+        "toolName": "run_tests",
+        "summary": "[collapsed run_tests: 3/4 passed · 1 failed · exit 1]",
+        "originalTokens": 61,
+        "collapsedTokens": 14
+      }
+    },
+    {
+      "name": "run-tests-negativelookahead",
+      "tool": "run_tests",
+      "content": "退出码：1\n2 失败项如下\n10 通过，5 失败，0 跳过\nzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "turnAge": 5,
+      "want": {
+        "toolName": "run_tests",
+        "summary": "[collapsed run_tests: 10/15 passed · 5 failed · exit 1]",
+        "originalTokens": 58,
+        "collapsedTokens": 14
+      }
+    },
+    {
+      "name": "delegate-task",
+      "tool": "delegate_task",
+      "content": "profile: code_scout\nsummary: found the relevant code in three files\nzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "turnAge": 5,
+      "want": {
+        "toolName": "delegate_task",
+        "summary": "[collapsed delegate_task: code_scout — profile: code_scout]",
+        "originalTokens": 67,
+        "collapsedTokens": 15
+      }
+    },
+    {
+      "name": "generic-tool",
+      "tool": "unknown_tool",
+      "content": "l1\nl2\nl3\nl4\nzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "turnAge": 5,
+      "want": {
+        "toolName": "unknown_tool",
+        "summary": "[collapsed unknown_tool: 5 lines, 212 chars. Preview: l1 | l2 | l3]",
+        "originalTokens": 53,
+        "collapsedTokens": 17
+      }
+    },
+    {
+      "name": "generic-with-artifact",
+      "tool": "unknown_tool",
+      "content": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\n[artifact:keep_me]",
+      "turnAge": 5,
+      "want": {
+        "toolName": "unknown_tool",
+        "summary": "[collapsed unknown_tool: 2 lines, 269 chars. Preview: zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz | [artifact:keep_me]]",
+        "originalTokens": 68,
+        "collapsedTokens": 39
       }
     }
   ]

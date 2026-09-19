@@ -281,6 +281,21 @@ func compactToolMessage(
 	result.msg = msg
 	content := derefString(msg.Content)
 
+	// **语义折叠优先**（对账 TS：`turnAge >= 4 && toolName` 时先试折叠）。
+	// 折叠失败（内容太短 / 无工具名 / 未识别）则回退到下面的截断。
+	if turnAge >= collapseMinTurnAge {
+		if toolName := extractToolNameFromID(msg.ToolCallID); toolName != "" {
+			if collapsed := CollapseToolResult(toolName, content, turnAge); collapsed != nil {
+				c := collapsed.Summary
+				next := msg
+				next.Content = &c
+				result.msg = next
+				result.changed = true
+				return
+			}
+		}
+	}
+
 	// **必须用数字重载**（对账 `compactThresholds(contextWindow)`）——不是
 	// Profile 版本。两者在 toolResultMaxTokens 上取值相同，但语义不同：
 	// 数字重载的 reactive 是 0.8（历史遗留），Profile 是 0.88。
@@ -382,4 +397,29 @@ func mustJSON(s string) string {
 		return `""`
 	}
 	return string(b)
+}
+
+// extractToolNameFromID 从 tool_call_id 里提取工具名。
+//
+// 对账 TS 的 `extractToolNameFromId`：`/^([\w-]+)_/`——取第一个下划线前的部分。
+//
+// ⚠️ **依赖 provider 的 id 格式**：若模型返回 `call_abc123`（OpenAI 风格），
+// 提取出的是 `call` 而非工具名，折叠会落到 generic 分支。TS 同样如此。
+func extractToolNameFromID(toolCallID string) string {
+	for i, r := range toolCallID {
+		if r == '_' {
+			return toolCallID[:i]
+		}
+		if !isWordOrDash(r) {
+			return ""
+		}
+	}
+	return ""
+}
+
+func isWordOrDash(r rune) bool {
+	return r == '-' ||
+		(r >= '0' && r <= '9') ||
+		(r >= 'a' && r <= 'z') ||
+		(r >= 'A' && r <= 'Z')
 }

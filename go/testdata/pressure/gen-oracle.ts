@@ -29,6 +29,7 @@ import {
   estimateOaiMessageTokens, estimateOaiTokens, microCompactOai,
 } from '../../../src/compact/micro.js'
 import { KEEP_RECENT_MESSAGES, CACHE_ANCHOR_MESSAGES } from '../../../src/compact/constants.js'
+import { collapseToolResult } from '../../../src/compact/context-collapse.js'
 import { PressureMonitor } from '../../../src/context/pressure-monitor.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -402,6 +403,30 @@ const microCases = [
       { role: 'assistant', content: 'recent2 asst' },
     ],
   },
+  // ── 折叠路径接线（turnAge>=4 且 tool_call_id 可提取工具名）──
+  // tool_call_id = 'grep_abc123' → 提取出 'grep' → 走 grep 折叠而非截断。
+  // 需要 5 轮以上历史让该 tool 消息的 turnAge >= 4。
+  {
+    name: 'collapse-path-grep',
+    contextWindow: 200_000,
+    estimatedTokens: 100_000,
+    msgs: [
+      { role: 'user', content: 'turn 1' },
+      { role: 'assistant', content: 'a1', tool_calls: [{ id: 'grep_abc', type: 'function', function: { name: 'grep', arguments: '{}' } }] },
+      // 这条 tool 结果的 turnAge 会 >= 4
+      { role: 'tool', content: Array.from({ length: 40 }, (_, i) => `src/f${i % 5}.ts:${i}:hit`).join('\n') + '\n' + 'z'.repeat(200), tool_call_id: 'grep_abc' },
+      { role: 'assistant', content: 'a2' },
+      // 需要足够多轮次让上面那条 tool 的 turnAge 达到 4
+      { role: 'user', content: 'turn 3' },
+      { role: 'assistant', content: 'a3' },
+      { role: 'user', content: 'turn 4' },
+      { role: 'assistant', content: 'a4' },
+      { role: 'user', content: 'turn 5' },
+      { role: 'assistant', content: 'a5' },
+      { role: 'user', content: 'turn 6' },
+      { role: 'assistant', content: 'a6' },
+    ],
+  },
   // ── M7 缺口（真缺口）：guard 只在 currentTokens-roundTokens 落在
   //    70%~100% 窗口之间才可区分。窗口 100000 → 70%=70000、100%=100000。
   //    currentTokens=120000、中间轮 ~30000 → 删后 89999，落在区间内。
@@ -441,6 +466,98 @@ const microCases = [
   },
 ].map(c => ({ ...c, want: microCase(c) }))
 
+// ── context-collapse：语义折叠 ──
+// 构造超过 200 字符的内容（低于此不折叠）
+const long = (s: string, n = 300) => s.repeat(Math.ceil(n / s.length))
+
+const collapseCases = [
+  // 前置条件：太小 / 太新 → null
+  { name: 'too-small', tool: 'grep', content: 'x'.repeat(100), turnAge: 5 },
+  { name: 'too-new', tool: 'grep', content: long('a'), turnAge: 1 },
+  { name: 'at-boundary-200', tool: 'grep', content: 'x'.repeat(200), turnAge: 5 },
+  // grep 折叠
+  {
+    name: 'grep-basic', tool: 'grep', turnAge: 5,
+    content: ['src/a.ts:1:foo', 'src/a.ts:2:foo', 'src/b.ts:3:foo', 'src/c.ts:4:bar'].join('\n') + '\n' + 'z'.repeat(200),
+  },
+  {
+    name: 'grep-many-files', tool: 'grep', turnAge: 5,
+    content: Array.from({ length: 12 }, (_, i) => `src/f${i}.ts:${i}:hit`).join('\n') + '\n' + 'z'.repeat(200),
+  },
+  {
+    name: 'grep-with-artifact-statline', tool: 'grep', turnAge: 5,
+    content: 'grep "foo": 65 matches in 20 files\n' + 'z'.repeat(200) + '\n[artifact:abc_123]',
+  },
+  {
+    name: 'grep-with-artifact-nostat', tool: 'grep', turnAge: 5,
+    content: 'z'.repeat(250) + '\n[artifact:xyz]',
+  },
+  // read_file 折叠
+  {
+    name: 'read-file-with-funcs', tool: 'read_file', turnAge: 5,
+    content: ['export function alpha() {}', 'function beta() {}', 'class Gamma {}', 'const x = 1'].join('\n') + '\n' + 'z'.repeat(200),
+  },
+  {
+    name: 'read-file-exports-only', tool: 'read_file', turnAge: 5,
+    content: ['export const a = 1', 'export const b = 2', 'export const c = 3'].join('\n') + '\n' + 'z'.repeat(200),
+  },
+  // bash 折叠
+  {
+    name: 'bash-with-exit-and-fails', tool: 'bash', turnAge: 5,
+    content: ['line one', 'FAIL something broke', 'more output', 'exit code: 1', 'last line'].join('\n') + '\n' + 'z'.repeat(200),
+  },
+  {
+    name: 'bash-success-lines-excluded', tool: 'bash', turnAge: 5,
+    content: ['✓ passed test', '✗ failed test', 'output', 'exit code: 0'].join('\n') + '\n' + 'z'.repeat(200),
+  },
+  // ── C4 可区分用例：成功行**含** fail 关键词 ──
+  // `✓ 0 errors` 会被 fail 正则命中（"error"），必须被成功前缀排除。
+  // 原用例的 `✓ passed test` 不含 fail 关键词，故无法区分该 guard。
+  {
+    name: 'bash-success-with-error-word', tool: 'bash', turnAge: 5,
+    content: ['✓ 0 errors found', '✓ all checks passed', '✗ real failure here', 'done'].join('\n') + '\n' + 'z'.repeat(200),
+  },
+  // write/edit
+  { name: 'write-file', tool: 'write_file', content: long('w'), turnAge: 5 },
+  { name: 'edit-file', tool: 'edit_file', content: long('e'), turnAge: 5 },
+  // run_tests（中文口径）
+  {
+    name: 'run-tests-chinese', tool: 'run_tests', turnAge: 5,
+    content: ['退出码：1', '3 通过，1 失败，0 跳过', '失败项：', '  ✖ my test name'].join('\n') + '\n' + 'z'.repeat(200),
+  },
+  // ── C6 可区分用例：`N 失败项` 形式（负向前瞻必须跳过它）──
+  // `2 失败项` 会被基础正则 `(\d+)\s+失败` 命中，但 TS 的 `(?!项)` 要求
+  // 跳过——所以应匹配后面的 `5 失败，`（真正的计数行）。
+  {
+    name: 'run-tests-negativelookahead', tool: 'run_tests', turnAge: 5,
+    content: ['退出码：1', '2 失败项如下', '10 通过，5 失败，0 跳过'].join('\n') + '\n' + 'z'.repeat(200),
+  },
+  // delegate
+  {
+    name: 'delegate-task', tool: 'delegate_task', turnAge: 5,
+    content: 'profile: code_scout\nsummary: found the relevant code in three files\n' + 'z'.repeat(200),
+  },
+  // generic
+  { name: 'generic-tool', tool: 'unknown_tool', content: ['l1', 'l2', 'l3', 'l4'].join('\n') + '\n' + 'z'.repeat(200), turnAge: 5 },
+  // artifact 保留
+  {
+    name: 'generic-with-artifact', tool: 'unknown_tool', turnAge: 5,
+    content: 'z'.repeat(250) + '\n[artifact:keep_me]',
+  },
+].map(c => {
+  const r = collapseToolResult(c.tool, c.content, c.turnAge, 200_000)
+  return {
+    name: c.name,
+    tool: c.tool,
+    content: c.content,
+    turnAge: c.turnAge,
+    want: r === null ? null : {
+      toolName: r.toolName, summary: r.summary,
+      originalTokens: r.originalTokens, collapsedTokens: r.collapsedTokens,
+    },
+  }
+})
+
 const out = {
   constants: { largeContextWindowTokens: LARGE_CONTEXT_WINDOW_TOKENS, keepRecentMessages: KEEP_RECENT_MESSAGES, cacheAnchorMessages: CACHE_ANCHOR_MESSAGES },
   strategies: strategyCases,
@@ -456,6 +573,7 @@ const out = {
   thresholds: thresholdCases,
   tokens: tokenCases,
   micro: microCases,
+  collapse: collapseCases,
 }
 
 writeFileSync(join(__dirname, 'oracle.json'), JSON.stringify(out, null, 2) + '\n', 'utf-8')

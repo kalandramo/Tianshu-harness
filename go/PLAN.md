@@ -1224,6 +1224,75 @@ gate / 缓存顾问延迟；或 `internal/context` 其余子系统
 调用方，未接进 `internal/agent` 的压缩控制器。需在有 `compaction-controller`
 移植时一并处理。
 
+### 第二十七刀（已完成）：语义折叠 + 折叠接线（2026-09-19）
+
+✅ `CollapseToolResult` + 7 个折叠器 + `PreserveArtifactRef` + `ArtifactMarkerRegex`
+✅ **折叠接进 `MicroCompactOai`**——`turnAge≥4` 的路径现在真的走语义折叠了
+
+**七个专用折叠器**（按工具名分派）：
+
+| 工具 | 摘要形态 |
+|---|---|
+| `grep` / `search` | `N matches in M files: f1, f2, …`（前 8 个，超出标 `(+N more)`） |
+| `read_file` | `N lines, classes: …, functions: …`（扫描前 100 行） |
+| `bash` | `N lines output, exit C, fails: …, tail: …` |
+| `write_file` / `edit_file` | `N chars written` |
+| `run_tests` | `P/T passed · F failed · exit C · failures: …` |
+| `delegate_task` / `_batch` | `profile — snippet` |
+| 其余 | `N lines, M chars. Preview: l1 \| l2 \| l3` |
+
+**五个关键发现**：
+
+1. **Go 的 RE2 不支持负向前瞻**——TS 的 `run_tests` 失败正则是
+   `/(\d+)\s+失败(?!项)/`，`regexp.MustCompile` 直接 **panic**。改写为
+   基础正则 + 手写 `findRunTestsFailed`（遍历匹配、跳过后跟「项」的）。
+   这正是「排除『失败项：』标题行」的意图。
+2. **TS 的 `String.length` 是 UTF-16 码元数，不是字节数**。Go 的 `len(s)`
+   是字节数——中文 3 字节 vs 1 码元。实测：`'退出码：1\n3 通过…' + 'z'*200`
+   码点 243（→ 61 token）、字节 277（→ 70 token）。4 处 oracle 差异全部
+   源于此，修正为 `charLen`（增补平面字符按 2 码元计）。
+3. **两处 `collapseMinTurnAge` 阈值不同**：`micro.ts` 用 4（是否尝试折叠），
+   `context-collapse.ts` 用 2（再判一次）。Go 侧分别命名
+   `collapseMinTurnAge` / `collapseToolResultMinTurnAge`，避免混淆。
+4. **`extractToolNameFromId` 依赖 provider 的 id 格式**。TS 用
+   `/^([\w-]+)_/` 取首个下划线前的部分——若模型返回 OpenAI 风格的
+   `call_abc123`，提取出的是 `call` 而非工具名，折叠落到 generic 分支。
+   TS 亦然，忠实复刻并在注释标注。
+5. **artifact 分支在生产路径不会触发**——Go 侧 artifact store 未移植。
+   按 TS 契约完整复刻（含 `preserveArtifactRef` 的回读提示插入），未来接入
+   时无需改动本模块。
+
+**用户级验收（已执行）**：新增 2 组 oracle 对账，**131 个子用例**：
+
+- `TestCollapseToolResultParity`——**19 个用例**（两个前置条件 / grep 两路径 /
+  read_file 两路径 / bash 失败行判定 / write / edit / run_tests 三例 /
+  delegate / generic / artifact 保留 / **折叠接线**）
+- `TestArtifactMarkerRegex`——8 个边界（只认行尾标记、拒绝空 id 与空格）
+
+**变异反证 10 个有判别力**（最小长度前置红 2 / 轮龄前置红 2 / grep 前 8 限制
+红 2 / bash 成功行排除红 2 / artifact 去重红 2 / 负向前瞻等价红 2 / sliceRunes
+边界红 2 / read_file classes 红 2 / 折叠接线红 2 / 工具名提取红 2）。
+
+**两条方法论教训**：
+
+- **C4 与 C6 最初红 0，探针证明是「用例不可区分」而非等价变异**。C4：原用例
+  的 `✓ passed test` 不含 fail 关键词，故排除逻辑无差别——改用 `✓ 0 errors`
+  （含 "error"）后红 2。C6：原用例 `1 失败，` 后跟逗号，前瞻的 `continue`
+  从未走到——改用 `2 失败项` 后红 2。
+- **「红 0」有两种伪装**：等价变异，以及**编译失败**。「工具名提取失效」首次
+  变异因 `i` 未使用而编译失败，被脚本误判为红 0。变异脚本必须检查编译状态。
+
+**下一步**：`recovery-ref` 的完整接入（需先有 artifact store）；或压缩执行层的
+reclaim gate / 缓存顾问延迟；或 `internal/context` 其余子系统
+（CognitiveLedger / Stigmergy / task-contract）。
+
+**架构欠账（累积）**：
+1. `MicroCompactOai` 与 `CollapseToolResult` 均**无生产调用方**——未接进
+   `internal/agent` 压缩控制器。
+2. artifact 分支已复刻但**无 artifact 生产端**（store 未移植）。
+3. `run_tests` 折叠的中文正则与 Go 的 `formatTestResult` 输出格式**不匹配**——
+   忠实复刻 TS 契约，若未来统一输出格式需同步改。
+
 **为什么是它而不是补工具**：
 
 - CVM（认知虚拟机）是天枢三大支柱之一——`RuntimeHookPipeline` 五阶段条件装配 60+ hook，拦截服从性漂移 / doom loop / 验证债务
