@@ -1155,9 +1155,74 @@ disabledUntilTurn**。
 **变异反证 6 个有判别力**（熔断器不触发红 4 / 硬天花板失效红 4 / 熔断器不生效
 红 2 / 缓存保护阶梯失效红 6 / 精度带失效红 4 / 数字重载 reactive 用错红 3）。
 
-**下一步**：压缩的**执行层**（LLM 重写编排、reclaim gate、缓存顾问延迟、
-micro-compact 的历史重塑），或 `internal/context` 其余子系统
+### 第二十六刀（已完成）：micro-compact——截断 + 轮次删除（2026-09-19）
+
+✅ `EstimateOaiMessageTokens` + `ComputeTurnAges` + `MicroCompactOai` + 常量
+
+**压缩执行层的第一块**。本刀做**不依赖语义折叠**的部分：tool 消息截断
+（`<microcompacted>` 桩）+ 轮次删除。`context-collapse`（240 行，按工具名
+分派摘要策略）与 `recovery-ref`（37 行）留下刀。
+
+**两阶段算法**：
+
+- **阶段 1（逐条）**：tool 消息超过 `previewChars` 则截断为桩。非近期
+  assistant 的 reasoning 折叠——**TS 侧恒不生效**（`compactOaiReasoning`
+  硬编码 `changed: false`），reasoning 完整保留：截断收益在前缀缓存生效后
+  可忽略，而不完整推理会降低模型质量（MiMo / DeepSeek 要求回显）。
+- **阶段 2（轮次删除）**：若截断后仍超窗口，删**中间轮次**——保留前
+  `CacheAnchorMessages=2` 条锚与后 `KeepRecentMessages=4` 条近期，按轮删到
+  窗口的 **70%** 以下。三重条件：在锚之后、在近期之前、`apiInvariant === 'ok'`。
+
+**缓存锚的意义**（`CACHE_ANCHOR_MESSAGES = 2`）：压缩后保留前 2 条
+（初始 user 请求 + assistant 响应），让 DeepSeek 的前缀仍能匹配
+`[System][Tools][Volatile][User1][Asst1]`——这是前缀缓存支柱的关键。
+
+**四处发现**：
+
+1. **TS 的 `computeTurnAges` 注释与实现不符**。注释写「Current turn = 0」，
+   但实现里 `turn` 只在遇到 user 时递增——**最近的 user 轮龄是 1**，只有末尾
+   的非 user 消息才是 0。用探针逐行复刻 TS 实现取得真值（`[u,a,u,a]` →
+   `{3:0, 2:1, 1:1, 0:2}`），Go 侧以实现行为为准。
+2. **TS 的 `estimateOaiMessageTokens` 是「拼接后统一分档」而非「分段相加」**。
+   探针实测：`content='hi' + reasoning='thinking hard'`（15 字符）返回
+   `ceil(15/4)=4`，分段相加会得 `1+4=5`——后者系统性高估。
+3. **本仓存在两份口径不同的估算器，是 TS 的历史遗留**：
+   `internal/context/rounds.go`（3 个 CJK 区间，`cjk÷1.5`）与
+   `internal/compact/micro.go`（6 个区间，`cjk÷1.2`）。后果：tier-2 里
+   `currentTokens`（micro 口径）减去 `round.TokenEstimate`（rounds 口径）是
+   **跨口径相减**。TS 同样如此（`src/compact/micro.ts` vs
+   `src/context/rounds.ts`），按项目纪律忠实复刻并在代码里显式注释。
+4. **截断上限必须走数字重载**。TS 用 `compactThresholds(contextWindow)`
+   （数字版，`reactive=0.8`），我用成了 `CompactThresholdsForProfile`
+   （具名版，`reactive=0.88`）。两者在 `toolResultMaxTokens` 上取值相同，
+   但语义不同——已修正为 `CompactThresholdsForWindow`。
+
+**用户级验收（已执行）**：新增 3 组 oracle 对账，**111 个子用例**：
+
+- `TestMicroConstantsParity`——2 个常量
+- `TestEstimateOaiMessageTokensParity`——12 个用例（ASCII/CJK/tool_calls/
+  reasoning/tool 消息）
+- `TestMicroCompactParity`——**6 个用例**（无需压缩 / 截断 / 短消息不截断 /
+  轮次删除 / 不够本 / 跳过 broken 轮）
+- `TestComputeTurnAges`——4 个用例（TS 未导出该函数，用探针取真值自证）
+
+**变异反证 6 个有判别力**（CJK 用错比值红 5 / 不算 tool_calls 红 3 /
+不算 reasoning 红 3 / 缓存锚失效红 2 / 70% 水位失效红 2 / API 不变量检查
+失效红 2）；2 个等价变异已定性（预览下限不可达防御、`isRecent` 结构性占位）。
+
+**关键 lesson**：M7 最初红 0，我一度判为等价变异——**探针推翻了它**：
+该 guard 只在 `currentTokens - roundTokens` 落在 70%~100% 窗口之间才可区分，
+原用例（200000 远超该区间）无法区分。构造 `currentTokens=120000` + 中间轮
+30000 的新用例后红 2。**「红 0」必须先用探针定性，不能直接归因等价变异。**
+
+**下一步**：压缩执行层的其余部分——`context-collapse`（语义折叠，按工具名
+分派）+ `recovery-ref`（边界归档指针）使 turnAge≥4 的路径生效；或 reclaim
+gate / 缓存顾问延迟；或 `internal/context` 其余子系统
 （CognitiveLedger / Stigmergy / task-contract）。
+
+**架构欠账（本刀新增）**：生产路径尚未接线——`MicroCompactOai` 目前只有测试
+调用方，未接进 `internal/agent` 的压缩控制器。需在有 `compaction-controller`
+移植时一并处理。
 
 **为什么是它而不是补工具**：
 

@@ -25,6 +25,10 @@ import {
   tierForRatio, decideCompactAction, recordCompactFailure, recordCompactSuccess,
   llmActionRatiosFor,
 } from '../../../src/context/compact-policy.js'
+import {
+  estimateOaiMessageTokens, estimateOaiTokens, microCompactOai,
+} from '../../../src/compact/micro.js'
+import { KEEP_RECENT_MESSAGES, CACHE_ANCHOR_MESSAGES } from '../../../src/compact/constants.js'
 import { PressureMonitor } from '../../../src/context/pressure-monitor.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -294,8 +298,151 @@ const thresholdCases = [
   { name: 'profile-boundary-500000', input: { contextWindow: 500_000 } },
 ].map(c => ({ ...c, want: compactThresholds(c.input as any) }))
 
+// ── token 估算 ──
+const tokenCases = [
+  { name: 'ascii-4chars', msg: { role: 'user', content: 'abcd' } },
+  { name: 'ascii-5chars', msg: { role: 'user', content: 'abcde' } },
+  { name: 'cjk-1char', msg: { role: 'user', content: '中' } },
+  { name: 'cjk-2chars', msg: { role: 'user', content: '中文' } },
+  { name: 'mixed', msg: { role: 'user', content: 'abc中文' } },
+  { name: 'assistant-content-only', msg: { role: 'assistant', content: 'hello' } },
+  { name: 'assistant-with-toolcalls', msg: { role: 'assistant', content: '', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'bash', arguments: '{"cmd":"ls"}' } }] } },
+  { name: 'assistant-with-reasoning', msg: { role: 'assistant', content: 'hi', reasoning_content: 'thinking hard' } },
+  { name: 'assistant-all-three', msg: { role: 'assistant', content: 'hi', reasoning_content: 'think', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'f', arguments: '{}' } }] } },
+  { name: 'tool-message', msg: { role: 'tool', content: 'result data', tool_call_id: 'call_1' } },
+  { name: 'hiragana', msg: { role: 'user', content: 'あいう' } },
+  { name: 'hangul', msg: { role: 'user', content: '한국' } },
+].map(c => ({ ...c, want: estimateOaiMessageTokens(c.msg as any) }))
+
+// ── micro-compact（截断路径）──
+// 构造超长 tool 消息（超过 previewChars）
+// previewChars = toolResultMaxTokens（200K 窗口 → 30000 字符档）
+// 必须超过它才会触发截断
+// compactThresholds(200000).toolResultMaxTokens = 60000 字符
+const longTool = 'x'.repeat(70000)
+function microCase(o: any) {
+  const msgs = o.msgs
+  const r = microCompactOai(msgs as any, o.contextWindow, o.estimatedTokens ?? estimateOaiTokens(msgs as any))
+  return {
+    truncated: r.truncated,
+    messageCount: r.messages.length,
+    // 每条消息的 role + 内容长度（用于逐条对账，避免全文）
+    shapes: r.messages.map((m: any) => ({
+      role: m.role,
+      len: (m.content ?? '').length,
+      startsWithTag: typeof m.content === 'string' && m.content.startsWith('<microcompacted'),
+    })),
+  }
+}
+
+const microCases = [
+  {
+    name: 'below-threshold-no-change',
+    contextWindow: 200_000,
+    estimatedTokens: 1000,
+    msgs: [{ role: 'user', content: 'short' }, { role: 'assistant', content: 'ok' }],
+  },
+  {
+    name: 'long-tool-truncated',
+    contextWindow: 200_000,
+    estimatedTokens: 100_000,
+    msgs: [
+      { role: 'user', content: 'a' },
+      { role: 'assistant', content: 'b', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'bash', arguments: '{}' } }] },
+      { role: 'tool', content: longTool, tool_call_id: 'call_1' },
+    ],
+  },
+  {
+    name: 'short-tool-not-truncated',
+    contextWindow: 200_000,
+    estimatedTokens: 100_000,
+    msgs: [
+      { role: 'user', content: 'a' },
+      { role: 'assistant', content: 'b', tool_calls: [{ id: 'c_1', type: 'function', function: { name: 'bash', arguments: '{}' } }] },
+      { role: 'tool', content: 'short result', tool_call_id: 'c_1' },
+    ],
+  },
+  // ── 阶段 2：轮次删除 ──
+  // 构造 6 个完整轮次，中间轮次可被删。token 估算传超大值逼进阶段 2。
+  {
+    name: 'tier2-removes-middle-rounds',
+    contextWindow: 100_000,
+    estimatedTokens: 500_000,   // 远超窗口 → 触发阶段 2
+    msgs: [
+      // 锚（前 2 条，不可删）
+      { role: 'user', content: 'anchor user' },
+      { role: 'assistant', content: 'anchor asst' },
+      // 中间轮次 1
+      { role: 'user', content: 'mid1 user' },
+      { role: 'assistant', content: 'mid1 asst' },
+      // 中间轮次 2
+      { role: 'user', content: 'mid2 user' },
+      { role: 'assistant', content: 'mid2 asst' },
+      // 近期（后 4 条，不可删）
+      { role: 'user', content: 'recent user' },
+      { role: 'assistant', content: 'recent asst' },
+      { role: 'user', content: 'recent2 user' },
+      { role: 'assistant', content: 'recent2 asst' },
+    ],
+  },
+  // ── M7 缺口：删除「不够本」的边界（删后刚好在 70% 之上 → 不删）──
+  // contextWindow=100000，70% = 70000。中间轮 token 很小时不删。
+  {
+    name: 'tier2-not-worth-it',
+    contextWindow: 100_000,
+    estimatedTokens: 200_000,   // 超窗口，但删掉小轮后仍在 70% 之上
+    msgs: [
+      { role: 'user', content: 'anchor user' },
+      { role: 'assistant', content: 'anchor asst' },
+      { role: 'user', content: 'x' },          // 极小轮 → 删了也不够本
+      { role: 'assistant', content: 'y' },
+      { role: 'user', content: 'recent user' },
+      { role: 'assistant', content: 'recent asst' },
+      { role: 'user', content: 'recent2 user' },
+      { role: 'assistant', content: 'recent2 asst' },
+    ],
+  },
+  // ── M7 缺口（真缺口）：guard 只在 currentTokens-roundTokens 落在
+  //    70%~100% 窗口之间才可区分。窗口 100000 → 70%=70000、100%=100000。
+  //    currentTokens=120000、中间轮 ~30000 → 删后 89999，落在区间内。
+  {
+    name: 'tier2-guard-band',
+    contextWindow: 100_000,
+    estimatedTokens: 120_000,
+    msgs: [
+      { role: 'user', content: 'anchor user' },
+      { role: 'assistant', content: 'anchor asst' },
+      { role: 'user', content: 'mid user' },
+      // 大 assistant 消息（120000 字符 ≈ 30000 token）——非 tool 故不截断
+      { role: 'assistant', content: 'z'.repeat(120_000) },
+      { role: 'user', content: 'recent user' },
+      { role: 'assistant', content: 'recent asst' },
+      { role: 'user', content: 'recent2 user' },
+      { role: 'assistant', content: 'recent2 asst' },
+    ],
+  },
+  // ── M8 缺口：API 不变量为 broken 的轮次不可删 ──
+  // 构造孤儿 tool 消息（有 tool 结果但缺对应的 assistant tool_calls）→ broken
+  {
+    name: 'tier2-skips-broken-round',
+    contextWindow: 100_000,
+    estimatedTokens: 500_000,
+    msgs: [
+      { role: 'user', content: 'anchor user' },
+      { role: 'assistant', content: 'anchor asst' },
+      // 孤儿 tool（无对应 assistant tool_calls）→ 该轮 invariant=broken
+      { role: 'user', content: 'mid user' },
+      { role: 'tool', content: 'orphan result', tool_call_id: 'no_such_call' },
+      { role: 'user', content: 'recent user' },
+      { role: 'assistant', content: 'recent asst' },
+      { role: 'user', content: 'recent2 user' },
+      { role: 'assistant', content: 'recent2 asst' },
+    ],
+  },
+].map(c => ({ ...c, want: microCase(c) }))
+
 const out = {
-  constants: { largeContextWindowTokens: LARGE_CONTEXT_WINDOW_TOKENS },
+  constants: { largeContextWindowTokens: LARGE_CONTEXT_WINDOW_TOKENS, keepRecentMessages: KEEP_RECENT_MESSAGES, cacheAnchorMessages: CACHE_ANCHOR_MESSAGES },
   strategies: strategyCases,
   adaptive: adaptiveCases,
   ceilings: ceilingCases,
@@ -307,6 +454,8 @@ const out = {
   ladders: ladderCases,
   decides: decideCases,
   thresholds: thresholdCases,
+  tokens: tokenCases,
+  micro: microCases,
 }
 
 writeFileSync(join(__dirname, 'oracle.json'), JSON.stringify(out, null, 2) + '\n', 'utf-8')
