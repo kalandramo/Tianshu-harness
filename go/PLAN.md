@@ -397,7 +397,36 @@ priority 自写实现 3 红 / constitutional 不豁免 4 红 / ledger 不记 ren
 `TestGovernanceCooldownTableOnlyRegistered`）后红 1。**行为等价的变异要靠
 不变量测试钉住，而非行为断言。**
 
-**下一步**：`AdvisoryReadback`（采纳率台账）——它是习惯化 / efficacy / lift /
+### 第九刀（已完成）：CLI 装配——消除第三次悬空（2026-09-19）
+
+⚠️ **第三次同模式发现**：前八刀的 hook / bus / 治理子系统在**真实 CLI 路径上
+全部未生效**——`cmd/tianshu/main.go` 构造了 `Loop` 但**没装 `Pipeline` /
+`AdvisoryBus`**（grep 确认 `NewAdvisoryBus` 无生产构造点）。我的单测测的是
+「注入后的行为」，不是「CLI 会不会注入」。
+
+**这是同一模式的第三次**：hook 接进 Pipeline 但 Pipeline 未接进 loop（第五刀）→
+bus 有 Render 但 Render 无调用方（第七刀）→ 组件齐备但 CLI 未装配（第九刀）。
+
+✅ `cmd/tianshu/main.go` 装配三件：`AdvisoryBus` + `Pipeline`（注册两个真实
+hook）+ 接进 `Loop`。对账 TS 的 loop-factory / create-runtime-hooks 装配路径
+（TS 侧默认装 ~18+ hook，这里只装已移植的两个）。
+
+`consistency-check` 的 `getFileObservations` 注入**显式空集**——claim store 未
+移植，hook 不产生副作用。这是**显式降级**而非静默失效（接上 claim store 后
+自动生效）。
+
+**用户级验收（已执行，真实二进制）**：`cmd/tianshu/cli_advisory_e2e_test.go`
+——`go build` 出真实二进制 → 以 `-p` 跑 → mock SSE 端点 → 检查**发往端点的
+请求体含 `<星域-advisory>` 块**。这是首次用**真实二进制**（而非内部函数）验证。
+
+**变异反证 3 个：全部有判别力**（CLI 不装 bus 1 红 / 不装 Pipeline 1 红 /
+不注册 hook 1 红）——装配的每一环都被钉住。
+
+**方法教训**：内部测试的「注入后行为」永远无法证明「生产会注入」。**要验
+生产可达性，必须跑生产入口本身**（这里是二进制）。前两次我靠 grep 补验，
+这次直接用真实二进制测试锁住——这类测试应作为后续每一刀的收尾动作。
+
+**下一步**：`AdvisoryReadback`（采纳率台账）——习惯化 / efficacy / lift /
 holdout 四个子系统的共同前置；或 `todo-reminder` hook。
 
 **为什么是它而不是补工具**：

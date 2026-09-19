@@ -182,6 +182,29 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	}
 	loop := agent.New(app.Agent, cl, reg)
 
+	// ── CVM 装配：hook 管线 + 劝导总线 ──
+	//
+	// **为什么必须在 CLI 装**：hook 与 advisory 的逻辑再完备，不在这里装配
+	// 就完全不生效——真实会话走的是这条路径，不是测试里的手工注入。
+	//
+	// 装配三件：
+	//   1. AdvisoryBus——hook 投递的出口 + 渲染成 <星域-advisory> 块
+	//   2. Pipeline——五阶段 hook 管线（当前注册两个真实 hook）
+	//   3. Loop.Hooks / Loop.Advisories——把两者接进主循环
+	//
+	// 对账 TS 的 loop-factory / create-runtime-hooks 装配路径
+	// （TS 侧默认装配 ~18+ hook；这里只装已移植的两个）。
+	bus := agent.NewAdvisoryBus()
+	pipeline := agent.NewPipeline(agent.PipelineOptions{})
+	pipeline.Register(agent.NewTypecheckReminderHook(bus))
+	pipeline.Register(agent.NewConsistencyCheckHook(func() []agent.FileObservation {
+		// claim store 尚未移植——返回空集，hook 不产生副作用（no-op）。
+		// 这是**显式降级**而非静默失效：接上 claim store 后此处自动生效。
+		return nil
+	}))
+	loop.Hooks = pipeline
+	loop.Advisories = bus
+
 	loop.Emit = func(e agent.Event) {
 		if jsonOut {
 			emitJSON(e)
