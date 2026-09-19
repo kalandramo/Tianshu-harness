@@ -152,6 +152,13 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     搜索**（3000 文档 × 全预算）定位，并以 JSON 字面量原样嵌入文档。
     教训：变异 0 红 → 先怀疑用例无效与对照物有 bug，再怀疑测试无判别力；
     连续两轮 0 红就换穷举搜索，不要继续猜。
+- [x] **项目指令接线**：`internal/prompt/project.go`
+  - `LoadProjectInstructions` 读 cwd 下 AGENTS.md + .rivet.md（`\n\n` 拼接，
+    对账 TS readRivetMd）；`BuildSystemPromptWithProject` 按节选取后追加
+  - 这是 `projinst.go` 的**生产消费路径**——接线前它是悬空代码（仅测试消费）
+  - 端到端验证：真实端点下模型确认读到了 AGENTS.md 的「高危命令纪律」章节
+  - 注：这是**最小可用路径**（不做 XML 转义外的 <context> 包裹）。后续移植
+    volatile 层时应**替换**本函数，而非在其上叠加（避免双写）
 - [ ] volatile 层剩余：`buildVolatileBlockInternal`（148 行）的平台行/sober/
   locus/working-set/session-memory/star-domain 拼接，以及
   `buildDynamicAppendixParts`（动态 appendix）。**动态部分依赖会话状态容器，

@@ -132,12 +132,14 @@ func loadConfig(model, baseURL, approval string, maxTurns int, systemPrompt stri
 		baseURL = "https://api.deepseek.com"
 	}
 
-	// 系统提示词：未显式指定时按模型家族渲染（对账 TS 侧 buildSystemPrompt）。
+	// 系统提示词：未显式指定时按模型家族渲染（对账 TS 侧 buildSystemPrompt），
+	// 并追加 cwd 下的项目指令（AGENTS.md + .rivet.md，按节选取）。
 	// 模型家族决定是否附加 calibration 片段——deepseek/mimo/glm 各有一段，
 	// 其余家族返回 base 原样。
 	if systemPrompt == "" {
 		family := prompt.DetectModelFamily(model)
-		systemPrompt = prompt.BuildSystemPrompt(prompt.Context{ModelFamily: family})
+		systemPrompt = prompt.BuildSystemPromptWithProject(
+			prompt.Context{ModelFamily: family}, cwd, 0)
 	}
 
 	return &appConfig{
