@@ -5,11 +5,15 @@
 
 ## 现状一句话
 
-**Go 版已能跑通完整闭环**：`tianshu -p "提示词"` → 请求构造 → 模型调用 →
-工具执行 → 结果回灌 → 终答。Wave 1（模型接入层）完整收口，Wave 2（工具内核）
-基础工具就位，Wave 4（agent 循环）最小版打通。
+**Go 版已能干活**：`tianshu -p "提示词"` → 请求构造 → 模型调用 → 工具执行 →
+结果回灌 → 终答。Wave 1（模型接入层）完整收口，Wave 2（工具内核）含 bash，
+Wave 4（agent 循环）最小版打通。
 
-验证基线：`go test ./...` 298 PASS / `-race` / `go vet` / `gofmt` 全绿；
+**四步闭环已真实验证**（本地 mock 端点）：读 calc.go（发现 `a - b` bug）→
+edit_file 修复为 `a + b` → bash 跑 `go test ./...` → 文件确实改动、测试确实
+从红变绿。这是 Go 版第一次真正干活。
+
+验证基线：`go test ./...` 316 PASS / `-race` / `go vet` / `gofmt` 全绿；
 干净检出（`git archive HEAD`）复验通过且 CLI 可构建。
 
 ## 目录结构
@@ -58,6 +62,13 @@ go/
      套件从 42.8s 降到 0.9s
    - `httptest` handler 里 `<-r.Context().Done()` 会与 `Close()` 死锁
      （handler 等服务端 ctx，Close 等 handler）——用显式 release channel
+   - handler 读请求体必须用 `io.ReadAll`——单次 `r.Body.Read` 在大 body
+     （工具 schema 数十 KB）上不保证读满，会让断言随机失败
+   - **杀子进程树不能靠 `exec.CommandContext`**：它只杀主进程，bash 派生的
+     后台子进程成孤儿。须 `exec.Command` + `Setpgid:true` + 独立 goroutine
+     在 `ctx.Done()` 时 `kill(-pid)`，与 `Wait` 并行（主进程死后 pgid 会被回收）
+   - 变异反证若引入编译错误，测试报 `build failed` 而非 `FAIL`——别把
+     构建失败误判为「测试未生效」
 
 ## 环境注意
 
@@ -75,8 +86,8 @@ go/
       （需真实 key；当前证据强度止于「与真实 TS 客户端字节一致」）
 
 ### Wave 2 剩余（工具内核）
-- [ ] `bash`（超时 / 后台 job / 进程树清理）——**优先级最高**，闭环缺它不完整
-- [ ] `run_tests`（项目测试运行器探测）
+- [x] ~~`bash`~~ 已完成（超时 / 进程组清理 / 破坏性硬闸门 / 输出截断标记）
+- [ ] `run_tests`（项目测试运行器探测）——**优先级最高**，让「跑验证」不必手拼命令
 - [ ] `apply_patch` / `hash_edit`（结构化编辑）
 - [ ] `ast_grep`（需 tree-sitter 绑定）
 - [ ] `todo` / `job` / `git` / `diff` / `repo_map`
@@ -103,9 +114,12 @@ go/
 
 ## 建议的第一刀
 
-**接 `bash` 工具**。理由：当前闭环能读能改但不能跑测试，
-「读文件 → 改代码 → 跑测试 → 交付」四步里第三步缺失——而验证纪律是
-这个运行时的核心承诺，缺了它 Go 版只是个聊天壳。
+**接 `run_tests` 工具**。理由：闭环已通，但模型要跑验证得手拼
+`go test ./... 2>&1 | tail -3` 这类命令——而 `run_tests` 的价值在于
+**项目测试运行器探测**（package.json scripts / pytest / go test / cargo test
+自动识别）+ 结构化结果（passed/failed/blocked 与 blockedReason），
+让「跑验证」变成可靠动作而非拼字符串。
 
-实现时注意：超时要有硬上限（防挂死）、后台任务要有进程树清理
-（防孤儿进程）、命令输出要标记 lossiness（截断观测不能支撑负向结论）。
+之后建议补 `internal/prompt`（Wave 3）——那是字节等价的下一个主战场：
+system prompt 的冻结锚 + volatile + appendixDelta 三段拼接，判据是
+同会话状态下 Go 渲染结果与 TS 逐字节相同。
