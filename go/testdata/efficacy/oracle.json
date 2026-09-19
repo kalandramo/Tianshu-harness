@@ -1,0 +1,362 @@
+{
+  "constants": {
+    "halfLifeMs": 1209600000,
+    "pruneThreshold": 0.05,
+    "maxKeys": 200
+  },
+  "decay": [
+    {
+      "name": "age_0",
+      "input": {
+        "key": "k",
+        "delivered": 8,
+        "adopted": 4,
+        "ignored": 4,
+        "shadowHeld": 6,
+        "shadowSatisfied": 3,
+        "updatedAt": 1700000000000
+      },
+      "now": 1700000000000,
+      "want": {
+        "key": "k",
+        "delivered": 8,
+        "adopted": 4,
+        "ignored": 4,
+        "shadowHeld": 6,
+        "shadowSatisfied": 3,
+        "updatedAt": 1700000000000
+      }
+    },
+    {
+      "name": "age_14d",
+      "input": {
+        "key": "k",
+        "delivered": 8,
+        "adopted": 4,
+        "ignored": 4,
+        "shadowHeld": 6,
+        "shadowSatisfied": 3,
+        "updatedAt": 1700000000000
+      },
+      "now": 1701209600000,
+      "want": {
+        "key": "k",
+        "delivered": 4,
+        "adopted": 2,
+        "ignored": 2,
+        "shadowHeld": 3,
+        "shadowSatisfied": 1.5,
+        "updatedAt": 1701209600000
+      }
+    },
+    {
+      "name": "age_28d",
+      "input": {
+        "key": "k",
+        "delivered": 8,
+        "adopted": 4,
+        "ignored": 4,
+        "shadowHeld": 6,
+        "shadowSatisfied": 3,
+        "updatedAt": 1700000000000
+      },
+      "now": 1702419200000,
+      "want": {
+        "key": "k",
+        "delivered": 2,
+        "adopted": 1,
+        "ignored": 1,
+        "shadowHeld": 1.5,
+        "shadowSatisfied": 0.75,
+        "updatedAt": 1702419200000
+      }
+    },
+    {
+      "name": "age_1d",
+      "input": {
+        "key": "k",
+        "delivered": 10,
+        "adopted": 5,
+        "ignored": 5,
+        "shadowHeld": 4,
+        "shadowSatisfied": 2,
+        "updatedAt": 1700000000000
+      },
+      "now": 1700086400000,
+      "want": {
+        "key": "k",
+        "delivered": 9.516951530106196,
+        "adopted": 4.758475765053098,
+        "ignored": 4.758475765053098,
+        "shadowHeld": 3.8067806120424783,
+        "shadowSatisfied": 1.9033903060212392,
+        "updatedAt": 1700086400000
+      }
+    },
+    {
+      "name": "age_negative",
+      "input": {
+        "key": "k",
+        "delivered": 5,
+        "adopted": 5,
+        "ignored": 0,
+        "shadowHeld": 3,
+        "shadowSatisfied": 0,
+        "updatedAt": 1700086400000
+      },
+      "now": 1700000000000,
+      "want": {
+        "key": "k",
+        "delivered": 5,
+        "adopted": 5,
+        "ignored": 0,
+        "shadowHeld": 3,
+        "shadowSatisfied": 0,
+        "updatedAt": 1700000000000
+      }
+    }
+  ],
+  "prune": [
+    {
+      "name": "fresh_kept",
+      "input": {
+        "key": "k",
+        "delivered": 3,
+        "adopted": 1,
+        "ignored": 2,
+        "shadowHeld": 3,
+        "shadowSatisfied": 1,
+        "updatedAt": 1700000000000
+      },
+      "now": 1700000000000,
+      "decayed": {
+        "key": "k",
+        "delivered": 3,
+        "adopted": 1,
+        "ignored": 2,
+        "shadowHeld": 3,
+        "shadowSatisfied": 1,
+        "updatedAt": 1700000000000
+      },
+      "wantKeep": true
+    },
+    {
+      "name": "decayed_below_threshold",
+      "input": {
+        "key": "k",
+        "delivered": 0.2,
+        "adopted": 0.1,
+        "ignored": 0.1,
+        "shadowHeld": 0.2,
+        "shadowSatisfied": 0.1,
+        "updatedAt": 1700000000000
+      },
+      "now": 1703628800000,
+      "decayed": {
+        "key": "k",
+        "delivered": 0.025,
+        "adopted": 0.0125,
+        "ignored": 0.0125,
+        "shadowHeld": 0.025,
+        "shadowSatisfied": 0.0125,
+        "updatedAt": 1703628800000
+      },
+      "wantKeep": false
+    },
+    {
+      "name": "just_above_threshold",
+      "input": {
+        "key": "k",
+        "delivered": 0.06,
+        "adopted": 0.06,
+        "ignored": 0.06,
+        "shadowHeld": 0.06,
+        "shadowSatisfied": 0.06,
+        "updatedAt": 1700000000000
+      },
+      "now": 1700000000000,
+      "decayed": {
+        "key": "k",
+        "delivered": 0.06,
+        "adopted": 0.06,
+        "ignored": 0.06,
+        "shadowHeld": 0.06,
+        "shadowSatisfied": 0.06,
+        "updatedAt": 1700000000000
+      },
+      "wantKeep": true
+    },
+    {
+      "name": "exactly_at_threshold",
+      "input": {
+        "key": "k",
+        "delivered": 0.05,
+        "adopted": 0.05,
+        "ignored": 0.05,
+        "shadowHeld": 0.05,
+        "shadowSatisfied": 0.05,
+        "updatedAt": 1700000000000
+      },
+      "now": 1700000000000,
+      "decayed": {
+        "key": "k",
+        "delivered": 0.05,
+        "adopted": 0.05,
+        "ignored": 0.05,
+        "shadowHeld": 0.05,
+        "shadowSatisfied": 0.05,
+        "updatedAt": 1700000000000
+      },
+      "wantKeep": true
+    }
+  ],
+  "merge": [
+    {
+      "name": "single_merge",
+      "rounds": [
+        [
+          [
+            "k",
+            {
+              "delivered": 3,
+              "adopted": 1,
+              "ignored": 2,
+              "shadowHeld": 2,
+              "shadowSatisfied": 1
+            }
+          ]
+        ]
+      ],
+      "want": [
+        {
+          "key": "k",
+          "delivered": 3,
+          "adopted": 1,
+          "ignored": 2,
+          "shadowHeld": 2,
+          "shadowSatisfied": 1
+        }
+      ]
+    },
+    {
+      "name": "two_merges_accumulate",
+      "rounds": [
+        [
+          [
+            "k",
+            {
+              "delivered": 3,
+              "adopted": 1,
+              "ignored": 2,
+              "shadowHeld": 2,
+              "shadowSatisfied": 1
+            }
+          ]
+        ],
+        [
+          [
+            "k",
+            {
+              "delivered": 2,
+              "adopted": 2,
+              "ignored": 0,
+              "shadowHeld": 1,
+              "shadowSatisfied": 0
+            }
+          ]
+        ]
+      ],
+      "want": [
+        {
+          "key": "k",
+          "delivered": 5,
+          "adopted": 3,
+          "ignored": 2,
+          "shadowHeld": 3,
+          "shadowSatisfied": 1
+        }
+      ]
+    },
+    {
+      "name": "multi_key",
+      "rounds": [
+        [
+          [
+            "a",
+            {
+              "delivered": 5,
+              "adopted": 3,
+              "ignored": 2,
+              "shadowHeld": 4,
+              "shadowSatisfied": 1
+            }
+          ],
+          [
+            "b",
+            {
+              "delivered": 2,
+              "adopted": 0,
+              "ignored": 2,
+              "shadowHeld": 3,
+              "shadowSatisfied": 3
+            }
+          ]
+        ]
+      ],
+      "want": [
+        {
+          "key": "a",
+          "delivered": 5,
+          "adopted": 3,
+          "ignored": 2,
+          "shadowHeld": 4,
+          "shadowSatisfied": 1
+        },
+        {
+          "key": "b",
+          "delivered": 2,
+          "adopted": 0,
+          "ignored": 2,
+          "shadowHeld": 3,
+          "shadowSatisfied": 3
+        }
+      ]
+    }
+  ],
+  "maxKeys": {
+    "inputCount": 205,
+    "keptCount": 200,
+    "firstKey": "k204",
+    "lastKey": "k5"
+  },
+  "round3": [
+    {
+      "in": 0,
+      "out": 0
+    },
+    {
+      "in": 0.0004,
+      "out": 0
+    },
+    {
+      "in": 0.0005,
+      "out": 0.001
+    },
+    {
+      "in": 1.2345,
+      "out": 1.235
+    },
+    {
+      "in": 1.2344,
+      "out": 1.234
+    },
+    {
+      "in": 0.05,
+      "out": 0.05
+    },
+    {
+      "in": 7.9999,
+      "out": 8
+    }
+  ]
+}

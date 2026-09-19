@@ -403,14 +403,19 @@ func (r *AdvisoryReadback) GetIgnoredStreak(key string) int {
 }
 
 // GetDeliveredCount 返回 key 的送达次数。
-func (r *AdvisoryReadback) GetDeliveredCount(key string) int {
-	n := 0
+func (r *AdvisoryReadback) GetDeliveredCount(key string) float64 {
+	// **返回 float64，不取整**——对账 TS（`getDeliveredCount` 返回 number）。
+	//
+	// **为什么不能取整**：跨会话先验经 EWMA 衰减后是小数（如 2.9999…），
+	// `int()` 截断会让它变成 2——永远够不到 holdout 资格门（>= 3）。
+	// 这是真实偏差，不是精度洁癖：衰减后的先验本就该按连续值参与比较。
+	var n float64
 	if s, ok := r.stats[key]; ok {
-		n += s.Delivered
+		n += float64(s.Delivered)
 	}
 	// 先验的 delivered 也要计入（对账 TS：`(stats?.delivered ?? 0) + (priors?.delivered ?? 0)`）。
 	// **holdout 资格判定依赖此数**——漏掉先验会让「送达 >=N 次才开始抽样」永不满足。
-	n += int(r.priors[key].Delivered)
+	n += r.priors[key].Delivered
 	return n
 }
 

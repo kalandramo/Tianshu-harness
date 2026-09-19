@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/kalandramo/tianshu/go/internal/api"
 	"github.com/kalandramo/tianshu/go/internal/api/sse"
@@ -80,6 +81,16 @@ type Loop struct {
 	// 对账 TS 侧 loop.ts:848 的 `new SessionStateManager(this.config.sessionId)`。
 	// nil 时跳过状态更新（最小可跑路径）。
 	State *session.Manager
+
+	// EfficacyStore 是跨会话效能信息素（JSONL 持久化）。
+	//
+	// nil 时不做先验播种与写回——增强而非必需。
+	EfficacyStore *AdvisoryEfficacyStore
+	// lastEfficacyFlush 是上次 flush 时的 per-key 计数快照。
+	//
+	// **mergeAndSave 只收增量**，差分基线在这里。不维护它会导致每次写回都
+	// 把累计值当增量重复叠加（计数翻倍）。
+	lastEfficacyFlush map[string]EfficacyDelta
 	// Persist 是会话持久化器（transcript 落盘 + 元数据）。
 	//
 	// nil 时跳过落盘（headless 一次性跑或测试场景）。
@@ -182,6 +193,83 @@ func (l *Loop) appendAndPersist(msg *wire.OrderedMap) {
 	}
 }
 
+// FlushAdvisoryEfficacy 把会话内效能计数的**增量**合并写回跨会话信息素文件。
+//
+// 对账 TS `flushAdvisoryEfficacy`（loop.ts:443）。差分基线在
+// `lastEfficacyFlush`——每 20 轮 + 会话结束各调一次，**重复调用安全**
+// （零增量直接跳过）。失败不致命（信息素是尽力而为）。
+//
+// **为什么必须是增量**：mergeAndSave 内部是 `base[f] += delta[f]`——若传累计值，
+// 第二次 flush 会把已写过的计数再叠加一次，计数翻倍。
+func (l *Loop) FlushAdvisoryEfficacy() {
+	if l.EfficacyStore == nil || l.Readback == nil {
+		return
+	}
+	now := time.Now().UnixMilli()
+	deltas := map[string]EfficacyDelta{}
+	for key, s := range l.Readback.Stats() {
+		base := l.lastEfficacyFlush[key]
+		d := EfficacyDelta{
+			Delivered:       float64(s.Delivered) - base.Delivered,
+			Adopted:         float64(s.Adopted) - base.Adopted,
+			Ignored:         float64(s.Ignored) - base.Ignored,
+			ShadowHeld:      float64(s.ShadowHeld) - base.ShadowHeld,
+			ShadowSatisfied: float64(s.ShadowSatisfied) - base.ShadowSatisfied,
+		}
+		// 只提交非零增量（对账 TS 的 `if (delta.x > 0 || ...)`）
+		if d.Delivered > 0 || d.Adopted > 0 || d.Ignored > 0 ||
+			d.ShadowHeld > 0 || d.ShadowSatisfied > 0 {
+			deltas[key] = d
+		}
+		// **基线无条件推进**——即使本次增量为零，也要同步当前计数，
+		// 否则下次会把这期间的累积误算成新增量。
+		if l.lastEfficacyFlush == nil {
+			l.lastEfficacyFlush = map[string]EfficacyDelta{}
+		}
+		l.lastEfficacyFlush[key] = EfficacyDelta{
+			Delivered:       float64(s.Delivered),
+			Adopted:         float64(s.Adopted),
+			Ignored:         float64(s.Ignored),
+			ShadowHeld:      float64(s.ShadowHeld),
+			ShadowSatisfied: float64(s.ShadowSatisfied),
+		}
+	}
+	if len(deltas) == 0 {
+		return
+	}
+	// 写回失败不阻断会话（对账 TS 的 try/catch 吞掉）
+	_ = l.EfficacyStore.MergeAndSave(deltas, now)
+}
+
+// SeedEfficacyPriors 从持久化文件加载先验并播种给 readback。
+//
+// 对账 TS loop.ts:781-790 的装配：
+//
+//	const priors = this.advisoryEfficacyStore.load()
+//	this.advisoryReadback.seedPriors(...)
+//
+// **会话启动时调用一次**。加载失败回退冷启动（不致命）。
+func (l *Loop) SeedEfficacyPriors() {
+	if l.EfficacyStore == nil || l.Readback == nil {
+		return
+	}
+	priors := l.EfficacyStore.Load(time.Now().UnixMilli())
+	if len(priors) == 0 {
+		return
+	}
+	out := make(map[string]EfficacyPriorCounts, len(priors))
+	for k, p := range priors {
+		out[k] = EfficacyPriorCounts{
+			Delivered:       p.Delivered,
+			Adopted:         p.Adopted,
+			Ignored:         p.Ignored,
+			ShadowHeld:      p.ShadowHeld,
+			ShadowSatisfied: p.ShadowSatisfied,
+		}
+	}
+	l.Readback.SeedPriors(out)
+}
+
 // FlushSession 在**会话结束**时调用：排空落盘缓冲 + 会话级核销收尾。
 //
 // **粒度很关键**——这里不是「每个 Run 结束」，而是整个会话退出（CLI 的输入
@@ -202,6 +290,9 @@ func (l *Loop) FlushSession() []UnresolvedExpectation {
 	if l.Listener != nil {
 		_ = l.Listener.Drain()
 	}
+	// 跨会话效能写回（postSession 兜底——对账 TS loop.ts:2401）
+	l.FlushAdvisoryEfficacy()
+
 	if l.Readback != nil {
 		_, unresolved := l.Readback.FlushAtSessionEnd(l.SessionTurn())
 		return unresolved
@@ -400,6 +491,19 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 		// 不是 run 局部序号（见 SessionTurn 的说明）。
 		if l.Readback != nil {
 			l.Readback.Evaluate(l.SessionTurn())
+		}
+
+		// ── 跨会话效能写回（每 20 轮）──
+		//
+		// 对账 TS turn-step-producer.ts:776：`if (turn > 0 && turn % 20 === 0)`。
+		//
+		// **为什么定期写**：崩溃不丢账（不必等到会话正常结束）。会话结束时
+		// `FlushSession` 会再兜底一次（零增量时是空操作）。
+		//
+		// **注意 turn 语义**：TS 用的是 **run 局部序号**（此处的 `turn` 正是），
+		// 不是 session turn——因为这是「每 20 个模型轮」的节流，不是窗口判定。
+		if turn > 0 && turn%20 == 0 {
+			l.FlushAdvisoryEfficacy()
 		}
 	}
 

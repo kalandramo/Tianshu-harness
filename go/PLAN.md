@@ -909,9 +909,60 @@ constitutional 那条红 0 是**等价变异**——constitutional 在更早的 
 
 **oracle**：`advisorybus` 43 → **52 用例**（+9 holdout）。
 
-**下一步**：跨会话先验播种（`SeedPriors` 的生产调用方——TS 用
-`AdvisoryEfficacyStore` 做 EWMA 衰减持久化，Go 侧未移植）。补上后 lift 的
-冷启动数据源才完整。
+### 第二十一刀（已完成）：跨会话效能信息素——先验的加载与写回（2026-09-19）
+
+✅ `AdvisoryEfficacyStore`（JSONL + EWMA + 原子写 + 锁）+ flush 增量差分 + CLI 装配
+
+**这补齐了治理链的最后一块**：`SeedPriors` 此前无生产调用方——readback 的
+per-key 统计随会话死亡，每个新会话都要从零攒（holdout 资格需送达 >= 3，
+成熟 lift 需 decided >= 5 且 shadow >= 3）。**真实会话往往没那么长**，
+所以没有先验时这条链在冷启动阶段形同虚设。
+
+**对账点**：
+
+| 项 | TS 来源 | 值/语义 |
+|---|---|---|
+| 半衰期 | `HALF_LIFE_MS` | 14 天 |
+| 剪枝阈值 | `PRUNE_THRESHOLD` | 0.05（各计数全低于此值则剔除） |
+| 容量 | `MAX_KEYS` | 200（按 delivered+shadowHeld 降序） |
+| 写回触发 | `turn-step-producer.ts:776` | `turn > 0 && turn % 20 === 0` |
+| 兜底 | `loop.ts:2401` | postSession |
+
+**增量差分**（`loop.ts:443` `flushAdvisoryEfficacy`）：`lastEfficacyFlush`
+是差分基线——mergeAndSave 内部是 `base[f] += delta[f]`，传累计值会让计数翻倍。
+
+**修掉一个真实偏差（间歇性测试暴露的）**：
+
+`GetDeliveredCount` 原先返回 `int`（对 stats + priors 求和后截断）。TS 返回
+**number（浮点）**。跨会话先验经 EWMA 衰减后是小数（如 2.9999…），`int()`
+截断成 2——**永远够不到 holdout 资格门 3**。已改为 `float64`。
+
+这个偏差不是靠读代码发现的，而是靠**连跑 8 次全量测试**暴露的间歇性失败
+（约 3/8 概率）。单次跑绿会掩盖它。
+
+**用户级验收（已执行）**：
+
+- `TestCrossSessionPriorSeeding`——会话 A 写回 → 会话 B 启动时继承计数
+- `TestEfficacyFlushIsIncremental`——重复 flush **不翻倍**（增量差分正确）
+- `TestEfficacyFlushAtSessionEnd`——短会话（< 20 轮）靠 FlushSession 兜底
+- `TestEfficacySeedFeedsLift`——端到端：先验 → `GetMatureLift = -1`（负值会触发静音）
+- `TestEfficacyPersistenceFormat` / `TestEfficacyConcurrentWritesSerialized`
+- oracle 对账 11 个子用例（5 decay + 4 prune 边界 + 3 merge）+ maxKeys + round3
+
+**变异反证 5 个有判别力**（不衰减红 7 / load 不剪枝红 1 / 不截断 MAX_KEYS 红 1 /
+基线不推进红 1 / 漏算先验红 1）。
+
+**oracle**：新增 `efficacy` 数据集（13 用例）。**只对账纯逻辑**——文件 IO /
+锁 / 原子写是平台相关的（Node 的 renameSync vs Go 的 os.Rename），逐字节对账
+无意义。
+
+**方法论收获（重要）**：**间歇性失败必须连跑多次才能暴露**。本刀的
+`GetDeliveredCount` 截断偏差与两处时间敏感断言，单次跑全绿、连跑 8 次才现形。
+判据：涉及时间/浮点/并发的改动，全量测试至少连跑 5 次。
+
+**下一步**：efficacy 负反馈环（`getAdoptionRate` 消费者——低采纳率条目在
+排序中降权，`EFFICACY_SPAN` 调权）或 `AdvisoryEfficacyStore` 的
+`mergeAndSave` 在 CLI 的显式装配（当前只在 loop 内自动触发）。
 
 **为什么是它而不是补工具**：
 

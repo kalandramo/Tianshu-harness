@@ -293,6 +293,18 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	// 投递组样本，差值的分母为零。
 	//
 	// `RIVET_ADVISORY_HOLDOUT=0` 可关闭抽样（缺省 0.1）。
+	// 跨会话效能信息素——**先验的加载端**（对账 loop.ts:779-790）。
+	//
+	// 这是 lift / holdout 资格 / 副驾闸门的**冷启动数据源**：readback 的 per-key
+	// 统计随会话死亡，没有先验时每个新会话都要从零攒（holdout 资格需送达 >= 3，
+	// 成熟 lift 需 decided >= 5 且 shadow >= 3）——真实使用中会话往往没那么长。
+	//
+	// 加载 → 按 14 天半衰期 EWMA 衰减 → 剔除衰减殆尽的 key → 播种给 readback。
+	// **写回**在 loop 内自动进行（每 20 轮 + 会话结束），此处只需装配 store。
+	efficacyStore := agent.NewAdvisoryEfficacyStore(app.Agent.Cwd)
+	loop.EfficacyStore = efficacyStore
+	loop.SeedEfficacyPriors()
+
 	bus.SetHoldoutPolicy(agent.HoldoutPolicy{
 		Rate: agent.ParseHoldoutRate(os.Getenv("RIVET_ADVISORY_HOLDOUT")),
 		IsEligible: func(key string) bool {
