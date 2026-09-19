@@ -350,6 +350,32 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **filediff 子系统**（新建 `internal/filediff/`）——unified diff 生成
+  - 对账 `edit-diff.ts`（185 行）+ cpu-tasks 的 `diffUnifiedRaw` /
+    `diffStructuredRaw`（底层 jsdiff）
+  - **自写 Myers 差分算法**（Go 标准库无 diff；`git diff --no-index` 需临时
+    文件且输出受 git 版本影响，不可控）
+  - **用途边界**：结果只给 **uiContent** 通道（TUI/桌面工具卡片），
+    **绝不进模型面向的 content**——不进对话历史、无前缀缓存成本
+  - **架构差异**：TS 把 diff 放进 **worker 线程**（jsdiff 的 Myers 是同步
+    CPU，8K 行约 7 秒、50K 行可能几分钟，会冻住事件循环——2026-07-08
+    「write 卡住 → 丢工具返回」事故根因）。Go 侧每工具调用在独立 goroutine，
+    **不需要 worker**，但保留超时保护（超时返回空串，展示用丢失只降级卡片）
+  - **对账过程中探针实测出 5 个格式细节**（照 GNU diff 实现会全错）：
+    1. **hunk 头总是 `start,count`**（`@@ -1,1 +1,1 @@`）——**不省略 `,1`**
+    2. **空侧渲染为 `0,0`**（全新文件 `@@ -0,0 +1,2 @@`）
+    3. **尾换行被剥离**（`"a
+b
+"` → `["a","b"]`），存在性另行记录
+    4. **`\ No newline at end of file` 仅在双方都非空时输出**（全新/清空文件不加）
+    5. **纯删除/纯插入的空侧行号取非空侧起始行号**（删中间行 → `new(2,0)`
+       而非 `new(1,0)`）——这条直接决定 `ComputeChangedLineRanges` 的区间位置
+  - oracle：`go/testdata/filediff/`（18 用例，**diff 字节 + 行范围双对账**），
+    三次 sha256 一致
+  - 变异反证 6 个：5 个有判别力（不剥离尾换行 23 红 / 省略 `,1` 4 红 /
+    纯删除语义错 3 红 / 空侧不渲染 `0,0` 4 红 / 路径不归一化 3 红）；
+    **M4 经查证为等价变异**——`hasHunkHeader` 是防御性检查（`renderUnified`
+    只要有 hunk 必输出 `@@`），对应当前不可达路径
 - [x] **编辑失败计数门**（`internal/tools/editfail.go`）
   - 对账 `read-file.ts` 的 `editFailCount` Map + 三个函数
   - **语义**：按文件累计**连续**编辑失败次数；≥3 时在报错文案**前置**一句门禁
@@ -756,6 +782,7 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   wire 桥接（`OaiMessageFromWire`）
 - `internal/tools/schema.go`：**schema 有序序列化**——`OrderedProps` /
   `OrderValue`（从 agent 包移入，schema 序列化属 tools 领域）
+- `internal/filediff/`：**unified diff 生成**——自写 Myers；展示用（uiContent）
 - `internal/tools/editfail.go`：**编辑失败计数门**——连续失败 ≥3 时前置
   read_file 提示
 - `internal/syntaxcheck/`：**语法检查**——`.go`（原生解析器）+
@@ -831,11 +858,10 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 4. **hash_edit 的降级**（部分已修复）：
    - ✅ **语法检查 + 回滚**（checkSyntax）——已完成
    - ✅ **失败计数门**（连续 3 次要求先 read_file）——已完成
+   - ✅ **dry_run 的 diff 预览**（buildFileDiff）——已完成
    - **指针回灌守卫**（pointer-guard）：依赖 4 个未移植的 arg-processor
      常量模块（write_file / edit_file / hash_edit / apply_patch）。风险：
      模型可能把历史里的指针文本当 `new_string` 传回来并被写进文件。
-   - **dry_run 的 diff 预览**（buildFileDiff / computeChangedLineRanges，
-     185 行）：Go 侧只返回行数变更摘要，不含 unified diff。
 5. ✅ **工具 schema 已与 TS 逐字节对账**（本轮完成）
    - oracle：`go/testdata/toolschema/`（从**真实注册表**导出，非手抄）
    - 测试：`TestToolSchemaParity`（名+声明序+required）+

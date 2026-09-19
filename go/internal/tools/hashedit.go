@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kalandramo/tianshu/go/internal/contract"
+	"github.com/kalandramo/tianshu/go/internal/filediff"
 	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"github.com/kalandramo/tianshu/go/internal/recovery"
@@ -489,12 +490,18 @@ func (t *hashEditTool) applyEdit(
 	newContent := strings.Join(combined, "\n")
 
 	if boolArg(p.Input, "dry_run") {
-		return contract.Result{
-			Content: "预览（dry_run）" + absPath + " — 未写入任何更改：\n\n" +
-				"将 L" + itoa(firstLine) + "-L" + itoa(lastLine) +
-				"（" + itoa(lastLine-firstLine+1) + " 行）替换为 " + itoa(len(newLines)) + " 行\n" +
-				"（Go 版未移植 diff 预览，见 HANDOFF 降级项）",
-		}, nil
+		// diff 预览（对账 TS 的 buildHashDryRunPreview → buildFileDiff）。
+		// 走 uiContent 通道的语义在此处体现为：**内容里带上 diff**，
+		// 但 dry_run 本就不写盘、不进历史。
+		rel := relForRecovery(t.Cwd, absPath)
+		diff := filediff.BuildFileDiff(rel, oldContent, newContent, 0)
+		summary := "预览（dry_run）" + absPath + " — 未写入任何更改：\n\n" +
+			"将 L" + itoa(firstLine) + "-L" + itoa(lastLine) +
+			"（" + itoa(lastLine-firstLine+1) + " 行）替换为 " + itoa(len(newLines)) + " 行"
+		if diff != "" {
+			summary += "\n\n" + diff
+		}
+		return contract.Result{Content: summary, UIContent: diff}, nil
 	}
 
 	// **写入前备份**（供回滚）。dry_run 分支已在上方提前返回，不会走到这里。

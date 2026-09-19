@@ -307,3 +307,49 @@ func TestBackupContentsArePreWriteAcrossTools(t *testing.T) {
 		})
 	}
 }
+
+// TestHashEditDryRunIncludesDiff —— dry_run 输出含 unified diff（对账 TS）。
+//
+// 原实现返回「Go 版未移植 diff 预览」占位——现接入 filediff。
+func TestHashEditDryRunIncludesDiff(t *testing.T) {
+	resetEditFailCountForTests()
+	dir := t.TempDir()
+	writeRepoFile(t, dir, "d.go", "package main\n\nvar x = 1\nvar y = 2\n")
+
+	tool := HashEdit(dir, nil)
+	p := &CallParams{
+		Input: map[string]any{
+			"file_path":  "d.go",
+			"anchors":    []any{"L3"},
+			"new_string": "var x = 999",
+			"dry_run":    true,
+		},
+		Cwd:          dir,
+		ApprovalMode: "dangerously-skip-permissions",
+	}
+	res, err := tool.Execute(context.Background(), p)
+	if err != nil {
+		t.Fatalf("Execute 错误：%v", err)
+	}
+	if res.IsError {
+		t.Fatalf("dry_run 应成功：%s", res.Content)
+	}
+	// 应含 unified diff 的标记
+	for _, want := range []string{"---", "+++", "@@", "-var x = 1", "+var x = 999"} {
+		if !strings.Contains(res.Content, want) {
+			t.Errorf("dry_run 输出应含 %q：\n%s", want, res.Content)
+		}
+	}
+	// 不应再有「未移植」占位
+	if strings.Contains(res.Content, "未移植") {
+		t.Errorf("不应再有未移植占位：%s", res.Content)
+	}
+	// 文件未变
+	if got := readRepoFile(t, dir, "d.go"); !strings.Contains(got, "var x = 1") {
+		t.Errorf("dry_run 不应修改文件：%q", got)
+	}
+	// uiContent 应含 diff（展示通道）
+	if res.UIContent == "" {
+		t.Error("uiContent 应含 diff")
+	}
+}
