@@ -1287,11 +1287,73 @@ reclaim gate / 缓存顾问延迟；或 `internal/context` 其余子系统
 （CognitiveLedger / Stigmergy / task-contract）。
 
 **架构欠账（累积）**：
-1. `MicroCompactOai` 与 `CollapseToolResult` 均**无生产调用方**——未接进
-   `internal/agent` 压缩控制器。
-2. artifact 分支已复刻但**无 artifact 生产端**（store 未移植）。
-3. `run_tests` 折叠的中文正则与 Go 的 `formatTestResult` 输出格式**不匹配**——
+1. artifact 分支已复刻但**无 artifact 生产端**（store 未移植）。
+2. `run_tests` 折叠的中文正则与 Go 的 `formatTestResult` 输出格式**不匹配**——
    忠实复刻 TS 契约，若未来统一输出格式需同步改。
+
+### 第二十八刀（已完成）：压缩接线——判定层 → 执行层（2026-09-19）
+
+✅ `CompactBoundary`（决策 → micro-compact）+ 接进 `Loop` 的 turn 边界
+✅ **消除「悬空」欠账**——`MicroCompactOai` 首次有了生产调用方
+
+**接线链条**（对账 TS）：
+
+```
+turn-orchestrator Step 6b (每轮) → runCompaction(turn)
+  → maybeCompact({loopTurn, failures})
+    → decideCompactAction → [none 短路] → compactMessages → microCompactOai
+```
+
+Go 侧等价：`Loop.Run` 的 turn 边界 → `maybeCompactAtBoundary(turn)` →
+`CompactBoundary.MaybeCompact` → `compact.MicroCompactOai`。
+
+**转换层**：loop 用 `[]*wire.OrderedMap`（保插入序，前缀缓存前提），compact 包
+吃 `[]session.OaiMessage`——新增 `orderedMapsToOai` / `oaiToOrderedMaps` 往返。
+**键序用 `KeyOrder` 重建**（压缩只改 content 不改序）。
+
+**三处关键决策**：
+
+1. **压缩在 turn 边界而非 mid-turn**。mid-turn 改历史会让已发出的请求前缀失效，
+   前缀缓存命中率归零。对账 TS 同一约束（1M 窗口的确定性重写只在
+   `loopTurn === 0` 运行）。
+2. **压缩失败不中断主循环**——失败只记入熔断器。对账 TS：`shouldAbort` 只由
+   用户中断触发，不由压缩失败触发。
+3. **熔断器检查不重复做**。`DecideCompactAction` 内部已查（返回 `none` +
+   reason "circuit breaker is open"）——`CompactBoundary` 里再查是**死分支**
+   （变异 B1 红 0 证明），已删除。
+
+**一处真实缺陷（本刀发现）**：`CompactActionInput` 有**两个不同字段**——
+`ProviderProfile *CompactRatioProfile`（决定**策略阈值** Watch/Compact/Reactive/
+Ceiling）与 `Profile CompactionProfile`（决定 **LLM 阶梯**）。
+我最初只设 `Profile`，导致阈值停在 balanced（Watch=0.6）而非预期的
+aggressive（0.5）——**两者不联动**。修 `CompactBoundary` 同时设两个字段。
+
+**用户级验收（已执行）**：新增 `internal/agent/compact_boundary_test.go`，
+**8 个集成测试**（真实依赖，非 mock）：
+
+- `TriggersOnPressure`——超窗口历史真的被压缩（9 条 → 9 条，tool 内容
+  75021 → 7542 字符）
+- `NoOpWhenBelowThreshold`——低压力不改动（决策 `none`）
+- `CircuitBreakerSkips`——熔断器开启时跳过
+- `ForceOverridesBreaker`——超硬天花板时 force 绕过熔断器
+- `SuccessResetsBreaker`——成功后重置（`disabledUntilTurn` 被丢弃）
+- `ZeroReclaimReportsUnchanged`——**零回收时报 changed=false**
+- `Loop_CompactAtBoundary_WiresThrough`——loop 端到端（写回 + 事件 + 键序完整）
+- `NilSafe`——未装配时跳过
+
+**变异反证 3 个有判别力**（成功不重置熔断器红 1 / loop 不写回红 1 /
+零回收仍报 changed 红 1）；**2 个等价变异已定性**（B1 熔断器检查冗余——
+决策层已做；B3 none 短路冗余——低 ratio 本就不截断）。
+
+**一条方法论教训**：**测试构造必须探针标定，不能推算**。我按「30000 字符 =
+30000 token」推算构造用例，实际 `context` 估算器对 ASCII 按 `len/4`（=7500
+token），差 4 倍；且 assistant 只算 content+reasoning+tool_calls。连续 4 次
+构造失败（`none` / 意外触发轮次删除）后才改用探针实测标定——**这正是
+「推算 vs 实测」的代价**。
+
+**下一步**：压缩执行层剩余——reclaim gate（回收量是否够本）、缓存顾问延迟
+（`shouldDelayCompact`）、LLM 重写路径（`partial-llm` / `full-llm` /
+`checkpoint`，需 summaryClient）、session split（86% 会话切分）。
 
 **为什么是它而不是补工具**：
 

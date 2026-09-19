@@ -116,6 +116,15 @@ type Loop struct {
 	// nil 时 hook 的 effect 调用退化为 no-op（*Safe 方法兜底）。
 	Effects RuntimeHookEffects
 
+	// Compact 是压缩边界（确定性路径：决策 → micro-compact）。
+	//
+	// 对账 TS turn-orchestrator Step 6b 的 `runCompaction`。
+	// nil 时跳过压缩（增强而非必需——headless 一次性跑或测试场景不装）。
+	//
+	// **为什么挂在 Loop 上而非每轮新建**：熔断器状态（Failures）必须跨轮
+	// 持有——否则「连续失败 3 次禁用 3 轮」永远攒不满。
+	Compact *CompactBoundary
+
 	// Advisories 是劝导总线（hook 投递 → 渲染 → 注入 prompt）。
 	//
 	// nil 时跳过 advisory 注入——增强而非必需。
@@ -480,6 +489,20 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 			Usage: &u, StopReason: collector.stopReason,
 		})
 
+		// ── 压缩边界（Step 6b 等价）──
+		//
+		// 对账 TS turn-orchestrator.ts:595 的 `runCompaction(turn, snap)`
+		// → compact-boundary-coordinator → `maybeCompact`。
+		//
+		// **为什么在 turn 边界而非 mid-turn**：mid-turn 改历史会让已发出的
+		// 请求前缀失效，前缀缓存命中率归零。TS 侧同一约束（1M 窗口的确定性
+		// 重写只在 `loopTurn === 0` 运行）。
+		//
+		// **压缩失败不中断主循环**——失败只记入熔断器（见 MaybeCompact 的
+		// 说明），主循环继续。这与 TS 的 `RunCompactionResult.shouldAbort`
+		// 语义一致（abort 只由用户中断触发，不由压缩失败触发）。
+		l.maybeCompactAtBoundary(turn)
+
 		// ── postTurn hook ──
 		//
 		// 轮末——hook 在此做跨轮判断（如"改了 TS 但没 typecheck"）。
@@ -742,3 +765,31 @@ func (c *turnCollector) handler(l *Loop, turn int) sse.Handler {
 func intPtr(i int) *int { return &i }
 
 var _ = errors.New
+
+// maybeCompactAtBoundary 在 turn 边界运行压缩。
+//
+// 对账 TS `CompactBoundaryCoordinator.runCompaction` 的**确定性路径部分**。
+//
+// **转换往返**：loop 用 wire 形态存历史，compact 包吃结构化形态——这里做
+// 一次往返。**只有真发生压缩才回写**（`changed == true`），避免无谓的对象
+// 重建（每次重建都会让后续的键序断言失效风险上升）。
+//
+// **未接**（见 PLAN.md 架构欠账）：session split（86% 会话切分）、
+// reclaim gate（回收量是否够本）、缓存顾问延迟、LLM 重写路径。
+func (l *Loop) maybeCompactAtBoundary(turn int) {
+	if l.Compact == nil {
+		return
+	}
+	oai := orderedMapsToOai(l.messages)
+	compacted, changed := l.Compact.MaybeCompact(oai, turn)
+	if !changed {
+		return
+	}
+	l.messages = oaiToOrderedMaps(compacted)
+	l.emit(Event{
+		Kind: "compaction",
+		Turn: turn,
+		Text: fmt.Sprintf("压缩：回收 %d 条消息（窗口 %d）",
+			l.Compact.LastReclaimed, l.Compact.ContextWindow),
+	})
+}
