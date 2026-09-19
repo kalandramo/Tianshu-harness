@@ -1,0 +1,144 @@
+{
+  "cases": {
+    "empty": {
+      "diff": "",
+      "out": [],
+      "note": "空 diff"
+    },
+    "noPlusLines": {
+      "diff": "--- a/x\n@@ -1 +1 @@\n-a\n+b\n",
+      "out": [],
+      "note": "无 +++ 行"
+    },
+    "singleFile": {
+      "diff": "--- a/src/x.ts\n+++ b/src/x.ts\n@@ -1,2 +1,2 @@\n-old\n+new\n",
+      "out": [
+        "src/x.ts"
+      ],
+      "note": "单文件标准 diff"
+    },
+    "multiFile": {
+      "diff": "--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-x\n+y\n--- a/b.ts\n+++ b/b.ts\n@@ -1 +1 @@\n-p\n+q\n",
+      "out": [
+        "a.ts",
+        "b.ts"
+      ],
+      "note": "多文件——顺序保持首次出现"
+    },
+    "duplicatePaths": {
+      "diff": "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n--- a/x\n+++ b/x\n@@ -2 +2 @@\n-c\n+d\n",
+      "out": [
+        "x"
+      ],
+      "note": "**去重**：同一路径出现两次只算一次"
+    },
+    "devNullDeletion": {
+      "diff": "--- a/gone.ts\n+++ /dev/null\n@@ -1 +0,0 @@\n-bye\n",
+      "out": [],
+      "note": "**跳过 /dev/null**（纯删除）"
+    },
+    "mixedDevNull": {
+      "diff": "--- a/gone.ts\n+++ /dev/null\n@@ -1 +0,0 @@\n-bye\n--- a/kept.ts\n+++ b/kept.ts\n@@ -1 +1 @@\n-x\n+y\n",
+      "out": [
+        "kept.ts"
+      ],
+      "note": "删除 + 修改混合——只取后者"
+    },
+    "tabTimestamp": {
+      "diff": "--- a/x\t2024-01-01\n+++ b/x\t2024-01-01\n@@ -1 +1 @@\n-a\n+b\n",
+      "out": [
+        "x"
+      ],
+      "note": "**含 tab 时间戳**：截断到 tab 之前"
+    },
+    "quotedPath": {
+      "diff": "--- \"a/with space.ts\"\n+++ \"b/with space.ts\"\n@@ -1 +1 @@\n-a\n+b\n",
+      "out": [
+        "with space.ts"
+      ],
+      "note": "**含引号路径**：去掉成对引号"
+    },
+    "newFile": {
+      "diff": "--- /dev/null\n+++ b/new.ts\n@@ -0,0 +1 @@\n+hello\n",
+      "out": [
+        "new.ts"
+      ],
+      "note": "新建文件（--- 是 /dev/null）"
+    },
+    "noABPrefix": {
+      "diff": "--- x.ts\n+++ x.ts\n@@ -1 +1 @@\n-a\n+b\n",
+      "out": [
+        "x.ts"
+      ],
+      "note": "**无 a/ b/ 前缀**的路径（非 git diff）"
+    },
+    "onlyAPrefix": {
+      "diff": "--- a/x.ts\n+++ a/x.ts\n@@ -1 +1 @@\n-a\n+b\n",
+      "out": [
+        "x.ts"
+      ],
+      "note": "只有 a/ 前缀（b/ 不适用时）"
+    },
+    "crlfLine": {
+      "diff": "--- a/x.ts\r\n+++ b/x.ts\r\n@@ -1 +1 @@\r\n-a\r\n+b\r\n",
+      "out": [
+        "x.ts"
+      ],
+      "note": "CRLF 行尾——trim 应吃掉 \\r"
+    },
+    "unicodePath": {
+      "diff": "--- a/中文.ts\n+++ b/中文.ts\n@@ -1 +1 @@\n-a\n+b\n",
+      "out": [
+        "中文.ts"
+      ],
+      "note": "含中文路径"
+    },
+    "emojiPath": {
+      "diff": "--- a/😀.ts\n+++ b/😀.ts\n@@ -1 +1 @@\n-a\n+b\n",
+      "out": [
+        "😀.ts"
+      ],
+      "note": "含 emoji 路径"
+    },
+    "trailingSpaces": {
+      "diff": "--- a/x.ts   \n+++ b/x.ts   \n@@ -1 +1 @@\n-a\n+b\n",
+      "out": [
+        "x.ts"
+      ],
+      "note": "路径后有空格（trim 应吃掉）"
+    },
+    "cPrefixNotStripped": {
+      "diff": "+++ c/other.ts\n",
+      "out": [
+        "c/other.ts"
+      ],
+      "note": "**M6 区分点**：`c/` 开头不应被剥（只剥 a/ 与 b/）"
+    },
+    "dPrefixNotStripped": {
+      "diff": "+++ d/other.ts\n",
+      "out": [
+        "d/other.ts"
+      ],
+      "note": "**M6 区分点**：`d/` 开头不应被剥"
+    },
+    "singleCharBeforeSlash": {
+      "diff": "+++ x/other.ts\n",
+      "out": [
+        "x/other.ts"
+      ],
+      "note": "边界：`a/` 与 `b/` 之外的单字符前缀（如 `x/`）不剥"
+    },
+    "emptyPathAfterPrefix": {
+      "diff": "--- a/x\n+++ b/\n@@ -1 +1 @@\n-a\n+b\n",
+      "out": [],
+      "note": "**空前缀**：+++ b/ 去掉前缀后为空 → 跳过"
+    },
+    "plusPlusPlusInContent": {
+      "diff": "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n++++not-a-header\n",
+      "out": [
+        "x"
+      ],
+      "note": "**内容行以 +++ 开头**（不是 diff 头）——仍会被当作路径行"
+    }
+  }
+}

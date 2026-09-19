@@ -334,6 +334,14 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **`extractPatchTargetPaths`**：`internal/prompt/patchpath.go`
+  - 对账 src/tools/apply-patch.ts:34 —— 从 unified diff 提取目标路径
+  - 语义：只看 `+++ ` 行、trim、tab 截断、跳过 `/dev/null`、去成对引号、
+    去 `a/`/`b/` 前缀（**只这两个**，`c/`/`d/` 不剥）、Set 去重保序
+  - oracle 21 用例；7 个变异反证全部有判别力
+  - **边界（oracle 锁定）**：diff 正文里以 `+++ ` 开头的行**也会**被提取
+    ——TS 只看行首前缀，不区分头部与正文。看起来像 bug，但是真实语义
+  - **未做**：apply_patch 工具本体（diff 应用 + 冲突检测）
 
 ### Wave 4（Agent 循环深化）
 - [ ] `internal/agent/hooks.go`：五阶段 `Pipeline`（超时 / 迟到收尾记账 / 统计）
