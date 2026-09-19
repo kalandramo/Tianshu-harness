@@ -227,11 +227,34 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 判据：TS 侧凡 `.length`、`.slice(`、`.substring(`、`.charCodeAt(` 的文本处理，
 都要问"code unit 还是码点/字节"。oracle 用例必须含代理对字符（emoji）。
 
-- [ ] volatile 层剩余：`buildVolatileBlockInternal`（148 行）的平台行/sober/
-  locus/working-set/session-memory/star-domain 拼接，以及
-  `buildDynamicAppendixParts`（动态 appendix）。**动态部分依赖会话状态容器，
-  建议先做最小 session 状态**；稳定块的其余部分依赖 runtime-env /
-  verify-config / git-status-summary 等外部模块，需逐个移植
+- [x] **frozen 稳定块**：`internal/prompt/volatile.go`
+  - `BuildStableVolatileBlock(ctx, host)` 对账 TS volatile.ts:511/1055
+  - 覆盖：environment / platform 相关 / sober / locus(self|world) /
+    project-instructions / project-memory / knowledge-manifest / seed-capsule /
+    codebase-index / working-set / session-memory / star-domain
+  - 18 个 oracle 用例，含 cwd 转义与代理用对（emoji）
+  - **宿主参数化**：`HostEnv{Platform, OSType, OSRelease}` 注入而非直接读 os
+    ——这让 frozen 块可对账（golden 记录宿主值）。
+    `DetectHostEnv()` 供生产用，用 `uname -s/-r`（实测与 Node 的
+    os.type()/os.release() 逐字相同），并映射 Go 的 `windows` → Node 的 `win32`
+  - 变异反证 7 个全部有判别力（块间分隔符/sober-locus 顺序/空串跳过/
+    workingSet 转义/star-domain 共享纪律/blockCaps 合并/cwd 转义）
+- [x] **frozen 块接线**：`internal/prompt/full.go` 的 `BuildFullSystemPrompt`
+  - CLI 默认路径改用它（static + frozen 块）
+  - 端到端验证：模型确认看到 `<context>` / `<environment platform="darwin"
+    os="Darwin 25.6.0" />` / `<sober>`；多轮缓存命中率 0% → 79.8% → **99.0%**
+  - 注：TS 侧 frozen 块是 trailer-merge 到 user message（engine.ts:659），
+    此处拼在 system prompt 后是**最小可用路径**。后续移植 trailer-merge 时
+    应**替换**本函数，而非叠加
+- [ ] **未移植的 IO 探测块**（下一刀）：
+  - `detectRuntimeEnvBlock`（runtime-env.ts，184 行）——探测 python/node/rust/go
+    版本，需 spawn 命令
+  - `renderDeclaredVerify`（读 .rivet-config.json 的 verify 节）
+  - Windows 相关：`windowsShellNote` / path-style-note / platform-note
+  - `stripFirstMarkdownTable` 的**调用点**（projectIndexBlock 存在时剥离 AGENTS.md
+    的目录表）——函数已移植（truncate.go），但 volatile.go 里未接线
+- [ ] `buildDynamicAppendixParts`（动态 appendix）——**依赖会话状态容器，
+  建议先做最小 session 状态**
 - [ ] appendixDelta / 动态 appendix 的分段与冻结边界
 - [ ] `internal/compact`：边界压缩（仅 `turn===0` 重写历史）
 - [ ] `internal/cache`：命中率统计与 advisor

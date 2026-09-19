@@ -1,0 +1,189 @@
+{
+  "fixtureCwd": "/fixture/volatile",
+  "host": {
+    "platform": "darwin",
+    "osType": "Darwin",
+    "osRelease": "25.6.0"
+  },
+  "cases": {
+    "minimal": {
+      "ctx": {
+        "cwd": "/fixture/volatile"
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n</context>",
+      "note": "最小 ctx：只有 cwd。输出应只有 environment + sober"
+    },
+    "locusSelf": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "cwdRelation": "self"
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<locus relation=\"self\">这是你的源码。改动直接影响你自己的运行时行为。每个修改都做三级验证（typecheck → related tests → full suite）。对 prompt/、hooks/、engine.ts 的修改需说明预期的认知影响。</locus>\n</context>",
+      "note": "cwdRelation=self → locus 块（这是天枢自己的源码场景）"
+    },
+    "locusWorld": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "cwdRelation": "world"
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<locus relation=\"world\">你在一个外部项目中工作。遵循项目自身的约定（AGENTS.md + .rivet.md）。验证深度匹配任务复杂度：简单修改跑 related tests，跨模块改动跑 full suite。</locus>\n</context>",
+      "note": "cwdRelation=world → 另一条 locus 分支"
+    },
+    "projectInstructions": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "rivetMd": "## 甲节\n内容甲\n\n## 乙节\n内容乙"
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<project-instructions>\n## 甲节\n内容甲\n\n## 乙节\n内容乙\n</project-instructions>\n</context>",
+      "note": "rivetMd → project-instructions 块（含按节选取 + 转义）"
+    },
+    "projectInstructionsEscaping": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "rivetMd": "## 节\n<a> & \"b\" <c>"
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<project-instructions>\n## 节\n&lt;a&gt; &amp; &quot;b&quot; &lt;c&gt;\n</project-instructions>\n</context>",
+      "note": "rivetMd 含需转义字符（< > & \"）"
+    },
+    "projectMemory": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "projectMemoryBlock": "<project-memory>\n记忆内容\n</project-memory>"
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<project-memory>\n记忆内容\n</project-memory>\n</context>",
+      "note": "projectMemoryBlock → 经 truncateBlock"
+    },
+    "knowledgeManifest": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "knowledgeManifestBlock": "<knowledge-manifest>\n索引内容\n</knowledge-manifest>"
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<knowledge-manifest>\n索引内容\n</knowledge-manifest>\n</context>"
+    },
+    "seedCapsule": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "seedCapsuleBlock": "<seed-capsules note=\"x\">胶囊内容</seed-capsules>"
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<seed-capsules note=\"x\">胶囊内容</seed-capsules>\n</context>"
+    },
+    "codebaseIndex": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "projectIndexBlock": "<codebase-index>\n模块表\n</codebase-index>"
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<codebase-index>\n模块表\n</codebase-index>\n</context>",
+      "note": "codebase-index 走 truncateBlock 的特殊分支"
+    },
+    "workingSet": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "workingSet": [
+          "src/a.ts",
+          "src/b.ts",
+          "src/<odd>.ts"
+        ]
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<working-set>\n<file>src/a.ts</file>\n<file>src/b.ts</file>\n<file>src/&lt;odd&gt;.ts</file>\n</working-set>\n</context>",
+      "note": "workingSet 数组 → <working-set> 块（含转义）"
+    },
+    "sessionMemory": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "sessionMemoryBlock": "记忆条目一\n记忆条目二"
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<session-memory>\n记忆条目一\n记忆条目二\n</session-memory>\n</context>"
+    },
+    "starDomainNoKnowledge": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "activeDomain": {
+          "name": "天权",
+          "motto": "观天之道，执天之行",
+          "volatileBlock": "域内容"
+        }
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<star-domain name=\"天权\" motto=\"观天之道，执天之行\">域内容\n执行纪律（全星域共享）：绿非证明，复现即证——宣称已修/已验证前，先用工具复现结论；报告里的每个数字要能指到一条真实验证记录。</star-domain>\n</context>",
+      "note": "activeDomain 无 knowledgeBlock"
+    },
+    "starDomainWithKnowledge": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "activeDomain": {
+          "name": "天权",
+          "motto": "观天之道",
+          "volatileBlock": "域内容",
+          "knowledgeBlock": "域知识 <a> & \"b\""
+        }
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<star-domain name=\"天权\" motto=\"观天之道\">域内容\n执行纪律（全星域共享）：绿非证明，复现即证——宣称已修/已验证前，先用工具复现结论；报告里的每个数字要能指到一条真实验证记录。\n<domain-knowledge>\n域知识 &lt;a&gt; &amp; &quot;b&quot;\n</domain-knowledge></star-domain>\n</context>",
+      "note": "activeDomain 带 knowledgeBlock（含转义）"
+    },
+    "blockCapsScaling": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "projectMemoryBlock": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "blockCaps": {
+          "projectMemory": 30
+        }
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n<!-- project-memory truncated: 100 → 30 chars -->\n</context>",
+      "note": "blockCaps 缩放——验证 caps 参与渲染（projectMemory 收到更小 cap）"
+    },
+    "allBlocks": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "cwdRelation": "self",
+        "rivetMd": "## 项目节\n项目内容",
+        "projectMemoryBlock": "<project-memory>\n记忆\n</project-memory>",
+        "knowledgeManifestBlock": "<knowledge-manifest>\n索引\n</knowledge-manifest>",
+        "seedCapsuleBlock": "<seed-capsules>胶囊</seed-capsules>",
+        "projectIndexBlock": "<codebase-index>\n模块\n</codebase-index>",
+        "workingSet": [
+          "a.ts"
+        ],
+        "sessionMemoryBlock": "会话记忆",
+        "activeDomain": {
+          "name": "天枢",
+          "motto": "证据先行",
+          "volatileBlock": "域块",
+          "knowledgeBlock": "域知识"
+        }
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<locus relation=\"self\">这是你的源码。改动直接影响你自己的运行时行为。每个修改都做三级验证（typecheck → related tests → full suite）。对 prompt/、hooks/、engine.ts 的修改需说明预期的认知影响。</locus>\n\n<project-instructions>\n## 项目节\n项目内容\n</project-instructions>\n\n<project-memory>\n记忆\n</project-memory>\n\n<knowledge-manifest>\n索引\n</knowledge-manifest>\n\n<seed-capsules>胶囊</seed-capsules>\n\n<codebase-index>\n模块\n</codebase-index>\n\n<working-set>\n<file>a.ts</file>\n</working-set>\n\n<session-memory>\n会话记忆\n</session-memory>\n\n<star-domain name=\"天枢\" motto=\"证据先行\">域块\n执行纪律（全星域共享）：绿非证明，复现即证——宣称已修/已验证前，先用工具复现结论；报告里的每个数字要能指到一条真实验证记录。\n<domain-knowledge>\n域知识\n</domain-knowledge></star-domain>\n</context>",
+      "note": "全块齐上——验证拼接顺序与分隔符（\\n\\n）"
+    },
+    "emptyStrings": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "rivetMd": "",
+        "projectMemoryBlock": "",
+        "knowledgeManifestBlock": "",
+        "seedCapsuleBlock": "",
+        "projectIndexBlock": "",
+        "sessionMemoryBlock": "",
+        "workingSet": []
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n</context>",
+      "note": "空串字段应被跳过（falsy 判定）——验证不产生空块"
+    },
+    "cwdEscaping": {
+      "ctx": {
+        "cwd": "/tmp/a<b>&\"c\"/proj"
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/tmp/a&lt;b&gt;&amp;&quot;c&quot;/proj\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n</context>",
+      "note": "cwd 含需转义字符（< > & \"）——锁定 environment 行的转义"
+    },
+    "emojiContent": {
+      "ctx": {
+        "cwd": "/fixture/volatile",
+        "projectMemoryBlock": "<project-memory>\n😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\n</project-memory>",
+        "blockCaps": {
+          "projectMemory": 30
+        }
+      },
+      "out": "<context>\n<environment platform=\"darwin\" cwd=\"/fixture/volatile\" os=\"Darwin 25.6.0\" />\n\n<sober>天枢在此。证据先行，全貌定向。</sober>\n\n<project-memory>\n\n😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\ud83d\n<!-- truncated: 95 → 30 chars -->\n</project-memory>\n</context>",
+      "note": "含代理对字符——锁定 UTF-16 计费（truncateBlock 的切断）"
+    }
+  }
+}
