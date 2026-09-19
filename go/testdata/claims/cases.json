@@ -1,0 +1,3109 @@
+{
+  "id_derivation": {
+    "proposals": [
+      {
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 3,
+            "eventId": "ev-1"
+          },
+          "evidence": [
+            {
+              "id": "ev-1:e1",
+              "kind": "tool_result",
+              "summary": "读到 a.ts",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "obs"
+          ]
+        },
+        "id": "993425e68576"
+      },
+      {
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "b.ts 里有函数 Y",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 3,
+            "eventId": "ev-1"
+          },
+          "evidence": [
+            {
+              "id": "ev-1:e1",
+              "kind": "tool_result",
+              "summary": "读到 a.ts",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "obs"
+          ]
+        },
+        "id": "12c8d646b03d"
+      },
+      {
+        "proposal": {
+          "kind": "decision",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 3,
+            "eventId": "ev-1"
+          },
+          "evidence": [
+            {
+              "id": "ev-1:e1",
+              "kind": "tool_result",
+              "summary": "读到 a.ts",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "obs"
+          ]
+        },
+        "id": "e98ae9959307"
+      },
+      {
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "project",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 3,
+            "eventId": "ev-1"
+          },
+          "evidence": [
+            {
+              "id": "ev-1:e1",
+              "kind": "tool_result",
+              "summary": "读到 a.ts",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "obs"
+          ]
+        },
+        "id": "346020692790"
+      },
+      {
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "  A.TS  里有   函数 X  ",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 3,
+            "eventId": "ev-1"
+          },
+          "evidence": [
+            {
+              "id": "ev-1:e1",
+              "kind": "tool_result",
+              "summary": "读到 a.ts",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "obs"
+          ]
+        },
+        "id": "ed31ee831adc"
+      },
+      {
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 3,
+            "eventId": "ev-1"
+          },
+          "evidence": [
+            {
+              "id": "ev-1:e1",
+              "kind": "tool_result",
+              "summary": "读到 a.ts",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "obs"
+          ]
+        },
+        "id": "993425e68576"
+      },
+      {
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-2",
+            "turn": 3,
+            "eventId": "ev-1"
+          },
+          "evidence": [
+            {
+              "id": "ev-1:e1",
+              "kind": "tool_result",
+              "summary": "读到 a.ts",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "obs"
+          ]
+        },
+        "id": "62ccb9f66fc1"
+      }
+    ]
+  },
+  "render_basic": {
+    "claims": [
+      {
+        "id": "c1",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "第一条",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c2",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "第二条",
+        "confidence": 0.6,
+        "fitness": 0.9,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      }
+    ]
+  },
+  "render_sort_by_fitness": {
+    "claims": [
+      {
+        "id": "low",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "L",
+        "confidence": 0.9,
+        "fitness": 0.1,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "high",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "H",
+        "confidence": 0.1,
+        "fitness": 0.9,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "mid",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "M",
+        "confidence": 0.5,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      }
+    ]
+  },
+  "render_tiebreak_confidence": {
+    "claims": [
+      {
+        "id": "a",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "A",
+        "confidence": 0.3,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "b",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "B",
+        "confidence": 0.8,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      }
+    ]
+  },
+  "render_tiebreak_createdAt": {
+    "claims": [
+      {
+        "id": "old",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "OLD",
+        "confidence": 0.5,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "new",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "NEW",
+        "confidence": 0.5,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000001000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      }
+    ]
+  },
+  "render_excludes_stale": {
+    "claims": [
+      {
+        "id": "active",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "A",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "stale",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "stale",
+        "text": "S",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "quar",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "quarantined",
+        "text": "Q",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      }
+    ]
+  },
+  "render_expired": {
+    "claims": [
+      {
+        "id": "alive",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "A",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "exp",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "E",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "expiresAt": 1699999999999,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "future",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "F",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "expiresAt": 1701000000000,
+        "tags": [
+          "obs"
+        ]
+      }
+    ]
+  },
+  "render_empty": {
+    "claims": []
+  },
+  "render_all_ineligible": {
+    "claims": [
+      {
+        "id": "x",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "stale",
+        "text": "a.ts 里有函数 X",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      }
+    ]
+  },
+  "render_xml_escape": {
+    "claims": [
+      {
+        "id": "a&b<c",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "<script>\"x\"</script> & more",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      }
+    ]
+  },
+  "render_truncate_20": {
+    "claims": [
+      {
+        "id": "c00",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 0",
+        "confidence": 0.7,
+        "fitness": 1,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c01",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 1",
+        "confidence": 0.7,
+        "fitness": 0.99,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c02",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 2",
+        "confidence": 0.7,
+        "fitness": 0.98,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c03",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 3",
+        "confidence": 0.7,
+        "fitness": 0.97,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c04",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 4",
+        "confidence": 0.7,
+        "fitness": 0.96,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c05",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 5",
+        "confidence": 0.7,
+        "fitness": 0.95,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c06",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 6",
+        "confidence": 0.7,
+        "fitness": 0.94,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c07",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 7",
+        "confidence": 0.7,
+        "fitness": 0.9299999999999999,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c08",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 8",
+        "confidence": 0.7,
+        "fitness": 0.92,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c09",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 9",
+        "confidence": 0.7,
+        "fitness": 0.91,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c10",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 10",
+        "confidence": 0.7,
+        "fitness": 0.9,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c11",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 11",
+        "confidence": 0.7,
+        "fitness": 0.89,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c12",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 12",
+        "confidence": 0.7,
+        "fitness": 0.88,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c13",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 13",
+        "confidence": 0.7,
+        "fitness": 0.87,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c14",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 14",
+        "confidence": 0.7,
+        "fitness": 0.86,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c15",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 15",
+        "confidence": 0.7,
+        "fitness": 0.85,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c16",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 16",
+        "confidence": 0.7,
+        "fitness": 0.84,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c17",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 17",
+        "confidence": 0.7,
+        "fitness": 0.83,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c18",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 18",
+        "confidence": 0.7,
+        "fitness": 0.8200000000000001,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c19",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 19",
+        "confidence": 0.7,
+        "fitness": 0.81,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c20",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 20",
+        "confidence": 0.7,
+        "fitness": 0.8,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c21",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 21",
+        "confidence": 0.7,
+        "fitness": 0.79,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c22",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 22",
+        "confidence": 0.7,
+        "fitness": 0.78,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c23",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 23",
+        "confidence": 0.7,
+        "fitness": 0.77,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c24",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "claim 24",
+        "confidence": 0.7,
+        "fitness": 0.76,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      }
+    ]
+  },
+  "render_durable_statuses": {
+    "claims": [
+      {
+        "id": "a",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "A",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "dc",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "durable_candidate",
+        "text": "DC",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "d",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "durable",
+        "text": "D",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      }
+    ]
+  },
+  "render_missing_evidence": {
+    "claims": [
+      {
+        "id": "noev",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "N",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      }
+    ]
+  },
+  "render_confidence_format": {
+    "claims": [
+      {
+        "id": "a",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "A",
+        "confidence": 0.555,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "b",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "B",
+        "confidence": 0.6,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      }
+    ]
+  },
+  "checkpoint_filters": {
+    "claims": [
+      {
+        "id": "a",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "a.ts 里有函数 X",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "s",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "stale",
+        "text": "a.ts 里有函数 X",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "q",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "quarantined",
+        "text": "a.ts 里有函数 X",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "e",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "a.ts 里有函数 X",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "expiresAt": 1699999999999,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "d",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "durable",
+        "text": "a.ts 里有函数 X",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      }
+    ]
+  },
+  "load_snapshot_version_mismatch": {
+    "snapshot": {
+      "version": 2,
+      "createdAt": 1700000000000,
+      "claims": [
+        {
+          "id": "993425e68576",
+          "kind": "file_observation",
+          "scope": "session",
+          "status": "active",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 3,
+            "eventId": "ev-1"
+          },
+          "evidence": [
+            {
+              "id": "ev-1:e1",
+              "kind": "tool_result",
+              "summary": "读到 a.ts",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "consumers": [],
+          "counterevidence": [],
+          "createdAt": 1700000000000,
+          "lastUsedAt": 1700000000000,
+          "tags": [
+            "obs"
+          ]
+        }
+      ]
+    }
+  },
+  "eligible_matrix": {
+    "statuses": [
+      {
+        "status": "ephemeral",
+        "eligible": false
+      },
+      {
+        "status": "active",
+        "eligible": true
+      },
+      {
+        "status": "durable_candidate",
+        "eligible": true
+      },
+      {
+        "status": "durable",
+        "eligible": true
+      },
+      {
+        "status": "stale",
+        "eligible": false
+      },
+      {
+        "status": "conflicted",
+        "eligible": false
+      },
+      {
+        "status": "quarantined",
+        "eligible": false
+      }
+    ]
+  },
+  "promotion_active_insufficient": {
+    "claim": {
+      "id": "993425e68576",
+      "kind": "file_observation",
+      "scope": "session",
+      "status": "active",
+      "text": "a.ts 里有函数 X",
+      "confidence": 0.7,
+      "fitness": 0.5,
+      "source": {
+        "actor": "tool",
+        "sessionId": "sess-1",
+        "turn": 3,
+        "eventId": "ev-1"
+      },
+      "evidence": [
+        {
+          "id": "ev-1:e1",
+          "kind": "tool_result",
+          "summary": "读到 a.ts",
+          "path": "a.ts",
+          "createdAt": 1700000000000
+        }
+      ],
+      "consumers": [
+        {
+          "id": "c1",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        }
+      ],
+      "counterevidence": [],
+      "createdAt": 1700000000000,
+      "lastUsedAt": 1700000000000,
+      "tags": [
+        "obs"
+      ]
+    }
+  },
+  "promotion_active_3_consumers": {
+    "claim": {
+      "id": "993425e68576",
+      "kind": "file_observation",
+      "scope": "session",
+      "status": "active",
+      "text": "a.ts 里有函数 X",
+      "confidence": 0.7,
+      "fitness": 0.5,
+      "source": {
+        "actor": "tool",
+        "sessionId": "sess-1",
+        "turn": 3,
+        "eventId": "ev-1"
+      },
+      "evidence": [
+        {
+          "id": "ev-1:e1",
+          "kind": "tool_result",
+          "summary": "读到 a.ts",
+          "path": "a.ts",
+          "createdAt": 1700000000000
+        }
+      ],
+      "consumers": [
+        {
+          "id": "c1",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c2",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c3",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        }
+      ],
+      "counterevidence": [],
+      "createdAt": 1700000000000,
+      "lastUsedAt": 1700000000000,
+      "tags": [
+        "obs"
+      ]
+    }
+  },
+  "promotion_active_dup_consumers": {
+    "claim": {
+      "id": "993425e68576",
+      "kind": "file_observation",
+      "scope": "session",
+      "status": "active",
+      "text": "a.ts 里有函数 X",
+      "confidence": 0.7,
+      "fitness": 0.5,
+      "source": {
+        "actor": "tool",
+        "sessionId": "sess-1",
+        "turn": 3,
+        "eventId": "ev-1"
+      },
+      "evidence": [
+        {
+          "id": "ev-1:e1",
+          "kind": "tool_result",
+          "summary": "读到 a.ts",
+          "path": "a.ts",
+          "createdAt": 1700000000000
+        }
+      ],
+      "consumers": [
+        {
+          "id": "c1",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c1",
+          "kind": "prompt",
+          "usedAt": 1700000000001
+        },
+        {
+          "id": "c1",
+          "kind": "prompt",
+          "usedAt": 1700000000002
+        }
+      ],
+      "counterevidence": [],
+      "createdAt": 1700000000000,
+      "lastUsedAt": 1700000000000,
+      "tags": [
+        "obs"
+      ]
+    }
+  },
+  "promotion_durable_candidate_too_young": {
+    "claim": {
+      "id": "993425e68576",
+      "kind": "file_observation",
+      "scope": "session",
+      "status": "durable_candidate",
+      "text": "a.ts 里有函数 X",
+      "confidence": 0.7,
+      "fitness": 0.5,
+      "source": {
+        "actor": "tool",
+        "sessionId": "sess-1",
+        "turn": 3,
+        "eventId": "ev-1"
+      },
+      "evidence": [
+        {
+          "id": "ev-1:e1",
+          "kind": "tool_result",
+          "summary": "读到 a.ts",
+          "path": "a.ts",
+          "createdAt": 1700000000000
+        }
+      ],
+      "consumers": [
+        {
+          "id": "c0",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c1",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c2",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c3",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c4",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        }
+      ],
+      "counterevidence": [],
+      "createdAt": 1700000000000,
+      "lastUsedAt": 1700000000000,
+      "tags": [
+        "obs"
+      ]
+    }
+  },
+  "promotion_durable_candidate_old_enough": {
+    "claim": {
+      "id": "993425e68576",
+      "kind": "file_observation",
+      "scope": "session",
+      "status": "durable_candidate",
+      "text": "a.ts 里有函数 X",
+      "confidence": 0.7,
+      "fitness": 0.5,
+      "source": {
+        "actor": "tool",
+        "sessionId": "sess-1",
+        "turn": 3,
+        "eventId": "ev-1"
+      },
+      "evidence": [
+        {
+          "id": "ev-1:e1",
+          "kind": "tool_result",
+          "summary": "读到 a.ts",
+          "path": "a.ts",
+          "createdAt": 1700000000000
+        }
+      ],
+      "consumers": [
+        {
+          "id": "c0",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c1",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c2",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c3",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c4",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        }
+      ],
+      "counterevidence": [],
+      "createdAt": 1699998800000,
+      "lastUsedAt": 1700000000000,
+      "tags": [
+        "obs"
+      ]
+    }
+  },
+  "promotion_durable_candidate_7min": {
+    "claim": {
+      "id": "993425e68576",
+      "kind": "file_observation",
+      "scope": "session",
+      "status": "durable_candidate",
+      "text": "a.ts 里有函数 X",
+      "confidence": 0.7,
+      "fitness": 0.5,
+      "source": {
+        "actor": "tool",
+        "sessionId": "sess-1",
+        "turn": 3,
+        "eventId": "ev-1"
+      },
+      "evidence": [
+        {
+          "id": "ev-1:e1",
+          "kind": "tool_result",
+          "summary": "读到 a.ts",
+          "path": "a.ts",
+          "createdAt": 1700000000000
+        }
+      ],
+      "consumers": [
+        {
+          "id": "c0",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c1",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c2",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c3",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c4",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        }
+      ],
+      "counterevidence": [],
+      "createdAt": 1699999580000,
+      "lastUsedAt": 1700000000000,
+      "tags": [
+        "obs"
+      ]
+    }
+  },
+  "promotion_durable_candidate_9min59s": {
+    "claim": {
+      "id": "993425e68576",
+      "kind": "file_observation",
+      "scope": "session",
+      "status": "durable_candidate",
+      "text": "a.ts 里有函数 X",
+      "confidence": 0.7,
+      "fitness": 0.5,
+      "source": {
+        "actor": "tool",
+        "sessionId": "sess-1",
+        "turn": 3,
+        "eventId": "ev-1"
+      },
+      "evidence": [
+        {
+          "id": "ev-1:e1",
+          "kind": "tool_result",
+          "summary": "读到 a.ts",
+          "path": "a.ts",
+          "createdAt": 1700000000000
+        }
+      ],
+      "consumers": [
+        {
+          "id": "c0",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c1",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c2",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c3",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c4",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        }
+      ],
+      "counterevidence": [],
+      "createdAt": 1699999400001,
+      "lastUsedAt": 1700000000000,
+      "tags": [
+        "obs"
+      ]
+    }
+  },
+  "promotion_durable_candidate_10min": {
+    "claim": {
+      "id": "993425e68576",
+      "kind": "file_observation",
+      "scope": "session",
+      "status": "durable_candidate",
+      "text": "a.ts 里有函数 X",
+      "confidence": 0.7,
+      "fitness": 0.5,
+      "source": {
+        "actor": "tool",
+        "sessionId": "sess-1",
+        "turn": 3,
+        "eventId": "ev-1"
+      },
+      "evidence": [
+        {
+          "id": "ev-1:e1",
+          "kind": "tool_result",
+          "summary": "读到 a.ts",
+          "path": "a.ts",
+          "createdAt": 1700000000000
+        }
+      ],
+      "consumers": [
+        {
+          "id": "c0",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c1",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c2",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c3",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c4",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        }
+      ],
+      "counterevidence": [],
+      "createdAt": 1699999400000,
+      "lastUsedAt": 1700000000000,
+      "tags": [
+        "obs"
+      ]
+    }
+  },
+  "promotion_with_counterevidence": {
+    "claim": {
+      "id": "993425e68576",
+      "kind": "file_observation",
+      "scope": "session",
+      "status": "active",
+      "text": "a.ts 里有函数 X",
+      "confidence": 0.7,
+      "fitness": 0.5,
+      "source": {
+        "actor": "tool",
+        "sessionId": "sess-1",
+        "turn": 3,
+        "eventId": "ev-1"
+      },
+      "evidence": [
+        {
+          "id": "ev-1:e1",
+          "kind": "tool_result",
+          "summary": "读到 a.ts",
+          "path": "a.ts",
+          "createdAt": 1700000000000
+        }
+      ],
+      "consumers": [
+        {
+          "id": "c0",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c1",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c2",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c3",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        },
+        {
+          "id": "c4",
+          "kind": "prompt",
+          "usedAt": 1700000000000
+        }
+      ],
+      "counterevidence": [
+        {
+          "id": "ce",
+          "kind": "tool_result",
+          "summary": "反驳",
+          "createdAt": 1700000000000
+        }
+      ],
+      "createdAt": 1700000000000,
+      "lastUsedAt": 1700000000000,
+      "tags": [
+        "obs"
+      ]
+    }
+  },
+  "has_file_evidence": {
+    "checks": [
+      {
+        "claim": {
+          "id": "993425e68576",
+          "kind": "file_observation",
+          "scope": "session",
+          "status": "active",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 3,
+            "eventId": "ev-1"
+          },
+          "evidence": [
+            {
+              "id": "ev-1:e1",
+              "kind": "tool_result",
+              "summary": "读到 a.ts",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "consumers": [],
+          "counterevidence": [],
+          "createdAt": 1700000000000,
+          "lastUsedAt": 1700000000000,
+          "tags": [
+            "obs"
+          ]
+        },
+        "path": "a.ts",
+        "result": true
+      },
+      {
+        "claim": {
+          "id": "993425e68576",
+          "kind": "file_observation",
+          "scope": "session",
+          "status": "active",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 3,
+            "eventId": "ev-1"
+          },
+          "evidence": [
+            {
+              "id": "ev-1:e1",
+              "kind": "tool_result",
+              "summary": "读到 a.ts",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "consumers": [],
+          "counterevidence": [],
+          "createdAt": 1700000000000,
+          "lastUsedAt": 1700000000000,
+          "tags": [
+            "obs"
+          ]
+        },
+        "path": "z.ts",
+        "result": false
+      },
+      {
+        "claim": {
+          "id": "993425e68576",
+          "kind": "decision",
+          "scope": "session",
+          "status": "active",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 3,
+            "eventId": "ev-1"
+          },
+          "evidence": [
+            {
+              "id": "ev-1:e1",
+              "kind": "tool_result",
+              "summary": "读到 a.ts",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "consumers": [],
+          "counterevidence": [],
+          "createdAt": 1700000000000,
+          "lastUsedAt": 1700000000000,
+          "tags": [
+            "obs"
+          ]
+        },
+        "path": "a.ts",
+        "result": false
+      },
+      {
+        "claim": {
+          "id": "993425e68576",
+          "kind": "verification_fact",
+          "scope": "session",
+          "status": "active",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 3,
+            "eventId": "ev-1"
+          },
+          "evidence": [
+            {
+              "id": "ev-1:e1",
+              "kind": "tool_result",
+              "summary": "读到 a.ts",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "consumers": [],
+          "counterevidence": [],
+          "createdAt": 1700000000000,
+          "lastUsedAt": 1700000000000,
+          "tags": [
+            "obs"
+          ]
+        },
+        "path": "a.ts",
+        "result": true
+      }
+    ]
+  },
+  "status_counts": {
+    "claims": [
+      {
+        "id": "a1",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "a.ts 里有函数 X",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "a2",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "active",
+        "text": "a.ts 里有函数 X",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "s",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "stale",
+        "text": "a.ts 里有函数 X",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "c",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "conflicted",
+        "text": "a.ts 里有函数 X",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "d",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "durable",
+        "text": "a.ts 里有函数 X",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "dc",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "durable_candidate",
+        "text": "a.ts 里有函数 X",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "q",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "quarantined",
+        "text": "a.ts 里有函数 X",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      },
+      {
+        "id": "e",
+        "kind": "file_observation",
+        "scope": "session",
+        "status": "ephemeral",
+        "text": "a.ts 里有函数 X",
+        "confidence": 0.7,
+        "fitness": 0.5,
+        "source": {
+          "actor": "tool",
+          "sessionId": "sess-1",
+          "turn": 3,
+          "eventId": "ev-1"
+        },
+        "evidence": [
+          {
+            "id": "ev-1:e1",
+            "kind": "tool_result",
+            "summary": "读到 a.ts",
+            "path": "a.ts",
+            "createdAt": 1700000000000
+          }
+        ],
+        "consumers": [],
+        "counterevidence": [],
+        "createdAt": 1700000000000,
+        "lastUsedAt": 1700000000000,
+        "tags": [
+          "obs"
+        ]
+      }
+    ]
+  },
+  "proposal_from_anchor": {
+    "anchors": [
+      {
+        "anchor": {
+          "kind": "user_constraint",
+          "text": "必须用 Go",
+          "sourceRoundIndex": 0,
+          "salience": 0.9
+        },
+        "proposal": {
+          "kind": "user_constraint",
+          "scope": "session",
+          "text": "必须用 Go",
+          "confidence": 0.9,
+          "fitness": 0.9,
+          "source": {
+            "actor": "user",
+            "sessionId": "s1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "e1:anchor",
+              "kind": "user_message",
+              "summary": "必须用 Go",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "anchor",
+            "user_constraint"
+          ]
+        }
+      },
+      {
+        "anchor": {
+          "kind": "decision",
+          "text": "选了方案 A",
+          "sourceRoundIndex": 1,
+          "salience": 0.8
+        },
+        "proposal": {
+          "kind": "decision",
+          "scope": "session",
+          "text": "选了方案 A",
+          "confidence": 0.82,
+          "fitness": 0.8,
+          "source": {
+            "actor": "user",
+            "sessionId": "s1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "e1:anchor",
+              "kind": "user_message",
+              "summary": "选了方案 A",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "anchor",
+            "decision"
+          ]
+        }
+      },
+      {
+        "anchor": {
+          "kind": "verification",
+          "text": "测试通过",
+          "sourceRoundIndex": 2,
+          "salience": 0.7
+        },
+        "proposal": {
+          "kind": "verification_fact",
+          "scope": "session",
+          "text": "测试通过",
+          "confidence": 0.88,
+          "fitness": 0.7,
+          "source": {
+            "actor": "user",
+            "sessionId": "s1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "e1:anchor",
+              "kind": "user_message",
+              "summary": "测试通过",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "anchor",
+            "verification"
+          ]
+        }
+      },
+      {
+        "anchor": {
+          "kind": "error",
+          "text": "编译失败",
+          "sourceRoundIndex": 3,
+          "salience": 0.6
+        },
+        "proposal": {
+          "kind": "failure_pattern",
+          "scope": "session",
+          "text": "编译失败",
+          "confidence": 0.7,
+          "fitness": 0.6,
+          "source": {
+            "actor": "user",
+            "sessionId": "s1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "e1:anchor",
+              "kind": "user_message",
+              "summary": "编译失败",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "anchor",
+            "error"
+          ]
+        }
+      },
+      {
+        "anchor": {
+          "kind": "file",
+          "text": "改了 a.ts",
+          "sourceRoundIndex": 4,
+          "salience": 0.5
+        },
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "改了 a.ts",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "user",
+            "sessionId": "s1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "e1:anchor",
+              "kind": "user_message",
+              "summary": "改了 a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "anchor",
+            "file"
+          ]
+        }
+      },
+      {
+        "anchor": {
+          "kind": "pending_task",
+          "text": "待办 X",
+          "sourceRoundIndex": 5,
+          "salience": 0.4
+        },
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "待办 X",
+          "confidence": 0.7,
+          "fitness": 0.4,
+          "source": {
+            "actor": "user",
+            "sessionId": "s1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "e1:anchor",
+              "kind": "user_message",
+              "summary": "待办 X",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "anchor",
+            "pending_task"
+          ]
+        }
+      },
+      {
+        "anchor": {
+          "kind": "user_preference",
+          "text": "喜欢简洁",
+          "sourceRoundIndex": 6,
+          "salience": 0.3
+        },
+        "proposal": {
+          "kind": "user_preference",
+          "scope": "session",
+          "text": "喜欢简洁",
+          "confidence": 0.7,
+          "fitness": 0.3,
+          "source": {
+            "actor": "user",
+            "sessionId": "s1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "e1:anchor",
+              "kind": "user_message",
+              "summary": "喜欢简洁",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "anchor",
+            "user_preference"
+          ]
+        }
+      }
+    ]
+  }
+}

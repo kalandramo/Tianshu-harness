@@ -426,8 +426,56 @@ hook）+ 接进 `Loop`。对账 TS 的 loop-factory / create-runtime-hooks 装�
 生产可达性，必须跑生产入口本身**（这里是二进制）。前两次我靠 grep 补验，
 这次直接用真实二进制测试锁住——这类测试应作为后续每一刀的收尾动作。
 
-**下一步**：`AdvisoryReadback`（采纳率台账）——习惯化 / efficacy / lift /
-holdout 四个子系统的共同前置；或 `todo-reminder` hook。
+### 第十刀（已完成）：claims 纯逻辑层——认知层根节点（2026-09-19）
+
+✅ `internal/context/claims.go` + `promotion.go`（682 行 + 438 行测试）
+
+**Scope Check**：`claim-store` 是依赖链根节点（`loop-factory.ts:691` 的
+`contextClaimStore.listClaims` 是 consistency-check 的真实来源），含事件溯源
++ 落盘。本轮先做**纯逻辑层**（无 I/O，可 oracle 对账）——store 层留下一步。
+
+对账 `claims.ts` + `promotion.ts`：
+
+- claim 构造 / sha256 ID 派生（**键序敏感**：TS 对象字面量序，不能用 Go map）
+- `renderActiveClaimsBlock`（三级排序 fitness↓ / confidence↓ / createdAt↑，
+  截断 20，XML 转义）
+- `checkpointClaims` / `loadClaimSnapshot`（version 门禁）
+- `evaluatePromotion`（去重消费者计数，阈值 3/5 + 10 分钟年龄）
+- `canRecallClaim`（文件证据召回门禁）/ `claimHasFileEvidence`（kind 门禁）
+- `claimProposalFromAnchor`（anchor → claim 映射与 confidence 分级）
+
+**oracle 抓到的 TS 既有缺陷（重要）**：`renderActiveClaimsBlock` 里
+`.filter(isPromptEligibleClaim)` **直接把函数引用传给 filter**——JS 的
+回调签名是 `(element, index, array)`，故 `now` 参数收到的是**数组下标**
+（0/1/2…），不是 `Date.now()`。后果：`expiresAt` 过期检查实际失效。
+
+实测确认（`node -e`）：
+
+```
+filter 直传：      [alive, exp, future]   ← exp 已过期却仍入选
+显式传 Date.now()：[alive]                ← 「正确」行为
+```
+
+**移植决策：忠实复刻**。Go 侧若「修正」为真 now，同一会话状态下渲染结果与
+TS 分叉，破坏字节等价（硬约束）。已在代码注释与测试里显式标注；若上游修了
+此 bug，oracle 会红，届时同步。
+
+**oracle 对账**：`testdata/claims/` 29 个用例，**92 个子测试**全绿。
+
+**变异反证 12 个：全部有判别力**（render 用真 now 3 红 / ID 不归一化 1 红 /
+ID 不含 sessionId 1 红 / 排序二级键去掉 3 红 / 三级键反向 2 红 / 截断阈值 2 红 /
+XML 不转义 2 红 / checkpoint 不过滤 stale 5 红 / 晋升不去重 2 红 / 年龄阈值
+7 红 / kind 门禁去掉 1 红 / anchor 默认映射 1 红）。
+
+**两次覆盖缺口修正**（红 0 的诊断）：
+1. M10（年龄阈值 10→5 分钟）首轮红 0——原用例年龄只有 0 与 20 分钟，**都在
+   阈值同侧**。补 3 个边界用例（7 分钟 / 9分59秒 / 10 分钟整）后红 7。
+2. `TestPromotionParity` 首版对 `promotion: null` 直接 `continue`——导致「不该
+   晋升」语义完全没断言。改用**原始 JSON 键判定**（区分「值为 null」与
+   「字段缺失」，二者在 Go 的 `*string` 上都解析为 nil）。
+
+**下一步**：claim-store 事件溯源 + 落盘（解锁 consistency-check 的真实副作用，
+即消除第九刀留下的 blocked 验收项）。
 
 **为什么是它而不是补工具**：
 
