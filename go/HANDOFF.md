@@ -350,6 +350,21 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **transcript codec（zstd 帧）**：`internal/session/transcript.go`
+  - **引入首个第三方依赖** `github.com/klauspost/compress v1.20.0`
+    （用户授权：允许引入成熟生态）
+  - **跨版本兼容已双向验证**：Node 帧 → Go 解压 ✅、Go 帧 → Node 解压 ✅
+    （`go/testdata/zstd/gen-frames.ts` 产 oracle，`verify-go-frames.ts` 验反向）
+  - **判据是「互解」不是「同字节」**——实测 Node 用 singleSegment、Go 默认
+    不用，descriptor 位不同（0x24 vs 0x04），但互相可解。**不要**把两者做
+    逐字节对账。
+  - torn tail（崩溃截断的末帧）被丢弃而非报错——`scanZstdFrames` 已实现
+  - **库的默认行为陷阱**：klauspost 的 `NewWriter(nil)` **默认就开 CRC**，
+    故 `WithEncoderCRC(true)` 是冗余显式声明（实测两种写法 descriptor 都是
+    0x04）。保留它是为了**意图显式化**（对账 TS 的 checksumFlag: 1），
+    但不要声称它有判别力——真正的判别力来自「篡改校验和后解压失败」
+  - 变异反证：M1 空文本产帧 1 红 / M2 不做帧判定 1 红 / M3 torn tail 也解压
+    2 红；M4（关 CRC）、M5（空 buffer 特判）经查证为**等价变异**
 - [x] **会话状态容器**：`internal/session/`（新包）
   - 对账 src/agent/session-state.ts（326 行，TS 侧**零 import**——完全自包含）
   - `Manager`：状态管理（文件/决策/验证/事实/任务列表）+ `RenderForVolatile()`
@@ -503,7 +518,9 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 - `applypatch.go`：**apply_patch 工具本体**（工具集 9 → 10）——核心是调
   `git apply --3way`，oracle 用真实 git 仓库对账
 - `internal/session/`：**会话状态容器**（新包）——纯状态 + volatile 渲染，
-  已接进 agent loop；JSONL 落盘因 zstd 依赖未移植（见欠账 1）
+  已接进 agent loop
+- `internal/session/transcript.go`：**zstd 帧编解码**——引入
+  `klauspost/compress v1.20.0`，跨版本兼容双向验证通过
 
 **本轮核心教训**：`orderedProps` 的数组型 schema 缺陷只在**接线后**暴露
 （单测工具全绿，接注册表立刻 panic）。这印证了「消费方核查」与
@@ -534,14 +551,17 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 
 ### 架构欠账（已知，非缺陷）
 
-1. **session 的 3 项降级**：
-   - **JSONL 落盘**（`session-persist.ts` 928 行）未移植——依赖 zstd 压缩
-     （`encodeBatch` / `decodeTranscriptText`），Go 标准库无 zstd 且项目
-     约束零第三方依赖。这是 Wave 4 里最大的一块。
+1. **session 剩余（zstd 依赖已解决）**：
+   - ✅ **transcript codec**（zstd 帧 encode/decode + torn tail）——本轮完成
+   - **JSONL 落盘**（`session-persist.ts` 928 行）未移植——现在**技术上
+     无阻塞**（zstd 已可用），主要是工作量：它依赖消息序列化
+     （`serializeSessionMessage` / `serializeOaiSessionMessage`）与
+     证据追踪（`trackFileChange`）。
    - **会话恢复**（`session-recovery.ts` 140 行）、**会话注册表**
      （`session-registry.ts` 589 行）未移植。
-   - **`session-transcript-codec` 的 zstd 帧**：帧扫描（`scanZstdFrames`）
-     已实现，但 encode/decode 需要压缩库。
+   - **依赖策略变更**：项目已从「零第三方依赖」改为「允许成熟生态」，
+     后续 `go.mod` 会有更多依赖——注意保持 `go.sum` 提交完整（他人
+     拉取需能复现构建，已用 `-mod=readonly` 验证）。
 2. **apply_patch 的 4 项降级**：
    - **补丁前备份 + 失败回滚**（rollbackTargets / unstagePatchTargets）：
      TS 侧 `git apply --3way` 失败时状态已被动过（冲突标记落盘、干净文件
