@@ -1,0 +1,200 @@
+{
+  "cases": {
+    "firstLineSyncFlush": {
+      "note": "**首行同步落盘**——新会话文件立即存在",
+      "preexisting": null,
+      "observations": [
+        {
+          "after": "enqueue",
+          "fileExists": true,
+          "isZstd": true,
+          "decoded": "line1\n"
+        }
+      ],
+      "finalDecoded": "line1\n",
+      "backupFiles": []
+    },
+    "secondLineQueued": {
+      "note": "第二行排队（不 flush）——文件仍是首行内容",
+      "preexisting": null,
+      "observations": [
+        {
+          "after": "enqueue",
+          "fileExists": true,
+          "isZstd": true,
+          "decoded": "line1\n"
+        },
+        {
+          "after": "enqueue",
+          "fileExists": true,
+          "isZstd": true,
+          "decoded": "line1\n"
+        }
+      ],
+      "finalDecoded": "line1\n",
+      "backupFiles": []
+    },
+    "mergePendingVisible": {
+      "note": "**未 flush 的行对进程内读者可见**",
+      "preexisting": null,
+      "observations": [
+        {
+          "after": "enqueue",
+          "fileExists": true,
+          "isZstd": true,
+          "decoded": "line1\n"
+        },
+        {
+          "after": "enqueue",
+          "fileExists": true,
+          "isZstd": true,
+          "decoded": "line1\n"
+        },
+        {
+          "after": "mergePending",
+          "merged": "ONDISK\nline2\n"
+        }
+      ],
+      "finalDecoded": "line1\n",
+      "backupFiles": []
+    },
+    "mergePendingEmpty": {
+      "note": "pending 为空时 mergePending 原样返回磁盘内容",
+      "preexisting": null,
+      "observations": [
+        {
+          "after": "mergePending",
+          "merged": "ONDISK\n"
+        }
+      ],
+      "finalDecoded": null,
+      "backupFiles": []
+    },
+    "flushDrainsBatch": {
+      "note": "**flush 把 pending 排空成一个帧**",
+      "preexisting": null,
+      "observations": [
+        {
+          "after": "enqueue",
+          "fileExists": true,
+          "isZstd": true,
+          "decoded": "line1\n"
+        },
+        {
+          "after": "enqueue",
+          "fileExists": true,
+          "isZstd": true,
+          "decoded": "line1\n"
+        },
+        {
+          "after": "flush",
+          "fileExists": true,
+          "decoded": "line1\nline2\n"
+        }
+      ],
+      "finalDecoded": "line1\nline2\n",
+      "backupFiles": []
+    },
+    "flushAfterFirstLine": {
+      "note": "首行已同步落盘后再 flush（不重复写）",
+      "preexisting": null,
+      "observations": [
+        {
+          "after": "enqueue",
+          "fileExists": true,
+          "isZstd": true,
+          "decoded": "line1\n"
+        },
+        {
+          "after": "flush",
+          "fileExists": true,
+          "decoded": "line1\n"
+        }
+      ],
+      "finalDecoded": "line1\n",
+      "backupFiles": []
+    },
+    "multiBatch": {
+      "note": "多批次 flush（多个帧）",
+      "preexisting": null,
+      "observations": [
+        {
+          "after": "enqueue",
+          "fileExists": true,
+          "isZstd": true,
+          "decoded": "a\n"
+        },
+        {
+          "after": "enqueue",
+          "fileExists": true,
+          "isZstd": true,
+          "decoded": "a\n"
+        },
+        {
+          "after": "flush",
+          "fileExists": true,
+          "decoded": "a\nb\n"
+        },
+        {
+          "after": "enqueue",
+          "fileExists": true,
+          "isZstd": true,
+          "decoded": "a\nb\n"
+        },
+        {
+          "after": "flush",
+          "fileExists": true,
+          "decoded": "a\nb\nc\n"
+        }
+      ],
+      "finalDecoded": "a\nb\nc\n",
+      "backupFiles": []
+    },
+    "emptyLine": {
+      "note": "空行（line 为空串）——不产帧",
+      "preexisting": null,
+      "observations": [
+        {
+          "after": "enqueue",
+          "fileExists": false,
+          "isZstd": false,
+          "decoded": null
+        }
+      ],
+      "finalDecoded": null,
+      "backupFiles": []
+    },
+    "legacyMigration": {
+      "note": "**legacy 纯文本首次写入时被转码为 zstd 帧 + 备份**",
+      "preexisting": "legacy-line-1\nlegacy-line-2\n",
+      "observations": [
+        {
+          "after": "enqueue",
+          "fileExists": true,
+          "isZstd": false,
+          "decoded": "legacy-line-1\nlegacy-line-2\n"
+        },
+        {
+          "after": "flush",
+          "fileExists": true,
+          "decoded": "legacy-line-1\nlegacy-line-2\nnew-line\n"
+        }
+      ],
+      "finalDecoded": "legacy-line-1\nlegacy-line-2\nnew-line\n",
+      "backupFiles": []
+    },
+    "alreadyZstdNoMigration": {
+      "note": "已压缩文件不重复迁移（无备份产生）",
+      "preexisting": "",
+      "observations": [
+        {
+          "after": "flush",
+          "fileExists": true,
+          "decoded": "already-compressed\n"
+        }
+      ],
+      "finalDecoded": "already-compressed\n",
+      "backupFiles": []
+    }
+  }
+}

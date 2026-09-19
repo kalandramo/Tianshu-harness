@@ -350,6 +350,26 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **write-behind 批量写入器**：`internal/session/batchwriter.go`
+  - 对账 src/agent/session-batch-writer.ts（129 行）
+  - 行先排队在内存，成批 flush 为**一个 zstd 帧**；200ms 定时窗口 / 显式
+    flush 屏障触发
+  - **新会话首行同步落盘**——文件立即存在（listSessions 靠 .jsonl 存在性
+    解析会话），且崩溃在前 200ms 内不丢整个会话
+  - **MergePending**：未 flush 的行对进程内读者可见（append 后立刻 load
+    是合法用法）
+  - **legacy 迁移**：首次写入时把纯文本 transcript 备份 + 转码为帧
+  - **flush 失败把行放回队列**（ENOSPC 等不能永久丢行）
+  - **反直觉发现（oracle 锁定）**：legacy 迁移的**备份目录不存在时不产生
+    备份**——TS 的 `copyFileSync` 抛错被 `catch {}` 吞掉，转码照常。
+    我首版 `copyFile` 会 `MkdirAll` 建目录，与 TS 行为不一致，已修
+  - **两处测试期望是我算错的**（oracle 已证明实现正确）：① 首行同步落盘后
+    pending 已清空，第二行入队时 `MergePending("")` 得 `"line2\n"` 而非
+    两行；② 多批次是 **3 个帧**（首行同步是独立一帧）
+  - 变异反证：M1 首行不同步 5 红 / M2 MergePending 忽略 pending 2 红 /
+    M3 legacy 迁移（**首轮编译失败**，加 `_ = prompt.ZstdMagicLE` 后 3 红）/
+    M4 flush 失败不放回（**首轮测试缺口**，补 IO 失败测试后 1 红）/
+    M5 经查证是**不可达分支**（空串拼接不改 pending，不进 writeBatch）
 - [x] **transcript codec（zstd 帧）**：`internal/session/transcript.go`
   - **引入首个第三方依赖** `github.com/klauspost/compress v1.20.0`
     （用户授权：允许引入成熟生态）
@@ -521,6 +541,8 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   已接进 agent loop
 - `internal/session/transcript.go`：**zstd 帧编解码**——引入
   `klauspost/compress v1.20.0`，跨版本兼容双向验证通过
+- `internal/session/batchwriter.go`：**write-behind 批量写入器**——首行同步
+  落盘 / mergePending / legacy 迁移 / 失败放回队列
 
 **本轮核心教训**：`orderedProps` 的数组型 schema 缺陷只在**接线后**暴露
 （单测工具全绿，接注册表立刻 panic）。这印证了「消费方核查」与
@@ -553,10 +575,11 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 
 1. **session 剩余（zstd 依赖已解决）**：
    - ✅ **transcript codec**（zstd 帧 encode/decode + torn tail）——本轮完成
-   - **JSONL 落盘**（`session-persist.ts` 928 行）未移植——现在**技术上
-     无阻塞**（zstd 已可用），主要是工作量：它依赖消息序列化
-     （`serializeSessionMessage` / `serializeOaiSessionMessage`）与
-     证据追踪（`trackFileChange`）。
+   - ✅ **write-behind 批量写入器**（`session-batch-writer.ts`）——本轮完成
+   - **`SessionPersist` 类本体**（`session-persist.ts` 928 行）未移植：
+     它依赖消息序列化（`serializeSessionMessage` / `serializeOaiSessionMessage`
+     + `capJsonValue` 截断）、孤儿工具调用修复（`repairOrphanToolCalls`）、
+     会话元数据（`SessionMetadataStore`）。BatchWriter 是它的地基，已就位。
    - **会话恢复**（`session-recovery.ts` 140 行）、**会话注册表**
      （`session-registry.ts` 589 行）未移植。
    - **依赖策略变更**：项目已从「零第三方依赖」改为「允许成熟生态」，
