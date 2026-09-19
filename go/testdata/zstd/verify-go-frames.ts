@@ -1,6 +1,13 @@
 /**
  * 验证 Go 产出的 zstd 帧能被 Node 解码（跨版本兼容的另一半）。
  *
+ * ## 关于本文件里的 console.log
+ *
+ * 它们是**脚本的正常输出**（这个脚本的产出就是一份通过/失败报告），
+ * 不是调试探针。Go 侧无法验证「Go 帧能否被 Node 解压」——那需要 Node 的
+ * zstdDecompressSync。所以这一半兼容性证据由本脚本提供，结果直接打到
+ * stdout。退出码非 0 表示有失败，可用于 CI。
+ *
  * 运行：
  *   cd go && go test ./internal/session/ -run TestEmitGoFramesForNode
  *   npx tsx go/testdata/zstd/verify-go-frames.ts
