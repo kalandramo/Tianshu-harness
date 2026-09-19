@@ -86,6 +86,17 @@ type AdvisoryBus struct {
 	// 避免数据不更新导致永久静音。
 	liftProbation map[string]bool
 
+	// efficacySignal 是效力信号源（注入）。
+	//
+	// nil 时排序退化为纯 priority（对账 TS 的 `if (!this.efficacySignal) return 0`）。
+	efficacySignal func(key string) *EfficacySignal
+	// adoptionRateProvider 是采纳率源（注入）——secondaryScore 的回退路径。
+	adoptionRateProvider func(key string) *float64
+	// efficacySpan 是效力对有效优先级的最大调整幅度（±）。
+	//
+	// 对账 `this.efficacySpan`（构造时从 env 读一次）。
+	efficacySpan float64
+
 	// holdout 是反事实抽样策略（注入）。
 	//
 	// nil 时不做抽样（对账 TS 的 `if (this.holdout && this.holdout.rate > 0)`）。
@@ -138,6 +149,48 @@ const (
 	HoldoutMinDelivered = 3
 )
 
+// T7 效力排序常量（对账 TS 同名常量）。
+const (
+	// defaultEfficacyPrioritySpan 是效力对有效优先级的最大调整幅度（±）。
+	defaultEfficacyPrioritySpan = 0.15
+	// EfficacyConfidentSamples 是采纳率达到满置信度所需的决出样本数。
+	//
+	// 不足时按比例缩放调整幅度——避免单样本改写优先级。
+	EfficacyConfidentSamples = 5
+	// efficacyPriorityFloor 是调整后的有效优先级下限。
+	//
+	// **再低也保留参赛资格，不等于静音**。
+	efficacyPriorityFloor = 0.05
+	// efficacyPriorityCap 是调整后的有效优先级上限。
+	//
+	// **不得触及 0.8 的 efficacy fail-open 豁免线**。
+	efficacyPriorityCap = 0.79
+)
+
+// EfficacySignal 是效力信号——供有效优先级做有界调整。
+//
+// 对账 EfficacySignalProvider。`Score` 归一 [0,1]（0.5 = 中性），
+// `Confidence` 归一 [0,1]（样本充分度）。nil = 无样本，排序零调整。
+type EfficacySignal struct {
+	Score      float64
+	Confidence float64
+}
+
+// ParseEfficacySpan 解析 RIVET_ADVISORY_EFFICACY_SPAN。
+//
+// 对账 parseEfficacySpan：合法 [0,0.5] 数字生效，'0' 关闭调整，
+// 非法/缺省用默认值。
+func ParseEfficacySpan(raw string) float64 {
+	if raw == "" {
+		return defaultEfficacyPrioritySpan
+	}
+	n, err := strconv.ParseFloat(raw, 64)
+	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) || n < 0 || n > 0.5 {
+		return defaultEfficacyPrioritySpan
+	}
+	return n
+}
+
 // HoldoutPolicy 是反事实抽样策略。
 //
 // 对账 HoldoutPolicy。**资格历史判定由调用方注入**（readback 的
@@ -171,6 +224,40 @@ func ParseHoldoutRate(raw string) float64 {
 // 对账 setHabituationPolicy。缺省 = 不做习惯化对抗。
 func (b *AdvisoryBus) SetHabituationPolicy(policy HabituationPolicy) {
 	b.habituation = policy
+}
+
+// SetEfficacySignalProvider 注入效力信号源。
+//
+// 对账 setEfficacySignalProvider（advisory-bus.ts:548）。生产装配：
+//
+//	bus.SetEfficacySignalProvider(func(key string) *EfficacySignal {
+//	    if lift := readback.GetMatureLift(key); lift != nil {
+//	        return &EfficacySignal{Score: (*lift + 1) / 2, Confidence: 1}
+//	    }
+//	    if rate := readback.GetAdoptionRate(key); rate != nil {
+//	        decided := readback.GetDecidedCount(key)
+//	        return &EfficacySignal{Score: *rate, Confidence: min(1, decided/5)}
+//	    }
+//	    return nil
+//	})
+//
+// **缺省 = 效力只做同 priority 的 tie-break**（改动前的行为）。
+func (b *AdvisoryBus) SetEfficacySignalProvider(provider func(key string) *EfficacySignal) {
+	b.efficacySignal = provider
+}
+
+// SetAdoptionRateProvider 注入采纳率源（secondaryScore 的回退路径）。
+//
+// 对账 setAdoptionRateProvider（advisory-bus.ts:513）。
+func (b *AdvisoryBus) SetAdoptionRateProvider(provider func(key string) *float64) {
+	b.adoptionRateProvider = provider
+}
+
+// SetEfficacySpan 设置效力调整幅度（对账构造时的 efficacySpan）。
+//
+// 生产装配从 `RIVET_ADVISORY_EFFICACY_SPAN` 解析；0 = 关闭调整。
+func (b *AdvisoryBus) SetEfficacySpan(span float64) {
+	b.efficacySpan = span
 }
 
 // SetHoldoutPolicy 注入反事实抽样策略。
@@ -307,7 +394,8 @@ func advisoryBudgetForDomain(activeStarDomain string) int {
 
 // NewAdvisoryBus 构造总线。
 func NewAdvisoryBus() *AdvisoryBus {
-	return &AdvisoryBus{}
+	return &AdvisoryBus{
+		efficacySpan: defaultEfficacyPrioritySpan}
 }
 
 // Submit 投递一条 advisory。
@@ -578,7 +666,7 @@ func (b *AdvisoryBus) Render(activeStarDomain string, turn int) string {
 	for _, e := range deduped {
 		sortedDeduped = append(sortedDeduped, e)
 	}
-	sortEntriesByPriority(sortedDeduped)
+	b.sortEntriesByPriority(sortedDeduped)
 
 	catCounts := map[AdvisoryCategory]int{}
 	catFiltered := make([]AdvisoryEntry, 0, len(sortedDeduped))
@@ -665,7 +753,7 @@ func (b *AdvisoryBus) Render(activeStarDomain string, turn int) string {
 	}
 	// constitutional 内部按 key 序输出（TS 用 Map 迭代序 = 插入序）
 	sorted = append(sorted, constList...)
-	sortEntriesByPriority(taken)
+	b.sortEntriesByPriority(taken)
 	sorted = append(sorted, taken...)
 
 	// ── 7. CVM 注入预算（constitutional / immediate 豁免）──
@@ -835,14 +923,86 @@ func dedupByKeyKeepingHigherPriority(entries []AdvisoryEntry) []AdvisoryEntry {
 	return out
 }
 
-// sortEntriesByPriority 按 priority 降序排序。
+// sortEntriesByPriority 按**有效优先级**降序排序（T7 效力排序）。
+//
+// 对账 TS 的 `compareEntries`（advisory-bus.ts:1106-1112）：
+//
+//	const pa = effectivePriority(a), pb = effectivePriority(b)
+//	if (pb !== pa) return pb - pa
+//	if (!adoptionRateProvider && !liftProvider) return 0
+//	return secondaryScore(b.key) - secondaryScore(a.key)
 //
 // **稳定性**：用 sort.SliceStable——TS 的 Array.sort 在现代 V8 里是稳定的，
-// 故同 priority 条目保持插入序（oracle 的 same_priority 用例锁住）。
-func sortEntriesByPriority(entries []AdvisoryEntry) {
+// 故完全平手时保持插入序（oracle 的 same_priority 用例锁住）。
+func (b *AdvisoryBus) sortEntriesByPriority(entries []AdvisoryEntry) {
 	sort.SliceStable(entries, func(i, j int) bool {
-		return entries[i].Priority > entries[j].Priority
+		pa := b.effectivePriority(entries[i])
+		pb := b.effectivePriority(entries[j])
+		if pa != pb {
+			return pb < pa // 降序：i 排前当且仅当 pa > pb
+		}
+		// 次级排序键：仅在有 provider 时启用（对账 TS 的守卫）
+		if b.adoptionRateProvider == nil && b.liftProvider == nil {
+			return false
+		}
+		return b.secondaryScore(entries[j].Key) < b.secondaryScore(entries[i].Key)
 	})
+}
+
+// secondaryScore 是有效优先级平手时的次级排序键。
+//
+// 对账 TS 的 `secondaryScore`（advisory-bus.ts:1079-1083）：
+// **成熟 lift 优先**（(lift+1)/2 归一到 [0,1]），回退采纳率，都无则 0.5（中性）。
+func (b *AdvisoryBus) secondaryScore(key string) float64 {
+	if b.liftProvider != nil {
+		if lift := b.liftProvider(key); lift != nil {
+			return (*lift + 1) / 2
+		}
+	}
+	if b.adoptionRateProvider != nil {
+		if rate := b.adoptionRateProvider(key); rate != nil {
+			return *rate
+		}
+	}
+	return 0.5
+}
+
+// efficacyAdjust 计算效力调整量（有界）。
+//
+// 对账 TS 的 `efficacyAdjust`（advisory-bus.ts:1088-1096）。
+//
+// **返回 0 表示不调整**（无 provider / 豁免 / 无样本）——此时优先级**原样透传，
+// 不进 clamp**。否则 CONSTITUTIONAL_PRIORITY(0.9) 会被压到 0.79。
+//
+// **豁免集与负 lift 静音同源**：constitutional / immediate / star_domain。
+func (b *AdvisoryBus) efficacyAdjust(e AdvisoryEntry) float64 {
+	if b.efficacySignal == nil {
+		return 0
+	}
+	if isLiftExempt(e) {
+		return 0
+	}
+	sig := b.efficacySignal(e.Key)
+	if sig == nil {
+		return 0
+	}
+	score := math.Max(0, math.Min(1, sig.Score))
+	confidence := math.Max(0, math.Min(1, sig.Confidence))
+	return (score - 0.5) * 2 * b.efficacySpan * confidence
+}
+
+// effectivePriority 计算用于排序比较的有效优先级。
+//
+// 对账 TS 的 `effectivePriority`（advisory-bus.ts:1097-1104）。
+//
+// **两个边界**：下限 0.05（保留参赛资格，不等于静音）、
+// 上限 0.79（不触及 0.8 的 fail-open 豁免线）。
+func (b *AdvisoryBus) effectivePriority(e AdvisoryEntry) float64 {
+	delta := b.efficacyAdjust(e)
+	if delta == 0 {
+		return e.Priority // 零调整时原样透传，不 clamp
+	}
+	return math.Max(efficacyPriorityFloor, math.Min(efficacyPriorityCap, e.Priority+delta))
 }
 
 // formatPriority 把 priority 格式化为两位小数（对账 TS 的 toFixed(2)）。

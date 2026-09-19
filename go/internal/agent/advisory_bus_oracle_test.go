@@ -37,6 +37,14 @@ type busCaseSpec struct {
 	Streaks map[string]int `json:"streaks"`
 	// Lifts 是 lift 消费：key → 成熟 lift（null 模拟样本不足 = 中性）
 	Lifts map[string]*float64 `json:"lifts"`
+	// Efficacy 是 T7 效力排序：key → { score, confidence }（null = 无样本）
+	Efficacy *struct {
+		Signals map[string]*struct {
+			Score      float64 `json:"score"`
+			Confidence float64 `json:"confidence"`
+		} `json:"signals"`
+		Span *float64 `json:"span"`
+	} `json:"efficacy"`
 	// Holdout 是反事实抽样：抽样率 + 固定 RNG 序列 + 资格 key 集
 	Holdout *struct {
 		Rate     float64   `json:"rate"`
@@ -159,6 +167,19 @@ func TestAdvisoryBusOracleParity(t *testing.T) {
 					return nil
 				})
 			}
+			if spec.Efficacy != nil {
+				e := spec.Efficacy
+				bus.SetEfficacySignalProvider(func(key string) *EfficacySignal {
+					sig, ok := e.Signals[key]
+					if !ok || sig == nil {
+						return nil
+					}
+					return &EfficacySignal{Score: sig.Score, Confidence: sig.Confidence}
+				})
+				if e.Span != nil {
+					bus.SetEfficacySpan(*e.Span)
+				}
+			}
 			if spec.Holdout != nil {
 				h := spec.Holdout
 				ri := 0
@@ -238,6 +259,19 @@ func TestAdvisoryBusLedgerParity(t *testing.T) {
 					}
 					return nil
 				})
+			}
+			if spec.Efficacy != nil {
+				e := spec.Efficacy
+				bus.SetEfficacySignalProvider(func(key string) *EfficacySignal {
+					sig, ok := e.Signals[key]
+					if !ok || sig == nil {
+						return nil
+					}
+					return &EfficacySignal{Score: sig.Score, Confidence: sig.Confidence}
+				})
+				if e.Span != nil {
+					bus.SetEfficacySpan(*e.Span)
+				}
 			}
 			if spec.Holdout != nil {
 				h := spec.Holdout

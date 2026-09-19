@@ -22,6 +22,8 @@ interface CaseSpec {
   lifts?: Record<string, number | null>
   /** holdout 抽样：抽样率 + 固定 RNG 序列（模拟确定性抽样）+ 资格 key 集 */
   holdout?: { rate: number; rng: number[]; eligible: string[] }
+  /** T7 效力排序：key → { score, confidence }（null 模拟无样本）+ span 覆盖 */
+  efficacy?: { signals: Record<string, { score: number; confidence: number } | null>; span?: number }
 }
 
 // 用例：覆盖去重 / 排序 / 类别上限 / 预算 / TTL / 转义 / 星域预算。
@@ -522,6 +524,89 @@ const cases: Record<string, CaseSpec> = {
     renders: 1,
   },
 
+  // ── T7 效力排序：高效力低 priority 胜出（跨 priority 竞争）──
+  efficacy_sort_upset: {
+    efficacy: { signals: {
+      'high': { score: 0.95, confidence: 1 },
+      'low': { score: 0.05, confidence: 1 },
+    } },
+    batches: [{ entries: [
+      { key: 'high', priority: 0.58, category: 'discipline', content: 'H' },
+      { key: 'low', priority: 0.70, category: 'discipline', content: 'L' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 效力：无样本（null）→ 零调整，纯 priority 排序 ──
+  efficacy_no_signal: {
+    efficacy: { signals: {} },
+    batches: [{ entries: [
+      { key: 'a', priority: 0.58, category: 'discipline', content: 'A' },
+      { key: 'b', priority: 0.70, category: 'discipline', content: 'B' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 效力：中性 score=0.5 → 零调整 ──
+  efficacy_neutral_score: {
+    efficacy: { signals: { 'a': { score: 0.5, confidence: 1 }, 'b': { score: 0.5, confidence: 1 } } },
+    batches: [{ entries: [
+      { key: 'a', priority: 0.58, category: 'discipline', content: 'A' },
+      { key: 'b', priority: 0.70, category: 'discipline', content: 'B' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 效力：constitutional 豁免（priority 原样，不被 clamp 压到 0.79）──
+  efficacy_constitutional_exempt: {
+    efficacy: { signals: { 'c': { score: 0.0, confidence: 1 } } },
+    batches: [{ entries: [
+      { key: 'c', priority: 0.9, category: 'constitutional', tier: 'constitutional', content: 'C' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 效力：immediate 豁免 ──
+  efficacy_immediate_exempt: {
+    efficacy: { signals: { 'i': { score: 0.0, confidence: 1 } } },
+    batches: [{ entries: [
+      { key: 'i', priority: 0.7, category: 'guard', immediate: true, content: 'I' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 效力：star_domain 豁免 ──
+  efficacy_star_exempt: {
+    efficacy: { signals: { 's': { score: 0.0, confidence: 1 } } },
+    batches: [{ entries: [
+      { key: 's', priority: 0.5, category: 'star_domain', content: 'S' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 效力：置信度缩放（单样本 confidence=0.2 → 调整幅度小）──
+  efficacy_confidence_scaled: {
+    efficacy: { signals: {
+      'confident': { score: 1.0, confidence: 1.0 },
+      'shaky': { score: 1.0, confidence: 0.2 },
+    } },
+    batches: [{ entries: [
+      { key: 'shaky', priority: 0.60, category: 'discipline', content: 'S' },
+      { key: 'confident', priority: 0.60, category: 'discipline', content: 'C' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 效力：span=0 关闭调整（span 由 env 控制，见主循环）──
+  efficacy_span_zero: {
+    efficacy: { signals: { 'a': { score: 1.0, confidence: 1 } }, span: 0 },
+    batches: [{ entries: [
+      { key: 'a', priority: 0.58, category: 'discipline', content: 'A' },
+      { key: 'b', priority: 0.70, category: 'discipline', content: 'B' },
+    ] }],
+    renders: 1,
+  },
+
   // ── immediate 条目豁免 CVM 注入预算 ──
   immediate_exempt: {
     batches: [{ entries: [
@@ -547,12 +632,21 @@ interface OracleEntry {
 
 const out: Record<string, OracleEntry> = {}
 for (const [name, spec] of Object.entries(cases)) {
+  // efficacySpan 是 readonly + 从 env 读（无运行时注入钩子）——用例级覆盖
+  if (spec.efficacy?.span !== undefined) {
+    process.env.RIVET_ADVISORY_EFFICACY_SPAN = String(spec.efficacy.span)
+  } else {
+    delete process.env.RIVET_ADVISORY_EFFICACY_SPAN
+  }
   const bus = new AdvisoryBus()
   if (spec.streaks) {
     bus.setHabituationPolicy({ getIgnoredStreak: (key: string) => spec.streaks![key] ?? 0 })
   }
   if (spec.lifts) {
     bus.setLiftProvider((key: string) => spec.lifts![key] ?? null)
+  }
+  if (spec.efficacy) {
+    bus.setEfficacySignalProvider((key: string) => spec.efficacy!.signals[key] ?? null)
   }
   if (spec.holdout) {
     let ri = 0

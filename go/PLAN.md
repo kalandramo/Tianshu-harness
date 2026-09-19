@@ -960,9 +960,56 @@ per-key 统计随会话死亡，每个新会话都要从零攒（holdout 资格�
 `GetDeliveredCount` 截断偏差与两处时间敏感断言，单次跑全绿、连跑 8 次才现形。
 判据：涉及时间/浮点/并发的改动，全量测试至少连跑 5 次。
 
-**下一步**：efficacy 负反馈环（`getAdoptionRate` 消费者——低采纳率条目在
-排序中降权，`EFFICACY_SPAN` 调权）或 `AdvisoryEfficacyStore` 的
-`mergeAndSave` 在 CLI 的显式装配（当前只在 loop 内自动触发）。
+### 第二十二刀（已完成）：T7 效力排序——效力跨 priority 参与预算竞争（2026-09-19）
+
+✅ `efficacyAdjust` + `effectivePriority` + `secondaryScore` + 三个注入点 + 8 个 oracle 用例
+
+**修掉的真实问题**（TS 注释原文，本刀取证时发现）：
+
+> 此前只在 priority 完全相等时做 tie-break，而 hook 的 priority 高度分散——
+> **实测 self-verify 采纳 77% 却因 0.58 < 0.70 恒输给采纳 12% 的 todo-missing**。
+
+**四段逻辑**（全部对账 TS）：
+
+| 组件 | TS 位置 | 语义 |
+|---|---|---|
+| `efficacyAdjust` | `advisory-bus.ts:1088` | `(score-0.5) × 2 × span × confidence`，豁免集返回 0 |
+| `effectivePriority` | `:1097` | 有界调整 clamp 到 `[0.05, 0.79]` |
+| `secondaryScore` | `:1079` | 平手时的次级键：成熟 lift → 采纳率 → 0.5 |
+| `compareEntries` | `:1106` | 先比有效优先级，再比次级键 |
+
+**三处边界（都是易错点）**：
+
+1. **豁免集**（constitutional / immediate / star_domain）返回 0 → 优先级**原样透传，
+   不进 clamp**。否则 `CONSTITUTIONAL_PRIORITY(0.9)` 会被压到 0.79。
+2. **上限 0.79**——不得触及 0.8 的 efficacy fail-open 豁免线。
+3. **下限 0.05**——保留参赛资格，**不等于静音**（与习惯化/lift 的静音是两回事）。
+
+**置信度缩放**：`confidence = min(1, decided / EFFICACY_CONFIDENT_SAMPLES)`——
+**避免单样本改写优先级**。成熟 lift 已过样本门故满置信。
+
+**用户级验收（已执行）**：
+
+- `TestEfficacySortingInRealRequests`——真实请求体实测
+  `渲染顺序观测=[high-eff 在前 high-eff 在前]`：**0.58 的 87.5% 采纳率压过
+  0.70 的 12.5%**（span=0.15 时 0.58+0.15=0.73 > 0.70-0.15=0.55）
+- `TestEfficacyExemptInSorting`——三类豁免各一子用例，验证「原样透传」
+- `TestEfficacyPriorityBounds`——上下限各一（0.75+0.15 → 0.79；0.10-0.15 → 0.05）
+- `TestEfficacyConfidenceScaling`——confident 0.75 vs shaky 0.63（精确值）
+- `TestEfficacySpanZeroDisables` / `TestParseEfficacySpan`（8 个边界）
+
+**变异反证 5 个有判别力**（不做调整红 6 / 豁免失效红 4 / 不 clamp 红 1 /
+忽略置信度红 3 / 零调整也 clamp 红 2）。
+
+**oracle**：`advisorybus` 52 → **60 用例**（+8 efficacy）。
+
+**一处 TS 的测试基建约束**：`efficacySpan` 是 `readonly` + 从 env 读，
+**无运行时注入钩子**——生成器改用 `process.env.RIVET_ADVISORY_EFFICACY_SPAN`
+逐用例设置。Go 侧我用 `SetEfficacySpan` 显式注入（更直接，且不污染进程环境）。
+
+**下一步**：efficacy **负向臂**（会话内静默 + 冷却翻倍，`EFFICACY_BASE_COOLDOWN_RENDERS=2`）
+与**正向臂**（`adopted >= 3` → 冷却减半 + 排序加成 0.05）。两者共享
+`efficacyStats` / `efficacyCooldownLength` 两个数据结构，适合一并做。
 
 **为什么是它而不是补工具**：
 

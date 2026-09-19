@@ -293,6 +293,35 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	// 投递组样本，差值的分母为零。
 	//
 	// `RIVET_ADVISORY_HOLDOUT=0` 可关闭抽样（缺省 0.1）。
+	// T7 效力排序——**让效力跨 priority 参与预算竞争**（对账 loop.ts:810-820）。
+	//
+	// **为什么需要**：此前效力只在 priority 完全相等时做 tie-break，而 hook 的
+	// priority 高度分散——实测 self-verify 采纳 77% 却因 0.58 < 0.70 恒输给
+	// 采纳 12% 的 todo-missing。**「说了有人听」的提醒应该赢得预算**。
+	//
+	// 信号优先级：成熟 lift（已过样本门，故满置信）→ 回退采纳率（按决出样本数
+	// 缩放置信度，避免单样本改写优先级）。
+	//
+	// `RIVET_ADVISORY_EFFICACY_SPAN=0` 关闭调整（回退纯 priority 排序）。
+	bus.SetEfficacySpan(agent.ParseEfficacySpan(os.Getenv("RIVET_ADVISORY_EFFICACY_SPAN")))
+	bus.SetEfficacySignalProvider(func(key string) *agent.EfficacySignal {
+		if lift := readback.GetMatureLift(key); lift != nil {
+			return &agent.EfficacySignal{Score: (*lift + 1) / 2, Confidence: 1}
+		}
+		rate := readback.GetAdoptionRate(key)
+		if rate == nil {
+			return nil
+		}
+		decided := float64(readback.GetDecidedCount(key))
+		conf := decided / agent.EfficacyConfidentSamples
+		if conf > 1 {
+			conf = 1
+		}
+		return &agent.EfficacySignal{Score: *rate, Confidence: conf}
+	})
+	// 次级排序键的回退源（priority 完全平手时用采纳率）
+	bus.SetAdoptionRateProvider(readback.GetAdoptionRate)
+
 	// 跨会话效能信息素——**先验的加载端**（对账 loop.ts:779-790）。
 	//
 	// 这是 lift / holdout 资格 / 副驾闸门的**冷启动数据源**：readback 的 per-key
