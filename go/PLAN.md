@@ -184,6 +184,32 @@ tool_call 的额外字段（如 `index`），而 TS 的 `JSON.stringify` 会带�
 **下一步**：`internal/context` 其余模块（claim-store / cognitive-ledger /
 stigmergy / task-contract），或具体 hook 移植。
 
+### 第三刀（已完成）：第一个真实 hook 接入管线（2026-09-19）
+
+✅ `internal/agent/typecheck_reminder.go` + `advisory.go`（77 + 127 行 +
+238 行测试）——**证明 hook 管线地基可用**（管线本体不再空转）。
+
+对账 `src/agent/hooks/typecheck-reminder-hook.ts`（53 行）：
+
+- **触发条件**（三条全真，任务级而非 5 条窗口）：
+  `touchedTsFiles` ∧ `!sawTypecheckThisTask` ∧ `run_tests` 在窗口内
+- 投递一条 operational advisory（key / priority 0.6 / category typecheck /
+  ttl 1 / expect verify_attempted withinTurns 2 / observe turns 1）
+- **content 逐字对账**——用户可见文案不可转述
+
+**接口收窄是刻意的**：Go 侧 `AdvisorySink` 只含 `Submit`，对账 TS 的
+`Pick<AdvisoryBus, 'submit'>`。`advisory-bus.ts` 有 1277 行，**不做完整移植**
+——hook 只该投递，不该读 bus 内部状态。bus 本体（渲染 / 排序 / 去重 / 挂起
+观察生命周期 / readback 核销 / holdout）见 HANDOFF。
+
+**测试 10 个**（含端到端经 Pipeline 注册执行 + 统计/manifest 对账）。
+变异反证 10 个：**全部有判别力**（去掉三条守卫各 1-2 红 / 窗口语义错 1 红 /
+content 改一字 1 红 / expect 值 1 红 / category 1 红 / phase 2 红 / priority 1 红 /
+ttl 1 红），零编译失败。
+
+**下一步**：接更多 hook（`todo-reminder` / `vigor` / `theta` / `lossy-observation`），
+或补 `advisory-bus` 本体。
+
 **为什么是它而不是补工具**：
 
 - CVM（认知虚拟机）是天枢三大支柱之一——`RuntimeHookPipeline` 五阶段条件装配 60+ hook，拦截服从性漂移 / doom loop / 验证债务
