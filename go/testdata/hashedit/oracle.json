@@ -1,0 +1,219 @@
+{
+  "hashLineSamples": {
+    "line2": "cc8fda49",
+    "a": "ca978112"
+  },
+  "cases": {
+    "singleLineReplace": {
+      "note": "单锚点替换该行",
+      "initial": "line1\nline2\nline3\n",
+      "expandedAnchors": [
+        "L2:cc8fda49"
+      ],
+      "result": {
+        "content": "hash_edit 已应用到 <DIR>/target.txt：将 L2-L2（1 行）替换为 1 行\n新鲜锚点（链式安全）：\nL1:815750a4 → line1\nL2:b0326566 → LINE-TWO\nL3:0051852e → line3",
+        "isError": false
+      },
+      "finalContent": "line1\nLINE-TWO\nline3\n"
+    },
+    "rangeReplace": {
+      "note": "首尾锚点定义区间（含两端）",
+      "initial": "a\nb\nc\nd\ne\n",
+      "expandedAnchors": [
+        "L2:3e23e816",
+        "L4:18ac3e73"
+      ],
+      "result": {
+        "content": "hash_edit 已应用到 <DIR>/target.txt：将 L2-L4（3 行）替换为 2 行\n新鲜锚点（链式安全）：\nL1:ca978112 → a\nL2:4b68ab38 → X\nL3:18f5384d → Y\nL4:3f79bb7b → e",
+        "isError": false
+      },
+      "finalContent": "a\nX\nY\ne\n"
+    },
+    "deleteRange": {
+      "note": "空 new_string = 删除区间",
+      "initial": "a\nb\nc\nd\n",
+      "expandedAnchors": [
+        "L2:3e23e816",
+        "L3:2e7d2c03"
+      ],
+      "result": {
+        "content": "hash_edit 已应用到 <DIR>/target.txt：将 L2-L3（2 行）替换为 0 行\n新鲜锚点（链式安全）：\nL1:ca978112 → a\nL2:18ac3e73 → d",
+        "isError": false
+      },
+      "finalContent": "a\nd\n"
+    },
+    "insertAfter": {
+      "note": "单锚点插入（原内容 + 新增）",
+      "initial": "a\nb\nc\n",
+      "expandedAnchors": [
+        "L2:3e23e816"
+      ],
+      "result": {
+        "content": "hash_edit 已应用到 <DIR>/target.txt：将 L2-L2（1 行）替换为 2 行\n新鲜锚点（链式安全）：\nL1:ca978112 → a\nL2:3e23e816 → b\nL3:a253ff09 → NEW\nL4:2e7d2c03 → c",
+        "isError": false
+      },
+      "finalContent": "a\nb\nNEW\nc\n"
+    },
+    "threeAnchors": {
+      "note": "三锚点（中间锚点校验区间内部）",
+      "initial": "a\nb\nc\nd\ne\n",
+      "expandedAnchors": [
+        "L2:3e23e816",
+        "L3:2e7d2c03",
+        "L4:18ac3e73"
+      ],
+      "result": {
+        "content": "hash_edit 已应用到 <DIR>/target.txt：将 L2-L4（3 行）替换为 1 行\n新鲜锚点（链式安全）：\nL1:ca978112 → a\nL2:ade09975 → XYZ\nL3:3f79bb7b → e",
+        "isError": false
+      },
+      "finalContent": "a\nXYZ\ne\n"
+    },
+    "positionOnly": {
+      "note": "位置-only 锚点（无哈希）——新 session 未读过文件，不应有漂移警告",
+      "initial": "a\nb\nc\n",
+      "expandedAnchors": [
+        "L2"
+      ],
+      "result": {
+        "content": "hash_edit 已应用到 <DIR>/target.txt：将 L2-L2（1 行）替换为 1 行\n新鲜锚点（链式安全）：\nL1:ca978112 → a\nL2:df7e70e5 → B\nL3:2e7d2c03 → c",
+        "isError": false
+      },
+      "finalContent": "a\nB\nc\n"
+    },
+    "dryRun": {
+      "note": "dry_run=true 不写盘",
+      "initial": "a\nb\nc\n",
+      "expandedAnchors": [
+        "L2:3e23e816"
+      ],
+      "result": {
+        "content": "预览（dry_run）<DIR>/target.txt — 未写入任何更改：\n\n--- target.txt\n+++ target.txt\n@@ -1,3 +1,3 @@\n a\n-b\n+B2\n c",
+        "isError": false
+      },
+      "finalContent": "a\nb\nc\n"
+    },
+    "anchorWithSuffix": {
+      "note": "锚点容忍行尾内容后缀（fresh anchor 形如 \"L2:hash → content\"）",
+      "initial": "a\nb\nc\n",
+      "expandedAnchors": [
+        "L2:3e23e816 → b"
+      ],
+      "result": {
+        "content": "hash_edit 已应用到 <DIR>/target.txt：将 L2-L2（1 行）替换为 1 行\n新鲜锚点（链式安全）：\nL1:ca978112 → a\nL2:df7e70e5 → B\nL3:2e7d2c03 → c",
+        "isError": false
+      },
+      "finalContent": "a\nB\nc\n"
+    },
+    "badAnchorFormat": {
+      "note": "锚点格式非法",
+      "initial": "a\nb\n",
+      "expandedAnchors": [
+        "XYZ"
+      ],
+      "result": {
+        "content": "错误：无效锚点格式 \"XYZ\"。期望 \"L<num>:<8-char-hex>\"（如 \"L5:a1b2c3d4\"）或 \"L<num>\"（如 \"L5\"）",
+        "isError": true
+      },
+      "finalContent": "a\nb\n"
+    },
+    "anchorZero": {
+      "note": "L0 非法（行号必须 >= 1）",
+      "initial": "a\nb\n",
+      "expandedAnchors": [
+        "L0:aaaaaaaa"
+      ],
+      "result": {
+        "content": "错误：无效锚点格式 \"L0:aaaaaaaa\"。期望 \"L<num>:<8-char-hex>\"（如 \"L5:a1b2c3d4\"）或 \"L<num>\"（如 \"L5\"）",
+        "isError": true
+      },
+      "finalContent": "a\nb\n"
+    },
+    "tooManyAnchors": {
+      "note": "超过 3 个锚点",
+      "initial": "a\nb\nc\nd\ne\n",
+      "expandedAnchors": [
+        "L1:aaaaaaaa",
+        "L2:bbbbbbbb",
+        "L3:cccccccc",
+        "L4:dddddddd"
+      ],
+      "result": {
+        "content": "错误：anchors 必须是 1-3 个 \"L<line>:<hash>\" 或 \"L<line>\" 字符串组成的数组",
+        "isError": true
+      },
+      "finalContent": "a\nb\nc\nd\ne\n"
+    },
+    "emptyAnchors": {
+      "note": "空锚点数组",
+      "initial": "a\nb\n",
+      "expandedAnchors": [],
+      "result": {
+        "content": "错误：anchors 必须是 1-3 个 \"L<line>:<hash>\" 或 \"L<line>\" 字符串组成的数组",
+        "isError": true
+      },
+      "finalContent": "a\nb\n"
+    },
+    "notAscending": {
+      "note": "锚点非升序（会静默损坏文件）",
+      "initial": "a\nb\nc\n",
+      "expandedAnchors": [
+        "L3:2e7d2c03",
+        "L1:ca978112"
+      ],
+      "result": {
+        "content": "错误：anchors 必须严格按行号升序排列。锚点 2（L1）没有排在锚点 1（L3）之后。",
+        "isError": true
+      },
+      "finalContent": "a\nb\nc\n"
+    },
+    "duplicateLine": {
+      "note": "锚点行号重复（非严格升序）",
+      "initial": "a\nb\nc\n",
+      "expandedAnchors": [
+        "L2:3e23e816",
+        "L2:3e23e816"
+      ],
+      "result": {
+        "content": "错误：anchors 必须严格按行号升序排列。锚点 2（L2）没有排在锚点 1（L2）之后。",
+        "isError": true
+      },
+      "finalContent": "a\nb\nc\n"
+    },
+    "staleHash": {
+      "note": "哈希过期 → 诊断文本（含可重试锚点）",
+      "initial": "a\nb\nc\n",
+      "expandedAnchors": [
+        "L2:deadbeef"
+      ],
+      "result": {
+        "content": "hash_edit 在 <DIR>/target.txt 上失败：1 个锚点已过期。\n自你上次 read_file 以来文件已变化（可能是你自己更早的编辑导致）。\n\n期望的锚点：\n  L2:deadbeef\n\n过期锚点（该行当前哈希）：\n  L2: expected deadbeef | actual 3e23e816 | content: b\n\n若上方所示 \"content\" 正是你要替换的行，请立即用以下锚点重试：anchors: [\"L2:3e23e816\"]\n若不是正确的行，请用 grep 重新定位目标（grep 输出含新鲜的 L<line>:<hash> 锚点提示；read_file 不会输出哈希）。\n不要再用已经用过的锚点重试——它们是一次性坐标，完全相同的调用还会再次失败。",
+        "isError": true
+      },
+      "finalContent": "a\nb\nc\n"
+    },
+    "eofOverrun": {
+      "note": "行号超出文件长度 → <eof> 不匹配",
+      "initial": "a\nb\n",
+      "expandedAnchors": [
+        "L99:aaaaaaaa"
+      ],
+      "result": {
+        "content": "hash_edit 在 <DIR>/target.txt 上失败：1 个锚点已过期。\n自你上次 read_file 以来文件已变化（可能是你自己更早的编辑导致）。\n\n期望的锚点：\n  L99:aaaaaaaa\n\n过期锚点（该行当前哈希）：\n  L99: expected aaaaaaaa | actual <eof> | content: <未找到该行>\n\n锚点行号超出当前文件长度。请用 grep 重新定位目标（grep 输出含新鲜的 L<line>:<hash> 锚点提示；read_file 不会输出哈希）。\n不要再用已经用过的锚点重试——它们是一次性坐标，完全相同的调用还会再次失败。",
+        "isError": true
+      },
+      "finalContent": "a\nb\n"
+    },
+    "fileNotFound": {
+      "note": "文件不存在",
+      "initial": null,
+      "expandedAnchors": [
+        "L1:aaaaaaaa"
+      ],
+      "result": {
+        "content": "错误：文件未找到：<DIR>/nope.txt",
+        "isError": true
+      },
+      "finalContent": null
+    }
+  }
+}

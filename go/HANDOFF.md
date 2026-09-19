@@ -350,6 +350,25 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **hash_edit 工具本体**：`internal/tools/hashedit.go` + `eol.go`
+  - 对账 src/tools/hash-edit.ts（572 行）。工具集 8 → 9
+  - 纯函数层：`ParseAnchor`（完整格式先试，否则 "L5:hash" 会被位置正则截成 L5）、
+    `RecoverStaleAnchors`（±200 窗口 + 一致漂移量重搜，50 窗口）、
+    `FormatStaleDiagnostic`（**含可重试锚点**——这是模型唯一的重试线索）
+  - `eol.go`：EOL 策略（`.bat`/`.cmd` 强制 CRLF > 既有 > 目标平台默认；
+    `toLF` 顺序敏感——先 `\r\n` 再裸 `\r`）
+  - **oracle 走真实 `execute` 路径**：三个核心函数都未导出，手抄必假绿
+  - **取证纠正实现**：JS 模板插值 `null` 得到字面量 `"null"`——我首版写成
+    `<position-only>` 占位符，探针实测后修正
+  - **测试断言错误**：`TestParseAnchorParity` 首版断言"TS 侧解析成功"，
+    但 `badAnchorFormat`/`anchorZero` 的锚点**故意非法**（TS 同样失败）——
+    是我错，不是实现错
+  - 变异反证 8 个：7 个有判别力（正则顺序 1 / 窗口 1 / null 渲染 1 /
+    toLF 顺序 1 / EOL 平局 1 / eof 重试 2 / 升序检查 1），
+    M3（漂移非零判断）**实测确认为等价变异**（shift==0 时 50 窗口是 200
+    窗口的子集，必失败，两路径输出相同）
+  - **降级项（4 条，见下方欠账）**：指针回灌守卫、语法检查+回滚、
+    失败计数门、dry_run 的 diff 预览
 - [x] **todo 工具本体**：`internal/tools/todo.go`
   - 消费了 todofmt 的渲染（FormatTodoList / FormatTodoSummary）——
     这是本轮**唯一有生产调用方**的新增能力
@@ -437,6 +456,8 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   —— 本轮唯一有生产调用方的新增能力，并连带修复了数组型 schema 的
   序列化 panic（见下方架构欠账 1 与教训）
 - `zstdframe.go`：zstd 帧扫描（跨版本兼容基础）
+- `hashedit.go` + `eol.go`：**hash_edit 工具本体**（工具集 8 → 9）——
+  纯函数层逐字节对账（含诊断文本），工具本体走真实 oracle 路径
 
 **本轮核心教训**：`orderedProps` 的数组型 schema 缺陷只在**接线后**暴露
 （单测工具全绿，接注册表立刻 panic）。这印证了「消费方核查」与
@@ -467,20 +488,29 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 
 ### 架构欠账（已知，非缺陷）
 
-1. **工具 schema 键序未与 TS 对账**：`orderedProps` 主动对键**排序**（字母序），
+1. **hash_edit 的 4 项降级**（对账 TS 时明确未移植，各自独立）：
+   - **指针回灌守卫**（pointer-guard）：依赖 4 个未移植的 arg-processor
+     常量模块（write_file / edit_file / hash_edit / apply_patch）。风险：
+     模型可能把历史里的指针文本当 `new_string` 传回来并被写进文件。
+   - **语法检查 + 回滚**（checkSyntax）：TS 侧在致命语法错误时自动回滚
+     并递增失败计数。Go 侧直接写入，无回滚。
+   - **失败计数门**：连续 3 次失败后要求先重新 read_file。
+   - **dry_run 的 diff 预览**（buildFileDiff / computeChangedLineRanges，
+     185 行）：Go 侧只返回行数变更摘要，不含 unified diff。
+2. **工具 schema 键序未与 TS 对账**：`orderedProps` 主动对键**排序**（字母序），
    而 TS 侧 schema 由 zod 生成（**插入序**）。当前注释自称「只要每次生成
    顺序一致即可保证请求体稳定」——这保证了**确定性**，但**未保证与 TS 字节
    等价**。工具 schema 进请求体时（`tools` 字段）是缓存命中率风险。
    待办：对账 TS 的真实 schema 键序，决定是否改为保插入序。
-2. **frozen 块位置**：TS 是 trailer-merge 到 user message（`engine.ts:659`），
+3. **frozen 块位置**：TS 是 trailer-merge 到 user message（`engine.ts:659`），
    Go 侧拼在 system prompt 后——`full.go` 注释标了是「最小可用路径」。
    后续移植 trailer-merge 时应**替换**而非叠加。
-3. **三处「最小可用路径」待替换**：`BuildFullSystemPrompt`（拼法）、
+4. **三处「最小可用路径」待替换**：`BuildFullSystemPrompt`（拼法）、
    `RenderProjectInstructionsBlock`（无 `<context>` 包裹）、
    `BuildSystemPromptWithProject`（已被 `full.go` 取代但保留，因 11 个测试锁定它）。
-4. **未移植的行为差异**：TS 的信任门 `isProjectTrusted`（Go 侧无 trust store）；
+5. **未移植的行为差异**：TS 的信任门 `isProjectTrusted`（Go 侧无 trust store）；
    Windows 的 `resolveShellCommand`（需真实 Windows 环境验证）。
-5. **`main` 分支未合并**：`go-runtime` 有 47 个提交，`main` 仍在 `69b0381`；
+6. **`main` 分支未合并**：`go-runtime` 有 47 个提交，`main` 仍在 `69b0381`；
    分支**未 push**。
 
 ## 建议的第一刀
