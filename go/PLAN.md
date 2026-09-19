@@ -474,8 +474,44 @@ XML 不转义 2 红 / checkpoint 不过滤 stale 5 红 / 晋升不去重 2 红 /
    晋升」语义完全没断言。改用**原始 JSON 键判定**（区分「值为 null」与
    「字段缺失」，二者在 Go 的 `*string` 上都解析为 nil）。
 
-**下一步**：claim-store 事件溯源 + 落盘（解锁 consistency-check 的真实副作用，
-即消除第九刀留下的 blocked 验收项）。
+### 第十一刀（已完成）：claim-store 投影层——事件溯源核心（2026-09-19）
+
+✅ `internal/context/claim_store.go`（194 行 + 258 行测试）
+
+**Scope Check**：TS 的 `claim-store` 有 15 个方法，含**写链治理**（异步写 /
+梯度重试 / 停链诊断——为治理 Node 事件循环饥饿，issue #61 族）。**Go 的并发
+模型不同，不需要复刻这套**。本轮做**投影层**（`applyEventsToMap` 的等价物）
+——纯函数、可 oracle 对账，是 store 的核心语义。
+
+对账四种事件的投影语义：
+
+- `claim_proposed` — **幂等**：同 ID 已存在则忽略（不覆盖）
+- `claim_status_changed` — 改状态；**新状态非 active 时追加反证**（回到 active
+  保留原反证，不追加）
+- `claim_used` — 追加消费者（**封顶 50，保留最近**），更新 lastUsedAt
+- `claim_boosted` — **覆盖** fitness（事件带结果值，不是增量）
+
+另有 `FilterClaims`（status / kind / scope 三维可选过滤）。
+
+**oracle 对账**：`testdata/claimstore/` 16 个用例。**注意**：TS 的
+`applyEventsToMap` 是 private——生成器通过 store 的**公开路径**
+（`propose` / `updateClaimStatus` / `recordClaimUsed` / `boostFitness`）间接
+导出，不侵入源码。**16 用例 × 2 维度全绿**。
+
+**探针先行**：写实现前先跑了一个 TS 探针（`.rivet/scratch/probe-store.ts`）
+确认 5 项行为——幂等 / 反证条件追加 / consumers 封顶保留最近 / lastUsedAt /
+boost 覆盖。探针输出与预期一致后才落 Go 实现。**探针已清理**。
+
+**变异反证 9 个：全部有判别力**（propose 不幂等 2 红 / 反证条件去掉 2 红 /
+封顶保留最旧 2 红 / 不封顶 2 红 / boost 累加 3 红 / 不更新 lastUsedAt 3 红 /
+status 过滤失效 2 红 / kind 过滤失效 2 红 / 未知 claimId 不忽略 2 红）。
+
+**未移植**（下一步）：JSONL 落盘与读回（`appendEvent` 的写链、`readEvents` 的
+外部修改检测、checkpoint 快照）。TS 那套为事件循环饥饿设计，Go 侧应用惯用
+方式重写，但**格式须与 TS 兼容**（跨版本可读）。
+
+**下一步**：claim-store 落盘 + 接给 consistency-check（消除第九刀的 blocked
+验收项）。
 
 **为什么是它而不是补工具**：
 

@@ -1,0 +1,1287 @@
+{
+  "propose_once": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      }
+    ]
+  },
+  "propose_idempotent": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      }
+    ]
+  },
+  "propose_two_distinct": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "b.ts 里有函数 Y",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      }
+    ]
+  },
+  "status_stale_adds_counterevidence": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "status",
+        "claimId": "",
+        "status": "stale",
+        "reason": "文件被改"
+      }
+    ]
+  },
+  "status_back_to_active": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "status",
+        "claimId": "",
+        "status": "stale",
+        "reason": "文件被改"
+      },
+      {
+        "op": "status",
+        "claimId": "",
+        "status": "active",
+        "reason": "重新确认"
+      }
+    ]
+  },
+  "status_multi_counterevidence": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "status",
+        "claimId": "",
+        "status": "stale",
+        "reason": "r1"
+      },
+      {
+        "op": "status",
+        "claimId": "",
+        "status": "conflicted",
+        "reason": "r2"
+      },
+      {
+        "op": "status",
+        "claimId": "",
+        "status": "quarantined",
+        "reason": "r3"
+      }
+    ]
+  },
+  "use_consumers": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c1",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000001
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c2",
+        "consumerKind": "tool",
+        "usedAt": 1700000000002
+      }
+    ]
+  },
+  "use_consumers_cap": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c000",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000000
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c001",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000001
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c002",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000002
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c003",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000003
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c004",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000004
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c005",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000005
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c006",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000006
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c007",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000007
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c008",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000008
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c009",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000009
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c010",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000010
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c011",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000011
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c012",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000012
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c013",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000013
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c014",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000014
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c015",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000015
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c016",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000016
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c017",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000017
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c018",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000018
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c019",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000019
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c020",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000020
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c021",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000021
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c022",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000022
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c023",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000023
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c024",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000024
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c025",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000025
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c026",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000026
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c027",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000027
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c028",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000028
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c029",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000029
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c030",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000030
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c031",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000031
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c032",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000032
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c033",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000033
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c034",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000034
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c035",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000035
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c036",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000036
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c037",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000037
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c038",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000038
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c039",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000039
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c040",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000040
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c041",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000041
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c042",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000042
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c043",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000043
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c044",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000044
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c045",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000045
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c046",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000046
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c047",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000047
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c048",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000048
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c049",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000049
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c050",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000050
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c051",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000051
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c052",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000052
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c053",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000053
+      },
+      {
+        "op": "use",
+        "claimId": "",
+        "consumerId": "c054",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000054
+      }
+    ]
+  },
+  "boost_fitness": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "boost",
+        "claimId": "",
+        "delta": 0.3,
+        "cap": 1
+      }
+    ]
+  },
+  "boost_fitness_cap": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "boost",
+        "claimId": "",
+        "delta": 0.9,
+        "cap": 0.6
+      }
+    ]
+  },
+  "unknown_claim_ignored": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "status",
+        "claimId": "nonexistent",
+        "status": "stale",
+        "reason": "r"
+      },
+      {
+        "op": "use",
+        "claimId": "nonexistent",
+        "consumerId": "c",
+        "consumerKind": "prompt",
+        "usedAt": 1700000000000
+      },
+      {
+        "op": "boost",
+        "claimId": "nonexistent",
+        "delta": 0.5,
+        "cap": 1
+      }
+    ]
+  },
+  "filter_kind": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "decision",
+          "scope": "session",
+          "text": "选了方案 A",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "user_constraint",
+          "scope": "session",
+          "text": "必须用 Go",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      }
+    ],
+    "filter": {
+      "kind": [
+        "decision"
+      ]
+    }
+  },
+  "filter_status": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "b",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "status",
+        "claimId": "",
+        "status": "stale",
+        "reason": "r"
+      }
+    ],
+    "filter": {
+      "status": [
+        "stale"
+      ]
+    }
+  },
+  "filter_scope": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "project",
+          "text": "p",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      }
+    ],
+    "filter": {
+      "scope": [
+        "project"
+      ]
+    }
+  },
+  "filter_multi": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "decision",
+          "scope": "session",
+          "text": "d",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "decision",
+          "scope": "project",
+          "text": "dp",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      }
+    ],
+    "filter": {
+      "kind": [
+        "decision"
+      ],
+      "scope": [
+        "project"
+      ]
+    }
+  },
+  "filter_empty": {
+    "ops": [
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "a.ts 里有函数 X",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      },
+      {
+        "op": "propose",
+        "proposal": {
+          "kind": "file_observation",
+          "scope": "session",
+          "text": "b",
+          "confidence": 0.7,
+          "fitness": 0.5,
+          "source": {
+            "actor": "tool",
+            "sessionId": "sess-1",
+            "turn": 1,
+            "eventId": "e1"
+          },
+          "evidence": [
+            {
+              "id": "ev1",
+              "kind": "tool_result",
+              "summary": "s",
+              "path": "a.ts",
+              "createdAt": 1700000000000
+            }
+          ],
+          "createdAt": 1700000000000,
+          "tags": [
+            "t"
+          ]
+        }
+      }
+    ],
+    "filter": {}
+  }
+}
