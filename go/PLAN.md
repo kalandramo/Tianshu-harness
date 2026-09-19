@@ -134,7 +134,23 @@ node_modules/.bin/tsx go/testdata/<name>/gen-oracle.ts
 
 ## 4. 下一步做什么（**按依赖排序，不按难度**）
 
-### 第一刀（推荐）：Wave 4 的 hook 管线 + 认知层
+### 第一刀（进行中）：Wave 4 的 hook 管线 + 认知层
+
+**进度：管线本体已完成（2026-09-19）**
+
+✅ `internal/agent/hooks.go`——五阶段管线本体（472 行 + 575 行测试，18 个测试）
+- 五阶段分派（preTurn / afterPerception / postTool / postTurn / postSession）
+- 阶段内**串行保序**（hook 有顺序依赖）
+- 单 hook 失败/超时**不中断**该阶段
+- 单 hook `BudgetMs` 覆盖全局预算
+- **迟到收尾**：超时后 hook 仍会 settle，迟到失败送 `OnError` 但不重复计 runs
+- `stats` 按 `phase:id` 键控（跨阶段同名不冲突）
+- panic 恢复（hook panic / OnRun 回调 panic 都不崩主流程）
+- 禁用集热更（只影响运行时，不改变注册集）
+
+变异反证 7 个：**全部有判别力**。
+
+**下一步**：具体 hook 移植（依赖 `internal/context` 认知层）。
 
 **为什么是它而不是补工具**：
 
