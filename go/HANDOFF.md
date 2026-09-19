@@ -350,6 +350,16 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **工具 schema 与 TS 逐字节对账（缓存命中率防线）**
+  - **背景**：Go 侧 `orderedProps` **字典序排序**属性键，TS 是**声明序**
+    ——而工具定义变化「打的是整个前缀（system+tools 段）」
+    （src/api/openai-client.ts:630），键序不同让前缀缓存**完全失效**
+  - **更严重**：不只是键序——**参数名本身不同**（`read_file` 用 `path`
+    而 TS 用 `file_path`）。这是**功能性缺陷**
+  - oracle 从真实注册表导出，三次生成 sha256 一致（可复现）
+  - **修掉 6 类缺陷** + 3 个消费方测试同步（详见欠账 #5）
+  - 变异反证 5 个：4 个有判别力；**M2 不可构造**——类型签名阻止
+    `strProp` 返回无序结构，这本身是类型的价值
 - [x] **会话落盘接线（悬空消除）**：`internal/session/listener.go` + `loop.go`/`main.go`
   - **背景**：上一轮完成 `Persist` 后核查发现 `internal/session` 的组件
     **全部零生产调用**——能力已实现但从未接线。本轮消除悬空。
@@ -662,6 +672,8 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   完整链路 / legacy 迁移 / 审计行跳过
 - `internal/session/listener.go`：**落盘接线**——flush 策略 / 元数据增量 /
   wire 桥接（`OaiMessageFromWire`）
+- `internal/tools/schema.go`：**schema 有序序列化**——`OrderedProps` /
+  `OrderValue`（从 agent 包移入，schema 序列化属 tools 领域）
 
 **本轮核心教训**：`orderedProps` 的数组型 schema 缺陷只在**接线后**暴露
 （单测工具全绿，接注册表立刻 panic）。这印证了「消费方核查」与
@@ -737,20 +749,31 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
    - **失败计数门**：连续 3 次失败后要求先重新 read_file。
    - **dry_run 的 diff 预览**（buildFileDiff / computeChangedLineRanges，
      185 行）：Go 侧只返回行数变更摘要，不含 unified diff。
-5. **工具 schema 键序未与 TS 对账**：`orderedProps` 主动对键**排序**（字母序），
-   而 TS 侧 schema 由 zod 生成（**插入序**）。当前注释自称「只要每次生成
-   顺序一致即可保证请求体稳定」——这保证了**确定性**，但**未保证与 TS 字节
-   等价**。工具 schema 进请求体时（`tools` 字段）是缓存命中率风险。
-   待办：对账 TS 的真实 schema 键序，决定是否改为保插入序。
-6. **frozen 块位置**：TS 是 trailer-merge 到 user message（`engine.ts:659`），
+5. ✅ **工具 schema 已与 TS 逐字节对账**（本轮完成）
+   - oracle：`go/testdata/toolschema/`（从**真实注册表**导出，非手抄）
+   - 测试：`TestToolSchemaParity`（名+声明序+required）+
+     `TestToolSchemaByteParity`（**完整序列化字节**，含嵌套键序与描述文本）
+   - **修掉的真实缺陷**：`read_file` 参数名 `path`→**`file_path`**（并补
+     `file_paths`/`focus`/`focus_max_matches`）；`bash`/`run_tests` 的
+     `timeout_ms`→**`timeout`**；`edit_file` 缺 `expected_count`/`dry_run`；
+     `todo` 缺 `acceptance`；`grep` 键序错；多处描述文本与约束
+     （`enum`/`minimum`）不符
+   - **结构性修复**：`contract.InputSchema` 加 `PropOrder []string`；
+     属性值改用 `*wire.OrderedMap`（`map[string]any` 无法表达嵌套键序）
+   - **未覆盖**：嵌套 object 的键序目前用字典序（oracle 显示 TS 这几处
+     恰为字典序）；`apply_patch` 不在默认注册表故未覆盖
+6. **schema 描述文本的漂移风险**：工具 schema 的 `description` 现已与 TS
+   逐字节对账，但 TS 侧改描述时 Go 不会自动跟随——需重跑 `gen-oracle.ts`
+   并修 Go 文本。这是**有意的**（显式失败优于静默漂移）。
+7. **frozen 块位置**：TS 是 trailer-merge 到 user message（`engine.ts:659`），
    Go 侧拼在 system prompt 后——`full.go` 注释标了是「最小可用路径」。
    后续移植 trailer-merge 时应**替换**而非叠加。
-7. **三处「最小可用路径」待替换**：`BuildFullSystemPrompt`（拼法）、
+8. **三处「最小可用路径」待替换**：`BuildFullSystemPrompt`（拼法）、
    `RenderProjectInstructionsBlock`（无 `<context>` 包裹）、
    `BuildSystemPromptWithProject`（已被 `full.go` 取代但保留，因 11 个测试锁定它）。
-8. **未移植的行为差异**：TS 的信任门 `isProjectTrusted`（Go 侧无 trust store）；
+9. **未移植的行为差异**：TS 的信任门 `isProjectTrusted`（Go 侧无 trust store）；
    Windows 的 `resolveShellCommand`（需真实 Windows 环境验证）。
-9. **分支策略**：`go-runtime` 已 push 到 `origin`（2026-09-19）；
+10. **分支策略**：`go-runtime` 已 push 到 `origin`（2026-09-19）；
    `main` 仍在 `69b0381` 未动（用户明确要求不合并）。Go 实现**将来要独立
    仓库**——当前 `go/` 与 TS 源码同仓库是过渡状态。拆分可行性已核实：
    52 个提交无交叉改动（无一个同时改 `go/` 与 `src/`）、所有 `.go` 都在

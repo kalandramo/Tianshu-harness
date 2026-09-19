@@ -36,13 +36,15 @@ func Grep(cwd string) Tool {
 - 结果按文件分组并带行号
 - pattern 可以是正则（默认）或字面量字符串（literal=true）
 - context_lines 附带上下文行（设 2-3 可直接看到周边代码）`,
-		InputSchema: objSchema(map[string]any{
+		InputSchema: objSchemaOrdered([]string{
+			"pattern", "path", "glob", "max_results", "literal", "context_lines",
+		}, map[string]any{
 			"pattern":       strProp("要搜索的正则或字面量模式"),
 			"path":          strProp("要搜索的目录或文件（默认：cwd）"),
 			"glob":          strProp("文件过滤，如 \"*.ts\" 或 \"*.{ts,tsx}\""),
-			"literal":       boolProp("把 pattern 按字面量处理，不当正则（默认 false）"),
-			"context_lines": intProp("每个匹配前后附带的上下文行数（默认 0）"),
-			"max_results":   intProp("最大匹配行数（默认 100）"),
+			"max_results":   intProp("最大匹配行数（默认：100）"),
+			"literal":       boolProp("把 pattern 按字面量处理，不当正则（默认：false）"),
+			"context_lines": intProp("每个匹配前后附带的上下文行数（默认：0）。设 2-3 可直接看到周边代码，省去单独的 read_file。"),
 		}, "pattern"),
 	}
 	t.enabled = true

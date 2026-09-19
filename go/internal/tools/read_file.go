@@ -41,11 +41,18 @@ func ReadFile(cwd string, grants pathsafe.GrantChecker) Tool {
 - offset/limit 只用于已知子区间（如第 800-900 行），不要拿它当长文件的绕行手段
 - 输出可能被截断（标记 [output truncated]）——**截断的观测不能支撑负向结论**
   （「我没看到 X」≠「X 不存在」），需换 grep 或分段读确认`,
-		InputSchema: objSchema(map[string]any{
-			"path":   strProp("文件路径（相对工作目录或绝对路径）"),
-			"offset": intProp("起始行号（从 1 开始）"),
-			"limit":  intProp("最多读取的行数"),
-		}, "path"),
+		InputSchema: objSchemaOrdered([]string{
+			"file_path", "file_paths", "offset", "limit", "focus", "focus_max_matches",
+		}, map[string]any{
+			"file_path": strProp("文件的绝对路径"),
+			"file_paths": arrayPropOrdered(
+				"一次调用读取多个文件。用于替代重复的 read_file 调用。每个文件单独成节。最多 5 个文件。",
+				"string"),
+			"offset":            intProp("起始读取行号（从 1 开始）"),
+			"limit":             intProp("最多读取的行数"),
+			"focus":             strProp("任务关键词或问题；只返回结构摘要和相关片段"),
+			"focus_max_matches": intProp("focus 最多返回的片段数量（默认 8）"),
+		}, "file_path"),
 	}
 	t.enabled = true
 	t.concurrent = true
@@ -55,7 +62,7 @@ func ReadFile(cwd string, grants pathsafe.GrantChecker) Tool {
 func (t *readFileTool) Timeout(*CallParams) time.Duration { return 30 * time.Second }
 
 func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Result, error) {
-	path, _ := p.Input["path"].(string)
+	path, _ := p.Input["file_path"].(string)
 	if path == "" {
 		return contract.Result{
 			Content: "read_file 需要 path 参数",

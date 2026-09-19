@@ -163,8 +163,8 @@ func TestBashTimeoutKills(t *testing.T) {
 
 	start := time.Now()
 	r, _ := tool.Execute(context.Background(), call(root, map[string]any{
-		"command":    "sleep 30",
-		"timeout_ms": 500,
+		"command": "sleep 30",
+		"timeout": 500,
 	}))
 	elapsed := time.Since(start)
 
@@ -193,8 +193,8 @@ func TestBashTimeoutKillsProcessGroup(t *testing.T) {
 	marker := filepath.Join(root, "still-alive.txt")
 	cmd := "sh -c 'sleep 20 && touch " + marker + "' & sleep 20"
 	_, _ = tool.Execute(context.Background(), call(root, map[string]any{
-		"command":    cmd,
-		"timeout_ms": 500,
+		"command": cmd,
+		"timeout": 500,
 	}))
 
 	// 等一段时间，确认后台子进程没有继续运行到写标记
@@ -284,7 +284,7 @@ func TestBashEmptyCommand(t *testing.T) {
 func TestBashCustomTimeout(t *testing.T) {
 	root := t.TempDir()
 	tool := Bash(root)
-	p := call(root, map[string]any{"command": "echo x", "timeout_ms": 5000})
+	p := call(root, map[string]any{"command": "echo x", "timeout": 5000})
 	if got := tool.Timeout(p); got != 5*time.Second {
 		t.Errorf("超时应为 5s，实际 %v", got)
 	}

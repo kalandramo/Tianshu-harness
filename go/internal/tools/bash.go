@@ -44,11 +44,10 @@ func Bash(cwd string) Tool {
   需换更窄的命令确认
 - 破坏性/不可逆命令（rm -rf、git reset --hard 等）需要用户明确批准
 - 超时默认 120 秒；超时会终止整个进程组（不留孤儿进程）`,
-		InputSchema: objSchema(map[string]any{
+		InputSchema: objSchemaOrdered([]string{"command", "timeout", "run_in_background"}, map[string]any{
 			"command":           strProp("要执行的 shell 命令"),
-			"timeout_ms":        intProp("超时毫秒数（默认 120000）"),
-			"description":       strProp("命令用途的简短描述（5-10 字）"),
-			"run_in_background": boolProp("后台运行（长任务用）"),
+			"timeout":           intPropMin("超时毫秒数（默认 120000；非正数按默认值处理）", 1),
+			"run_in_background": boolProp("设为 true 转入后台并返回 job id。自动检测已知长跑命令。"),
 		}, "command"),
 	}
 	t.enabled = true
@@ -59,7 +58,7 @@ func Bash(cwd string) Tool {
 // Timeout 返回工具级超时。
 func (t *bashTool) Timeout(p *CallParams) time.Duration {
 	if p != nil {
-		if ms := intArg(p.Input, "timeout_ms", 0); ms > 0 {
+		if ms := intArg(p.Input, "timeout", 0); ms > 0 {
 			return time.Duration(ms) * time.Millisecond
 		}
 	}

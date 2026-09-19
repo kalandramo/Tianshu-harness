@@ -37,7 +37,7 @@ func TestReadFileBasic(t *testing.T) {
 	mustWriteFile(t, filepath.Join(root, "a.txt"), "line1\nline2\nline3\n")
 
 	tool := ReadFile(root, nil)
-	r, err := tool.Execute(context.Background(), call(root, map[string]any{"path": "a.txt"}))
+	r, err := tool.Execute(context.Background(), call(root, map[string]any{"file_path": "a.txt"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestReadFileOffsetLimit(t *testing.T) {
 
 	tool := ReadFile(root, nil)
 	r, _ := tool.Execute(context.Background(), call(root, map[string]any{
-		"path": "a.txt", "offset": 2, "limit": 2,
+		"file_path": "a.txt", "offset": 2, "limit": 2,
 	}))
 	if !strings.Contains(r.Content, "l2") || !strings.Contains(r.Content, "l3") {
 		t.Errorf("区间读取错误：%s", r.Content)
@@ -70,7 +70,7 @@ func TestReadFileOffsetLimit(t *testing.T) {
 func TestReadFileEscapeBlocked(t *testing.T) {
 	root := t.TempDir()
 	tool := ReadFile(root, nil)
-	r, _ := tool.Execute(context.Background(), call(root, map[string]any{"path": "../../etc/passwd"}))
+	r, _ := tool.Execute(context.Background(), call(root, map[string]any{"file_path": "../../etc/passwd"}))
 	if !r.IsError {
 		t.Fatal("逃逸路径必须被拦截")
 	}
@@ -84,7 +84,7 @@ func TestReadFileSensitiveBlocked(t *testing.T) {
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, ".env"), "SECRET=1")
 	tool := ReadFile(root, nil)
-	r, _ := tool.Execute(context.Background(), call(root, map[string]any{"path": ".env"}))
+	r, _ := tool.Execute(context.Background(), call(root, map[string]any{"file_path": ".env"}))
 	if !r.IsError {
 		t.Fatal("敏感文件必须被拦截")
 	}
@@ -101,7 +101,7 @@ func TestReadFileBinaryRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	tool := ReadFile(root, nil)
-	r, _ := tool.Execute(context.Background(), call(root, map[string]any{"path": "bin.dat"}))
+	r, _ := tool.Execute(context.Background(), call(root, map[string]any{"file_path": "bin.dat"}))
 	if !r.IsError {
 		t.Fatal("二进制文件应被拒绝")
 	}
@@ -119,7 +119,7 @@ func TestReadFileTruncationMarked(t *testing.T) {
 	mustWriteFile(t, filepath.Join(root, "big.txt"), big)
 
 	tool := ReadFile(root, nil)
-	r, _ := tool.Execute(context.Background(), call(root, map[string]any{"path": "big.txt"}))
+	r, _ := tool.Execute(context.Background(), call(root, map[string]any{"file_path": "big.txt"}))
 
 	if r.Lossiness == nil {
 		t.Fatal("截断必须标记 Lossiness（否则模型会把截断当完整）")
@@ -137,7 +137,7 @@ func TestReadFileNoTruncationNoLossiness(t *testing.T) {
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "small.txt"), "hi")
 	tool := ReadFile(root, nil)
-	r, _ := tool.Execute(context.Background(), call(root, map[string]any{"path": "small.txt"}))
+	r, _ := tool.Execute(context.Background(), call(root, map[string]any{"file_path": "small.txt"}))
 	if r.Lossiness != nil {
 		t.Errorf("未截断时 Lossiness 应缺席，实际 %q", *r.Lossiness)
 	}
@@ -150,7 +150,7 @@ func TestReadFileDirectoryRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	tool := ReadFile(root, nil)
-	r, _ := tool.Execute(context.Background(), call(root, map[string]any{"path": "sub"}))
+	r, _ := tool.Execute(context.Background(), call(root, map[string]any{"file_path": "sub"}))
 	if !r.IsError {
 		t.Fatal("目录应被拒绝")
 	}
@@ -453,7 +453,7 @@ func TestRegistryExecuteAndAlias(t *testing.T) {
 	r := NewDefaultRegistry(Options{Cwd: root})
 
 	// 直接调用
-	if _, err := r.Execute(context.Background(), "read_file", call(root, map[string]any{"path": "x"})); err != nil {
+	if _, err := r.Execute(context.Background(), "read_file", call(root, map[string]any{"file_path": "x"})); err != nil {
 		t.Errorf("read_file 应可调用：%v", err)
 	}
 	// 未知名应给 did-you-mean

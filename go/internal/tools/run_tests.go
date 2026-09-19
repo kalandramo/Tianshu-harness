@@ -48,9 +48,9 @@ func RunTests(cwd string) Tool {
 - **blocked 是中性信号**：无测试框架 ≠ 测试失败。blocked 时门禁已重置，
   不是对你的拒绝；若项目缺测试基础设施，可询问用户是否需要协助搭建
 - filter 用于**定位测试文件**（不是筛选测试名）——按文件名或相对路径匹配`,
-		InputSchema: objSchema(map[string]any{
-			"filter":     strProp("测试文件名、词干或相对路径（不是测试名）"),
-			"timeout_ms": intProp("超时毫秒数（默认 300000）"),
+		InputSchema: objSchemaOrdered([]string{"filter", "timeout"}, map[string]any{
+			"filter":  strProp("测试文件名、词干或相对路径（不是测试名）。留空跑全量。"),
+			"timeout": intProp("超时时间（毫秒，默认：120000）"),
 		}),
 	}
 	t.enabled = true
@@ -60,7 +60,7 @@ func RunTests(cwd string) Tool {
 
 func (t *runTestsTool) Timeout(p *CallParams) time.Duration {
 	if p != nil {
-		if ms := intArg(p.Input, "timeout_ms", 0); ms > 0 {
+		if ms := intArg(p.Input, "timeout", 0); ms > 0 {
 			return time.Duration(ms) * time.Millisecond
 		}
 	}

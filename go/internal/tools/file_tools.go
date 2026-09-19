@@ -30,14 +30,12 @@ func WriteFile(cwd string, grants pathsafe.GrantChecker) Tool {
 - 对已有文件的定点修改优先用 edit_file
 - write_file 只用于新文件或整文件重写
 - overwrite 时 content 是完整文件内容（不是 diff）；append 时 content 是本次追加的块`,
-		InputSchema: objSchema(map[string]any{
-			"file_path": strProp("文件的绝对路径"),
-			"content":   strProp("完整文件内容（overwrite）或本次追加块（append）"),
-			"mode": map[string]any{
-				"type":        "string",
-				"description": "写入模式",
-				"enum":        []any{"overwrite", "append"},
-			},
+		InputSchema: objSchemaOrdered([]string{"file_path", "content", "mode"}, map[string]any{
+			"file_path": strProp("文件的绝对路径。先提供此参数。"),
+			"content":   strProp("完整文件内容（append 时为本块内容；不是 diff）。最后提供此参数。"),
+			"mode": enumPropOrdered(
+				"写入模式。缺省 overwrite 整文件覆盖；append 原样追加到文件末尾（不自动加换行），用于分块写入新文件。",
+				[]string{"overwrite", "append"}),
 		}, "file_path", "content"),
 	}
 	t.enabled = true
@@ -123,11 +121,15 @@ func EditFile(cwd string, grants pathsafe.GrantChecker) Tool {
 - 严格保留文件原有的缩进（tabs/spaces）
 - replace_all 替换所有出现处
 - 大编辑后消息历史只保留短指针——看到指针说明编辑已成功，不要重做`,
-		InputSchema: objSchema(map[string]any{
-			"file_path":   strProp("要编辑文件的绝对路径"),
-			"old_string":  strProp("要替换的原始文本（必须在文件中唯一）"),
-			"new_string":  strProp("替换后的文本"),
-			"replace_all": boolProp("替换 old_string 的所有出现处（默认 false）"),
+		InputSchema: objSchemaOrdered([]string{
+			"file_path", "old_string", "new_string", "replace_all", "expected_count", "dry_run",
+		}, map[string]any{
+			"file_path":      strProp("要编辑文件的绝对路径。先提供此参数。"),
+			"old_string":     strProp("要替换的原始文本（必须在文件中唯一）"),
+			"new_string":     strProp("替换后的文本"),
+			"replace_all":    boolProp("替换 old_string 的所有出现处（默认：false）"),
+			"expected_count": numProp("replace_all 为 true 时预期的替换次数。实际次数不符时返回警告，便于你用 grep 核实是否有遗漏（例如缩进差异导致的漏配）。"),
+			"dry_run":        boolProp("为 true 时，计算并返回将要应用的 diff，但不写盘。"),
 		}, "file_path", "old_string", "new_string"),
 	}
 	t.enabled = true
@@ -222,7 +224,7 @@ func Glob(cwd string) Tool {
 - 读取文件前，先用 glob 按名称或模式定位文件
 - 支持 ** 递归匹配目录、* 通配符、? 单字符、{a,b} 多选一
 - 结果排序返回，上限 500 条`,
-		InputSchema: objSchema(map[string]any{
+		InputSchema: objSchemaOrdered([]string{"pattern", "path"}, map[string]any{
 			"pattern": strProp("Glob 模式，如 \"src/**/*.ts\" 或 \"*.md\""),
 			"path":    strProp("搜索的根目录（默认：cwd）"),
 		}, "pattern"),

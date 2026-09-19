@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"github.com/kalandramo/tianshu/go/internal/api/wire"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,11 +52,16 @@ func TestHashEditDefinition(t *testing.T) {
 		}
 	}
 	// anchors 必须是数组型（回归：数组型 schema 曾导致序列化 panic）
-	anchorsProp, _ := def.InputSchema.Properties["anchors"].(map[string]any)
-	if anchorsProp["type"] != "array" {
-		t.Errorf("anchors 应为 array 型，得到 %v", anchorsProp["type"])
+	// anchors 必须是数组型（回归：数组型 schema 曾导致序列化 panic）
+	// 属性值现在是有序结构（*wire.OrderedMap）——对账 TS 的键序。
+	anchorsProp, ok := def.InputSchema.Properties["anchors"].(*wire.OrderedMap)
+	if !ok {
+		t.Fatalf("anchors 应为有序结构，得到 %T", def.InputSchema.Properties["anchors"])
 	}
-	if _, ok := anchorsProp["items"]; !ok {
+	if v, _ := anchorsProp.Get("type"); v != "array" {
+		t.Errorf("anchors 应为 array 型，得到 %v", v)
+	}
+	if _, ok := anchorsProp.Get("items"); !ok {
 		t.Error("anchors 应有 items 定义")
 	}
 }

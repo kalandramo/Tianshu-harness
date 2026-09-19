@@ -30,10 +30,19 @@ type Usage struct {
 
 // InputSchema 是工具入参的 JSON Schema。
 type InputSchema struct {
-	Type                 string         `json:"type"`
-	Properties           map[string]any `json:"properties"`
-	Required             []string       `json:"required,omitempty"`
-	AdditionalProperties *bool          `json:"additionalProperties,omitempty"`
+	Type string `json:"type"`
+	// Properties 是属性定义。**map 无插入序**——序列化时用 PropOrder 决定键序。
+	Properties map[string]any `json:"properties"`
+	// PropOrder 是属性的**声明序**（对账 TS 的对象字面量序）。
+	//
+	// 为什么必须显式给出：TS 侧 schema 是对象字面量（zod 亦保声明序），
+	// 而工具定义变化「打的是整个前缀（system+tools 段）」
+	// （src/api/openai-client.ts:630）——键序不同会让前缀缓存**完全失效**。
+	//
+	// 为 nil 时退化为字典序（旧行为，**会破坏缓存**，仅供无 oracle 的场景）。
+	PropOrder            []string `json:"-"`
+	Required             []string `json:"required,omitempty"`
+	AdditionalProperties *bool    `json:"additionalProperties,omitempty"`
 }
 
 // Definition 是工具的对外声明（模型可见的接口）。

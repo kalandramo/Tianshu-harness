@@ -338,9 +338,11 @@ apply_patch 加 unified diff。
 不是你写了占位符，不要重做。后续轮次用 read_file 回看当前内容。
 new_string 必须是真实文件内容；把历史里的
 [hash_edit applied to …] 指针原样传回会被拦截。`,
-		InputSchema: objSchema(map[string]any{
-			"file_path":  strProp("要编辑文件的绝对路径。先提供此参数。"),
-			"anchors":    arrProp("1-3 个锚点，格式 \"L<line>:<8-char-hex>\"（完整）或 \"L<line>\"（仅位置）。首尾锚点定义含两端在内的替换区间。", strProp("锚点字符串")),
+		InputSchema: objSchemaOrdered([]string{"file_path", "anchors", "new_string", "dry_run"}, map[string]any{
+			"file_path": strProp("要编辑文件的绝对路径。先提供此参数。"),
+			"anchors": arrayPropOrdered(
+				"1-3 个锚点，格式 \"L<line>:<8-char-hex>\"（完整）或 \"L<line>\"（仅位置）。首尾锚点定义含两端在内的替换区间。",
+				"string"),
 			"new_string": strProp("锚定区间的替换文本。传 \"\" 表示删除。最后提供此参数。"),
 			"dry_run":    boolProp("为 true 时，计算并返回将要应用的 diff，但不写盘。"),
 		}, "file_path", "anchors", "new_string"),

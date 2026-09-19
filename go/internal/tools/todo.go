@@ -37,14 +37,25 @@ func Todo() Tool {
 - 多步任务（3+ 步）开始前先 write 建清单，每完成一步就更新状态
 - status 只接受 pending / in_progress / completed
 - 任何时刻恰好一个 in_progress——同时进行多项会失去进度锚点`,
-		InputSchema: objSchema(map[string]any{
-			"action": strProp("read | write"),
-			"todos": arrProp("完整 todo 清单（仅 write 用）", objPropMap(map[string]any{
-				"id":         strProp("任务唯一标识"),
-				"content":    strProp("任务描述（祈使式，如「修复认证 bug」）"),
-				"status":     enumProp("任务状态", []string{"pending", "in_progress", "completed"}),
-				"activeForm": strProp("进行中的现在时说法；可选，缺省时面板显示 content"),
-			}, "id", "content", "status")),
+		InputSchema: objSchemaOrdered([]string{"action", "todos", "acceptance"}, map[string]any{
+			"action": enumPropOrdered("read 读当前清单；write 写新清单", []string{"read", "write"}),
+			"todos": arrPropOrdered("完整 todo 清单（仅 write 用）", objPropMapOrdered(
+				[]string{"id", "content", "status", "activeForm"},
+				map[string]any{
+					"id":         strProp("任务唯一标识"),
+					"content":    strProp("任务描述（祈使式，如「修复认证 bug」）"),
+					"status":     enumPropOrdered("任务状态", []string{"pending", "in_progress", "completed"}),
+					"activeForm": strProp("进行中的现在时说法（如「正在修复认证 bug」）；可选，缺省时面板显示 content"),
+				}, "id", "content", "status")),
+			"acceptance": arrPropOrdered(
+				"用户级验收面（可选，代码任务建议首次 write 就带；声明须早于验证）。正例「按 ESC 后弹窗 isVisible() 为 False」。反例一律拒绝：「信号连通」「函数逻辑正确」是内部属性；「所有测试通过」「跑 test_x.py 看到 3 passed」是信号级——单测覆盖的是函数分支，不是用户按键后的行为。",
+				objPropMapOrdered(
+					[]string{"criterion", "status", "evidence"},
+					map[string]any{
+						"criterion": strProp("用户做什么动作 → 看到什么可观察结果"),
+						"status":    enumPropOrdered("", []string{"pending", "met", "blocked"}),
+						"evidence":  strProp("met：实际做了什么、观察到什么；blocked：为何执行不了"),
+					}, "criterion", "status")),
 		}, "action"),
 	}
 	return t

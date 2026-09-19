@@ -317,7 +317,7 @@ func (l *Loop) toolDefs() []*wire.OrderedMap {
 			params := wire.NewOrderedMap().
 				Set("type", d.InputSchema.Type)
 			if d.InputSchema.Properties != nil {
-				params.Set("properties", orderedProps(d.InputSchema.Properties))
+				params.Set("properties", tools.OrderedProps(d.InputSchema.Properties, d.InputSchema.PropOrder))
 			}
 			if len(d.InputSchema.Required) > 0 {
 				req := make([]any, len(d.InputSchema.Required))
@@ -339,43 +339,6 @@ func (l *Loop) toolDefs() []*wire.OrderedMap {
 //
 // 注意：properties 的键序按字母升序固定——schema 由我们生成，
 // 只要每次生成顺序一致即可保证请求体稳定。
-func orderedProps(props map[string]any) *wire.OrderedMap {
-	om := wire.NewOrderedMap()
-	keys := make([]string, 0, len(props))
-	for k := range props {
-		keys = append(keys, k)
-	}
-	// 插入排序（键数极少）
-	for i := 1; i < len(keys); i++ {
-		for j := i; j > 0 && keys[j] < keys[j-1]; j-- {
-			keys[j], keys[j-1] = keys[j-1], keys[j]
-		}
-	}
-	for _, k := range keys {
-		om.Set(k, orderValue(props[k]))
-	}
-	return om
-}
-
-// orderValue 递归把 schema 值转为有序结构。
-//
-// 必须处理 **[]any 内的 map**——数组型 schema（如 todo 的 todos）
-// 的 items 是嵌套 object，不递归会让 wire.writeValue 遇到裸 map 而排序键，
-// 破坏 schema 的字节稳定性；更糟的是遇到非 map 类型（如 *InputSchema）直接 panic。
-func orderValue(v any) any {
-	switch x := v.(type) {
-	case map[string]any:
-		return orderedProps(x)
-	case []any:
-		out := make([]any, len(x))
-		for i, e := range x {
-			out[i] = orderValue(e)
-		}
-		return out
-	default:
-		return v
-	}
-}
 
 // buildAssistantMessage 从本回合的收集结果构造 assistant 消息。
 //

@@ -137,7 +137,7 @@ func TestLoopToolCallCycle(t *testing.T) {
 	writeFile(t, root+"/data.txt", "文件内容")
 
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "read_file", `{"path":"data.txt"}`),
+		toolTurn("c1", "read_file", `{"file_path":"data.txt"}`),
 		textTurn("读到了"),
 	}}
 	srv := httptest.NewServer(sc.handler())
@@ -185,7 +185,7 @@ func TestAssistantMessageCarriesToolCalls(t *testing.T) {
 	writeFile(t, root+"/a.txt", "x")
 
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "read_file", `{"path":"a.txt"}`),
+		toolTurn("c1", "read_file", `{"file_path":"a.txt"}`),
 		textTurn("done"),
 	}}
 	srv := httptest.NewServer(sc.handler())
@@ -280,7 +280,7 @@ func TestMaxTurnsEnforced(t *testing.T) {
 
 	// 每次都返回工具调用 → 若无预算限制会无限循环
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "read_file", `{"path":"a.txt"}`),
+		toolTurn("c1", "read_file", `{"file_path":"a.txt"}`),
 	}}
 	srv := httptest.NewServer(sc.handler())
 	defer srv.Close()
@@ -353,7 +353,7 @@ func TestLoopChainedToolCalls(t *testing.T) {
 	writeFile(t, root+"/a.txt", "AAA")
 
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "read_file", `{"path":"a.txt"}`),
+		toolTurn("c1", "read_file", `{"file_path":"a.txt"}`),
 		toolTurn("c2", "grep", `{"pattern":"AAA"}`),
 		textTurn("完成"),
 	}}
@@ -388,7 +388,7 @@ func TestToolErrorFedBack(t *testing.T) {
 	root := t.TempDir()
 
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "read_file", `{"path":"nonexistent.txt"}`),
+		toolTurn("c1", "read_file", `{"file_path":"nonexistent.txt"}`),
 		textTurn("文件不存在"),
 	}}
 	srv := httptest.NewServer(sc.handler())
@@ -510,20 +510,18 @@ func TestToolDefsArraySchemaNoPanic(t *testing.T) {
 		t.Errorf("序列化结果应含 status 的 enum 约束：%s", s)
 	}
 
-	// **确定性断言**——这是本测试真正锁的契约。
+	// **确定性断言**——同一输入两次序列化字节一致。
 	//
-	// orderedProps 会**主动对键排序**（见其注释：schema 由我们生成，
-	// 只要每次生成顺序一致即可保证请求体稳定）。所以 items 内的键序
-	// 是字母序，不是插入序——这与 TS 侧（zod 生成序）**尚未对账**，
-	// 是已知欠账（见 HANDOFF）。
-	//
-	// 此处只锁「同一输入两次序列化字节一致」——这是前缀缓存的最低要求。
+	// 键序的**正确性**由 `internal/tools/schema_parity_test.go` 的
+	// TestToolSchemaByteParity 与 TS oracle 逐字节对账（9/9 绿）；
+	// 此处只锁「确定性」这一更弱的契约，作为前缀缓存的底线防线。
 	if again := l.toolDefs()[0].Marshal(); again != s {
 		t.Errorf("两次序列化应字节一致\n  第一次: %s\n  第二次: %s", s, again)
 	}
 
 	// 嵌套结构完整性：items 内的 properties 必须被递归展开（不是裸 map 排序）
-	if !containsSub(s, `"items":{"properties":{`) {
+	// items 内的 object 必须被递归展开为有序结构（含 type），不是裸 map
+	if !containsSub(s, `"items":{"type":"object","properties":{`) {
 		t.Errorf("items 内应有递归展开的 properties：%s", s)
 	}
 	if !containsSub(s, `"required":["id","content","status"]`) {

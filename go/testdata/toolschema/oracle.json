@@ -1,0 +1,1033 @@
+{
+  "read_file": {
+    "description": "从文件系统读取文件，支持可选的行范围。\n\n- 约 50,000 行以内的文件完整返回——不要自己切成小片分多次读\n- focus=\"...\" 用于按当前任务提取关键代码：返回结构摘要和高相关行段，避免把无关正文塞进上下文\n- offset/limit 只用于已知子区间（如第 800-900 行），不要拿它当长文件的绕行手段\n- 超过约 2000 行的文件返回 PARTIAL 视图并附导航提示\n- 已读文件的内容会驻留上下文、可直接引用；仅当文件可能已变化（外部修改、并发写入、或你刚编辑过）或所需内容不在已读范围内时，重读是恰当的\n- 小文件（如数百行内的日志与配置）优先整体读取——整读覆盖全部相关细节，定向搜索可能遗漏关键上下文\n- file_paths 一次调用最多读 5 个文件\n- 图片文件（png / jpg / jpeg / gif / webp / bmp）会作为视觉附件返回——视觉模型可直接查看图片内容作答（如扫描件、截图、图表），无需先 OCR；非视觉模型该附件自动丢弃",
+    "inputSchema": {
+      "__ordered": [
+        [
+          "type",
+          "object"
+        ],
+        [
+          "properties",
+          {
+            "__ordered": [
+              [
+                "file_path",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "文件的绝对路径"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "file_paths",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "array"
+                    ],
+                    [
+                      "items",
+                      {
+                        "__ordered": [
+                          [
+                            "type",
+                            "string"
+                          ]
+                        ]
+                      }
+                    ],
+                    [
+                      "description",
+                      "一次调用读取多个文件。用于替代重复的 read_file 调用。每个文件单独成节。最多 5 个文件。"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "offset",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "integer"
+                    ],
+                    [
+                      "description",
+                      "起始读取行号（从 1 开始）"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "limit",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "integer"
+                    ],
+                    [
+                      "description",
+                      "最多读取的行数"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "focus",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "任务关键词或问题；只返回结构摘要和相关片段"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "focus_max_matches",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "integer"
+                    ],
+                    [
+                      "description",
+                      "focus 最多返回的片段数量（默认 8）"
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        [
+          "required",
+          [
+            "file_path"
+          ]
+        ]
+      ]
+    },
+    "propOrder": [
+      "file_path",
+      "file_paths",
+      "offset",
+      "limit",
+      "focus",
+      "focus_max_matches"
+    ],
+    "required": [
+      "file_path"
+    ]
+  },
+  "write_file": {
+    "description": "创建、覆盖或追加一个文件。自动创建父目录。\n\n### 用法\n- 对已有文件的定点修改优先用 edit_file\n- write_file 只用于新文件或整文件重写\n- 始终提供绝对文件路径\n- overwrite 时 content 是完整文件内容（不是 diff）；append 时 content 是本次追加的块\n- 父目录不存在时自动创建\n- mode 缺省 overwrite；append 把内容原样追加到文件末尾（不自动加换行）\n- 单次内容过大时分块写新文件：先 overwrite 第一块，再用 append 依次追加后续块；绝不要用分块方式修改已有文件的中间部分\n\n### 示例\n好的：write_file(file_path=\"/abs/path/src/new-component.tsx\", content=\"...full file content...\")\n好的：write_file(file_path=\"/abs/path/big-data.sql\", content=\"...chunk 2...\", mode=\"append\")\n坏的：用 write_file 只改已有文件里的一行（应改用 edit_file）\n\n**注意：** 磁盘上的文件是唯一事实来源。写入成功后无需重写或回贴内容确认；后续轮次如需回看写入内容，用 `read_file`。",
+    "inputSchema": {
+      "__ordered": [
+        [
+          "type",
+          "object"
+        ],
+        [
+          "properties",
+          {
+            "__ordered": [
+              [
+                "file_path",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "文件的绝对路径。先提供此参数。"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "content",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "完整文件内容（append 时为本块内容；不是 diff）。最后提供此参数。"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "mode",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "enum",
+                      [
+                        "overwrite",
+                        "append"
+                      ]
+                    ],
+                    [
+                      "description",
+                      "写入模式。缺省 overwrite 整文件覆盖；append 原样追加到文件末尾（不自动加换行），用于分块写入新文件。"
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        [
+          "required",
+          [
+            "file_path",
+            "content"
+          ]
+        ]
+      ]
+    },
+    "propOrder": [
+      "file_path",
+      "content",
+      "mode"
+    ],
+    "required": [
+      "file_path",
+      "content"
+    ]
+  },
+  "edit_file": {
+    "description": "在已有文件中执行精确字符串替换。\n\n- old_string 必须唯一——必要时带上周边上下文\n- 严格保留文件原有的缩进（tabs/spaces）\n- replace_all 替换所有出现处；expected_count 数量不符时给出警告\n- 大编辑后消息历史只保留短指针——看到指针说明编辑已成功，不要重做；用 read_file 回看\n\n唯一字符串替换优先用 edit_file；空白字符有歧义的编辑用 hash_edit；单文件多处改动、超过约 20 行的编辑或结构性重构，用 apply_patch 加 unified diff。",
+    "inputSchema": {
+      "__ordered": [
+        [
+          "type",
+          "object"
+        ],
+        [
+          "properties",
+          {
+            "__ordered": [
+              [
+                "file_path",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "要编辑文件的绝对路径。先提供此参数。"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "old_string",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "要替换的原始文本（必须在文件中唯一）"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "new_string",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "替换后的文本"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "replace_all",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "boolean"
+                    ],
+                    [
+                      "description",
+                      "替换 old_string 的所有出现处（默认：false）"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "expected_count",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "number"
+                    ],
+                    [
+                      "description",
+                      "replace_all 为 true 时预期的替换次数。实际次数不符时返回警告，便于你用 grep 核实是否有遗漏（例如缩进差异导致的漏配）。"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "dry_run",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "boolean"
+                    ],
+                    [
+                      "description",
+                      "为 true 时，计算并返回将要应用的 diff，但不写盘。"
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        [
+          "required",
+          [
+            "file_path",
+            "old_string",
+            "new_string"
+          ]
+        ]
+      ]
+    },
+    "propOrder": [
+      "file_path",
+      "old_string",
+      "new_string",
+      "replace_all",
+      "expected_count",
+      "dry_run"
+    ],
+    "required": [
+      "file_path",
+      "old_string",
+      "new_string"
+    ]
+  },
+  "hash_edit": {
+    "description": "内容哈希锚定的文件编辑。比 edit_file 更安全的替代。\n\n锚点格式为 L<line>:<8-char-hex>（完整哈希校验）或 L<line>\n（仅位置快速路径——仅在你刚读过该文件时使用）。提供 1-3 个\n锚点：首尾锚点定义含两端在内的替换区间；中间锚点校验区间内部。\n单锚点模式替换该行（要插入就把该行内容原样放进 new_string 首/尾）。\n\n哈希：SHA256(line_content_without_trailing_cr)[0:8]。\ngrep 结果对单文件匹配附带锚点提示。\n\n### 锚点是一次性坐标\n任何对该文件的写入都会让此前取得的锚点作废——包括你自己上一次的\nhash_edit / edit_file / write_file。编辑点之后的所有行号还会整体漂移\n（漂移量 = 新行数 − 旧行数）。拿旧锚点重试同一调用只会再次失败。\n\n同一文件连续编辑：\n- 改**刚编辑过的那一块**：用成功回传的「新鲜锚点」（只覆盖编辑点前后\n  各一行与新块首尾）。\n- 改**该文件的其他位置**：先用 grep 重新取锚点。read_file 的输出不带\n  哈希，只有 grep 会给出 L<line>:<hash> 提示。\n- 一次要改多处时，**从文件末尾往前改**——这样先改的位置不会让后面\n  待改位置的行号漂移。\n\n仅位置模式（L<line> 无哈希）适合首次编辑，且绝不能连续链式使用；\n链式编辑一律用带哈希的完整锚点（L<line>:<hash>）。\n\n### 示例\n替换 L5-L7：anchors=[\"L5:a1b2c3d4\",\"L7:e5f6a7b8\"], new_string=\"新5\\n新6\\n新7\"\n删除 L10-L12：anchors=[\"L10:deadbeef\",\"L12:cafebabe\"], new_string=\"\"\n在 L42 后插入：anchors=[\"L42:feedface\"], new_string=\"<L42 原内容>\\n新增行\"\n\n多处改动、超过约 20 行的编辑或结构性重构，优先用\napply_patch 加 unified diff。\n\n注意：new_string 较大时，消息历史只保留短指针\n（file_path + 大小）——看到指针说明那次编辑已成功落盘，\n不是你写了占位符，不要重做。后续轮次用 read_file 回看当前内容。\nnew_string 必须是真实文件内容；把历史里的\n[hash_edit applied to …] 指针原样传回会被拦截。",
+    "inputSchema": {
+      "__ordered": [
+        [
+          "type",
+          "object"
+        ],
+        [
+          "properties",
+          {
+            "__ordered": [
+              [
+                "file_path",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "要编辑文件的绝对路径。先提供此参数。"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "anchors",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "array"
+                    ],
+                    [
+                      "items",
+                      {
+                        "__ordered": [
+                          [
+                            "type",
+                            "string"
+                          ]
+                        ]
+                      }
+                    ],
+                    [
+                      "description",
+                      "1-3 个锚点，格式 \"L<line>:<8-char-hex>\"（完整）或 \"L<line>\"（仅位置）。首尾锚点定义含两端在内的替换区间。"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "new_string",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "锚定区间的替换文本。传 \"\" 表示删除。最后提供此参数。"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "dry_run",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "boolean"
+                    ],
+                    [
+                      "description",
+                      "为 true 时，计算并返回将要应用的 diff，但不写盘。"
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        [
+          "required",
+          [
+            "file_path",
+            "anchors",
+            "new_string"
+          ]
+        ]
+      ]
+    },
+    "propOrder": [
+      "file_path",
+      "anchors",
+      "new_string",
+      "dry_run"
+    ],
+    "required": [
+      "file_path",
+      "anchors",
+      "new_string"
+    ]
+  },
+  "glob": {
+    "description": "查找匹配 glob 模式的文件。\n\n### 用法\n- 读取文件前，先用 glob 按名称或模式定位文件\n- 支持 ** 递归匹配目录\n- 支持 * 通配符、? 单字符、{a,b} 多选一\n- 结果排序返回，上限 500 条\n\n### 示例\nGood: glob(pattern=\"src/**/*.ts\")\nGood: glob(pattern=\"*.test.ts\", path=\"src/\")\nGood: glob(pattern=\"src/components/**/*.tsx\")\nBad: glob(pattern=\"node_modules/**\") (excluded by default)",
+    "inputSchema": {
+      "__ordered": [
+        [
+          "type",
+          "object"
+        ],
+        [
+          "properties",
+          {
+            "__ordered": [
+              [
+                "pattern",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "Glob 模式，如 \"src/**/*.ts\" 或 \"*.md\""
+                    ]
+                  ]
+                }
+              ],
+              [
+                "path",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "搜索的根目录（默认：cwd）"
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        [
+          "required",
+          [
+            "pattern"
+          ]
+        ]
+      ]
+    },
+    "propOrder": [
+      "pattern",
+      "path"
+    ],
+    "required": [
+      "pattern"
+    ]
+  },
+  "grep": {
+    "description": "用正则或字面量模式搜索文件内容。\n\n### 用法\n- 用 grep 在源码中查找函数、类、模式或关键字\n- 优先用本工具而不是 bash grep/rg——更快，且遵守 .gitignore\n- 结果按文件分组并带行号\n- pattern 可以是正则（默认）或字面量字符串\n- 不知道确切字符串或符号、需要按概念搜索时，改用 semantic_search\n\n### 示例\nGood: grep(pattern=\"function handleSubmit\", path=\"src/\")\nGood: grep(pattern=\"API_KEY\", path=\".\", glob=\"*.{ts,tsx}\")\nGood: grep(pattern=\"class Foo\", path=\"src/\", context_lines=3)\nBad: grep(pattern=\"x\") (too broad — will match too many lines)",
+    "inputSchema": {
+      "__ordered": [
+        [
+          "type",
+          "object"
+        ],
+        [
+          "properties",
+          {
+            "__ordered": [
+              [
+                "pattern",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "要搜索的正则或字面量模式"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "path",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "要搜索的目录或文件（默认：cwd）"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "glob",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "文件过滤，如 \"*.ts\" 或 \"*.{ts,tsx}\""
+                    ]
+                  ]
+                }
+              ],
+              [
+                "max_results",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "integer"
+                    ],
+                    [
+                      "description",
+                      "最大匹配行数（默认：100）"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "literal",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "boolean"
+                    ],
+                    [
+                      "description",
+                      "把 pattern 按字面量处理，不当正则（默认：false）"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "context_lines",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "integer"
+                    ],
+                    [
+                      "description",
+                      "每个匹配前后附带的上下文行数（默认：0）。设 2-3 可直接看到周边代码，省去单独的 read_file。"
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        [
+          "required",
+          [
+            "pattern"
+          ]
+        ]
+      ]
+    },
+    "propOrder": [
+      "pattern",
+      "path",
+      "glob",
+      "max_results",
+      "literal",
+      "context_lines"
+    ],
+    "required": [
+      "pattern"
+    ]
+  },
+  "bash": {
+    "description": "执行 shell 命令，用于构建、测试、git 和系统操作。\n\n用 && 串联独立命令。长时间运行的命令（dev server、watcher、install）传 run_in_background=true 转入后台，用 job 工具查看/等待/终止。自动检测已知长跑命令也会后台化。",
+    "inputSchema": {
+      "__ordered": [
+        [
+          "type",
+          "object"
+        ],
+        [
+          "properties",
+          {
+            "__ordered": [
+              [
+                "command",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "要执行的 shell 命令"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "timeout",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "integer"
+                    ],
+                    [
+                      "minimum",
+                      1
+                    ],
+                    [
+                      "description",
+                      "超时毫秒数（默认 120000；非正数按默认值处理）"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "run_in_background",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "boolean"
+                    ],
+                    [
+                      "description",
+                      "设为 true 转入后台并返回 job id。自动检测已知长跑命令。"
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        [
+          "required",
+          [
+            "command"
+          ]
+        ]
+      ]
+    },
+    "propOrder": [
+      "command",
+      "timeout",
+      "run_in_background"
+    ],
+    "required": [
+      "command"
+    ]
+  },
+  "run_tests": {
+    "description": "运行项目测试并返回解析后的结果。\n\n### 用法\n- 修改代码后用 run_tests 验证改动\n- filter 用于**定位测试文件**，不是筛选测试名——按 src/**/*<filter>*.test.* 匹配\n- 自动检测 Node.js 测试脚本和 Python pytest 项目\n- 无法推断出安全的 runner 时，返回受阻的验证结果，并指引改用 bash\n- 报告：exit code、失败的测试、错误详情、耗时\n\n### filter 怎么写\n文件名和相对路径都可以，带不带 .test/.spec 后缀都能解析：\n好：run_tests() —— 运行全部测试\n好：run_tests(filter=\"loop.test.ts\") —— 按文件名定位\n好：run_tests(filter=\"loop\") —— 词干也可以，命中多个时取最贴近的\n好：run_tests(filter=\"src/agent/__tests__/loop.test.ts\") —— 相对路径最精确\n好：run_tests(filter=\"tests/test_example.py\") —— 一个 Python pytest 文件\n坏：run_tests(filter=\"handles empty input\") —— 这是测试名，定位不到文件会受阻\n坏：run_tests(filter=\"star-genesis\") —— 源文件名而无同名测试文件时同样受阻\n\n要按测试名筛选，用 bash 执行项目自身的测试命令（如 --test-name-pattern）。\n不确定测试文件叫什么，先用 glob 找 **/*<关键词>*.test.ts。",
+    "inputSchema": {
+      "__ordered": [
+        [
+          "type",
+          "object"
+        ],
+        [
+          "properties",
+          {
+            "__ordered": [
+              [
+                "filter",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "测试文件名、词干或相对路径（不是测试名）。留空跑全量。"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "timeout",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "integer"
+                    ],
+                    [
+                      "description",
+                      "超时时间（毫秒，默认：120000）"
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      ]
+    },
+    "propOrder": [
+      "filter",
+      "timeout"
+    ],
+    "required": []
+  },
+  "todo": {
+    "description": "读写会话任务清单——你的目标分解。主动使用它。\n\nActions:\n- write: 整体替换清单（全量替换，不是补丁）。每项含 id、content、status（pending/in_progress/completed）。已完成项也要重发，否则丢失。\n- read: 返回当前清单。\n\n何时创建/更新（不用等用户要求）：\n- 任务需要 3 个以上不同步骤，或非平凡/跨多文件。\n- 用户一次给多个任务（编号或逗号分隔的清单）。\n- 收到新指令后立即建——先落成 todo，再开工。\n\n何时不用：单步琐碎操作（一次性小编辑别加仪式）。\n\nPlan mode 下：用 todo 跟踪调研步骤（最后一项固定为「汇总写计划并提交审批」）；计划正文写活动计划文件，不进 todo。\n\nTDD 纪律：\n- 代码任务（非文档/配置）每个任务的第一步应是写或更新测试（RED），再实现通过（GREEN）。todo 结构体现这一点：如「写 X 的测试」→「实现 X」→「重构」。\n- 以下不强制：文档、配置改动、已有测试覆盖的重构、快速 typo 修复。\n\n状态规则：\n- 开工前把任务标为 in_progress；任何时刻恰好只有一个 in_progress。\n- 完成立即标 completed——不要攒批。\n- 重写清单时不要静默丢弃或重置已完成项。\n\n验收面：代码任务首次 write 时用 acceptance 字段声明可观察的完成标志（形状与正反例见该字段说明）。",
+    "inputSchema": {
+      "__ordered": [
+        [
+          "type",
+          "object"
+        ],
+        [
+          "properties",
+          {
+            "__ordered": [
+              [
+                "action",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "enum",
+                      [
+                        "read",
+                        "write"
+                      ]
+                    ],
+                    [
+                      "description",
+                      "read 读当前清单；write 写新清单"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "todos",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "array"
+                    ],
+                    [
+                      "description",
+                      "完整 todo 清单（仅 write 用）"
+                    ],
+                    [
+                      "items",
+                      {
+                        "__ordered": [
+                          [
+                            "type",
+                            "object"
+                          ],
+                          [
+                            "properties",
+                            {
+                              "__ordered": [
+                                [
+                                  "id",
+                                  {
+                                    "__ordered": [
+                                      [
+                                        "type",
+                                        "string"
+                                      ],
+                                      [
+                                        "description",
+                                        "任务唯一标识"
+                                      ]
+                                    ]
+                                  }
+                                ],
+                                [
+                                  "content",
+                                  {
+                                    "__ordered": [
+                                      [
+                                        "type",
+                                        "string"
+                                      ],
+                                      [
+                                        "description",
+                                        "任务描述（祈使式，如「修复认证 bug」）"
+                                      ]
+                                    ]
+                                  }
+                                ],
+                                [
+                                  "status",
+                                  {
+                                    "__ordered": [
+                                      [
+                                        "type",
+                                        "string"
+                                      ],
+                                      [
+                                        "enum",
+                                        [
+                                          "pending",
+                                          "in_progress",
+                                          "completed"
+                                        ]
+                                      ],
+                                      [
+                                        "description",
+                                        "任务状态"
+                                      ]
+                                    ]
+                                  }
+                                ],
+                                [
+                                  "activeForm",
+                                  {
+                                    "__ordered": [
+                                      [
+                                        "type",
+                                        "string"
+                                      ],
+                                      [
+                                        "description",
+                                        "进行中的现在时说法（如「正在修复认证 bug」）；可选，缺省时面板显示 content"
+                                      ]
+                                    ]
+                                  }
+                                ]
+                              ]
+                            }
+                          ],
+                          [
+                            "required",
+                            [
+                              "id",
+                              "content",
+                              "status"
+                            ]
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ],
+              [
+                "acceptance",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "array"
+                    ],
+                    [
+                      "description",
+                      "用户级验收面（可选，代码任务建议首次 write 就带；声明须早于验证）。正例「按 ESC 后弹窗 isVisible() 为 False」。反例一律拒绝：「信号连通」「函数逻辑正确」是内部属性；「所有测试通过」「跑 test_x.py 看到 3 passed」是信号级——单测覆盖的是函数分支，不是用户按键后的行为。"
+                    ],
+                    [
+                      "items",
+                      {
+                        "__ordered": [
+                          [
+                            "type",
+                            "object"
+                          ],
+                          [
+                            "properties",
+                            {
+                              "__ordered": [
+                                [
+                                  "criterion",
+                                  {
+                                    "__ordered": [
+                                      [
+                                        "type",
+                                        "string"
+                                      ],
+                                      [
+                                        "description",
+                                        "用户做什么动作 → 看到什么可观察结果"
+                                      ]
+                                    ]
+                                  }
+                                ],
+                                [
+                                  "status",
+                                  {
+                                    "__ordered": [
+                                      [
+                                        "type",
+                                        "string"
+                                      ],
+                                      [
+                                        "enum",
+                                        [
+                                          "pending",
+                                          "met",
+                                          "blocked"
+                                        ]
+                                      ]
+                                    ]
+                                  }
+                                ],
+                                [
+                                  "evidence",
+                                  {
+                                    "__ordered": [
+                                      [
+                                        "type",
+                                        "string"
+                                      ],
+                                      [
+                                        "description",
+                                        "met：实际做了什么、观察到什么；blocked：为何执行不了"
+                                      ]
+                                    ]
+                                  }
+                                ]
+                              ]
+                            }
+                          ],
+                          [
+                            "required",
+                            [
+                              "criterion",
+                              "status"
+                            ]
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        [
+          "required",
+          [
+            "action"
+          ]
+        ]
+      ]
+    },
+    "propOrder": [
+      "action",
+      "todos",
+      "acceptance"
+    ],
+    "required": [
+      "action"
+    ]
+  }
+}

@@ -218,7 +218,7 @@ func TestSlow(t *testing.T) { time.Sleep(30 * time.Second) }
 `)
 
 	tool := RunTests(root)
-	p := call(root, map[string]any{"timeout_ms": 1500})
+	p := call(root, map[string]any{"timeout": 1500})
 	r, _ := tool.Execute(context.Background(), p)
 
 	if r.Verification == nil {
