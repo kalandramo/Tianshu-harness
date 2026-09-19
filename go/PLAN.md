@@ -353,8 +353,52 @@ priority 自写实现 3 红 / constitutional 不豁免 4 红 / ledger 不记 ren
    挂起 / key 冷却），本移植未包含。**改测试而非改实现**——期望要反映真实语义。
    判据改为「单个请求内至多 1 份」（这才是请求级注入 vs 持久化的真判别器）。
 
-**下一步**：治理子系统（习惯化 / efficacy / key 冷却——它们抑制重复提醒），
-或 `todo-reminder` hook。
+### 第八刀（已完成）：两个治理子系统——key 冷却 + mutex 互斥（2026-09-19）
+
+✅ `advisory_bus.go` 增补（+约 90 行生产 + 340 行测试）
+
+**Scope Check**：`advisory-bus.ts` 的治理子系统依赖分两档——
+
+- **无外部依赖**（本轮做）：`KEY_COOLDOWN_TURNS`（key 级送达冷却）与
+  `MUTEX_PAIRS`（互斥让位）。前者只需 `renderEpoch` + 一个 map，后者是静态表。
+- **依赖 `AdvisoryReadback`**（未做）：习惯化对抗 / efficacy 负反馈环 / lift 消费 /
+  holdout 反抽样。它们都需要跨会话的采纳率台账，当前地基不具备。
+
+**key 级送达冷却**（对账 `KEY_COOLDOWN_TURNS` + `recordDeliveredRender`）：
+
+- 注册 key：`virtue-encouragement` 5 轮 / `readonly-spiral` 3 轮 /
+  `turn-call-limit` 3 轮
+- 位置在**一切竞争逻辑之前**（TS 注释：冷却中的条目不该占 MUTEX/预算/挂起任何一席）
+- 吞掉 ≠ 永久丢失：调用方按轮重新 submit，冷却过后自动恢复
+- **只记注册 key 的送达轮次**——未注册 key 数量无上限，全记会让表无界增长
+
+**mutex 互斥让位**（对账 `MUTEX_PAIRS`）：5 对，如 `self-verify` 胜过
+`virtue-encouragement`（「你有债」与「干得好」同屏是语义冲突）、
+`lossy-observation` 胜过 `readonly-spiral`。**精确 key 等值匹配，不支持通配**。
+
+**oracle 对账**：新增 10 个治理用例（冷却 5 个 + mutex 5 个），总数 **32 用例 ×
+2 维度 = 64 个子测试**全绿。
+
+**用户级验收（已执行）**：`TestE2EGovernanceCooldownInPrompt`——真实 `Loop.Run`
+跑 5 轮、每轮都投递同一个注册 key，观察到**送达请求：[1 4]**（共 5 个请求）——
+中间两轮被冷却吞掉。**这修复了上一刀发现的「同一提醒每轮重复」缺口**。
+`TestE2EGovernanceMutexInPrompt` 验证「有债仍表扬」被拦下。
+
+**顺带修了一个真实缺陷**：`Reset()` 未清 `lastDeliveredRenderByKey`。因
+`renderEpoch` 归零而旧送达轮次仍在，`renderEpoch - last` 变负（恒 < cooldown），
+该 key 被**永久静默**。对账 TS `reset()` 的 `lastDeliveredRenderByKey.clear()`。
+
+**变异反证 8 个：全部有判别力**（冷却不生效 12 红 / 冷却对所有 key 生效 2 红 /
+不记送达轮次 12 红 / 非注册 key 也记 1 红 / mutex 不生效 6 红 / mutex 方向搞反
+19 红 / Reset 不清表 1 红 / 冷却不记 dropped 6 红）。
+
+**方法记录**：M4（非注册 key 也记轮次）首轮红 0——它是**行为等价变异**（冷却
+查询同样要求 registered）。补了一条直接检查内部状态的测试（
+`TestGovernanceCooldownTableOnlyRegistered`）后红 1。**行为等价的变异要靠
+不变量测试钉住，而非行为断言。**
+
+**下一步**：`AdvisoryReadback`（采纳率台账）——它是习惯化 / efficacy / lift /
+holdout 四个子系统的共同前置；或 `todo-reminder` hook。
 
 **为什么是它而不是补工具**：
 

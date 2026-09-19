@@ -47,6 +47,55 @@ type AdvisoryBus struct {
 	// **为什么不用 turn**：render(turn) 的 turn 是 run 内局部序号，每个 run
 	// 都从 0 重置——用它做冷却会导致固定在 turn=12 触发的 key 永久静默。
 	renderEpoch int
+
+	// lastDeliveredRenderByKey 是 key → 上次实际送达的单调渲染序号。
+	//
+	// 对账 lastDeliveredRenderByKey。只记 **KEY_COOLDOWN_TURNS 注册的 key**
+	// （对账 recordDeliveredRender 的 `if (KEY_COOLDOWN_TURNS.has(key))`）。
+	lastDeliveredRenderByKey map[string]int
+}
+
+// keyCooldownTurns 是 key 级送达冷却表（轮数）。
+//
+// 对账 KEY_COOLDOWN_TURNS。**动机**（TS 注释）：virtue-settlement-hook 每次
+// 美德结算都提交一次表扬（实测 9-88 次/会话），而表扬的信息量在节奏确认而非
+// 重复计数。门禁放 bus 层而非 hook 层——送达历史在 bus 手边，且天然覆盖未来
+// 任何调用方。
+//
+// readonly-spiral / turn-call-limit 的冷却动机（TS 注释）：它们在 advisory
+// 洪水期反复弹窗加剧噪音，key 级冷却确保同一提醒不在连续轮次重复注入。
+var keyCooldownTurns = map[string]int{
+	"virtue-encouragement": 5,
+	"readonly-spiral":      3,
+	"turn-call-limit":      3,
+}
+
+// mutexPair 是一对语义冲突的信号。
+type mutexPair struct {
+	winner string
+	loser  string
+}
+
+// mutexPairs 是互斥对表。
+//
+// 对账 MUTEX_PAIRS。**机制**：同一 render 周期内语义冲突的两个信号同时在场时，
+// 确定度低的一方（loser）让位丢弃。
+//
+// 首个已知冲突（TS 注释）：lossy-observation（观测确实被截断——事实）胜过
+// readonly-spiral（"信息可能已足够，开始行动"——启发式）。观测有损时"已足够"
+// 不成立，同轮双发会同时催"继续交叉验证"和"停止读取"。
+//
+// W3 穿透让位（TS 注释）：验证债在场时表扬让位。「你有债」和「干得好」同屏是
+// 语义冲突——714c5d9b 里 self-verify 被忽略、同轮表扬照发，验证债类缺陷从提醒
+// 眼皮底下逃逸。
+//
+// **匹配是精确 key 等值，不支持通配**——CCR 验证债 key 增多时逐条补录。
+var mutexPairs = []mutexPair{
+	{winner: "lossy-observation", loser: "readonly-spiral"},
+	{winner: "self-verify", loser: "virtue-encouragement"},
+	{winner: "self-verify-scope-mismatch", loser: "virtue-encouragement"},
+	{winner: "ccr-天权-P3", loser: "virtue-encouragement"},
+	{winner: "ccr-天权-P7", loser: "virtue-encouragement"},
 }
 
 // DeliveredAdvisory 是已送达条目的快照（供 readback 跟踪）。
@@ -171,6 +220,61 @@ func (b *AdvisoryBus) Render(activeStarDomain string, turn int) string {
 	all = append(all, b.alive...)
 	all = append(all, b.entries...)
 
+	// ── 1a. key 级送达冷却（**在一切竞争逻辑之前**）──
+	//
+	// 对账 TS 的 W2 key 级送达冷却段。TS 注释：冷却中的条目不该占
+	// MUTEX / 预算 / 挂起任何一席。
+	//
+	// **吞掉 ≠ 永久丢失**：调用方按轮重新 submit，冷却过后自动恢复送达。
+	if len(all) > 0 {
+		cooled := make([]AdvisoryEntry, 0, len(all))
+		var swallowed []string
+		for _, e := range all {
+			cooldown, registered := keyCooldownTurns[e.Key]
+			last, seen := b.lastDeliveredRenderByKey[e.Key]
+			if registered && seen && b.renderEpoch-last < cooldown {
+				swallowed = append(swallowed, e.Key)
+			} else {
+				cooled = append(cooled, e)
+			}
+		}
+		if len(swallowed) > 0 {
+			b.recordDropped(swallowed)
+			all = cooled
+		}
+	}
+
+	// ── 1b. 互斥对：语义冲突信号同场时 loser 让位（跨通道，在分流前生效）──
+	//
+	// 对账 TS 的 A4 互斥对段。**注意**：TS 的 winner 判定**并入 pendingWatch**
+	// （带 observe 的 winner 在挂起观察窗内不进竞争池 all，只扫 all 会让 loser
+	// 照常送达）。**本移植未含挂起观察**，故只扫 all——这是已知偏差，见注释。
+	for _, pair := range mutexPairs {
+		winnerPresent := false
+		for _, e := range all {
+			if e.Key == pair.winner {
+				winnerPresent = true
+				break
+			}
+		}
+		if !winnerPresent {
+			continue
+		}
+		var dropped []string
+		kept := make([]AdvisoryEntry, 0, len(all))
+		for _, e := range all {
+			if e.Key == pair.loser {
+				dropped = append(dropped, e.Key)
+			} else {
+				kept = append(kept, e)
+			}
+		}
+		if len(dropped) > 0 {
+			b.recordDropped(dropped)
+			all = kept
+		}
+	}
+
 	// ── 2. 按 tier 分流 ──
 	var constitutional, nonConstitutional []AdvisoryEntry
 	for _, e := range all {
@@ -286,6 +390,19 @@ func (b *AdvisoryBus) Render(activeStarDomain string, turn int) string {
 		})
 	}
 
+	// ── W2 冷却记账：只记**注册 key** 的送达轮次 ──
+	//
+	// 对账 recordDeliveredRender 的 `if (KEY_COOLDOWN_TURNS.has(key))`。
+	// 非注册 key 不记账——它们的冷却查询恒为 undefined，永远不冷却。
+	for _, e := range sorted {
+		if _, registered := keyCooldownTurns[e.Key]; registered {
+			if b.lastDeliveredRenderByKey == nil {
+				b.lastDeliveredRenderByKey = map[string]int{}
+			}
+			b.lastDeliveredRenderByKey[e.Key] = b.renderEpoch
+		}
+	}
+
 	if len(sorted) == 0 {
 		b.entries = nil
 		b.alive = nil
@@ -328,6 +445,10 @@ func (b *AdvisoryBus) Reset() {
 	b.ledgerDroppedKeys = nil
 	b.delivered = nil
 	b.renderEpoch = 0
+	// **必须清冷却表**——否则 Reset 后注册 key 仍带着旧送达轮次，
+	// 且 renderEpoch 归零会让 `renderEpoch - last` 变成负数（永远 < cooldown），
+	// 该 key 被永久静默。对账 TS reset() 的 lastDeliveredRenderByKey.clear()。
+	b.lastDeliveredRenderByKey = nil
 }
 
 // recordDropped 记 dropped 账本（去重 key，封顶）。

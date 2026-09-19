@@ -532,6 +532,289 @@
       ]
     ]
   },
+  "cooldown_registered": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"readonly-spiral\" priority=\"0.60\" category=\"discipline\">螺旋</entry>\n</星域-advisory>",
+      "",
+      "",
+      "<星域-advisory>\n  <entry key=\"readonly-spiral\" priority=\"0.60\" category=\"discipline\">螺旋</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 4,
+      "rendered": 2,
+      "dropped": 2,
+      "droppedKeys": [
+        "readonly-spiral"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "readonly-spiral"
+      ],
+      [],
+      [],
+      [
+        "readonly-spiral"
+      ]
+    ]
+  },
+  "cooldown_unregistered": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"some-other\" priority=\"0.60\" category=\"discipline\">X</entry>\n</星域-advisory>",
+      "<星域-advisory>\n  <entry key=\"some-other\" priority=\"0.60\" category=\"discipline\">X</entry>\n</星域-advisory>",
+      "<星域-advisory>\n  <entry key=\"some-other\" priority=\"0.60\" category=\"discipline\">X</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 3,
+      "rendered": 3,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "some-other"
+      ],
+      [
+        "some-other"
+      ],
+      [
+        "some-other"
+      ]
+    ]
+  },
+  "cooldown_mixed": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"readonly-spiral\" priority=\"0.60\" category=\"discipline\">螺旋</entry>\n  <entry key=\"normal\" priority=\"0.50\" category=\"repair\">普通</entry>\n</星域-advisory>",
+      "<星域-advisory>\n  <entry key=\"normal\" priority=\"0.50\" category=\"repair\">普通</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 4,
+      "rendered": 3,
+      "dropped": 1,
+      "droppedKeys": [
+        "readonly-spiral"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "readonly-spiral",
+        "normal"
+      ],
+      [
+        "normal"
+      ]
+    ]
+  },
+  "cooldown_turn_call_limit": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"turn-call-limit\" priority=\"0.70\" category=\"discipline\">限额</entry>\n</星域-advisory>",
+      ""
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 1,
+      "dropped": 1,
+      "droppedKeys": [
+        "turn-call-limit"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "turn-call-limit"
+      ],
+      []
+    ]
+  },
+  "cooldown_virtue_5": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"virtue-encouragement\" priority=\"0.40\" category=\"encouragement\">表扬</entry>\n</星域-advisory>",
+      "",
+      "",
+      "",
+      "",
+      "<星域-advisory>\n  <entry key=\"virtue-encouragement\" priority=\"0.40\" category=\"encouragement\">表扬</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 6,
+      "rendered": 2,
+      "dropped": 4,
+      "droppedKeys": [
+        "virtue-encouragement"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "virtue-encouragement"
+      ],
+      [],
+      [],
+      [],
+      [],
+      [
+        "virtue-encouragement"
+      ]
+    ]
+  },
+  "mutex_self_verify_wins": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"self-verify\" priority=\"0.58\" category=\"discipline\">有验证债</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 1,
+      "dropped": 1,
+      "droppedKeys": [
+        "virtue-encouragement"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "self-verify"
+      ]
+    ]
+  },
+  "mutex_winner_absent": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"virtue-encouragement\" priority=\"0.40\" category=\"encouragement\">干得好</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 1,
+      "rendered": 1,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "virtue-encouragement"
+      ]
+    ]
+  },
+  "mutex_lossy_wins": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"lossy-observation\" priority=\"0.60\" category=\"discipline\">观测有损</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 1,
+      "dropped": 1,
+      "droppedKeys": [
+        "readonly-spiral"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "lossy-observation"
+      ]
+    ]
+  },
+  "mutex_ccr_wins": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"ccr-天权-P3\" priority=\"0.55\" category=\"star_domain\">改道</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 1,
+      "dropped": 1,
+      "droppedKeys": [
+        "virtue-encouragement"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "ccr-天权-P3"
+      ]
+    ]
+  },
+  "mutex_two_losers": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"lossy-observation\" priority=\"0.60\" category=\"discipline\">有损</entry>\n  <entry key=\"self-verify\" priority=\"0.58\" category=\"discipline\">债</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 4,
+      "rendered": 2,
+      "dropped": 2,
+      "droppedKeys": [
+        "readonly-spiral",
+        "virtue-encouragement"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "lossy-observation",
+        "self-verify"
+      ]
+    ]
+  },
   "immediate_exempt": {
     "renders": [
       "<星域-advisory>\n  <entry key=\"n1\" priority=\"0.90\" category=\"todo\">N1</entry>\n  <entry key=\"n2\" priority=\"0.80\" category=\"dedup\">N2</entry>\n  <entry key=\"n3\" priority=\"0.70\" category=\"immune\">N3</entry>\n</星域-advisory>"

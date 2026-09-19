@@ -218,6 +218,112 @@ const cases: Record<string, CaseSpec> = {
     renders: 2,
   },
 
+  // ── key 级送达冷却：注册 key 送达后 N 轮内不再渲染 ──
+  // readonly-spiral 注册 3 轮冷却——第 0 轮送达后，第 1/2 轮应被吞掉（计 dropped），
+  // 第 3 轮恢复。未注册的 key 不受影响。
+  cooldown_registered: {
+    batches: [
+      { entries: [{ key: 'readonly-spiral', priority: 0.6, category: 'discipline', content: '螺旋' }] },
+      { entries: [{ key: 'readonly-spiral', priority: 0.6, category: 'discipline', content: '螺旋' }] },
+      { entries: [{ key: 'readonly-spiral', priority: 0.6, category: 'discipline', content: '螺旋' }] },
+      { entries: [{ key: 'readonly-spiral', priority: 0.6, category: 'discipline', content: '螺旋' }] },
+    ],
+    renders: 4,
+  },
+
+  // ── 未注册 key 无冷却（对照）──
+  cooldown_unregistered: {
+    batches: [
+      { entries: [{ key: 'some-other', priority: 0.6, category: 'discipline', content: 'X' }] },
+      { entries: [{ key: 'some-other', priority: 0.6, category: 'discipline', content: 'X' }] },
+      { entries: [{ key: 'some-other', priority: 0.6, category: 'discipline', content: 'X' }] },
+    ],
+    renders: 3,
+  },
+
+  // ── 冷却只影响注册 key，不牵连同批其他条目 ──
+  cooldown_mixed: {
+    batches: [
+      { entries: [
+        { key: 'readonly-spiral', priority: 0.6, category: 'discipline', content: '螺旋' },
+        { key: 'normal', priority: 0.5, category: 'repair', content: '普通' },
+      ] },
+      { entries: [
+        { key: 'readonly-spiral', priority: 0.6, category: 'discipline', content: '螺旋' },
+        { key: 'normal', priority: 0.5, category: 'repair', content: '普通' },
+      ] },
+    ],
+    renders: 2,
+  },
+
+  // ── turn-call-limit 也是注册 key（3 轮冷却）──
+  cooldown_turn_call_limit: {
+    batches: [
+      { entries: [{ key: 'turn-call-limit', priority: 0.7, category: 'discipline', content: '限额' }] },
+      { entries: [{ key: 'turn-call-limit', priority: 0.7, category: 'discipline', content: '限额' }] },
+    ],
+    renders: 2,
+  },
+
+  // ── virtue-encouragement 注册 5 轮冷却 ──
+  cooldown_virtue_5: {
+    batches: [
+      { entries: [{ key: 'virtue-encouragement', priority: 0.4, category: 'encouragement', content: '表扬' }] },
+      { entries: [{ key: 'virtue-encouragement', priority: 0.4, category: 'encouragement', content: '表扬' }] },
+      { entries: [{ key: 'virtue-encouragement', priority: 0.4, category: 'encouragement', content: '表扬' }] },
+      { entries: [{ key: 'virtue-encouragement', priority: 0.4, category: 'encouragement', content: '表扬' }] },
+      { entries: [{ key: 'virtue-encouragement', priority: 0.4, category: 'encouragement', content: '表扬' }] },
+      { entries: [{ key: 'virtue-encouragement', priority: 0.4, category: 'encouragement', content: '表扬' }] },
+    ],
+    renders: 6,
+  },
+
+  // ── mutex：winner 在场时 loser 让位 ──
+  mutex_self_verify_wins: {
+    batches: [{ entries: [
+      { key: 'self-verify', priority: 0.58, category: 'discipline', content: '有验证债' },
+      { key: 'virtue-encouragement', priority: 0.4, category: 'encouragement', content: '干得好' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── mutex：winner 不在场时 loser 正常渲染 ──
+  mutex_winner_absent: {
+    batches: [{ entries: [
+      { key: 'virtue-encouragement', priority: 0.4, category: 'encouragement', content: '干得好' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── mutex：lossy-observation 胜过 readonly-spiral ──
+  mutex_lossy_wins: {
+    batches: [{ entries: [
+      { key: 'lossy-observation', priority: 0.6, category: 'discipline', content: '观测有损' },
+      { key: 'readonly-spiral', priority: 0.55, category: 'discipline', content: '开始行动' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── mutex：ccr-天权-P3 胜过表扬 ──
+  mutex_ccr_wins: {
+    batches: [{ entries: [
+      { key: 'ccr-天权-P3', priority: 0.55, category: 'star_domain', content: '改道' },
+      { key: 'virtue-encouragement', priority: 0.4, category: 'encouragement', content: '干得好' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── mutex：两个 loser 同时在场都被丢弃 ──
+  mutex_two_losers: {
+    batches: [{ entries: [
+      { key: 'self-verify', priority: 0.58, category: 'discipline', content: '债' },
+      { key: 'virtue-encouragement', priority: 0.4, category: 'encouragement', content: '表扬1' },
+      { key: 'readonly-spiral', priority: 0.55, category: 'discipline', content: '行动' },
+      { key: 'lossy-observation', priority: 0.6, category: 'discipline', content: '有损' },
+    ] }],
+    renders: 1,
+  },
+
   // ── immediate 条目豁免 CVM 注入预算 ──
   immediate_exempt: {
     batches: [{ entries: [
