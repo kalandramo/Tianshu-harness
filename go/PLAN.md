@@ -510,8 +510,44 @@ status 过滤失效 2 红 / kind 过滤失效 2 红 / 未知 claimId 不忽略 2
 外部修改检测、checkpoint 快照）。TS 那套为事件循环饥饿设计，Go 侧应用惯用
 方式重写，但**格式须与 TS 兼容**（跨版本可读）。
 
-**下一步**：claim-store 落盘 + 接给 consistency-check（消除第九刀的 blocked
-验收项）。
+### 第十二刀（已完成）：claim-store 落盘 + 跨版本兼容验证（2026-09-19）
+
+✅ `internal/context/claim_store_io.go`（506 行 + 330 行测试）
+
+**Scope Check**：TS 的写链（异步写 / 梯度重试 / 停链诊断 / 字节数外部修改
+检测）是为**治理 Node 事件循环饥饿**设计的（TS 注释引 issue #61 族）。
+**Go 的并发模型不同，不复刻**——这里用同步写 + 显式错误返回实现等价语义。
+代价：写失败直接返回（TS 是延后诊断），换来无崩溃窗口。
+
+**JSONL 格式逐字节对账**（探针实测 TS 输出后落实现）：
+
+- 键序 = 事件构造序，**`seq` 在末尾**（对账 `{...event, seq}` 展开序）
+- **`expiresAt` 未设时省略**（对账 TS 的 `expiresAt?: number`）
+- **`evidence.path` 为空时省略**
+- eventId 格式：`${eventId}:claim:${claimId}` / `${id}:status:${status}:${now}` /
+  `${id}:used:${consumerId}:${usedAt}` / `${id}:boost:${now}`
+
+**跨版本兼容验证（已执行）**：Go 写 JSONL → **TS 读回**，字段全对
+（status / fitness / evidence / consumers / counterevidence / tags）。这是双向
+兼容的关键证据——Go 侧格式与 TS 逐字节一致。
+
+**测试 10 个**：往返一致性 / JSONL 行格式（键序 + seq 位置 + 省略规则）/
+seq 单调与延续 / seq 显式沿用 / markStaleForFile（consistency-check 的真实
+副作用）/ 坏行跳过 / boost 累加 / 空 path 省略。
+
+**变异反证 8 个：全部有判别力**（seq 不输出 3 红 / expiresAt 不省略 1 红 /
+path 不省略 1 红 / seq 强制重分配 1 红 / 坏行中断 1 红 / markStale 不跳过
+已 stale 1 红 / boost 不累加 1 红 / 读回不延续 nextSeq 1 红）。
+
+**三次覆盖缺口修正**（红 0 的诊断）：
+1. `evidence.path` 总输出——原用例 path 都非空，补空 path 用例。
+2. `seq` 强制重分配——无显式 seq 用例，补 `TestClaimStoreSeqPreservedFromEvent`。
+3. `boost` 不累加——首次 boost 时「累加」与「只用 delta」等价（当前值恰为
+   基准），需**连续两次** boost 才能判别。补
+   `TestClaimStoreBoostAccumulatesCurrent`。
+
+**下一步**：把 claim store 接给 consistency-check hook（CLI 装配），
+消除第九刀留下的 blocked 验收项。
 
 **为什么是它而不是补工具**：
 
