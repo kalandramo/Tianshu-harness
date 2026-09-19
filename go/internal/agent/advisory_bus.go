@@ -38,6 +38,8 @@ type AdvisoryBus struct {
 	ledgerRendered    int
 	ledgerDropped     int
 	ledgerDroppedKeys []string
+	// ledgerLiftMuted 是负 lift 静音的累计条目数（对账 ledgerLiftMuted）。
+	ledgerLiftMuted int
 
 	// delivered 是 render 实际送达的条目（供 readback 追踪采纳）。
 	delivered []DeliveredAdvisory
@@ -65,6 +67,22 @@ type AdvisoryBus struct {
 	// **防止同一 streak 反复静音，保证 probation 放行**——若不复位，
 	// streak 不涨的情况下每轮都会重新触发静音。
 	lastSilencedStreak map[string]int
+
+	// liftProvider 是成熟 lift 查询源（注入）。
+	//
+	// nil 时不做 lift 消费（对账 TS 的 `if (this.liftProvider)`）。
+	// 返回 nil = 样本不足 = **中性**，不得据此静音。
+	liftProvider func(key string) *float64
+	// liftMuteRemaining 是 key → 剩余 lift 静音渲染周期数。
+	//
+	// **独立于 silenceRemaining**（对账 TS 的 liftMuteRemaining）——两个触发源
+	// （习惯化 streak / 负 lift）的静音互不干扰，各自计时。
+	liftMuteRemaining map[string]int
+	// liftProbation 是「静音期满、下次出现放行一次」的 key 集合。
+	//
+	// 与习惯化的 probation 机制同构但**独立**：lift 仍 ≤0 才再静音，
+	// 避免数据不更新导致永久静音。
+	liftProbation map[string]bool
 	// ledgerDeferred / ledgerRevoked 等治理账本字段（本移植只保留必要项）。
 }
 
@@ -87,6 +105,17 @@ const (
 	habituationSilenceStreak = 3
 	// habituationSilenceRenders 是每次静音持续的渲染周期数。
 	habituationSilenceRenders = 4
+
+	// liftMuteRenders 是负 lift 静音的渲染周期数。
+	//
+	// 对账 LIFT_MUTE_RENDERS。**比习惯化静音长**（10 vs 4）——lift 基于反事实
+	// 证据，结论更可靠，不需要那么频繁地重新试探。
+	liftMuteRenders = 10
+	// liftMuteThreshold 是触发静音的 lift 上限。
+	//
+	// 对账 LIFT_MUTE_THRESHOLD（= 0）。**lift <= 0 都静音**：
+	// 正 lift = 提醒有真实增益；lift≈0 = 模型本来就会做（纯噪音）。
+	liftMuteThreshold = 0.0
 )
 
 // SetHabituationPolicy 注入习惯化查询源。
@@ -94,6 +123,28 @@ const (
 // 对账 setHabituationPolicy。缺省 = 不做习惯化对抗。
 func (b *AdvisoryBus) SetHabituationPolicy(policy HabituationPolicy) {
 	b.habituation = policy
+}
+
+// SetLiftProvider 注入成熟 lift 查询源。
+//
+// 对账 setLiftProvider（advisory-bus.ts:536）。生产装配：
+//
+//	bus.SetLiftProvider(readback.GetMatureLift)
+//
+// 缺省 = 不做 lift 消费。**返回 nil 表示样本不足**（成熟度门未过）——
+// 消费端必须视为中性，不得据此静音。
+func (b *AdvisoryBus) SetLiftProvider(provider func(key string) *float64) {
+	b.liftProvider = provider
+}
+
+// isLiftExempt 判断条目是否豁免 lift 静音。
+//
+// 对账 TS 的豁免集（advisory-bus.ts:958）——**三类**：
+// constitutional tier / immediate 条目 / star_domain 类别。
+// 与 holdout 资格判定同源（这些条目要么是宪法级约束，要么是即时守护，
+// 要么是星域情境提醒，都不该被统计意义上的「无效」判定静音掉）。
+func isLiftExempt(e AdvisoryEntry) bool {
+	return e.Tier == TierConstitutional || e.Immediate || e.Category == CategoryStarDomain
 }
 
 // keyCooldownTurns 是 key 级送达冷却表（轮数）。
@@ -375,6 +426,70 @@ func (b *AdvisoryBus) Render(activeStarDomain string, turn int) string {
 		all = kept
 	}
 
+	// ── 1d. lift 消费端：负 lift 自动静音 ──
+	//
+	// 对账 TS 的「Lift 消费端:负 lift 自动静音」（advisory-bus.ts:942-980）。
+	//
+	// **与习惯化的区别**：习惯化看的是「连续被忽略」（行为层，streak）；
+	// lift 看的是**反事实基线**——投递组采纳率 减 扣留组自发完成率。
+	// lift ≈ 0 意味着「没提醒模型也会做」→ 提醒是**纯噪音**。
+	//
+	// **静音时长更长**（10 vs 4）：lift 基于反事实证据，结论更可靠，
+	// 不需要那么频繁地重新试探。
+	if b.liftProvider != nil {
+		// 计时流逝（无论该 key 本轮是否投递）
+		for k, v := range b.liftMuteRemaining {
+			if v <= 1 {
+				delete(b.liftMuteRemaining, k)
+				if b.liftProbation == nil {
+					b.liftProbation = map[string]bool{}
+				}
+				b.liftProbation[k] = true // 期满 → 下次出现放行一次
+			} else {
+				b.liftMuteRemaining[k] = v - 1
+			}
+		}
+
+		droppedByLift := map[string]bool{}
+		kept := make([]AdvisoryEntry, 0, len(all))
+		for _, e := range all {
+			if isLiftExempt(e) {
+				kept = append(kept, e)
+				continue
+			}
+			if _, muted := b.liftMuteRemaining[e.Key]; muted {
+				droppedByLift[e.Key] = true
+				continue
+			}
+			if b.liftProbation[e.Key] {
+				delete(b.liftProbation, e.Key) // probation 送达，消费一次
+				kept = append(kept, e)
+				continue
+			}
+			lift := b.liftProvider(e.Key)
+			// nil = 样本不足 → 中性（**不得据此静音**）
+			if lift != nil && *lift <= liftMuteThreshold {
+				if b.liftMuteRemaining == nil {
+					b.liftMuteRemaining = map[string]int{}
+				}
+				b.liftMuteRemaining[e.Key] = liftMuteRenders
+				droppedByLift[e.Key] = true
+				continue
+			}
+			kept = append(kept, e)
+		}
+		if len(droppedByLift) > 0 {
+			keys := make([]string, 0, len(droppedByLift))
+			for k := range droppedByLift {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			b.recordDropped(keys)
+			b.ledgerLiftMuted += len(keys)
+		}
+		all = kept
+	}
+
 	// ── 2. 按 tier 分流 ──
 	var constitutional, nonConstitutional []AdvisoryEntry
 	for _, e := range all {
@@ -552,6 +667,10 @@ func (b *AdvisoryBus) Reset() {
 	// 习惯化状态也要清——否则 Reset 后旧静音/streak 记录残留
 	b.silenceRemaining = nil
 	b.lastSilencedStreak = nil
+	// lift 静音状态也要清（否则 Reset 后旧静音残留）
+	b.liftMuteRemaining = nil
+	b.liftProbation = nil
+	b.ledgerLiftMuted = 0
 }
 
 // recordDropped 记 dropped 账本（去重 key，封顶）。

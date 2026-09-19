@@ -1005,6 +1005,373 @@
     ],
     "renders": 2
   },
+  "lift_mute_negative": {
+    "lifts": {
+      "noisy": -0.5
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      }
+    ],
+    "renders": 12
+  },
+  "lift_mute_zero": {
+    "lifts": {
+      "noisy": 0
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      }
+    ],
+    "renders": 12
+  },
+  "lift_positive_no_mute": {
+    "lifts": {
+      "good": 0.4
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "good",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "G"
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
+  "lift_null_neutral": {
+    "lifts": {
+      "unknown": null
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "unknown",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "U"
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
+  "lift_exempt_tiers": {
+    "lifts": {
+      "const": -1,
+      "imm": -1,
+      "star": -1
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "const",
+            "priority": 0.9,
+            "category": "constitutional",
+            "tier": "constitutional",
+            "content": "C"
+          },
+          {
+            "key": "imm",
+            "priority": 0.7,
+            "category": "guard",
+            "immediate": true,
+            "content": "I"
+          },
+          {
+            "key": "star",
+            "priority": 0.5,
+            "category": "star_domain",
+            "content": "S"
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
+  "lift_mixed": {
+    "lifts": {
+      "noisy": -0.5,
+      "good": 0.4
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          },
+          {
+            "key": "good",
+            "priority": 0.5,
+            "category": "repair",
+            "content": "G"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          },
+          {
+            "key": "good",
+            "priority": 0.5,
+            "category": "repair",
+            "content": "G"
+          }
+        ]
+      }
+    ],
+    "renders": 2
+  },
   "immediate_exempt": {
     "batches": [
       {

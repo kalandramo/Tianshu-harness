@@ -35,6 +35,8 @@ type busCaseSpec struct {
 	Renders int `json:"renders"`
 	// Streaks 是习惯化：key → 连续忽略次数（模拟 readback 的 getIgnoredStreak）
 	Streaks map[string]int `json:"streaks"`
+	// Lifts 是 lift 消费：key → 成熟 lift（null 模拟样本不足 = 中性）
+	Lifts map[string]*float64 `json:"lifts"`
 }
 
 // fakeHabituation 是测试用的习惯化策略。
@@ -122,6 +124,14 @@ func TestAdvisoryBusOracleParity(t *testing.T) {
 			if len(spec.Streaks) > 0 {
 				bus.SetHabituationPolicy(&fakeHabituation{streaks: spec.Streaks})
 			}
+			if len(spec.Lifts) > 0 {
+				bus.SetLiftProvider(func(key string) *float64 {
+					if v, ok := spec.Lifts[key]; ok {
+						return v
+					}
+					return nil
+				})
+			}
 			for i := 0; i < spec.Renders; i++ {
 				if i < len(spec.Batches) {
 					b := spec.Batches[i]
@@ -169,6 +179,14 @@ func TestAdvisoryBusLedgerParity(t *testing.T) {
 			bus := NewAdvisoryBus()
 			if len(spec.Streaks) > 0 {
 				bus.SetHabituationPolicy(&fakeHabituation{streaks: spec.Streaks})
+			}
+			if len(spec.Lifts) > 0 {
+				bus.SetLiftProvider(func(key string) *float64 {
+					if v, ok := spec.Lifts[key]; ok {
+						return v
+					}
+					return nil
+				})
 			}
 			for i := 0; i < spec.Renders; i++ {
 				if i < len(spec.Batches) {

@@ -813,8 +813,59 @@ FlushSession 不核销 红 1 / Evaluate 退回局部 turn 红 2 / ObserveTool �
 极可能按错误时钟的直觉构造出**自洽但无判别力**的用例——事实上我第一版
 RED 测试正是如此（合成递增 turn，自洽通过）。
 
-**下一步**：efficacy 负反馈环（`getAdoptionRate` 消费者）或 lift 消费
-（`getLift` 负值静音，`LIFT_MUTE_RENDERS = 10`）。
+### 第十九刀（已完成）：lift 消费——负 lift 静音（2026-09-19）
+
+✅ `GetMatureLift` + 先验字段补齐 + bus 的 lift 静音 + 6 个 oracle 用例
+
+**与习惯化的区别**（这是本刀的核心语义）：习惯化看的是「**连续被忽略**」
+（行为层信号，streak）；lift 看的是**反事实基线**——投递组采纳率 减 扣留组
+自发完成率。**lift ≈ 0 意味着「没提醒模型也会做」→ 提醒是纯噪音**。
+
+**静音时长更长**（10 vs 4 个渲染周期）：lift 基于反事实证据，结论更可靠，
+不需要那么频繁地重新试探。
+
+**三处对账点**：
+
+| 项 | TS 来源 | 值/语义 |
+|---|---|---|
+| 静音周期 | `LIFT_MUTE_RENDERS` | 10 |
+| 静音阈值 | `LIFT_MUTE_THRESHOLD` | 0（**≤ 0 都静音**） |
+| 成熟度门 | `MATURE_LIFT_MIN_DECIDED` / `_SHADOW` | 5 / 3 |
+
+**修复的两个既有缺口**（取证时发现的）：
+
+1. **`EfficacyPriorCounts` 缺 3 个字段**——TS 有 5 个（`delivered`/`adopted`/
+   `ignored`/`shadowHeld`/`shadowSatisfied`），Go 只有 2 个。没有 shadow 两字段
+   就无法算反事实基线。
+2. **`GetDeliveredCount` 漏算先验**——TS 是 `(stats?.delivered ?? 0) +
+   (priors?.delivered ?? 0)`，Go 只返回会话统计。**holdout 资格判定依赖此数**，
+   漏掉先验会让「送达 >=N 次才开始抽样」永不满足。
+
+**用户级验收（已执行）**：
+
+- `TestLiftMuteInRealRequests`——真实请求体里实测
+  `present=[false ×11, true, false ×12]`：**静音 11 轮后 probation 放行**，
+  前置断言确认成熟 lift = -1
+- `TestMatureLiftGate`——成熟度门 5 个子用例（无样本 / decided 不足 /
+  shadow 不足 / 达标正值 / 达标负值）全绿。**样本不足必须返回 nil（中性）**：
+  不设门会让冷启动阶段误杀有效提醒
+- `TestLiftExemptNotMuted`——三类豁免（constitutional / immediate /
+  star_domain）各一个子用例
+
+**变异反证 3 个有判别力**（豁免失效红 4 / nil 也静音红 4 / 成熟度门失效红 4）。
+L1（不静音）变异导致编译失败（`lift` 变量未使用）——属「编译失败伪装」类，
+不计判别力。
+
+**一次工具缺陷的自纠**：变异脚本只备份了 `advisory_bus.go`，而 L4 变异改的是
+`advisory_readback.go`——恢复时漏掉，导致残留的 `if false {` 让全量出现 3 个假
+FAIL。**教训：变异脚本的备份/恢复必须覆盖该轮所有被改文件**，不能只备份主文件。
+
+**oracle**：`advisorybus` 37 → **43 用例**（+6：mute_negative / mute_zero /
+positive_no_mute / null_neutral / exempt_tiers / mixed）。
+
+**下一步**：efficacy 负反馈环（`getAdoptionRate` 消费者——低采纳率条目降权，
+`EFFICACY_SPAN` 调权）或 holdout 反事实抽样本身（`shadowHeld` 的产生端——
+目前 Go 侧只消费 shadow 计数，抽样逻辑未移植）。
 
 **为什么是它而不是补工具**：
 

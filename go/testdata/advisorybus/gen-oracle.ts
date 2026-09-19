@@ -18,6 +18,8 @@ interface CaseSpec {
   renders: number
   /** 习惯化：key → 连续忽略次数（模拟 readback 的 getIgnoredStreak） */
   streaks?: Record<string, number>
+  /** lift 消费：key → 成熟 lift（null 模拟样本不足 = 中性） */
+  lifts?: Record<string, number | null>
 }
 
 // 用例：覆盖去重 / 排序 / 类别上限 / 预算 / TTL / 转义 / 星域预算。
@@ -379,6 +381,65 @@ const cases: Record<string, CaseSpec> = {
     renders: 2,
   },
 
+  // ── lift 消费：负 lift → 静音 10 周期 ──
+  lift_mute_negative: {
+    lifts: { 'noisy': -0.5 },
+    batches: Array.from({ length: 12 }, () => ({
+      entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: 'N' }],
+    })),
+    renders: 12,
+  },
+
+  // ── lift：lift = 0（≤ 阈值）也静音 ──
+  lift_mute_zero: {
+    lifts: { 'noisy': 0 },
+    batches: Array.from({ length: 12 }, () => ({
+      entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: 'N' }],
+    })),
+    renders: 12,
+  },
+
+  // ── lift：正 lift 不静音 ──
+  lift_positive_no_mute: {
+    lifts: { 'good': 0.4 },
+    batches: [{ entries: [{ key: 'good', priority: 0.6, category: 'discipline', content: 'G' }] }],
+    renders: 1,
+  },
+
+  // ── lift：样本不足（null）视为中性，不静音 ──
+  lift_null_neutral: {
+    lifts: { 'unknown': null },
+    batches: [{ entries: [{ key: 'unknown', priority: 0.6, category: 'discipline', content: 'U' }] }],
+    renders: 1,
+  },
+
+  // ── lift：constitutional / immediate / star_domain 三类豁免 ──
+  lift_exempt_tiers: {
+    lifts: { 'const': -1, 'imm': -1, 'star': -1 },
+    batches: [{ entries: [
+      { key: 'const', priority: 0.9, category: 'constitutional', tier: 'constitutional', content: 'C' },
+      { key: 'imm', priority: 0.7, category: 'guard', immediate: true, content: 'I' },
+      { key: 'star', priority: 0.5, category: 'star_domain', content: 'S' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── lift：静音只影响被静音的 key ──
+  lift_mixed: {
+    lifts: { 'noisy': -0.5, 'good': 0.4 },
+    batches: [
+      { entries: [
+        { key: 'noisy', priority: 0.6, category: 'discipline', content: 'N' },
+        { key: 'good', priority: 0.5, category: 'repair', content: 'G' },
+      ] },
+      { entries: [
+        { key: 'noisy', priority: 0.6, category: 'discipline', content: 'N' },
+        { key: 'good', priority: 0.5, category: 'repair', content: 'G' },
+      ] },
+    ],
+    renders: 2,
+  },
+
   // ── immediate 条目豁免 CVM 注入预算 ──
   immediate_exempt: {
     batches: [{ entries: [
@@ -407,6 +468,9 @@ for (const [name, spec] of Object.entries(cases)) {
   const bus = new AdvisoryBus()
   if (spec.streaks) {
     bus.setHabituationPolicy({ getIgnoredStreak: (key: string) => spec.streaks![key] ?? 0 })
+  }
+  if (spec.lifts) {
+    bus.setLiftProvider((key: string) => spec.lifts![key] ?? null)
   }
   const renders: string[] = []
   const deliveredKeys: string[][] = []

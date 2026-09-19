@@ -102,11 +102,27 @@ type UnresolvedExpectation struct {
 
 // EfficacyPriorCounts 是跨会话效能先验。
 //
-// 对账 EfficacyPriorCounts（EWMA 衰减后可为小数）。
+// 对账 TS EfficacyPriorCounts（advisory-readback.ts:122）——**五个字段**。
+// EWMA 衰减后可为小数。
+//
+// **为什么需要 shadow 两字段**：`getMatureLift` 的反事实基线要靠它们——
+// 没有 shadowHeld/shadowSatisfied 就无法判断「没提醒也会做」（纯噪音）。
 type EfficacyPriorCounts struct {
-	Adopted float64
-	Ignored float64
+	Delivered       float64
+	Adopted         float64
+	Ignored         float64
+	ShadowHeld      float64
+	ShadowSatisfied float64
 }
+
+// 成熟 lift 的成熟度门（对账 MATURE_LIFT_MIN_DECIDED / MATURE_LIFT_MIN_SHADOW）。
+//
+// **样本不足必须返回 nil（中性）**——不得据此下静音结论。会话内 holdout 积累
+// 极慢（单会话通常 0-2 个 shadow 样本），先验是冷启动的主数据源。
+const (
+	matureLiftMinDecided = 5
+	matureLiftMinShadow  = 3
+)
 
 // defaultWindow 是各谓词的缺省观察窗口（轮，含送达轮）。
 //
@@ -388,10 +404,14 @@ func (r *AdvisoryReadback) GetIgnoredStreak(key string) int {
 
 // GetDeliveredCount 返回 key 的送达次数。
 func (r *AdvisoryReadback) GetDeliveredCount(key string) int {
+	n := 0
 	if s, ok := r.stats[key]; ok {
-		return s.Delivered
+		n += s.Delivered
 	}
-	return 0
+	// 先验的 delivered 也要计入（对账 TS：`(stats?.delivered ?? 0) + (priors?.delivered ?? 0)`）。
+	// **holdout 资格判定依赖此数**——漏掉先验会让「送达 >=N 次才开始抽样」永不满足。
+	n += int(r.priors[key].Delivered)
+	return n
 }
 
 // GetAdoptionRate 返回采纳率（nil 表示无判定样本）。
@@ -446,6 +466,44 @@ func (r *AdvisoryReadback) GetLift(key string) *float64 {
 		return nil
 	}
 	v := float64(s.Adopted)/float64(decided) - float64(s.ShadowSatisfied)/float64(s.ShadowHeld)
+	return &v
+}
+
+// GetMatureLift 返回**成熟 lift**——会话实测 + 跨会话先验合并，过成熟度门才下结论。
+//
+// 对账 getMatureLift（advisory-readback.ts:341）。**与 GetLift 的区别**：
+//
+//	GetLift       仅会话统计，decided>0 && shadowHeld>0 即返回
+//	GetMatureLift 会话 + 先验合并，且 decided>=5 && shadowHeld>=3 才返回
+//
+// **样本不足返回 nil——消费端（负 lift 静音 / 效力排序）对 nil 必须视为中性**，
+// 不得据此下静音结论。会话内 holdout 积累极慢（单会话通常 0-2 个 shadow 样本），
+// 先验是冷启动的主数据源；EWMA 衰减保证陈旧历史权重递减。
+//
+// 语义：**正 lift = 提醒有真实增益**（投递组采纳率 > 扣留组自发完成率）；
+// lift≈0 = 模型本来就会做 → 提醒是纯噪音。
+func (r *AdvisoryReadback) GetMatureLift(key string) *float64 {
+	s := r.stats[key]
+	p := r.priors[key]
+
+	var adopted, ignored, shadowHeld, shadowSatisfied float64
+	if s != nil {
+		adopted = float64(s.Adopted)
+		ignored = float64(s.Ignored)
+		shadowHeld = float64(s.ShadowHeld)
+		shadowSatisfied = float64(s.ShadowSatisfied)
+	}
+	adopted += p.Adopted
+	ignored += p.Ignored
+	shadowHeld += p.ShadowHeld
+	shadowSatisfied += p.ShadowSatisfied
+
+	decided := adopted + ignored
+	// 成熟度门：样本不足不下结论（返回 nil = 中性）
+	if decided < matureLiftMinDecided || shadowHeld < matureLiftMinShadow {
+		return nil
+	}
+	v := adopted/decided - shadowSatisfied/shadowHeld
 	return &v
 }
 

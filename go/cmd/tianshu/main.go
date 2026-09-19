@@ -267,6 +267,19 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	// `agent.HabituationPolicy`，无需适配器。
 	bus.SetHabituationPolicy(readback)
 
+	// lift 消费接线——**成熟 lift 的第二层治理**。
+	//
+	// 对账 TS loop.ts:803：
+	//   `this.advisoryBus.setLiftProvider(key => this.advisoryReadback.getMatureLift(key))`
+	//
+	// 与习惯化（看「连续被忽略」的行为层信号）不同，lift 看的是**反事实基线**：
+	// 投递组采纳率 减 扣留组自发完成率。lift <= 0 = 「没提醒模型也会做」→ 纯噪音
+	// → 静音 10 个渲染周期（比习惯化的 4 长——反事实证据更可靠）。
+	//
+	// **成熟度门在 readback 内部**：decided < 5 或 shadowHeld < 3 返回 nil，
+	// bus 视为中性、不静音。这避免了冷启动阶段误杀有效提醒。
+	bus.SetLiftProvider(readback.GetMatureLift)
+
 	// claim 提取器装配——**这是 claim 的产生端**。
 	//
 	// 对账 TS 的工具执行后提取：`extractClaimsFromToolResult(ctx, meta)` →

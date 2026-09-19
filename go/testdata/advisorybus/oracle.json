@@ -950,6 +950,200 @@
       ]
     ]
   },
+  "lift_mute_negative": {
+    "renders": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "<星域-advisory>\n  <entry key=\"noisy\" priority=\"0.60\" category=\"discipline\">N</entry>\n</星域-advisory>",
+      ""
+    ],
+    "ledger": {
+      "submitted": 12,
+      "rendered": 1,
+      "dropped": 11,
+      "droppedKeys": [
+        "noisy"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 11,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [
+        "noisy"
+      ],
+      []
+    ]
+  },
+  "lift_mute_zero": {
+    "renders": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "<星域-advisory>\n  <entry key=\"noisy\" priority=\"0.60\" category=\"discipline\">N</entry>\n</星域-advisory>",
+      ""
+    ],
+    "ledger": {
+      "submitted": 12,
+      "rendered": 1,
+      "dropped": 11,
+      "droppedKeys": [
+        "noisy"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 11,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [
+        "noisy"
+      ],
+      []
+    ]
+  },
+  "lift_positive_no_mute": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"good\" priority=\"0.60\" category=\"discipline\">G</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 1,
+      "rendered": 1,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "good"
+      ]
+    ]
+  },
+  "lift_null_neutral": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"unknown\" priority=\"0.60\" category=\"discipline\">U</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 1,
+      "rendered": 1,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "unknown"
+      ]
+    ]
+  },
+  "lift_exempt_tiers": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"const\" priority=\"0.90\" category=\"constitutional\">C</entry>\n  <entry key=\"imm\" priority=\"0.70\" category=\"guard\">I</entry>\n  <entry key=\"star\" priority=\"0.50\" category=\"star_domain\">S</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 3,
+      "rendered": 3,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "const",
+        "imm",
+        "star"
+      ]
+    ]
+  },
+  "lift_mixed": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"good\" priority=\"0.50\" category=\"repair\">G</entry>\n</星域-advisory>",
+      "<星域-advisory>\n  <entry key=\"good\" priority=\"0.50\" category=\"repair\">G</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 4,
+      "rendered": 2,
+      "dropped": 2,
+      "droppedKeys": [
+        "noisy"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 2,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "good"
+      ],
+      [
+        "good"
+      ]
+    ]
+  },
   "immediate_exempt": {
     "renders": [
       "<星域-advisory>\n  <entry key=\"n1\" priority=\"0.90\" category=\"todo\">N1</entry>\n  <entry key=\"n2\" priority=\"0.80\" category=\"dedup\">N2</entry>\n  <entry key=\"n3\" priority=\"0.70\" category=\"immune\">N3</entry>\n</星域-advisory>"
