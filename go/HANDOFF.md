@@ -350,6 +350,24 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **会话元数据存储**：`internal/session/metadata.go`
+  - 对账 src/agent/session-metadata.ts（85 行）。内存缓存 + 批量落盘节拍：
+    append 热路径每条消息更新元数据，每次写整个 meta.json 是读写放大热点
+  - **手写缩进器 `indentJSON`**：必须逐字节匹配 `JSON.stringify(x, null, 2)`——
+    12 个用例锁定（含字符串里的转义引号/反斜杠/花括号，状态机不能被干扰）
+  - **重大发现：write 与 update 的键序不同**（oracle 锁定）：
+    - `update`（合并构造）→ `compactEvents` **最先**
+    - `write`（直接 stringify 调用方对象）→ 键序 = **调用方构造序**，
+      即生产路径 `initMetadata`（session-persist.ts:519-529）的字面量序
+  - **write 的输出键集精确等于调用方键集**——不是固定模板。首版无条件输出
+    `turnCount`/`toolCallCount`，`writeFormat` 用例当场红。已加
+    `PresentKeys []string` 显式表达键集
+  - `load` 三态缓存（未加载 / 磁盘无文件 / 已加载）；`tokenUsage` 嵌套合并
+  - 变异反证 7 个：5 个有判别力（缩进 1 / 尾换行 1 / sessionId 权威 1 /
+    tokenUsage 合并 1 / PresentKeys 1）；**M5、M7 经查证为等价变异**——
+    M5（flush 失败重设 dirty）是**冗余防御性赋值**（`Flush` 只在 dirty 时
+    进写路径，失败时 dirty 本来就是 true）；M7（load 不缓存）是**性能优化**，
+    不改变可观察输出
 - [x] **会话消息序列化**：`internal/session/serialize.go`
   - 对账 `serializeSessionMessage` / `serializeOaiSessionMessage` /
     `capJsonValue` / `truncateString` / `serializeSessionJsonValue`
@@ -590,6 +608,8 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   双向孤儿检测 / 两条警告文案 / loadOai 三层链路
 - `internal/session/serialize.go`：**消息序列化 + 三层截断**——capJsonValue
   递归截断 / truncateString marker / KeyOrder 保插入序
+- `internal/session/metadata.go`：**会话元数据存储**——内存缓存 + 批量落盘节拍 /
+  手写缩进器 / write 与 update 的键序差异
 
 **本轮核心教训**：`orderedProps` 的数组型 schema 缺陷只在**接线后**暴露
 （单测工具全绿，接注册表立刻 panic）。这印证了「消费方核查」与
@@ -627,11 +647,13 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
      `normalizeOaiMessage` / `isOaiMessage`）——本轮完成
    - ✅ **消息序列化 + 三层截断**（`serializeSessionMessage` /
      `serializeOaiSessionMessage` / `capJsonValue` / `truncateString`）——本轮完成
-   - **`SessionPersist` 类本体**（`session-persist.ts` 928 行）剩余部分未移植：
-     会话元数据（`SessionMetadataStore`）、`loadOai`/`append` 的完整编排
-     （读文件 → verifyLines → 逐行解析 → 三层链 → BatchWriter）。
-     **地基已全部就位**：BatchWriter（写）+ transcript codec（压缩）+
-     孤儿修复（完整性）+ 序列化（截断）+ 状态容器（渲染）。
+   - ✅ **会话元数据存储**（`SessionMetadataStore`）——本轮完成
+   - **`SessionPersist` 类本体**（`session-persist.ts` 928 行）剩余：`loadOai`/
+     `append` 的**编排层**（把已验证的组件串起来：读文件 → verifyLines →
+     逐行解析 → 三层链 → BatchWriter / MetadataStore）、`compact` 系列
+     （压缩重写）、`delete`/`evictOldSessions`（清理）。
+     **全部地基已就位**：BatchWriter（写）+ transcript codec（压缩）+
+     孤儿修复（完整性）+ 序列化（截断）+ 元数据（持久化）+ 状态容器（渲染）。
    - **会话恢复**（`session-recovery.ts` 140 行）、**会话注册表**
      （`session-registry.ts` 589 行）未移植。
    - **依赖策略变更**：项目已从「零第三方依赖」改为「允许成熟生态」，

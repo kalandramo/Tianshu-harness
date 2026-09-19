@@ -1,0 +1,177 @@
+{
+  "cases": {
+    "loadMissing": {
+      "note": "磁盘无文件 → load 返回 undefined",
+      "preexisting": null,
+      "observations": [
+        {
+          "after": "load",
+          "hasValue": false,
+          "keys": null
+        },
+        {
+          "after": "load",
+          "hasValue": false,
+          "keys": null
+        }
+      ]
+    },
+    "loadExisting": {
+      "note": "磁盘有文件 → load 返回对象",
+      "preexisting": "{\"sessionId\":\"s1\",\"createdAt\":100,\"updatedAt\":200,\"compactEvents\":[]}\n",
+      "observations": [
+        {
+          "after": "load",
+          "hasValue": true,
+          "keys": [
+            "compactEvents",
+            "createdAt",
+            "sessionId",
+            "updatedAt"
+          ]
+        }
+      ]
+    },
+    "loadCorrupt": {
+      "note": "损坏 JSON → load 返回 undefined（不抛）",
+      "preexisting": "{not json",
+      "observations": [
+        {
+          "after": "load",
+          "hasValue": false,
+          "keys": null
+        }
+      ]
+    },
+    "writeFormat": {
+      "note": "**write 的缩进格式**（2 空格 + 尾换行）",
+      "preexisting": null,
+      "observations": [
+        {
+          "after": "write"
+        },
+        {
+          "after": "readRaw",
+          "exists": true,
+          "raw": "{\n  \"sessionId\": \"s1\",\n  \"createdAt\": 1,\n  \"updatedAt\": 2,\n  \"compactEvents\": []\n}\n"
+        }
+      ]
+    },
+    "writeWithOptionals": {
+      "note": "write 的键序 = **调用方构造序**（此处复刻 initMetadata 的生产序）",
+      "preexisting": null,
+      "observations": [
+        {
+          "after": "write"
+        },
+        {
+          "after": "readRaw",
+          "exists": true,
+          "raw": "{\n  \"sessionId\": \"s1\",\n  \"createdAt\": 1,\n  \"updatedAt\": 2,\n  \"compactEvents\": [],\n  \"status\": \"active\",\n  \"turnCount\": 0,\n  \"toolCallCount\": 0,\n  \"tokenUsage\": {\n    \"prompt\": 1,\n    \"completion\": 2,\n    \"total\": 3\n  },\n  \"model\": \"deepseek-v4\",\n  \"provider\": \"deepseek\",\n  \"title\": \"T\"\n}\n"
+        }
+      ]
+    },
+    "updateFresh": {
+      "note": "无既有文件时 update（createdAt 首次设置）",
+      "preexisting": null,
+      "observations": [
+        {
+          "after": "update"
+        },
+        {
+          "after": "flush"
+        },
+        {
+          "after": "readRaw",
+          "exists": true,
+          "raw": "{\n  \"compactEvents\": [],\n  \"model\": \"m1\",\n  \"sessionId\": \"s1\",\n  \"createdAt\": 1789804803485,\n  \"updatedAt\": 1789804803485\n}\n"
+        }
+      ]
+    },
+    "updateMerges": {
+      "note": "**合并**：既有字段保留、patch 覆盖",
+      "preexisting": "{\"sessionId\":\"s1\",\"createdAt\":100,\"updatedAt\":100,\"compactEvents\":[],\"model\":\"old\",\"provider\":\"p1\"}\n",
+      "observations": [
+        {
+          "after": "update"
+        },
+        {
+          "after": "flush"
+        },
+        {
+          "after": "readRaw",
+          "exists": true,
+          "raw": "{\n  \"compactEvents\": [],\n  \"sessionId\": \"s1\",\n  \"createdAt\": 100,\n  \"updatedAt\": 1789804803486,\n  \"model\": \"new\",\n  \"provider\": \"p1\"\n}\n"
+        }
+      ]
+    },
+    "updateSessionIdAuthoritative": {
+      "note": "**sessionId 由调用方权威**（覆盖既有）",
+      "preexisting": "{\"sessionId\":\"OLD\",\"createdAt\":100,\"updatedAt\":100,\"compactEvents\":[]}\n",
+      "observations": [
+        {
+          "after": "update"
+        },
+        {
+          "after": "flush"
+        },
+        {
+          "after": "readRaw",
+          "exists": true,
+          "raw": "{\n  \"compactEvents\": [],\n  \"sessionId\": \"NEW\",\n  \"createdAt\": 100,\n  \"updatedAt\": 1789804803487\n}\n"
+        }
+      ]
+    },
+    "tokenUsageNestedMerge": {
+      "note": "**tokenUsage 嵌套合并**（不是替换）",
+      "preexisting": "{\"sessionId\":\"s1\",\"createdAt\":100,\"updatedAt\":100,\"compactEvents\":[],\"tokenUsage\":{\"prompt\":10,\"completion\":20,\"total\":30}}\n",
+      "observations": [
+        {
+          "after": "update"
+        },
+        {
+          "after": "flush"
+        },
+        {
+          "after": "readRaw",
+          "exists": true,
+          "raw": "{\n  \"compactEvents\": [],\n  \"sessionId\": \"s1\",\n  \"createdAt\": 100,\n  \"updatedAt\": 1789804803487,\n  \"tokenUsage\": {\n    \"prompt\": 10,\n    \"completion\": 20,\n    \"total\": 99\n  }\n}\n"
+        }
+      ]
+    },
+    "flushNotDirty": {
+      "note": "未 dirty 时 flush 不写盘",
+      "preexisting": null,
+      "observations": [
+        {
+          "after": "flush"
+        },
+        {
+          "after": "readRaw",
+          "exists": false,
+          "raw": null
+        }
+      ]
+    },
+    "updateThenFlushIdempotent": {
+      "note": "连续两次 flush（第二次无操作）",
+      "preexisting": null,
+      "observations": [
+        {
+          "after": "update"
+        },
+        {
+          "after": "flush"
+        },
+        {
+          "after": "flush"
+        },
+        {
+          "after": "readRaw",
+          "exists": true,
+          "raw": "{\n  \"compactEvents\": [],\n  \"model\": \"m\",\n  \"sessionId\": \"s1\",\n  \"createdAt\": 1789804803488,\n  \"updatedAt\": 1789804803488\n}\n"
+        }
+      ]
+    }
+  }
+}
