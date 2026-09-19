@@ -133,11 +133,26 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 - [ ] 工具 preset 三档（minimal / frontend / full）
 
 ### Wave 3（Prompt 引擎）
-- [ ] `internal/prompt`：static(frozen) + volatile + appendixDelta 三段拼接
-- [ ] 提示词资产外置（`src/prompt/static.ts` → `assets/prompt/*.txt`，TS/Go 共读）
+- [x] **static 层**：`internal/prompt` 的 BASE_PROMPT + MODEL_CALIBRATIONS
+  - 数据来源：`internal/prompt/data/prompt.json`，由 `testdata/prompt/gen-oracle.ts`
+    从真实 TS 代码路径写出（**不手抄**——Wave 1 假绿事故的教训）
+  - 对账：9 个测试（含 24 子测试）全绿；31,355 字节 / sha256 `26043390ef70024e`
+    与 TS 逐字节一致
+  - 端到端：CLI 实际发出的 system prompt（捕获自 mock 端点）与 oracle
+    逐字节一致，31,723 = 31,355 + 2 + 366
+  - 变异反证 4 个全部触发红灯（分隔符 / 优先级 / 未知家族 / base 篡改）
+- [ ] volatile 层：`src/prompt/volatile.ts`（1,263 行）——git 快照、工具历史、
+  待办、星域提示。**依赖会话状态容器，建议先做最小 session 状态**
+- [ ] appendixDelta / 动态 appendix 的分段与冻结边界
 - [ ] `internal/compact`：边界压缩（仅 `turn===0` 重写历史）
 - [ ] `internal/cache`：命中率统计与 advisor
 - [ ] **字节等价主判据**：同会话状态下 Go 渲染的 system prompt 与 TS 逐字节相同
+  （static 层已达成；volatile 层待办）
+
+> **方案变更说明**：原计划把提示词外置为 `assets/prompt/*.txt` 让 TS/Go 共读。
+> 实施时改为 oracle 模式（golden + 生成器），理由：外置需改 `src/prompt/static.ts`
+> 生产代码，且 tsup bundle 分发时资源文件能否进 dist 有未知风险；而 oracle
+> 模式与 Wave 1/2 既有架构一致、零 TS 生产代码改动、漂移可检测。
 
 ### Wave 4（Agent 循环深化）
 - [ ] `internal/agent/hooks.go`：五阶段 `Pipeline`（超时 / 迟到收尾记账 / 统计）
@@ -153,18 +168,17 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 
 ## 建议的第一刀
 
-**接 `internal/prompt`（Wave 3）**。理由：Wave 1（模型接入）已完整收口并
-经真实端点验证（缓存命中 93.7%–95.5%），Wave 2 的工具已覆盖
-「读→改→跑验证」闭环（bash + run_tests + 文件工具），Wave 4 的 agent 循环
-最小版可跑。
+**接 `internal/prompt` 的第二层（volatile + appendixDelta）**。
+static 层（BASE_PROMPT + calibration）已完成并逐字节对账通过——
+Go agent 现在跑的是真正的认知资产（31,355 字节），不是占位符。
 
-下一个主战场是**提示词引擎的字节等价**：`src/prompt/engine.ts` 的
-static(frozen) + volatile + appendixDelta 三段拼接。判据是同会话状态下
-Go 渲染的 system prompt 与 TS 逐字节相同——这是缓存命中率从当前的
-93.7% 推向 95%+ 的关键（当前 system prompt 是硬编码的最小版，不是真正的
-认知资产）。
+下一个主战场是 **volatile 块与动态 appendix**（`src/prompt/volatile.ts`，
+1,263 行）：每轮的 git 状态快照、工具历史、待办、星域提示等。
+这一层是缓存命中率的**真正杠杆**——它决定哪些内容进冻结前缀、哪些
+进尾部增量。判据仍是逐字节等价，但 oracle 需构造带 volatileCtx 的用例。
 
-配套需要把提示词文本从 `src/prompt/static.ts` 外置为 `assets/prompt/*.txt`，
-让 TS/Go 共读同一份（单一事实来源，避免两边漂移）。
+注意 volatile 层依赖会话状态（工具历史、turn 计数），需要先有
+会话状态容器（Wave 4 的 session 部分），两层有耦合——建议先做
+最小 session 状态，再上 volatile 渲染。
 
 其余待办见下方 Wave 2/3/4/5 清单。

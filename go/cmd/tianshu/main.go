@@ -27,6 +27,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/agent"
 	"github.com/kalandramo/tianshu/go/internal/api"
 	"github.com/kalandramo/tianshu/go/internal/client"
+	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"github.com/kalandramo/tianshu/go/internal/retry"
 	"github.com/kalandramo/tianshu/go/internal/tools"
 )
@@ -39,7 +40,7 @@ func main() {
 		baseURL      = flag.String("base-url", "", "API 端点（覆盖 TIANSHU_BASE_URL）")
 		approvalMode = flag.String("approval", "auto-safe", "审批档位：auto-safe | dangerously-skip-permissions")
 		maxTurns     = flag.Int("max-turns", 50, "单次 run 的最大轮数")
-		systemPrompt = flag.String("system", defaultSystemPrompt, "系统提示词")
+		systemPrompt = flag.String("system", "", "系统提示词（默认按模型家族渲染，见 internal/prompt）")
 		showVersion  = flag.Bool("version", false, "打印版本后退出")
 	)
 	flag.Parse()
@@ -96,17 +97,8 @@ func main() {
 	}
 }
 
-// defaultSystemPrompt 是最小系统提示词。
-//
-// 完整版在 src/prompt/static.ts（数千行的认知资产）——那是后续分波目标；
-// 此处只给一个能跑通闭环的最小版本。
-const defaultSystemPrompt = `你是天枢——一个终端编程助手。你有文件读写、检索与执行工具。
-
-工作纪律：
-- 动手前先读代码理解上下文，不凭猜测修改
-- 改完跑验证（测试/类型检查），未运行不得声称通过
-- 报告里的每个数字要能指到一条真实验证记录
-- 用最少格式传达清晰`
+// 系统提示词由 internal/prompt 按模型家族渲染（对账 src/prompt/static.ts，
+// 与 TS 侧逐字节等价）。`--system` 可显式覆盖。
 
 // appConfig 把 agent 配置与 client 配置捆在一起（凭证不进 agent.Config）。
 type appConfig struct {
@@ -138,6 +130,14 @@ func loadConfig(model, baseURL, approval string, maxTurns int, systemPrompt stri
 	}
 	if baseURL == "" {
 		baseURL = "https://api.deepseek.com"
+	}
+
+	// 系统提示词：未显式指定时按模型家族渲染（对账 TS 侧 buildSystemPrompt）。
+	// 模型家族决定是否附加 calibration 片段——deepseek/mimo/glm 各有一段，
+	// 其余家族返回 base 原样。
+	if systemPrompt == "" {
+		family := prompt.DetectModelFamily(model)
+		systemPrompt = prompt.BuildSystemPrompt(prompt.Context{ModelFamily: family})
 	}
 
 	return &appConfig{
