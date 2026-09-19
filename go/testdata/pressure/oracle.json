@@ -782,5 +782,443 @@
       "turn": 5,
       "want": false
     }
+  ],
+  "breaker": [
+    {
+      "name": "fail-once",
+      "failures": [
+        1
+      ],
+      "successes": [],
+      "startTurn": 10,
+      "want": [
+        {
+          "consecutiveFailures": 1,
+          "turn": 11
+        }
+      ]
+    },
+    {
+      "name": "fail-twice",
+      "failures": [
+        2
+      ],
+      "successes": [],
+      "startTurn": 10,
+      "want": [
+        {
+          "consecutiveFailures": 2,
+          "turn": 12
+        }
+      ]
+    },
+    {
+      "name": "fail-thrice-disables",
+      "failures": [
+        3
+      ],
+      "successes": [],
+      "startTurn": 10,
+      "want": [
+        {
+          "consecutiveFailures": 3,
+          "disabledUntilTurn": 15,
+          "turn": 13
+        }
+      ]
+    },
+    {
+      "name": "fail-four",
+      "failures": [
+        4
+      ],
+      "successes": [],
+      "startTurn": 10,
+      "want": [
+        {
+          "consecutiveFailures": 4,
+          "disabledUntilTurn": 16,
+          "turn": 14
+        }
+      ]
+    },
+    {
+      "name": "fail-then-success",
+      "failures": [
+        3
+      ],
+      "successes": [
+        1
+      ],
+      "startTurn": 10,
+      "want": [
+        {
+          "consecutiveFailures": 3,
+          "disabledUntilTurn": 15,
+          "turn": 13
+        },
+        {
+          "consecutiveFailures": 0,
+          "turn": 13
+        }
+      ]
+    }
+  ],
+  "ladders": [
+    {
+      "name": "per-token-exact-prefix",
+      "billing": "per-token",
+      "cache": "exact-prefix",
+      "want": {
+        "partial": 0.75,
+        "full": 0.85
+      }
+    },
+    {
+      "name": "per-token-partial",
+      "billing": "per-token",
+      "cache": "partial",
+      "want": {
+        "partial": 0.6,
+        "full": 0.75
+      }
+    },
+    {
+      "name": "per-token-none",
+      "billing": "per-token",
+      "cache": "none",
+      "want": {
+        "partial": 0.6,
+        "full": 0.75
+      }
+    },
+    {
+      "name": "subscription-exact-prefix",
+      "billing": "subscription",
+      "cache": "exact-prefix",
+      "want": {
+        "partial": 0.6,
+        "full": 0.75
+      }
+    },
+    {
+      "name": "subscription-none",
+      "billing": "subscription",
+      "cache": "none",
+      "want": {
+        "partial": 0.6,
+        "full": 0.75
+      }
+    }
+  ],
+  "decides": [
+    {
+      "name": "small-below-watch",
+      "maxTokens": 100000,
+      "estimatedTokens": 50000,
+      "turn": 1,
+      "want": {
+        "action": "none",
+        "reason": "context usage below watch threshold",
+        "force": false,
+        "precisionRisk": false,
+        "tier": 0,
+        "shouldCompact": false
+      }
+    },
+    {
+      "name": "small-watch-tier",
+      "maxTokens": 100000,
+      "estimatedTokens": 62000,
+      "turn": 1,
+      "want": {
+        "action": "micro",
+        "reason": "tool results exceeded watch threshold",
+        "force": false,
+        "precisionRisk": false,
+        "tier": 1,
+        "shouldCompact": true
+      }
+    },
+    {
+      "name": "small-compact-tier",
+      "maxTokens": 100000,
+      "estimatedTokens": 80000,
+      "turn": 1,
+      "want": {
+        "action": "micro",
+        "reason": "session memory compact recommended",
+        "force": false,
+        "precisionRisk": false,
+        "tier": 2,
+        "shouldCompact": true
+      }
+    },
+    {
+      "name": "small-ceiling-forced",
+      "maxTokens": 100000,
+      "estimatedTokens": 96000,
+      "turn": 1,
+      "want": {
+        "action": "micro",
+        "reason": "context ceiling exceeded; forced deterministic reclaim",
+        "force": true,
+        "precisionRisk": false,
+        "tier": 4,
+        "shouldCompact": true
+      }
+    },
+    {
+      "name": "breaker-open",
+      "maxTokens": 100000,
+      "estimatedTokens": 80000,
+      "turn": 1,
+      "failures": {
+        "consecutiveFailures": 3,
+        "disabledUntilTurn": 5
+      },
+      "want": {
+        "action": "none",
+        "reason": "automatic compact circuit breaker is open",
+        "force": false,
+        "precisionRisk": false,
+        "tier": 0,
+        "shouldCompact": false
+      }
+    },
+    {
+      "name": "breaker-open-but-ceiling",
+      "maxTokens": 100000,
+      "estimatedTokens": 96000,
+      "turn": 1,
+      "failures": {
+        "consecutiveFailures": 3,
+        "disabledUntilTurn": 5
+      },
+      "want": {
+        "action": "micro",
+        "reason": "context ceiling exceeded; forced deterministic reclaim",
+        "force": true,
+        "precisionRisk": false,
+        "tier": 4,
+        "shouldCompact": true
+      }
+    },
+    {
+      "name": "large-partial-llm",
+      "maxTokens": 1000000,
+      "estimatedTokens": 620000,
+      "turn": 1,
+      "want": {
+        "action": "partial-llm",
+        "reason": "partial LLM compact ladder at 62%",
+        "force": false,
+        "precisionRisk": false,
+        "tier": 1,
+        "shouldCompact": true
+      }
+    },
+    {
+      "name": "large-full-llm",
+      "maxTokens": 1000000,
+      "estimatedTokens": 780000,
+      "turn": 1,
+      "want": {
+        "action": "full-llm",
+        "reason": "full LLM compact ladder at 78%",
+        "force": false,
+        "precisionRisk": true,
+        "tier": 2,
+        "shouldCompact": true
+      }
+    },
+    {
+      "name": "large-cache-preserving-below-075",
+      "maxTokens": 1000000,
+      "estimatedTokens": 700000,
+      "turn": 1,
+      "billing": "per-token",
+      "cache": "exact-prefix",
+      "want": {
+        "action": "stale-round",
+        "reason": "precision-risk: past accuracy ceiling; deterministic reclaim only (gated)",
+        "force": false,
+        "precisionRisk": true,
+        "tier": 2,
+        "shouldCompact": true
+      }
+    },
+    {
+      "name": "large-cache-preserving-at-075",
+      "maxTokens": 1000000,
+      "estimatedTokens": 760000,
+      "turn": 1,
+      "billing": "per-token",
+      "cache": "exact-prefix",
+      "want": {
+        "action": "partial-llm",
+        "reason": "partial LLM compact ladder at 76%",
+        "force": false,
+        "precisionRisk": true,
+        "tier": 2,
+        "shouldCompact": true
+      }
+    },
+    {
+      "name": "large-precision-band",
+      "maxTokens": 1000000,
+      "estimatedTokens": 710000,
+      "turn": 1,
+      "billing": "per-token",
+      "cache": "exact-prefix",
+      "want": {
+        "action": "stale-round",
+        "reason": "precision-risk: past accuracy ceiling; deterministic reclaim only (gated)",
+        "force": false,
+        "precisionRisk": true,
+        "tier": 2,
+        "shouldCompact": true
+      }
+    },
+    {
+      "name": "large-ceiling-checkpoint",
+      "maxTokens": 1000000,
+      "estimatedTokens": 960000,
+      "turn": 1,
+      "want": {
+        "action": "checkpoint",
+        "reason": "context ceiling exceeded; checkpoint-resume required",
+        "force": true,
+        "precisionRisk": true,
+        "tier": 4,
+        "shouldCompact": true
+      }
+    },
+    {
+      "name": "large-below-all",
+      "maxTokens": 1000000,
+      "estimatedTokens": 100000,
+      "turn": 1,
+      "want": {
+        "action": "none",
+        "reason": "context usage below watch threshold",
+        "force": false,
+        "precisionRisk": false,
+        "tier": 0,
+        "shouldCompact": false
+      }
+    },
+    {
+      "name": "provider-ladder-override",
+      "maxTokens": 1000000,
+      "estimatedTokens": 700000,
+      "turn": 1,
+      "llmLadder": {
+        "partial": 0.85,
+        "full": 0.9
+      },
+      "want": {
+        "action": "stale-round",
+        "reason": "precision-risk: past accuracy ceiling; deterministic reclaim only (gated)",
+        "force": false,
+        "precisionRisk": true,
+        "tier": 2,
+        "shouldCompact": true
+      }
+    }
+  ],
+  "thresholds": [
+    {
+      "name": "number-overload-small",
+      "input": 100000,
+      "want": {
+        "autoThreshold": 80000,
+        "autoFloor": 60000,
+        "toolResultMaxTokens": 30000
+      }
+    },
+    {
+      "name": "number-overload-large",
+      "input": 1000000,
+      "want": {
+        "autoThreshold": 800000,
+        "autoFloor": 600000,
+        "toolResultMaxTokens": 200000
+      }
+    },
+    {
+      "name": "profile-small",
+      "input": {
+        "contextWindow": 100000
+      },
+      "want": {
+        "autoThreshold": 88000,
+        "autoFloor": 60000,
+        "toolResultMaxTokens": 30000
+      }
+    },
+    {
+      "name": "profile-large",
+      "input": {
+        "contextWindow": 1000000
+      },
+      "want": {
+        "autoThreshold": 880000,
+        "autoFloor": 600000,
+        "toolResultMaxTokens": 200000
+      }
+    },
+    {
+      "name": "profile-cache-preserving",
+      "input": {
+        "contextWindow": 1000000,
+        "providerProfile": {
+          "cacheType": "exact-prefix",
+          "persistent": true
+        }
+      },
+      "want": {
+        "autoThreshold": 920000,
+        "autoFloor": 720000,
+        "toolResultMaxTokens": 200000
+      }
+    },
+    {
+      "name": "profile-aggressive",
+      "input": {
+        "contextWindow": 1000000,
+        "providerProfile": {
+          "cacheType": "none",
+          "persistent": false
+        }
+      },
+      "want": {
+        "autoThreshold": 840000,
+        "autoFloor": 500000,
+        "toolResultMaxTokens": 200000
+      }
+    },
+    {
+      "name": "profile-boundary-499999",
+      "input": {
+        "contextWindow": 499999
+      },
+      "want": {
+        "autoThreshold": 439999,
+        "autoFloor": 299999,
+        "toolResultMaxTokens": 100000
+      }
+    },
+    {
+      "name": "profile-boundary-500000",
+      "input": {
+        "contextWindow": 500000
+      },
+      "want": {
+        "autoThreshold": 440000,
+        "autoFloor": 300000,
+        "toolResultMaxTokens": 150000
+      }
+    }
   ]
 }

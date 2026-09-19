@@ -19,9 +19,12 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   compactPolicyRatios, adaptiveCompactPolicyRatios, precisionCeilingRatio,
-  LARGE_CONTEXT_WINDOW_TOKENS,
+  LARGE_CONTEXT_WINDOW_TOKENS, compactThresholds,
 } from '../../../src/compact/constants.js'
-import { tierForRatio } from '../../../src/context/compact-policy.js'
+import {
+  tierForRatio, decideCompactAction, recordCompactFailure, recordCompactSuccess,
+  llmActionRatiosFor,
+} from '../../../src/context/compact-policy.js'
 import { PressureMonitor } from '../../../src/context/pressure-monitor.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -210,6 +213,87 @@ const thrashCases = [
   { name: 'boundary-5-away', compactions: [0, 1, 2], turn: 5 },
 ].map(c => ({ ...c, want: thrashCase(c.compactions, c.turn) }))
 
+// ── 熔断器状态机 ──
+function breakerSeq(failures: number[], successes: number[], startTurn: number) {
+  let st: any = { consecutiveFailures: 0 }
+  const out: any[] = []
+  let turn = startTurn
+  for (const f of failures) {
+    for (let i = 0; i < f; i++) { st = recordCompactFailure(st, turn); turn++ }
+    out.push({ ...st, turn })
+  }
+  for (const sc of successes) {
+    for (let i = 0; i < sc; i++) { st = recordCompactSuccess(st) }
+    out.push({ ...st, turn })
+  }
+  return out
+}
+
+const breakerCases = [
+  { name: 'fail-once', failures: [1], successes: [], startTurn: 10 },
+  { name: 'fail-twice', failures: [2], successes: [], startTurn: 10 },
+  { name: 'fail-thrice-disables', failures: [3], successes: [], startTurn: 10 },
+  { name: 'fail-four', failures: [4], successes: [], startTurn: 10 },
+  { name: 'fail-then-success', failures: [3], successes: [1], startTurn: 10 },
+].map(c => ({ ...c, want: breakerSeq(c.failures, c.successes, c.startTurn) }))
+
+// ── LLM 阶梯派生 ──
+const ladderCases = [
+  { name: 'per-token-exact-prefix', billing: 'per-token', cache: 'exact-prefix' },
+  { name: 'per-token-partial', billing: 'per-token', cache: 'partial' },
+  { name: 'per-token-none', billing: 'per-token', cache: 'none' },
+  { name: 'subscription-exact-prefix', billing: 'subscription', cache: 'exact-prefix' },
+  { name: 'subscription-none', billing: 'subscription', cache: 'none' },
+].map(c => ({ ...c, want: llmActionRatiosFor(c as any) }))
+
+// ── decideCompactAction 六种 action ──
+function decideCase(o: any) {
+  const input: any = {
+    estimatedTokens: o.estimatedTokens,
+    maxTokens: o.maxTokens,
+    turn: o.turn,
+    failures: o.failures ?? { consecutiveFailures: 0 },
+    profile: { billing: o.billing ?? 'subscription', cache: o.cache ?? 'none' },
+    recentHitRate: o.recentHitRate ?? null,
+  }
+  if (o.precisionCeilingOverride !== undefined) input.precisionCeilingOverride = o.precisionCeilingOverride
+  if (o.llmLadder !== undefined) input.providerProfile = { compaction: { llmLadder: o.llmLadder } }
+  const d = decideCompactAction(input)
+  return {
+    action: d.action, reason: d.reason, force: d.force,
+    precisionRisk: d.precisionRisk, tier: d.tier, shouldCompact: d.shouldCompact,
+  }
+}
+
+const decideCases = [
+  { name: 'small-below-watch', maxTokens: 100_000, estimatedTokens: 50_000, turn: 1 },
+  { name: 'small-watch-tier', maxTokens: 100_000, estimatedTokens: 62_000, turn: 1 },
+  { name: 'small-compact-tier', maxTokens: 100_000, estimatedTokens: 80_000, turn: 1 },
+  { name: 'small-ceiling-forced', maxTokens: 100_000, estimatedTokens: 96_000, turn: 1 },
+  { name: 'breaker-open', maxTokens: 100_000, estimatedTokens: 80_000, turn: 1, failures: { consecutiveFailures: 3, disabledUntilTurn: 5 } },
+  { name: 'breaker-open-but-ceiling', maxTokens: 100_000, estimatedTokens: 96_000, turn: 1, failures: { consecutiveFailures: 3, disabledUntilTurn: 5 } },
+  { name: 'large-partial-llm', maxTokens: 1_000_000, estimatedTokens: 620_000, turn: 1 },
+  { name: 'large-full-llm', maxTokens: 1_000_000, estimatedTokens: 780_000, turn: 1 },
+  { name: 'large-cache-preserving-below-075', maxTokens: 1_000_000, estimatedTokens: 700_000, turn: 1, billing: 'per-token', cache: 'exact-prefix' },
+  { name: 'large-cache-preserving-at-075', maxTokens: 1_000_000, estimatedTokens: 760_000, turn: 1, billing: 'per-token', cache: 'exact-prefix' },
+  { name: 'large-precision-band', maxTokens: 1_000_000, estimatedTokens: 710_000, turn: 1, billing: 'per-token', cache: 'exact-prefix' },
+  { name: 'large-ceiling-checkpoint', maxTokens: 1_000_000, estimatedTokens: 960_000, turn: 1 },
+  { name: 'large-below-all', maxTokens: 1_000_000, estimatedTokens: 100_000, turn: 1 },
+  { name: 'provider-ladder-override', maxTokens: 1_000_000, estimatedTokens: 700_000, turn: 1, llmLadder: { partial: 0.85, full: 0.90 } },
+].map(c => ({ ...c, want: decideCase(c) }))
+
+// ── CompactThresholds ──
+const thresholdCases = [
+  { name: 'number-overload-small', input: 100_000 },
+  { name: 'number-overload-large', input: 1_000_000 },
+  { name: 'profile-small', input: { contextWindow: 100_000 } },
+  { name: 'profile-large', input: { contextWindow: 1_000_000 } },
+  { name: 'profile-cache-preserving', input: { contextWindow: 1_000_000, providerProfile: { cacheType: 'exact-prefix', persistent: true } } },
+  { name: 'profile-aggressive', input: { contextWindow: 1_000_000, providerProfile: { cacheType: 'none', persistent: false } } },
+  { name: 'profile-boundary-499999', input: { contextWindow: 499_999 } },
+  { name: 'profile-boundary-500000', input: { contextWindow: 500_000 } },
+].map(c => ({ ...c, want: compactThresholds(c.input as any) }))
+
 const out = {
   constants: { largeContextWindowTokens: LARGE_CONTEXT_WINDOW_TOKENS },
   strategies: strategyCases,
@@ -219,6 +303,10 @@ const out = {
   checks: checkResults,
   cvm: cvmResults,
   thrashing: thrashCases,
+  breaker: breakerCases,
+  ladders: ladderCases,
+  decides: decideCases,
+  thresholds: thresholdCases,
 }
 
 writeFileSync(join(__dirname, 'oracle.json'), JSON.stringify(out, null, 2) + '\n', 'utf-8')

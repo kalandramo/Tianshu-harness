@@ -1102,8 +1102,61 @@ per-key 统计随会话死亡，每个新会话都要从零攒（holdout 资格�
 
 **oracle**：新增 `pressure` 数据集。
 
-**下一步**：`internal/compact` 的**压缩执行**部分（`decideCompactAction` +
-熔断器状态机 + `CompactThresholds`），或 `internal/context` 其余子系统
+### 第二十五刀（已完成）：压缩动作决策 + 熔断器 + 阈值（2026-09-19）
+
+✅ `DecideCompactAction` + 熔断器状态机 + `LLMActionRatiosFor` + `CompactThresholds`
+
+**`internal/compact` 的判定层现在完整了**（上一刀做了策略与压力监控，本刀做
+动作决策与阈值计算）。
+
+**六种 action**（对账 `decideCompactAction`）：
+
+| 条件 | action | force |
+|---|---|---|
+| ratio ≥ ceiling 且窗口 ≥ 1M | `checkpoint` | **true** |
+| ratio ≥ ceiling 且窗口 < 1M | `micro` | **true** |
+| 熔断器开启 | `none` | false |
+| 1M 且 ratio ≥ 阶梯上档 | `full-llm` | false |
+| 1M 且 ratio ≥ 阶梯下档 | `partial-llm` | false |
+| 1M 且越过精度天花板 | `stale-round` | false |
+| 其余 | `micro` / `none` | false |
+
+**三处关键语义（都有 oracle 锁定）**：
+
+1. **force 优先于熔断器**——超窗口请求是**硬 API 失败，不是调优偏好**。
+   oracle 的 `breaker-open-but-ceiling` 锁定：熔断器开启 + 超天花板 →
+   `micro force=true`。
+2. **精度带只做确定性回收**——`stale-round` 仍需过下游 reclaim gate 与缓存
+   顾问延迟，**永不强制 LLM 重写**。在默认阶梯下这条带是空的（天花板 0.7 <
+   下档 0.60 之上已全被 partial-llm 占据），但缓存保护阶梯把它重新打开为
+   0.70–0.75。
+3. **缓存保护阶梯**（per-token + exact-prefix → 0.75/0.85）：这类 provider 的
+   前缀缓存持久且精确（DeepSeek），一次 LLM 重写会让用户**已付费建立**的前缀
+   失效——回收必须大到值得重建。订阅制即使缓存保护也用基准阶梯（扁平计费下
+   提前回收只花延迟不花钱）。
+
+**熔断器**：连续失败 3 次 → 禁用 3 轮；**每次失败都重算禁用窗口**（oracle 的
+`fail-four` 锁定：turn 14 失败 → 禁用至 16）；成功重置且**丢弃
+disabledUntilTurn**。
+
+**一处 TS 的历史遗留（已如实对账）**：`compactThresholds` 有两条重载路径，
+**数字重载的 `reactive` 是 0.8，具名路径是 0.88**。Go 侧用
+`CompactThresholdsForWindow`（数字）与 `CompactThresholdsForProfile`（具名）
+两个函数显式区分，避免调用方误用。oracle 的 `number-overload-large`
+（800000）vs `profile-large`（880000）锁住这个差异。
+
+**用户级验收（已执行）**：新增 4 组 oracle 对账：
+
+- `TestCircuitBreakerParity`——5 个失败/成功序列
+- `TestLLMActionRatiosParity`——5 个 billing×cache 组合
+- `TestDecideCompactActionParity`——**14 个用例**覆盖六种 action + 边界
+- `TestCompactThresholdsParity`——8 个用例（含两条重载路径 + 窗口边界）
+
+**变异反证 6 个有判别力**（熔断器不触发红 4 / 硬天花板失效红 4 / 熔断器不生效
+红 2 / 缓存保护阶梯失效红 6 / 精度带失效红 4 / 数字重载 reactive 用错红 3）。
+
+**下一步**：压缩的**执行层**（LLM 重写编排、reclaim gate、缓存顾问延迟、
+micro-compact 的历史重塑），或 `internal/context` 其余子系统
 （CognitiveLedger / Stigmergy / task-contract）。
 
 **为什么是它而不是补工具**：

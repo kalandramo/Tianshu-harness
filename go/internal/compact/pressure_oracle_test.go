@@ -359,3 +359,237 @@ func itoa(n int) string {
 func itoaF(f float64) string {
 	return strconv.FormatFloat(f, 'g', -1, 64)
 }
+
+// ── 以下为 decideCompactAction / 熔断器 / 阶梯 / 阈值的对账 ──
+
+type actionOracle struct {
+	Breaker []struct {
+		Name      string `json:"name"`
+		Failures  []int  `json:"failures"`
+		Successes []int  `json:"successes"`
+		StartTurn int    `json:"startTurn"`
+		Want      []struct {
+			ConsecutiveFailures int  `json:"consecutiveFailures"`
+			DisabledUntilTurn   *int `json:"disabledUntilTurn"`
+			Turn                int  `json:"turn"`
+		} `json:"want"`
+	} `json:"breaker"`
+	Ladders []struct {
+		Name    string `json:"name"`
+		Billing string `json:"billing"`
+		Cache   string `json:"cache"`
+		Want    struct {
+			Partial float64 `json:"partial"`
+			Full    float64 `json:"full"`
+		} `json:"want"`
+	} `json:"ladders"`
+	Decides []struct {
+		Name            string `json:"name"`
+		MaxTokens       int    `json:"maxTokens"`
+		EstimatedTokens int    `json:"estimatedTokens"`
+		Turn            int    `json:"turn"`
+		Billing         string `json:"billing"`
+		Cache           string `json:"cache"`
+		Failures        *struct {
+			ConsecutiveFailures int  `json:"consecutiveFailures"`
+			DisabledUntilTurn   *int `json:"disabledUntilTurn"`
+		} `json:"failures"`
+		LLMLadder *struct {
+			Partial float64 `json:"partial"`
+			Full    float64 `json:"full"`
+		} `json:"llmLadder"`
+		Want struct {
+			Action        string `json:"action"`
+			Force         bool   `json:"force"`
+			PrecisionRisk bool   `json:"precisionRisk"`
+			Tier          int    `json:"tier"`
+			ShouldCompact bool   `json:"shouldCompact"`
+		} `json:"want"`
+	} `json:"decides"`
+	Thresholds []struct {
+		Name  string          `json:"name"`
+		Input json.RawMessage `json:"input"`
+		Want  struct {
+			AutoThreshold       int `json:"autoThreshold"`
+			AutoFloor           int `json:"autoFloor"`
+			ToolResultMaxTokens int `json:"toolResultMaxTokens"`
+		} `json:"want"`
+	} `json:"thresholds"`
+}
+
+func loadActionOracle(t *testing.T) actionOracle {
+	t.Helper()
+	p := filepath.Join("..", "..", "testdata", "pressure", "oracle.json")
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("读 oracle 失败：%v", err)
+	}
+	var out actionOracle
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("解析 oracle 失败：%v", err)
+	}
+	return out
+}
+
+// TestCircuitBreakerParity —— **熔断器状态机逐序列对账**。
+//
+// 关键语义：连续失败达 3 次触发禁用；**每次失败都重算禁用窗口**
+// （`fail-four` 的 turn 14 → 禁用至 16）；成功重置且**丢弃 disabledUntilTurn**。
+func TestCircuitBreakerParity(t *testing.T) {
+	o := loadActionOracle(t)
+	for _, c := range o.Breaker {
+		t.Run(c.Name, func(t *testing.T) {
+			st := CompactCircuitBreakerState{}
+			turn := c.StartTurn
+			var got []CompactCircuitBreakerState
+			for _, f := range c.Failures {
+				for i := 0; i < f; i++ {
+					st = RecordCompactFailure(st, turn)
+					turn++
+				}
+				got = append(got, st)
+			}
+			for _, sc := range c.Successes {
+				for i := 0; i < sc; i++ {
+					st = RecordCompactSuccess()
+				}
+				got = append(got, st)
+			}
+			if len(got) != len(c.Want) {
+				t.Fatalf("状态数：Go=%d TS=%d", len(got), len(c.Want))
+			}
+			for i, w := range c.Want {
+				if got[i].ConsecutiveFailures != w.ConsecutiveFailures {
+					t.Errorf("第 %d 步 consecutiveFailures：Go=%d TS=%d",
+						i, got[i].ConsecutiveFailures, w.ConsecutiveFailures)
+				}
+				if (got[i].DisabledUntilTurn == nil) != (w.DisabledUntilTurn == nil) {
+					t.Errorf("第 %d 步 disabledUntilTurn 的 nil 性不符：Go=%v TS=%v",
+						i, got[i].DisabledUntilTurn, w.DisabledUntilTurn)
+				} else if got[i].DisabledUntilTurn != nil && *got[i].DisabledUntilTurn != *w.DisabledUntilTurn {
+					t.Errorf("第 %d 步 disabledUntilTurn：Go=%d TS=%d",
+						i, *got[i].DisabledUntilTurn, *w.DisabledUntilTurn)
+				}
+			}
+		})
+	}
+}
+
+// TestLLMActionRatiosParity —— **阶梯派生**（billing × cache 四组合）。
+func TestLLMActionRatiosParity(t *testing.T) {
+	o := loadActionOracle(t)
+	for _, c := range o.Ladders {
+		t.Run(c.Name, func(t *testing.T) {
+			got := LLMActionRatiosFor(CompactionProfile{
+				Billing: CompactionBilling(c.Billing),
+				Cache:   CompactionCache(c.Cache),
+			})
+			if !near(got.Partial, c.Want.Partial) || !near(got.Full, c.Want.Full) {
+				t.Errorf("阶梯不符：Go=%+v TS={%v %v}", got, c.Want.Partial, c.Want.Full)
+			}
+		})
+	}
+}
+
+// TestDecideCompactActionParity —— **六种 action 的判定对账**（14 个用例）。
+//
+// 关键用例：
+//   - `breaker-open-but-ceiling`：force 优先于熔断器
+//   - `large-precision-band`：精度带 → stale-round（非强制 LLM 重写）
+//   - `large-cache-preserving-at-075`：缓存保护阶梯的 0.75 档
+func TestDecideCompactActionParity(t *testing.T) {
+	o := loadActionOracle(t)
+	for _, c := range o.Decides {
+		t.Run(c.Name, func(t *testing.T) {
+			in := CompactActionInput{
+				EstimatedTokens: c.EstimatedTokens,
+				MaxTokens:       c.MaxTokens,
+				Turn:            c.Turn,
+				Profile: CompactionProfile{
+					Billing: CompactionBilling(c.Billing),
+					Cache:   CompactionCache(c.Cache),
+				},
+			}
+			if in.Profile.Billing == "" {
+				in.Profile.Billing = BillingSubscription
+			}
+			if in.Profile.Cache == "" {
+				in.Profile.Cache = CompactionCacheNone
+			}
+			if c.Failures != nil {
+				in.Failures = CompactCircuitBreakerState{
+					ConsecutiveFailures: c.Failures.ConsecutiveFailures,
+					DisabledUntilTurn:   c.Failures.DisabledUntilTurn,
+				}
+			}
+			if c.LLMLadder != nil {
+				in.LLMLadderOverride = &LLMActionRatios{Partial: c.LLMLadder.Partial, Full: c.LLMLadder.Full}
+			}
+			got := DecideCompactAction(in)
+			if string(got.Action) != c.Want.Action {
+				t.Errorf("action：Go=%q TS=%q（reason=%q）", got.Action, c.Want.Action, got.Reason)
+			}
+			if got.Force != c.Want.Force {
+				t.Errorf("force：Go=%v TS=%v", got.Force, c.Want.Force)
+			}
+			if got.PrecisionRisk != c.Want.PrecisionRisk {
+				t.Errorf("precisionRisk：Go=%v TS=%v", got.PrecisionRisk, c.Want.PrecisionRisk)
+			}
+			if int(got.Tier) != c.Want.Tier {
+				t.Errorf("tier：Go=%d TS=%d", got.Tier, c.Want.Tier)
+			}
+			if got.ShouldCompact != c.Want.ShouldCompact {
+				t.Errorf("shouldCompact：Go=%v TS=%v", got.ShouldCompact, c.Want.ShouldCompact)
+			}
+		})
+	}
+}
+
+// TestCompactThresholdsParity —— **阈值计算对账**（含数字/具名两条路径）。
+//
+// **注意两条路径的 reactive 不同**（0.8 vs 0.88）——TS 的历史遗留。
+func TestCompactThresholdsParity(t *testing.T) {
+	o := loadActionOracle(t)
+	for _, c := range o.Thresholds {
+		t.Run(c.Name, func(t *testing.T) {
+			var got CompactThresholds
+			// input 是数字或对象——用首字符判别
+			trimmed := string(c.Input)
+			if len(trimmed) > 0 && trimmed[0] != '{' {
+				var w int
+				if err := json.Unmarshal(c.Input, &w); err != nil {
+					t.Fatalf("解析数字失败：%v", err)
+				}
+				got = CompactThresholdsForWindow(w)
+			} else {
+				var spec struct {
+					ContextWindow   int `json:"contextWindow"`
+					ProviderProfile *struct {
+						CacheType  string `json:"cacheType"`
+						Persistent bool   `json:"persistent"`
+					} `json:"providerProfile"`
+				}
+				if err := json.Unmarshal(c.Input, &spec); err != nil {
+					t.Fatalf("解析对象失败：%v", err)
+				}
+				in := CompactStrategyInput{ContextWindow: spec.ContextWindow}
+				if spec.ProviderProfile != nil {
+					in.ProviderProfile = &CompactRatioProfile{
+						CacheType:  CacheType(spec.ProviderProfile.CacheType),
+						Persistent: spec.ProviderProfile.Persistent,
+					}
+				}
+				got = CompactThresholdsForProfile(in)
+			}
+			if got.AutoThreshold != c.Want.AutoThreshold {
+				t.Errorf("autoThreshold：Go=%d TS=%d", got.AutoThreshold, c.Want.AutoThreshold)
+			}
+			if got.AutoFloor != c.Want.AutoFloor {
+				t.Errorf("autoFloor：Go=%d TS=%d", got.AutoFloor, c.Want.AutoFloor)
+			}
+			if got.ToolResultMaxTokens != c.Want.ToolResultMaxTokens {
+				t.Errorf("toolResultMaxTokens：Go=%d TS=%d", got.ToolResultMaxTokens, c.Want.ToolResultMaxTokens)
+			}
+		})
+	}
+}
