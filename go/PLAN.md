@@ -292,7 +292,7 @@ submit / 去重（同 key 保高 priority，平手先出现者胜）/ 排序（p
 习惯化对抗 / efficacy 负反馈环 / lift 消费 / holdout 反抽样 / SR 通道 / status
 通道 / 阶段抑制与挂起观察 / mutex 互斥对 / key 级送达冷却 / 星域措辞适配。
 
-**oracle 对账**（`testdata/advisorybus/`）：**23 个用例 × 2 维度 = 44 个子测试**，
+**oracle 对账**（`testdata/advisorybus/`）：**22 个用例 × 2 维度 = 44 个子测试**，
 从真实 TS `AdvisoryBus.render()` 导出。生成器同时导出 `cases.json`（输入唯一真源）。
 
 **oracle 抓到的真实缺陷（本轮主要收获）**：priority 格式化。
@@ -320,8 +320,41 @@ priority 自写实现 3 红 / constitutional 不豁免 4 红 / ledger 不记 ren
 渲染 → 输出里出现 `<星域-advisory>` 块含 `typecheck-reminder` 的 key 与提醒正文。
 `TestAdvisoryBusAsPipelineSink` 走真实 Pipeline。
 
-**下一步**：治理子系统按需增量移植（先做习惯化或 efficacy——它们是「提醒被忽略后
-静默」的核心），或继续接 hook。
+### 第七刀（已完成）：bus 接进 loop 的请求组装——真闭环（2026-09-19）
+
+⚠️ **再次发现悬空**：第六刀的 `AdvisoryBus` 有渲染能力，但 **`Render` 无生产
+调用方**（grep 确认）——渲染结果进不了 prompt。这与第五刀的 hook 悬空是**同一
+模式的重演**，被交付门禁的 `read-but-never-produced` 检查抓到。
+
+✅ `Loop.Advisories *AdvisoryBus` + `buildRequestMessages()`（hook_snapshot.go
++70 行，loop.go 请求构造改为调用它）
+
+- **请求级注入**（不写回 `l.messages`）：每轮调模型前 render，非空则作为
+  `<system-reminder>` 包裹的 user 消息**追加在请求尾部**。对账 TS 的
+  append-only 细断点通道（缓存安全：不改写历史）
+- `wrapSystemReminder` 对账 `src/prompt/system-reminder.ts`——不包裹时每次注入
+  都像真实用户边界，触发 prompt engine 重建 appendix，打爆前缀缓存
+- `Config.StarDomain` 新增（advisory 预算按域调整）
+
+**用户级验收（已执行）**：`TestE2EAdvisoryReachesPrompt`——真实 `Loop.Run`
+（mock SSE server）跑一轮，hook 投递 → bus 渲染 → **请求体里出现 advisory 块**。
+另有 5 个端到端用例（system-reminder 包裹 / 空块不注入 / 星域预算 / nil 安全 /
+请求内不重复）。
+
+**变异反证 6 个：全部有判别力**（不注入 4 红 / nil 检查去掉 1 红 / 空块也注入
+1 红 / 写回 l.messages 2 红 / 不包 system-reminder 1 红 / 星域传空 1 红）。
+
+**过程中的两个方法论收获**：
+1. **变异脚本的正则要覆盖全部相关测试**——首轮我用 `-run 'TestE2EAdvisory'`
+   匹配，漏掉了 `TestE2ENilAdvisories`，导致 M2 假红 0。改用 `-run 'TestE2E'`。
+2. **测试期望可能本身是错的**——我最初断言「advisory 只该出现一次」，实测发现
+   **hook 每轮都会重新触发**（touchedTSFiles 仍 true、run_tests 仍在窗口内、
+   sawTypecheck 仍 false）。抑制重复属于 TS 的治理子系统（expect 核销 / observe
+   挂起 / key 冷却），本移植未包含。**改测试而非改实现**——期望要反映真实语义。
+   判据改为「单个请求内至多 1 份」（这才是请求级注入 vs 持久化的真判别器）。
+
+**下一步**：治理子系统（习惯化 / efficacy / key 冷却——它们抑制重复提醒），
+或 `todo-reminder` hook。
 
 **为什么是它而不是补工具**：
 

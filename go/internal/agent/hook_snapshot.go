@@ -4,6 +4,8 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+
+	"github.com/kalandramo/tianshu/go/internal/api/wire"
 )
 
 // hookSnapshotState 是跨轮累积的 hook 快照状态。
@@ -174,4 +176,65 @@ func (l *Loop) runHookPhase(ctx context.Context, phase RuntimeHookPhase, turn in
 	case PhasePostSession:
 		l.Hooks.RunPostSession(ctx, hctx)
 	}
+}
+
+// systemReminderOpen / Close 是注入消息的标记（对账 src/prompt/system-reminder.ts）。
+//
+// **为什么需要**：hook 注入的引导以 `role:user` 消息送达。没有标记时，每次
+// 注入看起来都像真实的用户边界——触发 prompt engine 重建 appendix + 换
+// volatileBlock，在任务中途打爆前缀缓存（TS 注释引 cache-log #10/#12/#35）。
+//
+// 约定：每条注入消息都用 `<system-reminder>` 包裹。prompt engine 对这类消息
+// 原样透传（不做尾部合并、不做边界检测）；会话持久化也把它们排除在轮次计数
+// 与历史回放之外。
+const (
+	systemReminderOpen  = "<system-reminder>"
+	systemReminderClose = "</system-reminder>"
+)
+
+// wrapSystemReminder 包裹注入文本（幂等）。
+//
+// 对账 wrapSystemReminder：已带前缀则原样返回。
+func wrapSystemReminder(text string) string {
+	if strings.HasPrefix(text, systemReminderOpen) {
+		return text
+	}
+	return systemReminderOpen + "\n" + text + "\n" + systemReminderClose
+}
+
+// buildRequestMessages 构建本轮发给模型的消息列表。
+//
+// **核心职责**：在持久化的 `l.messages` 之上叠加**本轮专属**的注入
+// （advisory 块），而**不写回** `l.messages`。
+//
+// **为什么请求级而非持久化**：
+//   - TTL=1 的 advisory 自然只出现在一轮（下轮 render 时 bus 已清空）
+//   - 缓存安全：不改写历史，只在尾部追加（对账 TS 的 append-only 细断点通道）
+//
+// 对账 TS 的 `promptEngine.setHarnessAdvisoryBlock(advisoryBus.render(...))`
+// （turn-step-producer.ts:654-655）——**Go 侧的最小实现**：把渲染块作为
+// `<system-reminder>` 包裹的 user 消息追加在尾部。
+//
+// **未移植**：完整 prompt appendix 机制（TS 把块注入 system prompt 的 appendix
+// 区，Go 侧暂无该结构）。见 HANDOFF。
+func (l *Loop) buildRequestMessages() []*wire.OrderedMap {
+	if l.Advisories == nil {
+		return l.messages
+	}
+
+	block := l.Advisories.Render(l.cfg.StarDomain, 0)
+	if block == "" {
+		return l.messages
+	}
+
+	// 送达快照交给 readback（本移植暂无 readback，但保持 drain 语义：
+	// 不 drain 会让 delivered 无限累积）
+	l.Advisories.DrainDelivered()
+
+	out := make([]*wire.OrderedMap, 0, len(l.messages)+1)
+	out = append(out, l.messages...)
+	out = append(out, wire.NewOrderedMap().
+		Set("role", "user").
+		Set("content", wrapSystemReminder(block)))
+	return out
 }

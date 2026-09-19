@@ -40,6 +40,11 @@ type Config struct {
 	ApprovalMode string
 	// SessionID 用于缓存路由亲和。
 	SessionID string
+	// StarDomain 是当前星域名（用于 advisory 预算与措辞适配）。
+	//
+	// 对账 TS 的 activeStarName。空串 = 无星域（用全局预算）。
+	// **注意**：自主判断型星域（天权/瑶光）的 advisory 预算减为 1 条。
+	StarDomain string
 }
 
 // Event 是循环产出的事件（供 CLI 展示）。
@@ -99,6 +104,19 @@ type Loop struct {
 	//
 	// nil 时 hook 的 effect 调用退化为 no-op（*Safe 方法兜底）。
 	Effects RuntimeHookEffects
+
+	// Advisories 是劝导总线（hook 投递 → 渲染 → 注入 prompt）。
+	//
+	// nil 时跳过 advisory 注入——增强而非必需。
+	//
+	// 对账 TS 侧 `config.promptEngine.setHarnessAdvisoryBlock(advisoryBus.render(...))`
+	// （turn-step-producer.ts:654-655）。**Go 侧的最小实现**：在每轮调模型前
+	// render，把非空结果作为 **system-reminder 消息追加到尾部**——对账 TS 的
+	// append-only 细断点通道（缓存安全：只追加尾部，不重写历史）。
+	//
+	// **未移植**：完整的 prompt appendix 机制（promptEngine 的
+	// setHarnessAdvisoryBlock）。那是独立模块，见 HANDOFF。
+	Advisories *AdvisoryBus
 
 	// toolDefsCache 缓存工具定义的构造结果。
 	//
@@ -202,7 +220,7 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 		collector := &turnCollector{}
 		req := &api.ChatRequest{
 			Model:     l.cfg.Model,
-			Messages:  l.messages,
+			Messages:  l.buildRequestMessages(),
 			Tools:     l.toolDefs(),
 			MaxTokens: intPtr(l.cfg.MaxTokens),
 		}
