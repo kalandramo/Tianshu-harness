@@ -269,6 +269,11 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     （问模型"有没有 runtime-env 块"）暴露的。已补测试
     `TestBuildFullSystemPromptRuntimeEnv` 锁定生产路径
 
+> **教训（变异红 0 处的第三种高频成因：编译失败）**：本轮三次遇到「变异红 0 处」
+> 实际是**编译失败**（删掉某处使用后变量/import 成为未使用，Go 编译不过，
+> 测试根本没跑）。判据：看输出有无 `build failed`。规避：变异时加 `_ = x`
+> 保留引用，或先单独跑一次确认能编译。
+>
 > **教训（golden 复现性）**：首版 runtime-env 用例用 `mkdtempSync` 生成
 > fixture 目录，**临时路径进了 golden** → 每次生成都不同 → 对账必然失败。
 > 任何进入 golden 的路径/时间戳都必须可复现，否则测试是假的。本次的处置
@@ -334,6 +339,15 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **会话行校验和**：`internal/prompt/checksum.go`
+  - 对账 src/agent/checksum.ts（108 行，4 个导出纯函数）
+  - 行格式 `{json}|{checksum}`，checksum = SHA-256 前 8 字节（16 hex）
+  - **legacy 兼容是核心**（三条判定）：① 无 `|` ② `|` 后非 16 位小写 hex
+    ③ `|` 前非合法 JSON。这三条让"JSON 内容含 `|`"的行不被误判
+  - 用 **lastIndexOf** 取最后一个 `|`（对账 TS）
+  - oracle 12 checksum + 18 verify + 6 batch；7 个变异反证全部有判别力
+  - **M4 首轮红 0 处是编译失败**（去掉判定后 `json` 包成为未使用 import）
+    ——本轮第三次遇到这个成因，见下方教训
 - [x] **zstd 帧扫描**：`internal/prompt/zstdframe.go`
   - 对账 src/agent/session-transcript-codec.ts 的 `scanZstdFrames` /
     `isZstdFrameStream` —— 会话 transcript 的跨版本兼容基础（Wave 5 判据）

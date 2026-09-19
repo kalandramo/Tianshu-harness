@@ -1,0 +1,257 @@
+{
+  "checksums": {
+    "{\"role\":\"user\",\"content\":\"hi\"}": "ae760f5ba03c31ac",
+    "{}": "44136fa355b3678a",
+    "[]": "4f53cda18c2baa0c",
+    "{\"a\":1,\"b\":[1,2,3]}": "bfa6ceebf136e483",
+    "{\"中文\":\"内容\"}": "37b8d6cdb3af14f0",
+    "{\"emoji\":\"😀\"}": "4525cb52c6a0122e",
+    "{\"nested\":{\"deep\":{\"x\":null}}}": "ad0adefcd1f2f255",
+    "{\"escaped\":\"a\\\"b\\\\c\"}": "7906907490662824",
+    "{\"pipe\":\"a|b\"}": "38169f2a4cf5d40e",
+    "{\"num\":1.5e-7}": "ef0253669d178b45",
+    "": "e3b0c44298fc1c14",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": "5c0e0ea421571c30"
+  },
+  "appended": {
+    "{\"role\":\"user\",\"content\":\"hi\"}": "{\"role\":\"user\",\"content\":\"hi\"}|ae760f5ba03c31ac",
+    "{}": "{}|44136fa355b3678a",
+    "[]": "[]|4f53cda18c2baa0c",
+    "{\"a\":1,\"b\":[1,2,3]}": "{\"a\":1,\"b\":[1,2,3]}|bfa6ceebf136e483",
+    "{\"中文\":\"内容\"}": "{\"中文\":\"内容\"}|37b8d6cdb3af14f0",
+    "{\"emoji\":\"😀\"}": "{\"emoji\":\"😀\"}|4525cb52c6a0122e",
+    "{\"nested\":{\"deep\":{\"x\":null}}}": "{\"nested\":{\"deep\":{\"x\":null}}}|ad0adefcd1f2f255",
+    "{\"escaped\":\"a\\\"b\\\\c\"}": "{\"escaped\":\"a\\\"b\\\\c\"}|7906907490662824",
+    "{\"pipe\":\"a|b\"}": "{\"pipe\":\"a|b\"}|38169f2a4cf5d40e",
+    "{\"num\":1.5e-7}": "{\"num\":1.5e-7}|ef0253669d178b45",
+    "": "|e3b0c44298fc1c14",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx|5c0e0ea421571c30"
+  },
+  "verifyResults": {
+    "validNew": {
+      "line": "{\"role\":\"user\",\"content\":\"hi\"}|ae760f5ba03c31ac",
+      "result": {
+        "valid": true,
+        "json": "{\"role\":\"user\",\"content\":\"hi\"}",
+        "isLegacy": false
+      }
+    },
+    "checksumMismatch": {
+      "line": "{\"role\":\"user\",\"content\":\"hi\"}|0000000000000000",
+      "result": {
+        "valid": false,
+        "json": "{\"role\":\"user\",\"content\":\"hi\"}",
+        "isLegacy": false,
+        "error": "Checksum mismatch: expected ae760f5ba03c31ac, got 0000000000000000"
+      }
+    },
+    "badChecksumFormat": {
+      "line": "{\"role\":\"user\",\"content\":\"hi\"}|abc",
+      "result": {
+        "valid": true,
+        "json": "{\"role\":\"user\",\"content\":\"hi\"}|abc",
+        "isLegacy": true
+      }
+    },
+    "uppercaseChecksum": {
+      "line": "{\"role\":\"user\",\"content\":\"hi\"}|AE760F5BA03C31AC",
+      "result": {
+        "valid": true,
+        "json": "{\"role\":\"user\",\"content\":\"hi\"}|AE760F5BA03C31AC",
+        "isLegacy": true
+      }
+    },
+    "noPipe": {
+      "line": "{\"role\":\"user\",\"content\":\"hi\"}",
+      "result": {
+        "valid": true,
+        "json": "{\"role\":\"user\",\"content\":\"hi\"}",
+        "isLegacy": true
+      }
+    },
+    "legacyWithPipe": {
+      "line": "not json | something",
+      "result": {
+        "valid": true,
+        "json": "not json | something",
+        "isLegacy": true
+      }
+    },
+    "empty": {
+      "line": "",
+      "result": {
+        "valid": false,
+        "json": "",
+        "isLegacy": false,
+        "error": "Empty line"
+      }
+    },
+    "whitespace": {
+      "line": "   ",
+      "result": {
+        "valid": false,
+        "json": "",
+        "isLegacy": false,
+        "error": "Empty line"
+      }
+    },
+    "trailingNewline": {
+      "line": "{\"role\":\"user\",\"content\":\"hi\"}|ae760f5ba03c31ac\n",
+      "result": {
+        "valid": true,
+        "json": "{\"role\":\"user\",\"content\":\"hi\"}",
+        "isLegacy": false
+      }
+    },
+    "leadingSpaces": {
+      "line": "   {\"role\":\"user\",\"content\":\"hi\"}|ae760f5ba03c31ac",
+      "result": {
+        "valid": true,
+        "json": "{\"role\":\"user\",\"content\":\"hi\"}",
+        "isLegacy": false
+      }
+    },
+    "multiplePipes": {
+      "line": "{\"role\":\"user\",\"content\":\"hi\"}|extra|ae760f5ba03c31ac",
+      "result": {
+        "valid": true,
+        "json": "{\"role\":\"user\",\"content\":\"hi\"}|extra|ae760f5ba03c31ac",
+        "isLegacy": true
+      }
+    },
+    "jsonWithPipeAndChecksum": {
+      "line": "{\"pipe\":\"a|b\"}|38169f2a4cf5d40e",
+      "result": {
+        "valid": true,
+        "json": "{\"pipe\":\"a|b\"}",
+        "isLegacy": false
+      }
+    },
+    "jsonPartNotJsonButChecksumShaped": {
+      "line": "not json at all|aaaaaaaaaaaaaaaa",
+      "result": {
+        "valid": true,
+        "json": "not json at all|aaaaaaaaaaaaaaaa",
+        "isLegacy": true
+      }
+    },
+    "truncatedJsonWithValidChecksumShape": {
+      "line": "{\"a\":1|bbbbbbbbbbbbbbbb",
+      "result": {
+        "valid": true,
+        "json": "{\"a\":1|bbbbbbbbbbbbbbbb",
+        "isLegacy": true
+      }
+    },
+    "onlyPipe": {
+      "line": "|",
+      "result": {
+        "valid": true,
+        "json": "|",
+        "isLegacy": true
+      }
+    },
+    "pipeThenEmpty": {
+      "line": "{\"role\":\"user\",\"content\":\"hi\"}|",
+      "result": {
+        "valid": true,
+        "json": "{\"role\":\"user\",\"content\":\"hi\"}|",
+        "isLegacy": true
+      }
+    },
+    "arrayJson": {
+      "line": "[1,2]|49a64717d5d4cb19",
+      "result": {
+        "valid": true,
+        "json": "[1,2]",
+        "isLegacy": false
+      }
+    },
+    "crlf": {
+      "line": "{\"role\":\"user\",\"content\":\"hi\"}|ae760f5ba03c31ac\r\n",
+      "result": {
+        "valid": true,
+        "json": "{\"role\":\"user\",\"content\":\"hi\"}",
+        "isLegacy": false
+      }
+    }
+  },
+  "verifyLinesResults": {
+    "allValid": {
+      "lines": [
+        "{\"role\":\"user\",\"content\":\"hi\"}|ae760f5ba03c31ac",
+        "[1,2]|49a64717d5d4cb19"
+      ],
+      "result": {
+        "validLines": [
+          "{\"role\":\"user\",\"content\":\"hi\"}",
+          "[1,2]"
+        ],
+        "invalidCount": 0,
+        "legacyCount": 0
+      }
+    },
+    "mixedLegacy": {
+      "lines": [
+        "{\"role\":\"user\",\"content\":\"hi\"}",
+        "{\"role\":\"user\",\"content\":\"hi\"}|ae760f5ba03c31ac",
+        "not json | x"
+      ],
+      "result": {
+        "validLines": [
+          "{\"role\":\"user\",\"content\":\"hi\"}",
+          "{\"role\":\"user\",\"content\":\"hi\"}",
+          "not json | x"
+        ],
+        "invalidCount": 0,
+        "legacyCount": 2
+      }
+    },
+    "withInvalid": {
+      "lines": [
+        "{\"role\":\"user\",\"content\":\"hi\"}|0000000000000000",
+        "{\"role\":\"user\",\"content\":\"hi\"}|ae760f5ba03c31ac"
+      ],
+      "result": {
+        "validLines": [
+          "{\"role\":\"user\",\"content\":\"hi\"}"
+        ],
+        "invalidCount": 1,
+        "legacyCount": 0
+      }
+    },
+    "emptyList": {
+      "lines": [],
+      "result": {
+        "validLines": [],
+        "invalidCount": 0,
+        "legacyCount": 0
+      }
+    },
+    "emptyLines": {
+      "lines": [
+        "",
+        "   ",
+        "{\"role\":\"user\",\"content\":\"hi\"}|ae760f5ba03c31ac"
+      ],
+      "result": {
+        "validLines": [
+          "{\"role\":\"user\",\"content\":\"hi\"}"
+        ],
+        "invalidCount": 2,
+        "legacyCount": 0
+      }
+    },
+    "allInvalid": {
+      "lines": [
+        "{\"role\":\"user\",\"content\":\"hi\"}|0000000000000000",
+        "{\"role\":\"user\",\"content\":\"hi\"}|1111111111111111"
+      ],
+      "result": {
+        "validLines": [],
+        "invalidCount": 2,
+        "legacyCount": 0
+      }
+    }
+  }
+}
