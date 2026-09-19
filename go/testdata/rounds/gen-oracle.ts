@@ -159,4 +159,3 @@ writeFileSync(
   new URL('cases.json', import.meta.url),
   JSON.stringify(Object.fromEntries(cases), null, 2) + '\n',
 )
-console.log(`已写出 ${cases.length} 个用例（oracle.json + cases.json）`)
