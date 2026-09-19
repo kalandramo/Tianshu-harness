@@ -322,6 +322,19 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 > 生产代码，且 tsup bundle 分发时资源文件能否进 dist 有未知风险；而 oracle
 > 模式与 Wave 1/2 既有架构一致、零 TS 生产代码改动、漂移可检测。
 
+### Wave 2 补充（工具地基）
+
+- [x] **`hashLine` / `buildFreshAnchors`**：`internal/prompt/hashline.go`
+  - 对账 src/tools/hash-edit.ts 的两个导出纯函数（572 行工具的地基）
+  - **hashLine 关键语义**：先剥行尾 `\r` 再 sha256 取前 8 位（CRLF 归一化）
+    ——故 `"abc"` 与 `"abc\r"` 哈希相同，跨平台锚点才一致
+  - **buildFreshAnchors**：最多 4 个锚点（前文行/新区间首行/末行/后文行），
+    内容去行尾空白 + 截断 80 字符加 `…`，**哈希用原始行**（未 trim）
+  - 7 个变异反证全部有判别力（不剥 \r / 哈希长度 / 不去空白 / 截断阈值 /
+    单行末行 / 开头前文 / 行号基数）
+  - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
+    属工具层，涉及文件 IO；本轮先立地基
+
 ### Wave 4（Agent 循环深化）
 - [ ] `internal/agent/hooks.go`：五阶段 `Pipeline`（超时 / 迟到收尾记账 / 统计）
 - [ ] 首批 hook 移植（常驻基线 10 个，非全量 74 个）

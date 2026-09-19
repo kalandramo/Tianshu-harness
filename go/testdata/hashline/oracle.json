@@ -1,0 +1,138 @@
+{
+  "hashes": {
+    "": "e3b0c442",
+    "a": "ca978112",
+    "hello world": "b94d27b9",
+    "  indented": "b0c5a6eb",
+    "\ttab": "f4302143",
+    "中文行": "f0a7d220",
+    "😀 emoji 行": "97c1d512",
+    "trailing spaces   ": "0bbae9f3",
+    "x\r": "2d711642",
+    "line with CRLF\r": "9f9018c0",
+    "\r": "e3b0c442",
+    "a\rb": "af908167",
+    "const x = \"<tag> & 'q'\"": "83156628",
+    "```": "f1b90184",
+    "| a | b |": "881857d7",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": "c38c2bf3"
+  },
+  "crlfInvariant": {
+    "plain": "ba7816bf",
+    "withCR": "ba7816bf",
+    "equal": true
+  },
+  "fresh": {
+    "middleEdit": {
+      "lines": [
+        "line0",
+        "line1",
+        "new1",
+        "new2",
+        "line4",
+        "line5"
+      ],
+      "start0": 2,
+      "count": 2,
+      "out": "\n新鲜锚点（链式安全）：\nL2:815750a4 → line1\nL3:6039092f → new1\nL4:d504f016 → new2\nL5:7af3fd68 → line4",
+      "note": "中间插入：应含前文行、新区间首尾、后文行"
+    },
+    "atStart": {
+      "lines": [
+        "new1",
+        "new2",
+        "line2",
+        "line3"
+      ],
+      "start0": 0,
+      "count": 2,
+      "out": "\n新鲜锚点（链式安全）：\nL1:6039092f → new1\nL2:d504f016 → new2\nL3:cc8fda49 → line2",
+      "note": "编辑在文件开头（无前文行）"
+    },
+    "atEnd": {
+      "lines": [
+        "line0",
+        "line1",
+        "new1",
+        "new2"
+      ],
+      "start0": 2,
+      "count": 2,
+      "out": "\n新鲜锚点（链式安全）：\nL2:815750a4 → line1\nL3:6039092f → new1\nL4:d504f016 → new2",
+      "note": "编辑在文件末尾（无后文行）"
+    },
+    "pureDeletion": {
+      "lines": [
+        "line0",
+        "line1",
+        "line2"
+      ],
+      "start0": 1,
+      "count": 0,
+      "out": "\n新鲜锚点（链式安全）：\nL1:0646ca79 → line0\nL2:815750a4 → line1",
+      "note": "纯删除（count=0）——新区间为空"
+    },
+    "singleLine": {
+      "lines": [
+        "line0",
+        "new",
+        "line2"
+      ],
+      "start0": 1,
+      "count": 1,
+      "out": "\n新鲜锚点（链式安全）：\nL1:0646ca79 → line0\nL2:11507a0e → new\nL3:cc8fda49 → line2",
+      "note": "单行替换"
+    },
+    "wholeFile": {
+      "lines": [
+        "new1",
+        "new2",
+        "new3"
+      ],
+      "start0": 0,
+      "count": 3,
+      "out": "\n新鲜锚点（链式安全）：\nL1:6039092f → new1\nL3:e5dc626f → new3",
+      "note": "整个文件被替换（无前后文行）"
+    },
+    "emptyFile": {
+      "lines": [],
+      "start0": 0,
+      "count": 0,
+      "out": "",
+      "note": "空文件（0 行）"
+    },
+    "longLineTruncated": {
+      "lines": [
+        "line0",
+        "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+        "line2"
+      ],
+      "start0": 1,
+      "count": 1,
+      "out": "\n新鲜锚点（链式安全）：\nL1:0646ca79 → line0\nL2:8ca9bfd4 → yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy…\nL3:cc8fda49 → line2",
+      "note": "**关键**：锚点行内容应截断 80 字符"
+    },
+    "crlfLines": {
+      "lines": [
+        "line0\r",
+        "new1\r",
+        "line2\r"
+      ],
+      "start0": 1,
+      "count": 1,
+      "out": "\n新鲜锚点（链式安全）：\nL1:0646ca79 → line0\nL2:6039092f → new1\nL3:cc8fda49 → line2",
+      "note": "含 \\r 的行——哈希应归一化，内容展示保留原文？"
+    },
+    "emojiLine": {
+      "lines": [
+        "line0",
+        "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+        "line2"
+      ],
+      "start0": 1,
+      "count": 1,
+      "out": "\n新鲜锚点（链式安全）：\nL1:0646ca79 → line0\nL2:204fb86c → 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀…\nL3:cc8fda49 → line2",
+      "note": "含代理对的行"
+    }
+  }
+}
