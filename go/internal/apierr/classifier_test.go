@@ -199,26 +199,95 @@ func Test413NoImagesNotRetryable(t *testing.T) {
 	}
 }
 
-// Retry-After 解析。
-func TestParseRetryAfter(t *testing.T) {
+// Retry-After 解析——对账真实 oracle 的 __retryAfter 段。
+func TestParseRetryAfterGoldenParity(t *testing.T) {
+	oracle := loadOracle(t)
+	raw, ok := oracle["__retryAfter"]
+	if !ok {
+		t.Fatal("oracle 缺少 __retryAfter 段——需重新生成")
+	}
+	var want struct {
+		NumericSeconds *int `json:"numeric_seconds"`
+		NumericZero    *int `json:"numeric_zero"`
+		Unparseable    *int `json:"unparseable"`
+		Fractional     *int `json:"fractional"`
+	}
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatalf("解析 __retryAfter 失败：%v", err)
+	}
+
 	cases := []struct {
+		name string
 		in   string
-		want int
-		ok   bool
+		exp  *int
 	}{
-		{"5", 5000, true},
-		{"0", 0, true},
-		{"1.5", 1500, true},
-		{"not-a-number", 0, false},
+		{"numeric_seconds", "5", want.NumericSeconds},
+		{"numeric_zero", "0", want.NumericZero},
+		{"unparseable", "not-a-number", want.Unparseable},
+		{"fractional", "1.5", want.Fractional},
 	}
 	for _, tc := range cases {
-		got, ok := ParseRetryAfterMs(tc.in, 0)
-		if ok != tc.ok {
-			t.Errorf("ParseRetryAfterMs(%q) ok = %v, want %v", tc.in, ok, tc.ok)
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := ParseRetryAfterMs(tc.in, 0)
+			if tc.exp == nil {
+				if ok {
+					t.Errorf("应不可解析，实际得 %d", got)
+				}
+				return
+			}
+			if !ok {
+				t.Fatalf("应可解析，实际失败（期望 %d）", *tc.exp)
+			}
+			if got != *tc.exp {
+				t.Errorf("got %d, want %d", got, *tc.exp)
+			}
+		})
+	}
+}
+
+// 恢复指引——对账真实 oracle 的 __guidance 段（按类别）。
+func TestRecoveryGuidanceGoldenParity(t *testing.T) {
+	oracle := loadOracle(t)
+	raw, ok := oracle["__guidance"]
+	if !ok {
+		t.Fatal("oracle 缺少 __guidance 段——需重新生成")
+	}
+	var want map[string]string
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatalf("解析 __guidance 失败：%v", err)
+	}
+
+	// 与 gen-oracle.ts 的 __guidance 构造逐条对应
+	errs := map[string]error{
+		"rate_limit":       &APIError{Status: 429, Msg: "x"},
+		"auth_error":       &APIError{Status: 401, Msg: "x"},
+		"client_error":     &APIError{Status: 404, Msg: "x"},
+		"context_overflow": errors.New("prompt is too long"),
+		"unknown":          errors.New("weird thing"),
+	}
+
+	for name, wantText := range want {
+		err, ok := errs[name]
+		if !ok {
+			t.Errorf("oracle 含未覆盖的指引键 %q", name)
 			continue
 		}
-		if ok && got != tc.want {
-			t.Errorf("ParseRetryAfterMs(%q) = %d, want %d", tc.in, got, tc.want)
+		t.Run(name, func(t *testing.T) {
+			got := RecoveryGuidance(err)
+			if got == "" {
+				t.Fatal("指引为空")
+			}
+			// 类别必须与 oracle 判定的一致（文案可本地化，类别不可漂移）
+			if c := Classify(err); string(c.Category) != name {
+				t.Errorf("类别漂移：got %q, want %q", c.Category, name)
+			}
+			_ = wantText
+		})
+	}
+	// 反向：本测试覆盖的键都应在 oracle 中
+	for name := range errs {
+		if _, ok := want[name]; !ok {
+			t.Errorf("键 %q 未在 oracle 中——需重新生成", name)
 		}
 	}
 }
