@@ -50,6 +50,11 @@ type Event struct {
 	ToolID    string
 	IsError   bool
 	Turn      int
+	// Usage 在 turn_end 事件上携带本回合的 token 计量。
+	// 关键指标：CacheReadInputTokens > 0 表示前缀缓存命中。
+	Usage *contract.Usage
+	// StopReason 是本回合的结束原因（end_turn / tool_use / max_tokens）。
+	StopReason string
 }
 
 // Loop 是 agent 主循环。
@@ -124,7 +129,11 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 
 		// ── 无工具调用 → 终答，结束 ──
 		if len(collector.toolCalls) == 0 {
-			l.emit(Event{Kind: "done", Text: collector.text(), Turn: turn})
+			u := collector.usage
+			l.emit(Event{
+				Kind: "done", Text: collector.text(), Turn: turn,
+				Usage: &u, StopReason: collector.stopReason,
+			})
 			return nil
 		}
 
@@ -147,7 +156,11 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 				Set("content", result.Content))
 		}
 
-		l.emit(Event{Kind: "turn_end", Turn: turn})
+		u := collector.usage
+		l.emit(Event{
+			Kind: "turn_end", Turn: turn,
+			Usage: &u, StopReason: collector.stopReason,
+		})
 	}
 
 	return fmt.Errorf("已达最大轮数 %d——任务未完成（防无限循环）", maxTurns)
@@ -309,10 +322,14 @@ type toolCall struct {
 }
 
 type turnCollector struct {
-	textBuf   strings.Builder
-	thinkBuf  strings.Builder
-	toolCalls []toolCall
-	stopSeen  bool
+	textBuf    strings.Builder
+	thinkBuf   strings.Builder
+	toolCalls  []toolCall
+	stopSeen   bool
+	stopReason string
+	// usage 是本回合的 token 计量。**必须保留**——cache_read_input_tokens
+	// 是前缀缓存是否命中的唯一直接指标，丢掉它等于放弃缓存可观测性。
+	usage contract.Usage
 }
 
 func (c *turnCollector) text() string { return c.textBuf.String() }
@@ -341,6 +358,8 @@ func (c *turnCollector) handler(l *Loop, turn int) sse.Handler {
 		},
 		OnStopReason: func(reason string, u contract.Usage) {
 			c.stopSeen = true
+			c.stopReason = reason
+			c.usage = u
 		},
 	}
 }

@@ -199,6 +199,17 @@ func emitJSON(e agent.Event) {
 	if e.Kind == "tool_result" {
 		rec["isError"] = e.IsError
 	}
+	if e.StopReason != "" {
+		rec["stopReason"] = e.StopReason
+	}
+	if e.Usage != nil {
+		rec["usage"] = map[string]any{
+			"input_tokens":                e.Usage.InputTokens,
+			"output_tokens":               e.Usage.OutputTokens,
+			"cache_read_input_tokens":     e.Usage.CacheReadInputTokens,
+			"cache_creation_input_tokens": e.Usage.CacheCreationInputTokens,
+		}
+	}
 	// 单行 JSON（NDJSON），便于流式消费
 	b, _ := json.Marshal(rec)
 	fmt.Println(string(b))
@@ -221,6 +232,15 @@ func emitHuman(e agent.Event) {
 		fmt.Fprintln(os.Stderr)
 	case "done":
 		fmt.Println()
+		if e.Usage != nil && e.Usage.InputTokens > 0 {
+			hit := 0.0
+			if e.Usage.InputTokens > 0 {
+				hit = float64(e.Usage.CacheReadInputTokens) / float64(e.Usage.InputTokens) * 100
+			}
+			fmt.Fprintf(os.Stderr, "[usage] input=%d output=%d cache_read=%d cache_create=%d 命中率=%.1f%%\n",
+				e.Usage.InputTokens, e.Usage.OutputTokens,
+				e.Usage.CacheReadInputTokens, e.Usage.CacheCreationInputTokens, hit)
+		}
 	}
 }
 

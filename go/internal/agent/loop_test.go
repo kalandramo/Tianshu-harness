@@ -420,3 +420,52 @@ var _ = api.ChatRequest{}
 func writeFileHelper(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o644)
 }
+
+// 反证 E：usage 必须透传到事件上。
+//
+// 丢掉 usage 等于放弃缓存可观测性——cache_read_input_tokens 是前缀缓存
+// 是否命中的唯一直接指标（本轮真实端点验证正是靠它拿到 95% 命中率）。
+func TestUsagePropagatedToEvent(t *testing.T) {
+	// 构造带 usage 的响应（usage 与 finish_reason 同块，DeepSeek 式）
+	withUsage := sseData(map[string]any{"choices": []any{map[string]any{
+		"delta": map[string]any{"content": "ok"},
+	}}}) + sseData(map[string]any{
+		"choices": []any{map[string]any{"delta": map[string]any{}, "finish_reason": "stop"}},
+		"usage": map[string]any{
+			"prompt_tokens": 1600, "completion_tokens": 5,
+			"prompt_cache_hit_tokens": 1536,
+		},
+	}) + "data: [DONE]\n\n"
+
+	sc := &scriptedServer{responses: []string{withUsage}}
+	srv := httptest.NewServer(sc.handler())
+	defer srv.Close()
+
+	l := newTestLoop(t, srv, Config{Model: "m", MaxTokens: 100})
+	var got *Event
+	l.Emit = func(e Event) {
+		if e.Kind == "done" {
+			ev := e
+			got = &ev
+		}
+	}
+
+	if err := l.Run(context.Background(), "hi"); err != nil {
+		t.Fatalf("Run 失败：%v", err)
+	}
+	if got == nil {
+		t.Fatal("应产出 done 事件")
+	}
+	if got.Usage == nil {
+		t.Fatal("done 事件必须携带 Usage——否则缓存指标不可观测")
+	}
+	if got.Usage.InputTokens != 1600 {
+		t.Errorf("InputTokens = %d, want 1600", got.Usage.InputTokens)
+	}
+	if got.Usage.CacheReadInputTokens != 1536 {
+		t.Errorf("CacheReadInputTokens = %d, want 1536", got.Usage.CacheReadInputTokens)
+	}
+	if got.StopReason != "end_turn" {
+		t.Errorf("StopReason = %q, want end_turn", got.StopReason)
+	}
+}
