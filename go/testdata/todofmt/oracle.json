@@ -1,0 +1,204 @@
+{
+  "emptyResult": "暂无待办。请用 write 动作创建清单。",
+  "cases": {
+    "empty": {
+      "note": "空清单 → 固定文案",
+      "todos": [],
+      "formatList": "暂无待办。请用 write 动作创建清单。",
+      "formatSummary": "已更新：0/0 已完成\n"
+    },
+    "singlePending": {
+      "todos": [
+        {
+          "id": "1",
+          "content": "修复认证 bug",
+          "status": "pending"
+        }
+      ],
+      "formatList": "○ [1] 修复认证 bug (pending)",
+      "formatSummary": "已更新：0/1 已完成\n○ [1] 修复认证 bug"
+    },
+    "singleInProgress": {
+      "todos": [
+        {
+          "id": "1",
+          "content": "修复认证 bug",
+          "status": "in_progress"
+        }
+      ],
+      "formatList": "► [1] 修复认证 bug (in_progress)",
+      "formatSummary": "已更新：0/1 已完成\n► [1] 修复认证 bug"
+    },
+    "singleCompleted": {
+      "todos": [
+        {
+          "id": "1",
+          "content": "修复认证 bug",
+          "status": "completed"
+        }
+      ],
+      "formatList": "✓ [1] 修复认证 bug (completed)",
+      "formatSummary": "已更新：1/1 已完成\n✓ [1] 修复认证 bug"
+    },
+    "allThreeStatuses": {
+      "note": "三种状态齐上——验证三个 icon",
+      "todos": [
+        {
+          "id": "a",
+          "content": "任务甲",
+          "status": "completed"
+        },
+        {
+          "id": "b",
+          "content": "任务乙",
+          "status": "in_progress"
+        },
+        {
+          "id": "c",
+          "content": "任务丙",
+          "status": "pending"
+        }
+      ],
+      "formatList": "✓ [a] 任务甲 (completed)\n► [b] 任务乙 (in_progress)\n○ [c] 任务丙 (pending)",
+      "formatSummary": "已更新：1/3 已完成\n✓ [a] 任务甲\n► [b] 任务乙\n○ [c] 任务丙"
+    },
+    "orderPreserved": {
+      "note": "**顺序敏感**：输出顺序应等于输入顺序（不排序）",
+      "todos": [
+        {
+          "id": "z",
+          "content": "最后写的",
+          "status": "pending"
+        },
+        {
+          "id": "a",
+          "content": "最先写的",
+          "status": "completed"
+        }
+      ],
+      "formatList": "○ [z] 最后写的 (pending)\n✓ [a] 最先写的 (completed)",
+      "formatSummary": "已更新：1/2 已完成\n○ [z] 最后写的\n✓ [a] 最先写的"
+    },
+    "withActiveForm": {
+      "note": "带 activeForm 的项——formatList/formatSummary 是否用它？",
+      "todos": [
+        {
+          "id": "1",
+          "content": "修复认证 bug",
+          "status": "in_progress",
+          "activeForm": "正在修复认证 bug"
+        }
+      ],
+      "formatList": "► [1] 修复认证 bug (in_progress)",
+      "formatSummary": "已更新：0/1 已完成\n► [1] 修复认证 bug"
+    },
+    "specialChars": {
+      "note": "内容含特殊字符",
+      "todos": [
+        {
+          "id": "x|y",
+          "content": "含 | 与 [方括号]",
+          "status": "pending"
+        },
+        {
+          "id": "emoji",
+          "content": "😀 表情",
+          "status": "completed"
+        },
+        {
+          "id": "中文",
+          "content": "中文内容",
+          "status": "in_progress"
+        }
+      ],
+      "formatList": "○ [x|y] 含 | 与 [方括号] (pending)\n✓ [emoji] 😀 表情 (completed)\n► [中文] 中文内容 (in_progress)",
+      "formatSummary": "已更新：1/3 已完成\n○ [x|y] 含 | 与 [方括号]\n✓ [emoji] 😀 表情\n► [中文] 中文内容"
+    },
+    "longContent": {
+      "note": "长内容（不截断？）",
+      "todos": [
+        {
+          "id": "1",
+          "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "status": "pending"
+        }
+      ],
+      "formatList": "○ [1] xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx (pending)",
+      "formatSummary": "已更新：0/1 已完成\n○ [1] xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    "manyItems": {
+      "note": "多项——验证 join 与计数",
+      "todos": [
+        {
+          "id": "0",
+          "content": "任务0",
+          "status": "completed"
+        },
+        {
+          "id": "1",
+          "content": "任务1",
+          "status": "completed"
+        },
+        {
+          "id": "2",
+          "content": "任务2",
+          "status": "completed"
+        },
+        {
+          "id": "3",
+          "content": "任务3",
+          "status": "in_progress"
+        },
+        {
+          "id": "4",
+          "content": "任务4",
+          "status": "in_progress"
+        },
+        {
+          "id": "5",
+          "content": "任务5",
+          "status": "pending"
+        },
+        {
+          "id": "6",
+          "content": "任务6",
+          "status": "pending"
+        },
+        {
+          "id": "7",
+          "content": "任务7",
+          "status": "pending"
+        },
+        {
+          "id": "8",
+          "content": "任务8",
+          "status": "pending"
+        },
+        {
+          "id": "9",
+          "content": "任务9",
+          "status": "pending"
+        }
+      ],
+      "formatList": "✓ [0] 任务0 (completed)\n✓ [1] 任务1 (completed)\n✓ [2] 任务2 (completed)\n► [3] 任务3 (in_progress)\n► [4] 任务4 (in_progress)\n○ [5] 任务5 (pending)\n○ [6] 任务6 (pending)\n○ [7] 任务7 (pending)\n○ [8] 任务8 (pending)\n○ [9] 任务9 (pending)",
+      "formatSummary": "已更新：3/10 已完成\n✓ [0] 任务0\n✓ [1] 任务1\n✓ [2] 任务2\n► [3] 任务3\n► [4] 任务4\n○ [5] 任务5\n○ [6] 任务6\n○ [7] 任务7\n○ [8] 任务8\n○ [9] 任务9"
+    },
+    "allCompleted": {
+      "note": "全部完成——计数应为 N/N",
+      "todos": [
+        {
+          "id": "1",
+          "content": "甲",
+          "status": "completed"
+        },
+        {
+          "id": "2",
+          "content": "乙",
+          "status": "completed"
+        }
+      ],
+      "formatList": "✓ [1] 甲 (completed)\n✓ [2] 乙 (completed)",
+      "formatSummary": "已更新：2/2 已完成\n✓ [1] 甲\n✓ [2] 乙"
+    }
+  }
+}

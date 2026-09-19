@@ -339,6 +339,19 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     单行末行 / 开头前文 / 行号基数）
   - **未做**：hash_edit 工具本体（stale 锚点恢复 / 位移查找 / 语法检查）——
     属工具层，涉及文件 IO；本轮先立地基
+- [x] **todo 清单渲染**：`internal/prompt/todofmt.go`
+  - 对账 src/tools/todo-store.ts 的 `TodoStore.formatList` / `formatSummary`
+    ——模型直接读到的清单文本
+  - 三个状态 icon（✓ / ► / ○，未知状态兜底 ○）、`已更新：N/M 已完成` 计数、
+    formatList 带 status 后缀而 formatSummary 不带
+  - **两个真实行为差异（oracle 锁定）**：
+    - `formatSummary` 空清单**不特判**（渲染 `已更新：0/0 已完成` + 空行），
+      而 `formatList` 空清单返回固定文案
+    - `activeForm` 字段**不参与渲染**（schema 里有但两个方法都渲染 content）
+  - 空清单文案 `TODO_EMPTY_RESULT` 逐字对账（TS 注释要求「勿改成另一份字面量」）
+  - 7 个变异反证全部有判别力（icon 三元组 19 红 / 去 status 后缀 11 红 /
+    加 status 后缀 11 红 / 空清单特判 3 红 / 计数状态 7 红 / 文案改字 3 红 /
+    渲染 activeForm 3 红）
 - [x] **会话行校验和**：`internal/prompt/checksum.go`
   - 对账 src/agent/checksum.ts（108 行，4 个导出纯函数）
   - 行格式 `{json}|{checksum}`，checksum = SHA-256 前 8 字节（16 hex）
