@@ -1,0 +1,978 @@
+{
+  "adopt_verify_attempted": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 1,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "adopted",
+        "expectKind": "verify_attempted",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 0
+      }
+    ],
+    "adoptedRate": {
+      "k1": 1,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "ignore_verify_timeout": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 0,
+        "ignored": 1,
+        "ignoredStreak": 1,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "ignored",
+        "expectKind": "verify_attempted",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 1
+      }
+    ],
+    "adoptedRate": {
+      "k1": 0,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "pending_not_yet": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 0,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [],
+    "adoptedRate": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "tool_appears_hit": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 1,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "adopted",
+        "expectKind": "tool_appears",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 0
+      }
+    ],
+    "adoptedRate": {
+      "k1": 1,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "tool_appears_miss": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 0,
+        "ignored": 1,
+        "ignoredStreak": 1,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "ignored",
+        "expectKind": "tool_appears",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 0
+      }
+    ],
+    "adoptedRate": {
+      "k1": 0,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "tool_appears_target_includes": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 1,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "adopted",
+        "expectKind": "tool_appears",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 0
+      }
+    ],
+    "adoptedRate": {
+      "k1": 1,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "tool_appears_target_miss": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 0,
+        "ignored": 1,
+        "ignoredStreak": 1,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "ignored",
+        "expectKind": "tool_appears",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 0
+      }
+    ],
+    "adoptedRate": {
+      "k1": 0,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "verify_bash_test": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 1,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "adopted",
+        "expectKind": "verify_attempted",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 0
+      }
+    ],
+    "adoptedRate": {
+      "k1": 1,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "verify_bash_non_test": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 0,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [],
+    "adoptedRate": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "verify_typecheck_tool": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 1,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "adopted",
+        "expectKind": "verify_attempted",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 0
+      }
+    ],
+    "adoptedRate": {
+      "k1": 1,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "file_touched_hit": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 1,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "adopted",
+        "expectKind": "file_touched",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 0
+      }
+    ],
+    "adoptedRate": {
+      "k1": 1,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "file_touched_miss": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 0,
+        "ignored": 1,
+        "ignoredStreak": 1,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "ignored",
+        "expectKind": "file_touched",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 0
+      }
+    ],
+    "adoptedRate": {
+      "k1": 0,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "pattern_absent_expired": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 1,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "adopted",
+        "expectKind": "pattern_absent",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 3
+      }
+    ],
+    "adoptedRate": {
+      "k1": 1,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "course_changed_no_pre": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 1,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "adopted",
+        "expectKind": "course_changed",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 0
+      }
+    ],
+    "adoptedRate": {
+      "k1": 1,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "ignored_streak": {
+    "stats": {
+      "k1": {
+        "delivered": 2,
+        "adopted": 0,
+        "ignored": 2,
+        "ignoredStreak": 2,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "ignored",
+        "expectKind": "verify_attempted",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 1
+      },
+      {
+        "key": "k1",
+        "outcome": "ignored",
+        "expectKind": "verify_attempted",
+        "deliveredTurn": 2,
+        "evaluatedTurn": 3
+      }
+    ],
+    "adoptedRate": {
+      "k1": 0,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 2,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 2,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "adopt_resets_streak": {
+    "stats": {
+      "k1": {
+        "delivered": 2,
+        "adopted": 1,
+        "ignored": 1,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "ignored",
+        "expectKind": "verify_attempted",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 1
+      },
+      {
+        "key": "k1",
+        "outcome": "adopted",
+        "expectKind": "verify_attempted",
+        "deliveredTurn": 2,
+        "evaluatedTurn": 2
+      }
+    ],
+    "adoptedRate": {
+      "k1": 0.5,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 2,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "shadow_adopted": {
+    "stats": {
+      "k1": {
+        "delivered": 0,
+        "adopted": 0,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 1,
+        "shadowSatisfied": 1
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "adopted",
+        "expectKind": "verify_attempted",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 0,
+        "shadow": true
+      }
+    ],
+    "adoptedRate": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "shadow_ignored": {
+    "stats": {
+      "k1": {
+        "delivered": 0,
+        "adopted": 0,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 1,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "ignored",
+        "expectKind": "verify_attempted",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 1,
+        "shadow": true
+      }
+    ],
+    "adoptedRate": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "repeat_track_refresh": {
+    "stats": {
+      "k1": {
+        "delivered": 2,
+        "adopted": 0,
+        "ignored": 1,
+        "ignoredStreak": 1,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "ignored",
+        "expectKind": "verify_attempted",
+        "deliveredTurn": 1,
+        "evaluatedTurn": 2
+      }
+    ],
+    "adoptedRate": {
+      "k1": 0,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "no_expect": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 0,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [],
+    "adoptedRate": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "multi_key": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 0,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      },
+      "k2": {
+        "delivered": 1,
+        "adopted": 1,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k2",
+        "outcome": "adopted",
+        "expectKind": "tool_appears",
+        "deliveredTurn": 0,
+        "evaluatedTurn": 0
+      }
+    ],
+    "adoptedRate": {
+      "k1": null,
+      "k2": 1,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 0,
+      "k2": 1,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "event_trim": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 0,
+        "ignored": 1,
+        "ignoredStreak": 1,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "ignored",
+        "expectKind": "file_touched",
+        "deliveredTurn": 10,
+        "evaluatedTurn": 10
+      }
+    ],
+    "adoptedRate": {
+      "k1": 0,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "event_trim_affects_wide_window": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 0,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [],
+    "adoptedRate": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  },
+  "event_trim_keeps_recent": {
+    "stats": {
+      "k1": {
+        "delivered": 1,
+        "adopted": 1,
+        "ignored": 0,
+        "ignoredStreak": 0,
+        "shadowHeld": 0,
+        "shadowSatisfied": 0
+      }
+    },
+    "outcomes": [
+      {
+        "key": "k1",
+        "outcome": "adopted",
+        "expectKind": "file_touched",
+        "deliveredTurn": 5,
+        "evaluatedTurn": 5
+      }
+    ],
+    "adoptedRate": {
+      "k1": 1,
+      "k2": null,
+      "k3": null
+    },
+    "lift": {
+      "k1": null,
+      "k2": null,
+      "k3": null
+    },
+    "decided": {
+      "k1": 1,
+      "k2": 0,
+      "k3": 0
+    },
+    "ignoredStreak": {
+      "k1": 0,
+      "k2": 0,
+      "k3": 0
+    }
+  }
+}

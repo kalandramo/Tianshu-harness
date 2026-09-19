@@ -1,0 +1,592 @@
+{
+  "adopt_verify_attempted": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "verify_attempted"
+      },
+      "turn": 0
+    },
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "run_tests",
+      "target": ""
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    }
+  ],
+  "ignore_verify_timeout": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "verify_attempted"
+      },
+      "turn": 0
+    },
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "read_file",
+      "target": "a.ts"
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    },
+    {
+      "op": "tool",
+      "turn": 1,
+      "name": "read_file",
+      "target": "b.ts"
+    },
+    {
+      "op": "evaluate",
+      "turn": 1
+    }
+  ],
+  "pending_not_yet": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "verify_attempted"
+      },
+      "turn": 0
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    }
+  ],
+  "tool_appears_hit": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "tool_appears",
+        "tools": [
+          "bash"
+        ]
+      },
+      "turn": 0
+    },
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "bash",
+      "target": "ls"
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    }
+  ],
+  "tool_appears_miss": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "tool_appears",
+        "tools": [
+          "bash"
+        ]
+      },
+      "turn": 0
+    },
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "read_file",
+      "target": "a.ts"
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    }
+  ],
+  "tool_appears_target_includes": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "tool_appears",
+        "tools": [
+          "read_file"
+        ],
+        "targetIncludes": "src/"
+      },
+      "turn": 0
+    },
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "read_file",
+      "target": "src/a.ts"
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    }
+  ],
+  "tool_appears_target_miss": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "tool_appears",
+        "tools": [
+          "read_file"
+        ],
+        "targetIncludes": "src/"
+      },
+      "turn": 0
+    },
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "read_file",
+      "target": "test/a.ts"
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    }
+  ],
+  "verify_bash_test": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "verify_attempted"
+      },
+      "turn": 0
+    },
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "bash",
+      "target": "npm test"
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    }
+  ],
+  "verify_bash_non_test": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "verify_attempted"
+      },
+      "turn": 0
+    },
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "bash",
+      "target": "ls -la"
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    }
+  ],
+  "verify_typecheck_tool": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "verify_attempted"
+      },
+      "turn": 0
+    },
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "typecheck",
+      "target": ""
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    }
+  ],
+  "file_touched_hit": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "file_touched",
+        "paths": [
+          "src/a.ts"
+        ]
+      },
+      "turn": 0
+    },
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "edit_file",
+      "target": "src/a.ts"
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    }
+  ],
+  "file_touched_miss": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "file_touched",
+        "paths": [
+          "src/a.ts"
+        ]
+      },
+      "turn": 0
+    },
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "edit_file",
+      "target": "src/b.ts"
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    }
+  ],
+  "pattern_absent_expired": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "pattern_absent",
+        "path": "/nonexistent/x.ts",
+        "needles": [
+          "console.log"
+        ]
+      },
+      "turn": 0
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    },
+    {
+      "op": "evaluate",
+      "turn": 1
+    },
+    {
+      "op": "evaluate",
+      "turn": 2
+    },
+    {
+      "op": "evaluate",
+      "turn": 3
+    }
+  ],
+  "course_changed_no_pre": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "course_changed"
+      },
+      "turn": 0
+    },
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "bash",
+      "target": "ls"
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    }
+  ],
+  "ignored_streak": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "verify_attempted"
+      },
+      "turn": 0
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    },
+    {
+      "op": "evaluate",
+      "turn": 1
+    },
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "verify_attempted"
+      },
+      "turn": 2
+    },
+    {
+      "op": "evaluate",
+      "turn": 2
+    },
+    {
+      "op": "evaluate",
+      "turn": 3
+    }
+  ],
+  "adopt_resets_streak": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "verify_attempted"
+      },
+      "turn": 0
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    },
+    {
+      "op": "evaluate",
+      "turn": 1
+    },
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "verify_attempted"
+      },
+      "turn": 2
+    },
+    {
+      "op": "tool",
+      "turn": 2,
+      "name": "run_tests",
+      "target": ""
+    },
+    {
+      "op": "evaluate",
+      "turn": 2
+    }
+  ],
+  "shadow_adopted": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "verify_attempted"
+      },
+      "shadow": true,
+      "turn": 0
+    },
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "run_tests",
+      "target": ""
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    }
+  ],
+  "shadow_ignored": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "verify_attempted"
+      },
+      "shadow": true,
+      "turn": 0
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    },
+    {
+      "op": "evaluate",
+      "turn": 1
+    }
+  ],
+  "repeat_track_refresh": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "verify_attempted"
+      },
+      "turn": 0
+    },
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "verify_attempted"
+      },
+      "turn": 1
+    },
+    {
+      "op": "evaluate",
+      "turn": 1
+    },
+    {
+      "op": "evaluate",
+      "turn": 2
+    }
+  ],
+  "no_expect": [
+    {
+      "op": "track",
+      "key": "k1",
+      "turn": 0
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    },
+    {
+      "op": "evaluate",
+      "turn": 5
+    }
+  ],
+  "multi_key": [
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "verify_attempted"
+      },
+      "turn": 0
+    },
+    {
+      "op": "track",
+      "key": "k2",
+      "expect": {
+        "kind": "tool_appears",
+        "tools": [
+          "bash"
+        ]
+      },
+      "turn": 0
+    },
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "bash",
+      "target": "ls"
+    },
+    {
+      "op": "evaluate",
+      "turn": 0
+    }
+  ],
+  "event_trim": [
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "read_file",
+      "target": "a.ts"
+    },
+    {
+      "op": "tool",
+      "turn": 10,
+      "name": "read_file",
+      "target": "b.ts"
+    },
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "file_touched",
+        "paths": [
+          "a.ts"
+        ]
+      },
+      "turn": 10
+    },
+    {
+      "op": "evaluate",
+      "turn": 10
+    }
+  ],
+  "event_trim_affects_wide_window": [
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "read_file",
+      "target": "a.ts"
+    },
+    {
+      "op": "tool",
+      "turn": 10,
+      "name": "read_file",
+      "target": "b.ts"
+    },
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "file_touched",
+        "paths": [
+          "a.ts"
+        ],
+        "withinTurns": 12
+      },
+      "turn": 0
+    },
+    {
+      "op": "evaluate",
+      "turn": 10
+    }
+  ],
+  "event_trim_keeps_recent": [
+    {
+      "op": "tool",
+      "turn": 0,
+      "name": "read_file",
+      "target": "old.ts"
+    },
+    {
+      "op": "tool",
+      "turn": 5,
+      "name": "read_file",
+      "target": "a.ts"
+    },
+    {
+      "op": "tool",
+      "turn": 10,
+      "name": "read_file",
+      "target": "b.ts"
+    },
+    {
+      "op": "track",
+      "key": "k1",
+      "expect": {
+        "kind": "file_touched",
+        "paths": [
+          "a.ts"
+        ]
+      },
+      "turn": 5
+    },
+    {
+      "op": "evaluate",
+      "turn": 5
+    }
+  ]
+}

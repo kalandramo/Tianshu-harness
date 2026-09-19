@@ -619,8 +619,47 @@ oracle 不可复现。27 用例全绿。
 **变异反证 4 个：全部有判别力**（提案不落盘 2 红 / OnToolResult 提前返回 2 红 /
 loop 不调回调 2 红 / MarkClaimStale 不落盘 1 红）。
 
-**下一步**：`AdvisoryReadback`（采纳率台账）——解锁习惯化 / efficacy / lift /
-holdout 四个治理子系统。
+### 第十五刀（已完成）：AdvisoryReadback——四个治理子系统的共同前置（2026-09-19）
+
+✅ `internal/agent/advisory_readback.go`（570 行 + 395 行测试）
+
+**对账 `advisory-readback.ts` 核心路径**：`track`（送达跟踪）/ `observeTool`
+（行为观察）/ `evaluate`（核销评估）/ 谓词求值 / 查询方法。
+
+**三种核销语义（易错点已对账）**：
+
+1. **正负谓词的判定时机不同**——`pattern_absent`（负向）**只在到期时判**
+   （过早读文件会把「还没来得及清」误判为忽略）；其余（正向）窗口内满足即
+   adopted、到期未满足才 ignored。
+2. **shadow 隔离**——反事实组只进 `shadowHeld`/`shadowSatisfied` 桶，
+   **不动 adopted/ignored/streak**（TS 注释：不污染副驾闸门与习惯化）。
+3. **`flushAtSessionEnd` 不把未到期判 ignored**——TS 注释：advisory 在末轮送达
+   时模型没走完窗口，判忽略会把「没机会响应」记成「听了不做」。这类假 ignored
+   经 ignoredStreak / efficacy / 跨会话 lift 三条路径压低效力评分，最终静音掉
+   本可能有效的提醒。**worker 尤其吃这一刀**（中位只跑 2 轮）。
+
+**其他对账点**：`DEFAULT_WINDOW` 五值 / `TOOL_FAMILY` 映射 / `courseSignature`
+（read/edit 族带文件面，其余只看族）/ `EVENT_RETENTION_TURNS=8` 按轮修剪（不按
+条数）/ `getLift` 公式与 nil 条件 / `getAdoptionRate` 的会话+先验合并口径。
+
+**oracle 对账**：`testdata/readback/` 24 用例，**28 个子测试**全绿。
+
+**变异反证 8 个：全部有判别力**——adopted 不清零 streak 1 红 / shadow 不隔离
+2 红 / 负向谓词不到期就判 2 红 / deadline off-by-one 3 红 / 事件不修剪 1 红 /
+tool_appears 忽略 targetIncludes 1 红 / lift 在 shadowHeld=0 也返回 2 红 /
+flush 不报 unresolved 1 红。
+
+**三次用例设计修正**（红 0 的诊断，都是我的测试没覆盖到判别点）：
+1. `event_trim` 原用例的窗口是 `[10,10]`，turn 0 的事件**本就不在窗口内**——
+   裁不裁都不影响。改用 `withinTurns: 12` 的宽窗口让旧事件落进观察窗。
+2. 首版尝试用 `course_changed` 判别，但前置窗是 `[7,10)`，turn 0 的事件同样
+   不在其中——仍是等价用例。
+
+**状态：库级交付，尚未接进 CLI**。`AdvisoryReadback` 目前无生产调用方——
+下一刀接进 loop（render 后 `track`、postTool `observeTool`、postTurn `evaluate`、
+postSession `flushAtSessionEnd`），再接四个治理子系统。
+
+**下一步**：接 readback 进 loop，然后做习惯化对抗（`getIgnoredStreak` 消费者）。
 
 **为什么是它而不是补工具**：
 
