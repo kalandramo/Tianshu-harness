@@ -355,9 +355,73 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 - [ ] `internal/config`：多层配置（默认 → `~/.rivet` → 项目）
 - [ ] 跨版本兼容：Go 版写的会话 JSONL 能被 TS 版读取（反之亦然）
 
+## 本轮（自主推进）完成情况
+
+### 已完成
+
+**Wave 3（prompt 引擎）全部收口**：
+- static 层（31,355 字节逐字节等价）+ calibration
+- project-instructions 按节选取 + 块截断（UTF-16 语义完整复刻）
+- frozen 稳定块（12 类块，18 个 oracle 用例）
+- IO 探测块：`detectRuntimeEnvBlock`（21 用例）、`renderDeclaredVerify`（12 用例）
+- Windows 三条 note（platform / path-style / shell）
+- **端到端验证**：真实端点下模型确认看到 `<context>` / `<environment>` /
+  `<runtime-env>` / `<verify-commands>` / `<sober>`；缓存命中率 99.0%
+
+**Wave 2 工具地基**：
+- `hashLine` / `buildFreshAnchors`（hash_edit 的地基）
+- `extractPatchTargetPaths`（apply_patch 的地基）
+
+### 验证状态
+
+`go test ./...`（11 包、615 PASS、0 FAIL）、`-race`（0 FAIL）、`go vet`（OK）、
+`gofmt`（零违规）。**干净检出复验**（`git archive HEAD`）同样全绿——证明提交自包含。
+
+### 未完成（后续会话的起点）
+
+**Wave 2 剩余**（工具本体，均涉及文件 IO）：
+- `hash_edit` 工具本体（stale 锚点恢复 / 位移查找 / 语法检查，约 500 行）
+- `apply_patch` 工具本体（diff 应用 + 冲突检测）
+- `git` / `job` / `todo` / `ast_grep` / `diff` / `repo_map`
+- 工具 preset 三档（minimal/frontend/full）
+
+**Wave 4（Agent 循环深化）** —— 未开始：
+- 五阶段 `Pipeline`（超时 / 迟到收尾记账 / 统计）
+- 首批 10 个常驻 hook
+- `internal/context`（CognitiveLedger / ClaimStore / Stigmergy / PressureMonitor）
+- `internal/session`（JSONL 落盘，格式兼容 TS 版）
+- 审批门禁链（plan-mode / deny 规则）
+
+**Wave 5（表面层）** —— 未开始：
+- TUI（纯 ANSI）、多层配置、跨版本 JSONL 兼容
+
+### 架构欠账（已知，非缺陷）
+
+1. **frozen 块位置**：TS 是 trailer-merge 到 user message（`engine.ts:659`），
+   Go 侧拼在 system prompt 后——`full.go` 注释标了是「最小可用路径」。
+   后续移植 trailer-merge 时应**替换**而非叠加。
+2. **三处「最小可用路径」待替换**：`BuildFullSystemPrompt`（拼法）、
+   `RenderProjectInstructionsBlock`（无 `<context>` 包裹）、
+   `BuildSystemPromptWithProject`（已被 `full.go` 取代但保留，因 11 个测试锁定它）。
+3. **未移植的行为差异**：TS 的信任门 `isProjectTrusted`（Go 侧无 trust store）；
+   Windows 的 `resolveShellCommand`（需真实 Windows 环境验证）。
+4. **`main` 分支未合并**：`go-runtime` 有 47 个提交，`main` 仍在 `69b0381`；
+   分支**未 push**。
+
 ## 建议的第一刀
 
-**接 `internal/prompt` 的第二层（volatile + appendixDelta）**。
+**接 `internal/session`（最小会话状态容器）**。
+
+理由：它同时解锁两处——
+- Wave 3 剩余的 `buildDynamicAppendixParts`（动态 appendix，依赖工具历史与
+  turn 计数）
+- Wave 4 的 hook 管线（多数 hook 需读会话状态）
+
+且它的产出可独立验证（JSONL 落盘格式与 TS 版兼容）。
+
+**若优先补工具**：`hash_edit` 工具本体（地基已就绪，直接接）。
+
+（以下为历史记录）
 static 层（BASE_PROMPT + calibration）已完成并逐字节对账通过——
 Go agent 现在跑的是真正的认知资产（31,355 字节），不是占位符。
 
