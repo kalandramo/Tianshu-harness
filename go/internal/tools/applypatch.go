@@ -143,7 +143,7 @@ type applyPatchTool struct {
 
 // ApplyPatch 构造 apply_patch 工具。
 func ApplyPatch(cwd string, grants pathsafe.GrantChecker) Tool {
-	t := &applyPatchTool{Cwd: cwd, Grants: grants, Stack: recovery.NewStack()}
+	t := &applyPatchTool{Cwd: cwd, Grants: grants, Stack: recovery.DefaultStack()}
 	t.def = contract.Definition{
 		Name:        "apply_patch",
 		Description: `用 git apply 把 unified diff 应用到当前 git 仓库。支持应用前先做 check-only 校验。用于多文件改动或应用已有 patch；单点定向编辑优先用 edit_file 或 hash_edit。注意：大 patch 应用后，消息历史里只保留摘要指针（改动文件列表 + 大小）而非 diff 原文——用 read_file 或 git diff 查看结果。check_only 校验会保留完整 diff 内联。`,

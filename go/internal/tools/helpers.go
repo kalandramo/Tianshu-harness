@@ -1,7 +1,9 @@
 package tools
 
 import (
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/kalandramo/tianshu/go/internal/api/wire"
 	"github.com/kalandramo/tianshu/go/internal/contract"
@@ -171,6 +173,17 @@ func enumProp(desc string, values []string) *wire.OrderedMap {
 		Set("type", "string").
 		Set("description", desc).
 		Set("enum", vals)
+}
+
+// relForRecovery 把绝对路径转为 cwd 相对路径（供 recovery 记录用）。
+//
+// 对账 TS 的 `relative(params.cwd, filePath)`：备份目录布局与 journal 记录
+// 都用相对路径。无法相对化时（如跨盘）退回原路径——调用方已过 pathsafe 校验。
+func relForRecovery(cwd, abs string) string {
+	if rel, err := filepath.Rel(cwd, abs); err == nil && !strings.HasPrefix(rel, "..") {
+		return rel
+	}
+	return abs
 }
 
 // baseTool 是工具的公共实现——各工具嵌入它以避免重复样板。

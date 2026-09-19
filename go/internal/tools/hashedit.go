@@ -11,6 +11,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/contract"
 	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 	"github.com/kalandramo/tianshu/go/internal/prompt"
+	"github.com/kalandramo/tianshu/go/internal/recovery"
 )
 
 // Anchor 是一个编辑锚点。
@@ -292,11 +293,13 @@ type hashEditTool struct {
 	baseTool
 	Cwd    string
 	Grants pathsafe.GrantChecker
+	// Stack 是备份栈（写入前备份，供回滚）。
+	Stack *recovery.Stack
 }
 
 // HashEdit 构造 hash_edit 工具。
 func HashEdit(cwd string, grants pathsafe.GrantChecker) Tool {
-	t := &hashEditTool{Cwd: cwd, Grants: grants}
+	t := &hashEditTool{Cwd: cwd, Grants: grants, Stack: recovery.DefaultStack()}
 	t.def = contract.Definition{
 		Name: "hash_edit",
 		Description: `内容哈希锚定的文件编辑。比 edit_file 更安全的替代。
@@ -491,6 +494,15 @@ func (t *hashEditTool) applyEdit(
 				"（" + itoa(lastLine-firstLine+1) + " 行）替换为 " + itoa(len(newLines)) + " 行\n" +
 				"（Go 版未移植 diff 预览，见 HANDOFF 降级项）",
 		}, nil
+	}
+
+	// **写入前备份**（供回滚）。dry_run 分支已在上方提前返回，不会走到这里。
+	if _, err := t.Stack.TrackFileChange(t.Cwd, recovery.FileChangeRecord{
+		FilePath:   relForRecovery(t.Cwd, absPath),
+		Action:     "edit",
+		ToolCallID: "hash_edit",
+	}); err != nil {
+		return contract.Result{Content: "备份失败（写入已中止）：" + err.Error(), IsError: true}, nil
 	}
 
 	if err := os.WriteFile(absPath, []byte(applyEOL(newContent, eol)), 0o644); err != nil {

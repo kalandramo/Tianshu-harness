@@ -64,7 +64,26 @@ type Stack struct {
 	now func() int64
 }
 
-// NewStack 构造备份栈。
+// defaultStack 是**进程级共享**的备份栈。
+//
+// 为什么必须共享：TS 的 `latestBackups`/`memoryBackups` 是**模块级 Map**
+// ——所有写工具共享同一份视图。若每个工具各持一个实例，`write_file` 备份的
+// 文件在 `apply_patch` 回滚时**读不到**（内存与磁盘路径都记在实例状态里）。
+//
+// 可变状态在**实例**上（Stack 仍是普通结构体，测试可构造独立实例），
+// 但生产路径经 DefaultStack 取同一份。
+var (
+	defaultStackOnce sync.Once
+	defaultStack     *Stack
+)
+
+// DefaultStack 返回进程级共享的备份栈（生产路径用）。
+func DefaultStack() *Stack {
+	defaultStackOnce.Do(func() { defaultStack = NewStack() })
+	return defaultStack
+}
+
+// NewStack 构造**独立**备份栈（测试用；生产请用 DefaultStack）。
 func NewStack() *Stack {
 	return &Stack{
 		latestBackups: map[string]string{},

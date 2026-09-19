@@ -10,6 +10,7 @@ import (
 
 	"github.com/kalandramo/tianshu/go/internal/contract"
 	"github.com/kalandramo/tianshu/go/internal/pathsafe"
+	"github.com/kalandramo/tianshu/go/internal/recovery"
 )
 
 // ── write_file ──
@@ -18,11 +19,13 @@ type writeFileTool struct {
 	baseTool
 	Cwd    string
 	Grants pathsafe.GrantChecker
+	// Stack 是备份栈（写入前备份，供回滚）。
+	Stack *recovery.Stack
 }
 
 // WriteFile 构造 write_file 工具。
 func WriteFile(cwd string, grants pathsafe.GrantChecker) Tool {
-	t := &writeFileTool{Cwd: cwd, Grants: grants}
+	t := &writeFileTool{Cwd: cwd, Grants: grants, Stack: recovery.DefaultStack()}
 	t.def = contract.Definition{
 		Name: "write_file",
 		Description: `创建、覆盖或追加一个文件。自动创建父目录。
@@ -73,6 +76,16 @@ func (t *writeFileTool) Execute(_ context.Context, p *CallParams) (contract.Resu
 		return contract.Result{Content: fmt.Sprintf("创建父目录失败：%v", err), IsError: true}, nil
 	}
 
+	// **写入前备份**（供回滚）。新文件无备份可做——trackFileChange 只备份
+	// 已存在的文件（对账 TS）。
+	if _, err := t.Stack.TrackFileChange(t.Cwd, recovery.FileChangeRecord{
+		FilePath:   relForRecovery(t.Cwd, vr.Path),
+		Action:     "write",
+		ToolCallID: "write_file",
+	}); err != nil {
+		return contract.Result{Content: fmt.Sprintf("备份失败（写入已中止）：%v", err), IsError: true}, nil
+	}
+
 	var writeErr error
 	if mode == "append" {
 		f, err := os.OpenFile(vr.Path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
@@ -108,11 +121,13 @@ type editFileTool struct {
 	baseTool
 	Cwd    string
 	Grants pathsafe.GrantChecker
+	// Stack 是备份栈（写入前备份，供回滚）。
+	Stack *recovery.Stack
 }
 
 // EditFile 构造 edit_file 工具。
 func EditFile(cwd string, grants pathsafe.GrantChecker) Tool {
-	t := &editFileTool{Cwd: cwd, Grants: grants}
+	t := &editFileTool{Cwd: cwd, Grants: grants, Stack: recovery.DefaultStack()}
 	t.def = contract.Definition{
 		Name: "edit_file",
 		Description: `在已有文件中执行精确字符串替换。
@@ -191,6 +206,15 @@ func (t *editFileTool) Execute(_ context.Context, p *CallParams) (contract.Resul
 		updated = strings.ReplaceAll(text, oldStr, newStr)
 	} else {
 		updated = strings.Replace(text, oldStr, newStr, 1)
+	}
+
+	// **写入前备份**（供回滚）
+	if _, err := t.Stack.TrackFileChange(t.Cwd, recovery.FileChangeRecord{
+		FilePath:   relForRecovery(t.Cwd, vr.Path),
+		Action:     "edit",
+		ToolCallID: "edit_file",
+	}); err != nil {
+		return contract.Result{Content: fmt.Sprintf("备份失败（写入已中止）：%v", err), IsError: true}, nil
 	}
 
 	if err := os.WriteFile(vr.Path, []byte(updated), 0o644); err != nil {

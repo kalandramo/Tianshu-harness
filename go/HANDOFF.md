@@ -379,6 +379,19 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
   - 变异反证 7 个：**全部有判别力**（不回滚 1 / 不删新建文件 1 /
     不收回索引 1 / check_only 也备份 1 / journal 键序错 4 /
     ts 格式错 1 / 备份时序错 7）
+  - **消费方接入**（write_file / edit_file / hash_edit）：
+    - 备份点都在**写盘前**（核心不变量）。`dry_run` 分支提前返回故不备份；
+      `append` 模式同样备份（对账 TS）
+    - **发现并修复一个真实架构缺陷**：首版每个工具各持 `NewStack()` 实例
+      ——而 TS 的 `latestBackups`/`memoryBackups` 是**模块级 Map**（跨工具
+      共享）。后果：`write_file` 备份的文件，`apply_patch` 回滚时**读不到**。
+      修法：`recovery.DefaultStack()`（`sync.Once` 单例）供生产路径，
+      `NewStack()` 保留给测试构造独立实例
+    - 备份路径用 `relForRecovery`（cwd 相对）——对账 TS 的
+      `relative(params.cwd, filePath)`；备份目录布局与 journal 记录都用相对路径
+    - 变异反证 5 个：4 个有判别力（write_file 不备份 3 红 / edit_file 不备份
+      5 红 / hash_edit 不备份 1 红 / **各工具独立 Stack 2 红**）；
+      M5（备份用绝对路径）因 `filepath`/`strings` 变未使用而编译失败
 - [x] **工具 schema 与 TS 逐字节对账（缓存命中率防线）**
   - **背景**：Go 侧 `orderedProps` **字典序排序**属性键，TS 是**声明序**
     ——而工具定义变化「打的是整个前缀（system+tools 段）」
@@ -704,7 +717,9 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
 - `internal/tools/schema.go`：**schema 有序序列化**——`OrderedProps` /
   `OrderValue`（从 agent 包移入，schema 序列化属 tools 领域）
 - `internal/recovery/`：**备份与恢复**——journal（事件日志）+ stack
-  （备份栈）。写工具的共享地基
+  （备份栈，`DefaultStack()` 进程级共享）。**4 个写工具的共享地基**：
+  write_file / edit_file / hash_edit / apply_patch 均在写盘前调
+  `TrackFileChange`
 
 **本轮核心教训**：`orderedProps` 的数组型 schema 缺陷只在**接线后**暴露
 （单测工具全绿，接注册表立刻 panic）。这印证了「消费方核查」与
