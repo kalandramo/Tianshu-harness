@@ -1,0 +1,270 @@
+// 端到端对账：真实 oracle（src/agent/advisory-bus.ts 的 AdvisoryBus.render）
+// vs Go 实现。**不做手写期望值**——一律从真实 TS 代码路径导出。
+//
+// **范围**：只覆盖**核心路径**（submit / 去重 / 排序 / 类别上限 / Top-N /
+// TTL / XML 渲染 / ledger）。治理子系统（习惯化 / efficacy / lift / holdout /
+// SR 通道 / mutex）都需注入 provider 才生效，不注入时行为即核心路径。
+//
+// 运行（必须在**仓库根**）：
+//   node_modules/.bin/tsx go/testdata/advisorybus/gen-oracle.ts
+// 产出：go/testdata/advisorybus/oracle.json + cases.json
+import { writeFileSync } from 'node:fs'
+import { AdvisoryBus } from '../../../src/agent/advisory-bus.js'
+
+interface CaseSpec {
+  /** 投递批次：每次 render 前 submit 的条目 */
+  batches: Array<{ entries: any[]; domain?: string }>
+  /** 渲染轮数（每次 render 消耗一个批次；批次用尽则不再 submit 只 render） */
+  renders: number
+}
+
+// 用例：覆盖去重 / 排序 / 类别上限 / 预算 / TTL / 转义 / 星域预算。
+const cases: Record<string, CaseSpec> = {
+  // ── 基础：单条 ──
+  single: {
+    batches: [{ entries: [{ key: 'a', priority: 0.6, category: 'discipline', content: 'hello' }] }],
+    renders: 1,
+  },
+
+  // ── 去重：同 key 保留高 priority ──
+  dedup_keeps_higher: {
+    batches: [{ entries: [
+      { key: 'dup', priority: 0.5, category: 'discipline', content: '低' },
+      { key: 'dup', priority: 0.7, category: 'discipline', content: '高' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 去重：后投递的更高优先级胜出 ──
+  dedup_later_wins: {
+    batches: [{ entries: [
+      { key: 'dup', priority: 0.8, category: 'discipline', content: '先高' },
+      { key: 'dup', priority: 0.3, category: 'discipline', content: '后低' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 去重平手：同 key 同 priority → 先出现的胜出（TS 用严格大于）──
+  dedup_same_priority: {
+    batches: [{ entries: [
+      { key: 'dup', priority: 0.6, category: 'discipline', content: '第一条' },
+      { key: 'dup', priority: 0.6, category: 'discipline', content: '第二条' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 排序：按 priority 降序 ──
+  sort_by_priority: {
+    batches: [{ entries: [
+      { key: 'low', priority: 0.3, category: 'discipline', content: 'c' },
+      { key: 'high', priority: 0.8, category: 'repair', content: 'a' },
+      { key: 'mid', priority: 0.5, category: 'todo', content: 'b' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 类别上限：每 category 最多 2 条 ──
+  category_cap: {
+    batches: [{ entries: [
+      { key: 'd1', priority: 0.9, category: 'discipline', content: '1' },
+      { key: 'd2', priority: 0.8, category: 'discipline', content: '2' },
+      { key: 'd3', priority: 0.7, category: 'discipline', content: '3' },
+      { key: 'd4', priority: 0.6, category: 'discipline', content: '4' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── Top-N 预算：每轮最多 3 条（非 constitutional）──
+  top_n_budget: {
+    batches: [{ entries: [
+      { key: 'a', priority: 0.9, category: 'discipline', content: '1' },
+      { key: 'b', priority: 0.8, category: 'repair', content: '2' },
+      { key: 'c', priority: 0.7, category: 'todo', content: '3' },
+      { key: 'd', priority: 0.6, category: 'dedup', content: '4' },
+      { key: 'e', priority: 0.5, category: 'immune', content: '5' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── constitutional：不受上限，排在最前 ──
+  constitutional_first: {
+    batches: [{ entries: [
+      { key: 'normal', priority: 0.95, category: 'discipline', content: '普通' },
+      { key: 'const', priority: 0.9, category: 'constitutional', tier: 'constitutional', content: '宪法' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── constitutional 多条 + 普通多条 ──
+  constitutional_multi: {
+    batches: [{ entries: [
+      { key: 'c1', priority: 0.9, category: 'constitutional', tier: 'constitutional', content: 'C1' },
+      { key: 'c2', priority: 0.85, category: 'constitutional', tier: 'constitutional', content: 'C2' },
+      { key: 'n1', priority: 0.7, category: 'discipline', content: 'N1' },
+      { key: 'n2', priority: 0.6, category: 'repair', content: 'N2' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── informational：填充剩余预算 ──
+  informational_fill: {
+    batches: [{ entries: [
+      { key: 'op1', priority: 0.7, category: 'discipline', content: 'op' },
+      { key: 'info1', priority: 0.9, category: 'background', tier: 'informational', content: 'info-high' },
+      { key: 'info2', priority: 0.8, category: 'monitor', tier: 'informational', content: 'info-mid' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 星域预算：天权/瑶光 只 1 条 ──
+  domain_budget_tianquan: {
+    batches: [{ domain: '天权', entries: [
+      { key: 'a', priority: 0.9, category: 'discipline', content: '1' },
+      { key: 'b', priority: 0.8, category: 'repair', content: '2' },
+      { key: 'c', priority: 0.7, category: 'todo', content: '3' },
+    ] }],
+    renders: 1,
+  },
+
+  domain_budget_yaoguang: {
+    batches: [{ domain: '瑶光', entries: [
+      { key: 'a', priority: 0.9, category: 'discipline', content: '1' },
+      { key: 'b', priority: 0.8, category: 'repair', content: '2' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 星域条目豁免预算（star_domain category）──
+  star_domain_exempt: {
+    batches: [{ entries: [
+      { key: 'a', priority: 0.9, category: 'discipline', content: '1' },
+      { key: 'b', priority: 0.8, category: 'repair', content: '2' },
+      { key: 'c', priority: 0.7, category: 'todo', content: '3' },
+      { key: 'sd', priority: 0.1, category: 'star_domain', content: '星域' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── TTL：>1 的条目存活到下一轮 ──
+  ttl_survives: {
+    batches: [
+      { entries: [{ key: 'persist', priority: 0.6, category: 'discipline', content: '存活', ttl: 3 }] },
+      { entries: [] },
+      { entries: [] },
+    ],
+    renders: 3,
+  },
+
+  // ── TTL 递减到 1 后消失 ──
+  ttl_expires: {
+    batches: [
+      { entries: [{ key: 'p', priority: 0.6, category: 'discipline', content: 'X', ttl: 2 }] },
+      { entries: [] },
+      { entries: [] },
+    ],
+    renders: 3,
+  },
+
+  // ── XML 转义 ──
+  xml_escape: {
+    batches: [{ entries: [
+      { key: 'a&b', priority: 0.6, category: 'discipline', content: '<div class="x">&amp;</div>' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── priority 格式（toFixed(2)）──
+  priority_format: {
+    batches: [{ entries: [
+      { key: 'a', priority: 0.6, category: 'discipline', content: 'x' },
+      { key: 'b', priority: 0.555, category: 'repair', content: 'y' },
+      { key: 'c', priority: 0.1, category: 'todo', content: 'z' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── priority 边界值（判别「远离零」实现）──
+  // 2.675/0.615/1.255 这三个上，自写「放大 100 倍 + 远离零」会错，
+  // 而 JS toFixed 给 2.67/0.61/1.25。首版实现因此被 oracle 抓到。
+  priority_edge: {
+    batches: [{ entries: [
+      { key: 'a', priority: 2.675, category: 'discipline', content: 'x' },
+      { key: 'b', priority: 0.615, category: 'repair', content: 'y' },
+      { key: 'c', priority: 1.255, category: 'todo', content: 'z' },
+      { key: 'd', priority: 0.145, category: 'dedup', content: 'w' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 空渲染 ──
+  empty: { batches: [{ entries: [] }], renders: 1 },
+
+  // ── 同 priority 多条（次级排序无 provider → 保持稳定序）──
+  same_priority: {
+    batches: [{ entries: [
+      { key: 'a', priority: 0.6, category: 'discipline', content: 'A' },
+      { key: 'b', priority: 0.6, category: 'repair', content: 'B' },
+      { key: 'c', priority: 0.6, category: 'todo', content: 'C' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 多轮：轮次间状态清理（entries 每轮清空，alive 保留）──
+  multi_round: {
+    batches: [
+      { entries: [{ key: 'r1', priority: 0.6, category: 'discipline', content: '第一轮' }] },
+      { entries: [{ key: 'r2', priority: 0.7, category: 'repair', content: '第二轮' }] },
+    ],
+    renders: 2,
+  },
+
+  // ── immediate 条目豁免 CVM 注入预算 ──
+  immediate_exempt: {
+    batches: [{ entries: [
+      { key: 'i1', priority: 0.5, category: 'discipline', content: 'I1', immediate: true },
+      { key: 'i2', priority: 0.4, category: 'repair', content: 'I2', immediate: true },
+      { key: 'n1', priority: 0.9, category: 'todo', content: 'N1' },
+      { key: 'n2', priority: 0.8, category: 'dedup', content: 'N2' },
+      { key: 'n3', priority: 0.7, category: 'immune', content: 'N3' },
+      { key: 'n4', priority: 0.6, category: 'mistake', content: 'N4' },
+    ] }],
+    renders: 1,
+  },
+}
+
+interface OracleEntry {
+  /** 每次 render 的输出（空串 = 无内容） */
+  renders: string[]
+  /** 最终 ledger delta（累计值） */
+  ledger: unknown
+  /** 每次 render 后 drainDelivered 的 key 列表 */
+  deliveredKeys: string[][]
+}
+
+const out: Record<string, OracleEntry> = {}
+for (const [name, spec] of Object.entries(cases)) {
+  const bus = new AdvisoryBus()
+  const renders: string[] = []
+  const deliveredKeys: string[][] = []
+
+  for (let i = 0; i < spec.renders; i++) {
+    const batch = spec.batches[i]
+    if (batch) {
+      for (const e of batch.entries) bus.submit(e as never)
+    }
+    const domain = batch?.domain
+    renders.push(bus.render(domain, i))
+    deliveredKeys.push(bus.drainDelivered().map(d => d.key))
+  }
+
+  out[name] = { renders, ledger: bus.drainLedger(), deliveredKeys }
+}
+
+writeFileSync(
+  new URL('oracle.json', import.meta.url),
+  JSON.stringify(out, null, 2) + '\n',
+)
+writeFileSync(
+  new URL('cases.json', import.meta.url),
+  JSON.stringify(cases, null, 2) + '\n',
+)

@@ -278,7 +278,50 @@ Hooks nil 检查去掉 1 红 / Effects 不透传 1 红 / 窗口不封顶 2 红 /
 **仍未闭环**：advisory-bus 本体（渲染 / 排序 / 去重）未移植——hook 投递的条目
 **无处显示**。这是端到端可见性的最后一环。
 
-**下一步**：`advisory-bus` 渲染层（让投递可见），或 `todo-reminder` hook。
+### 第六刀（已完成）：advisory-bus 核心——投递有了落点（2026-09-19）
+
+✅ `internal/agent/advisory_bus.go`（463 行 + 400 行测试）——**advisory 通路闭环**。
+此前 hook 投递的条目无处显示（投进没有出口的箱子）。
+
+**Scope Check**：`advisory-bus.ts` 1277 行，含四套治理子系统。移植的是**核心路径**：
+submit / 去重（同 key 保高 priority，平手先出现者胜）/ 排序（priority 降序）/
+类别上限（每 category 2 条）/ Top-N 预算（3 条，天权·瑶光 1 条）/ star_domain
+豁免 / constitutional·immediate 豁免 / TTL 跨轮存活 / XML 渲染 / ledger。
+
+**未移植的治理子系统**（都在代码注释与类型里显式标注，都是 provider 注入才生效）：
+习惯化对抗 / efficacy 负反馈环 / lift 消费 / holdout 反抽样 / SR 通道 / status
+通道 / 阶段抑制与挂起观察 / mutex 互斥对 / key 级送达冷却 / 星域措辞适配。
+
+**oracle 对账**（`testdata/advisorybus/`）：**23 个用例 × 2 维度 = 44 个子测试**，
+从真实 TS `AdvisoryBus.render()` 导出。生成器同时导出 `cases.json`（输入唯一真源）。
+
+**oracle 抓到的真实缺陷（本轮主要收获）**：priority 格式化。
+首版自写「放大 100 倍 + 远离零舍入」，并在注释里断言「Go 的 `%.2f` 用
+banker's rounding 会与 JS 分歧」。**实测推翻**——分歧存在但方向相反：
+
+| v | Go `%.2f` | 自写「远离零」 | JS `toFixed(2)` |
+|---|---|---|---|
+| 2.675 | 2.67 | **2.68** ✗ | 2.67 |
+| 0.615 | 0.61 | **0.62** ✗ | 0.61 |
+| 1.255 | 1.25 | **1.26** ✗ | 1.25 |
+
+根因：JS 的 toFixed 与 Go 的格式化都按**浮点二进制实际值**舍入；自写的 `v*100`
+引入额外精度损失，反而偏离两者共同基准。改用 `strconv.FormatFloat(p,'f',2,64)`
+——实测 12/12 与 JS 一致。
+**教训**：跨语言数值语义不要凭直觉断言，先写探针实测。
+
+**变异反证 10 个：全部有判别力**（去重 `>=` 2 红 / 排序升序 18 红 / 类别上限去掉
+4 红 / 星域预算失效 6 红 / CVM 预算去掉 4 红 / TTL 不减 5 红 / XML 不转义 3 红 /
+priority 自写实现 3 红 / constitutional 不豁免 4 红 / ledger 不记 rendered 21 红）。
+首轮 M1·M8 各红 0（**等价变异**）——补了 `dedup_same_priority` 与
+`priority_edge` 两个 oracle 用例后变红，测试判别力随之提升。
+
+**用户级验收（已执行）**：`TestAdvisoryBusClosesHookLoop`——hook 投递 → bus
+渲染 → 输出里出现 `<星域-advisory>` 块含 `typecheck-reminder` 的 key 与提醒正文。
+`TestAdvisoryBusAsPipelineSink` 走真实 Pipeline。
+
+**下一步**：治理子系统按需增量移植（先做习惯化或 efficacy——它们是「提醒被忽略后
+静默」的核心），或继续接 hook。
 
 **为什么是它而不是补工具**：
 

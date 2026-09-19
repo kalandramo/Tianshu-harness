@@ -1,0 +1,564 @@
+{
+  "single": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"a\" priority=\"0.60\" category=\"discipline\">hello</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 1,
+      "rendered": 1,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "a"
+      ]
+    ]
+  },
+  "dedup_keeps_higher": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"dup\" priority=\"0.70\" category=\"discipline\">高</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 1,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "dup"
+      ]
+    ]
+  },
+  "dedup_later_wins": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"dup\" priority=\"0.80\" category=\"discipline\">先高</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 1,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "dup"
+      ]
+    ]
+  },
+  "dedup_same_priority": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"dup\" priority=\"0.60\" category=\"discipline\">第一条</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 1,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "dup"
+      ]
+    ]
+  },
+  "sort_by_priority": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"high\" priority=\"0.80\" category=\"repair\">a</entry>\n  <entry key=\"mid\" priority=\"0.50\" category=\"todo\">b</entry>\n  <entry key=\"low\" priority=\"0.30\" category=\"discipline\">c</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 3,
+      "rendered": 3,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "high",
+        "mid",
+        "low"
+      ]
+    ]
+  },
+  "category_cap": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"d1\" priority=\"0.90\" category=\"discipline\">1</entry>\n  <entry key=\"d2\" priority=\"0.80\" category=\"discipline\">2</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 4,
+      "rendered": 2,
+      "dropped": 2,
+      "droppedKeys": [
+        "d3",
+        "d4"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "d1",
+        "d2"
+      ]
+    ]
+  },
+  "top_n_budget": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"a\" priority=\"0.90\" category=\"discipline\">1</entry>\n  <entry key=\"b\" priority=\"0.80\" category=\"repair\">2</entry>\n  <entry key=\"c\" priority=\"0.70\" category=\"todo\">3</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 5,
+      "rendered": 3,
+      "dropped": 2,
+      "droppedKeys": [
+        "d",
+        "e"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "a",
+        "b",
+        "c"
+      ]
+    ]
+  },
+  "constitutional_first": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"const\" priority=\"0.90\" category=\"constitutional\">宪法</entry>\n  <entry key=\"normal\" priority=\"0.95\" category=\"discipline\">普通</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 2,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "const",
+        "normal"
+      ]
+    ]
+  },
+  "constitutional_multi": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"c1\" priority=\"0.90\" category=\"constitutional\">C1</entry>\n  <entry key=\"c2\" priority=\"0.85\" category=\"constitutional\">C2</entry>\n  <entry key=\"n1\" priority=\"0.70\" category=\"discipline\">N1</entry>\n  <entry key=\"n2\" priority=\"0.60\" category=\"repair\">N2</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 4,
+      "rendered": 4,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "c1",
+        "c2",
+        "n1",
+        "n2"
+      ]
+    ]
+  },
+  "informational_fill": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"info1\" priority=\"0.90\" category=\"background\">info-high</entry>\n  <entry key=\"info2\" priority=\"0.80\" category=\"monitor\">info-mid</entry>\n  <entry key=\"op1\" priority=\"0.70\" category=\"discipline\">op</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 3,
+      "rendered": 3,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "info1",
+        "info2",
+        "op1"
+      ]
+    ]
+  },
+  "domain_budget_tianquan": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"a\" priority=\"0.90\" category=\"discipline\">1</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 3,
+      "rendered": 1,
+      "dropped": 2,
+      "droppedKeys": [
+        "b",
+        "c"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "a"
+      ]
+    ]
+  },
+  "domain_budget_yaoguang": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"a\" priority=\"0.90\" category=\"discipline\">1</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 1,
+      "dropped": 1,
+      "droppedKeys": [
+        "b"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "a"
+      ]
+    ]
+  },
+  "star_domain_exempt": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"a\" priority=\"0.90\" category=\"discipline\">1</entry>\n  <entry key=\"b\" priority=\"0.80\" category=\"repair\">2</entry>\n  <entry key=\"c\" priority=\"0.70\" category=\"todo\">3</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 4,
+      "rendered": 3,
+      "dropped": 1,
+      "droppedKeys": [
+        "sd"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "a",
+        "b",
+        "c"
+      ]
+    ]
+  },
+  "ttl_survives": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"persist\" priority=\"0.60\" category=\"discipline\">存活</entry>\n</星域-advisory>",
+      "<星域-advisory>\n  <entry key=\"persist\" priority=\"0.60\" category=\"discipline\">存活</entry>\n</星域-advisory>",
+      "<星域-advisory>\n  <entry key=\"persist\" priority=\"0.60\" category=\"discipline\">存活</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 1,
+      "rendered": 3,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "persist"
+      ],
+      [
+        "persist"
+      ],
+      [
+        "persist"
+      ]
+    ]
+  },
+  "ttl_expires": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"p\" priority=\"0.60\" category=\"discipline\">X</entry>\n</星域-advisory>",
+      "<星域-advisory>\n  <entry key=\"p\" priority=\"0.60\" category=\"discipline\">X</entry>\n</星域-advisory>",
+      ""
+    ],
+    "ledger": {
+      "submitted": 1,
+      "rendered": 2,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "p"
+      ],
+      [
+        "p"
+      ],
+      []
+    ]
+  },
+  "xml_escape": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"a&amp;b\" priority=\"0.60\" category=\"discipline\">&lt;div class=&quot;x&quot;&gt;&amp;amp;&lt;/div&gt;</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 1,
+      "rendered": 1,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "a&b"
+      ]
+    ]
+  },
+  "priority_format": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"a\" priority=\"0.60\" category=\"discipline\">x</entry>\n  <entry key=\"b\" priority=\"0.56\" category=\"repair\">y</entry>\n  <entry key=\"c\" priority=\"0.10\" category=\"todo\">z</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 3,
+      "rendered": 3,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "a",
+        "b",
+        "c"
+      ]
+    ]
+  },
+  "priority_edge": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"a\" priority=\"2.67\" category=\"discipline\">x</entry>\n  <entry key=\"c\" priority=\"1.25\" category=\"todo\">z</entry>\n  <entry key=\"b\" priority=\"0.61\" category=\"repair\">y</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 4,
+      "rendered": 3,
+      "dropped": 1,
+      "droppedKeys": [
+        "d"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "a",
+        "c",
+        "b"
+      ]
+    ]
+  },
+  "empty": {
+    "renders": [
+      ""
+    ],
+    "ledger": {
+      "submitted": 0,
+      "rendered": 0,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      []
+    ]
+  },
+  "same_priority": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"a\" priority=\"0.60\" category=\"discipline\">A</entry>\n  <entry key=\"b\" priority=\"0.60\" category=\"repair\">B</entry>\n  <entry key=\"c\" priority=\"0.60\" category=\"todo\">C</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 3,
+      "rendered": 3,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "a",
+        "b",
+        "c"
+      ]
+    ]
+  },
+  "multi_round": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"r1\" priority=\"0.60\" category=\"discipline\">第一轮</entry>\n</星域-advisory>",
+      "<星域-advisory>\n  <entry key=\"r2\" priority=\"0.70\" category=\"repair\">第二轮</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 2,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "r1"
+      ],
+      [
+        "r2"
+      ]
+    ]
+  },
+  "immediate_exempt": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"n1\" priority=\"0.90\" category=\"todo\">N1</entry>\n  <entry key=\"n2\" priority=\"0.80\" category=\"dedup\">N2</entry>\n  <entry key=\"n3\" priority=\"0.70\" category=\"immune\">N3</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 6,
+      "rendered": 3,
+      "dropped": 3,
+      "droppedKeys": [
+        "i1",
+        "i2",
+        "n4"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ]
+  }
+}
