@@ -28,3 +28,49 @@ if ! npm run --silent typecheck; then
   exit 1
 fi
 echo "[pre-push] ✓ typecheck clean — pushing"
+
+# ── Go 侧门禁 ──
+#
+# 只在本次推送涉及 go/ 时运行——保持 hook 轻量（见文件头的设计说明：
+# 太重会让人养成 --no-verify 的习惯）。Go 未安装时跳过，不阻塞只做 TS
+# 的人（Go 侧的完整门禁在 CI 的 go job 里，那里是权威）。
+if command -v go >/dev/null 2>&1; then
+  # 本次推送涉及的提交里是否改了 go/
+  #
+  # 取比较基线：优先 upstream；未配置时回退到 origin/<当前分支>（分支可能
+  # 存在远程副本但未设 tracking，如 go-runtime）；都没有才保守跑一次。
+  base=""
+  if up="$(git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>/dev/null)"; then
+    base="$up"
+  else
+    br="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+    if [ -n "$br" ] && git rev-parse --verify --quiet "origin/$br" >/dev/null 2>&1; then
+      base="origin/$br"
+    fi
+  fi
+
+  if [ -n "$base" ]; then
+    changed="$(git diff --name-only "$base..HEAD" 2>/dev/null | grep -c '^go/' || true)"
+  else
+    changed=1  # 无基线（首次推送新分支）→ 保守起见跑一次
+  fi
+
+  if [ "$changed" != "0" ]; then
+    cd "$repo_root/go"
+    echo "[pre-push] Go 侧校验（go.sum 完整性 + 构建 + vet）…"
+    if ! go mod verify >/dev/null 2>&1; then
+      echo "[pre-push] ✗ go mod verify 失败 —— go.sum 不完整或被篡改"
+      exit 1
+    fi
+    if ! GOFLAGS=-mod=readonly go build ./... 2>&1; then
+      echo "[pre-push] ✗ go build 失败（-mod=readonly）—— 可能漏提交了 go.mod/go.sum"
+      echo "           Fix the errors above, or bypass with: git push --no-verify"
+      exit 1
+    fi
+    if ! go vet ./... 2>&1; then
+      echo "[pre-push] ✗ go vet 失败"
+      exit 1
+    fi
+    echo "[pre-push] ✓ Go 侧校验通过"
+  fi
+fi

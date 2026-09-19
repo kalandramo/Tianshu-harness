@@ -2,9 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # go-runtime 承载 Go 重写（将来拆为独立仓库）；它只影响 go job，
+    # 不改动 TS 侧的 ci job 行为。
+    branches: [main, go-runtime]
   pull_request:
-    branches: [main]
+    branches: [main, go-runtime]
 
 jobs:
   ci:
@@ -54,3 +56,48 @@ jobs:
 
       - name: Windows bash smoke test
         run: node --import tsx --test src/tools/__tests__/bash-windows-smoke.test.ts
+
+  go:
+    # Go 重写版（go/ 子目录）的构建与测试门禁。
+    #
+    # 为什么需要它：Go 侧引入了第三方依赖（klauspost/compress），
+    # 「本地能跑、他人拉取失败」这类问题只在干净环境暴露。本 job 用
+    # `-mod=readonly` 构建——它会**拒绝任何需要改 go.mod/go.sum 的情况**，
+    # 从而保证提交的依赖清单是完整的。
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          # 跟随 go/go.mod 的 go 指令，避免硬编码版本漂移
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      - name: Verify dependency manifest
+        # go.sum 缺失或不匹配时失败——这是「他人能否复现构建」的直接判据
+        run: go mod verify
+
+      - name: Build (readonly modules)
+        # -mod=readonly 拒绝隐式改 go.mod/go.sum，暴露漏提交的依赖
+        run: GOFLAGS=-mod=readonly go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test (race)
+        run: go test -race -count=1 ./...
+
+      - name: Check formatting
+        # gofmt -l 列出需格式化的文件；有输出即失败
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "以下文件未格式化："
+            echo "$unformatted"
+            exit 1
+          fi
