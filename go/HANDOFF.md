@@ -5,16 +5,30 @@
 
 ## 现状一句话
 
-**Go 版已能干活**：`tianshu -p "提示词"` → 请求构造 → 模型调用 → 工具执行 →
-结果回灌 → 终答。Wave 1（模型接入层）完整收口，Wave 2（工具内核）含 bash，
-Wave 4（agent 循环）最小版打通。
+**Go 版已能干活，且认知层已大部分落地**：`tianshu -p "提示词"` → 请求构造 →
+模型调用 → 工具执行 → 结果回灌 → 终答。Wave 1/2/3 收口，Wave 4（agent 循环
++ CVM + context）推进到**压缩链路闭环**。
 
-**四步闭环已真实验证**（本地 mock 端点）：读 calc.go（发现 `a - b` bug）→
-edit_file 修复为 `a + b` → bash 跑 `go test ./...` → 文件确实改动、测试确实
-从红变绿。这是 Go 版第一次真正干活。
+**当前规模**（2026-09-19 实测）：
 
-验证基线：`go test ./...` 316 PASS / `-race` / `go vet` / `gofmt` 全绿；
-干净检出（`git archive HEAD`）复验通过且 CLI 可构建。
+| 指标 | 值 |
+|---|---|
+| internal 子包 | 16 |
+| 生产代码 | 22,444 行 |
+| 测试代码 | 23,949 行 |
+| 测试用例 | **1,918 个 PASS** |
+| oracle 数据集 | 38 个 |
+| 注册工具 | 10 个 |
+| `go/` 提交数 | 103 |
+| 验证基线 | 19 包全绿 / `-race` / `go vet` / `gofmt` 零违规 |
+
+**四步闭环已真实验证**（本地 mock 端点 + 真实端点）：读 calc.go（发现
+`a - b` bug）→ edit_file 修复为 `a + b` → bash 跑 `go test ./...` → 文件确实
+改动、测试确实从红变绿。真实端点（`ai.ctaigw.cn/v1` + `deepseek-v4.1-flash`）
+下前缀缓存命中率 **99.0%**。
+
+**分支状态**：`go-runtime` 已 push 到 `origin`（HEAD 随每刀推进）；
+`main` 仍在 `69b0381` 未动（用户明确要求不合并）。
 
 ## 目录结构
 
@@ -34,11 +48,27 @@ go/
 │   ├── retry/retry.go          结构化重试（抖动退避 + 预算护栏）
 │   ├── client/client.go        集成层（串起上面全部）
 │   ├── pathsafe/pathsafe.go    路径安全（fail-closed）
-│   ├── tools/                  工具内核（注册表 + 6 个工具）
-│   └── agent/loop.go           agent 主循环
-└── testdata/                   oracle 生成器与 golden
-    ├── stablejson/ · provider/ · wire/ · sse/ · apierr/
+│   ├── syntaxcheck/            语法检查（.go 用原生解析器）
+│   ├── filediff/               unified diff（自写 Myers，展示用）
+│   ├── trust/                  项目级信任门（fail-closed）
+│   ├── recovery/               备份与恢复（journal + stack）
+│   ├── context/                认知上下文（rounds / pressure）
+│   ├── compact/                **压缩**（策略 / 压力 / 决策 / micro / 折叠）
+│   ├── session/                会话状态 + 持久化（JSONL / zstd / 元数据）
+│   ├── tools/                  工具内核（注册表 + 10 个工具）
+│   └── agent/                  agent 主循环 + CVM hook + 压缩接线
+└── testdata/                   oracle 生成器与 golden（38 个数据集）
 ```
+
+**`internal/compact` 的结构**（压缩链路，本阶段主战场）：
+
+| 文件 | 职责 |
+|---|---|
+| `policy.go` | 策略阈值（watch/compact/reactive/ceiling）+ 自适应 + 精度天花板 |
+| `pressure.go` | PressureMonitor（八字段 + log2 压缩 + thrashing 检测） |
+| `action.go` | `DecideCompactAction`（六种 action）+ 熔断器 + 阈值计算 |
+| `micro.go` | `MicroCompactOai`（截断 + 轮次删除）+ token 估算 |
+| `context_collapse.go` | 语义折叠（7 个按工具名分派的折叠器） |
 
 ## 三个必须知道的约束（踩过坑）
 
@@ -838,8 +868,19 @@ b
 
 ### 验证状态
 
-`go test ./...`（11 包全绿、0 FAIL）、`-race`（0 FAIL）、`go vet`（OK）、
-`gofmt`（零违规）。分支 `go-runtime` 共 49 个提交，**未 push**。
+`go test ./...`（**19 包全绿、0 FAIL、1,918 个用例 PASS**）、`-race`（0 FAIL）、
+`go vet`（OK）、`gofmt`（零违规）。分支 `go-runtime` 的 `go/` 相关提交 **103 个**，
+**已 push 到 origin**（本段此前记录的「11 包 / 49 提交 / 未 push」已过时）。
+
+**验证纪律（本阶段固化）**：
+
+- **每刀三级验证**：包内测试 → 全量 `go test ./...`（连跑 3 次防间歇性失败）→
+  `vet` + `gofmt`
+- **变异反证是必做项**：写完测试后故意改错实现，确认变红。累计约 **130+ 个变异**
+- **「红 0」四种成因**必须逐一排除：等价变异、用例不可区分、**编译失败**、
+  **被测逻辑在上游已实现**（本地检查是死分支）
+- **`t.Skipf` 是隐身衣**——用 `Skipf` 兜底的用例会让变异「红 0」被掩盖，
+  必须用 `Fatalf`
 
 ### 未完成（后续会话的起点）
 
@@ -964,6 +1005,84 @@ b
    用相对路径 import 父仓库 TS 源码（生成 golden 用），拆出后无法重新生成
    golden——建议生成器留在 TS 仓库（它们是「对账工具」，本就该跟被对账对象
    在一起），Go 仓库只保留 `oracle.json`。
+
+## 本阶段进展（第二十至二十八刀，2026-09-19）
+
+> 上文「本轮完成情况」记录的是更早几轮的状态。本段是最新交接点。
+
+### 已完成
+
+**认知层（CVM + advisory 链路）**：
+- advisory bus 核心 + 接进 loop（消除悬空）
+- 习惯化对抗（streak 升级措辞 / 静音 4 轮 / constitutional 豁免 / probation 放行）
+- holdout 反事实抽样（率 0.1 / 资格门 3 / 白名单）
+- 跨会话效能信息素（JSONL + 14 天 EWMA + 原子写 + O_EXCL 锁）
+- T7 效力排序 + efficacy 负反馈环（冷却翻倍 / 静默 / 正向臂）
+- AdvisoryReadback 接线（四调用点 + CLI 装配）
+
+**压缩链路（`internal/compact`，本阶段主战场）**：
+
+| 刀 | 提交 | 内容 |
+|---|---|---|
+| 二十四 | `1300067` | 策略层（三策略四阈值）+ 自适应 + 精度天花板 + PressureMonitor |
+| 二十五 | `38cd386` | `DecideCompactAction`（六种 action）+ 熔断器 + 阈值计算 |
+| 二十六 | `43169f8` | `MicroCompactOai`（截断 + 轮次删除）+ token 估算 + 轮龄 |
+| 二十七 | `15a34bb` | 语义折叠（7 个折叠器）+ 折叠接线 |
+| 二十八 | `c843a14` | **压缩接线**——判定层 → 执行层，消除悬空 |
+
+**压缩链路的完整事实流**（后续会话的锚点）：
+
+```
+Loop.Run turn 边界 (loop.go:504)
+  → maybeCompactAtBoundary(turn)              [loop.go:779]
+    → orderedMapsToOai(messages)              [wire → session.OaiMessage]
+      → CompactBoundary.MaybeCompact          [compact_boundary.go]
+        → context.EstimateOaiMessageTokens    [rounds 口径]
+        → compact.DecideCompactAction         [六种 action]
+        → [none 短路] → compact.MicroCompactOai
+          → CollapseToolResult                [turnAge≥4 时语义折叠]
+          → 截断 / 轮次删除
+      → oaiToOrderedMaps(compacted)           [KeyOrder 重建，保插入序]
+    → emit(compaction 事件)
+```
+
+**三处关键设计决策**（避免后续会话重复踩坑）：
+
+1. **压缩只在 turn 边界，不在 mid-turn**——mid-turn 改历史会让已发出的请求
+   前缀失效，缓存命中率归零（对账 TS 的 `loopTurn === 0` 约束）。
+2. **`CompactActionInput` 有两个不联动的字段**：`ProviderProfile`
+   （`*CompactRatioProfile`）决定**策略阈值**，`Profile`（`CompactionProfile`）
+   决定 **LLM 阶梯**。只设后者会让阈值停在 balanced（Watch=0.6）而非按
+   cacheType 推导的 aggressive（0.5）。
+3. **熔断器检查只在决策层做**——`DecideCompactAction` 内部已返回 `none` +
+   reason，`CompactBoundary` 里再查是死分支（变异红 0 证明）。
+
+### 未完成（后续会话的起点）
+
+**压缩执行层剩余四块**（按建议优先级）：
+
+1. **reclaim gate**——`buildReclaimDecision` + `estimateReclaim`。判定回收量
+   是否够本（`minReclaimTokens` 地板），不够就回滚。当前实现是「压了就压了」，
+   可能出现「只回收 1 条却重建整个前缀」的亏本压缩。确定性逻辑，可 oracle 对账。
+2. **缓存顾问延迟**——`cacheAdvisor.shouldDelayCompact(tier, {...})`。热缓存时
+   推迟压缩（1M 余量 > 前缀重建成本），force 动作不受此限。
+3. **LLM 重写路径**——`partial-llm` / `full-llm` / `checkpoint`，需 `summaryClient`
+   抽象（要真调模型做摘要）。这是四块里最大的。
+4. **session split**——86% 时主动切分会话（`preUserMessageSplit`）。
+
+**压缩链路的新风险面（建议排在 gate 之后）**：
+- **压缩产出的消息列表是否满足 API 格式约束**——目前无测试覆盖。特别是
+  tool_calls 与 tool 结果必须配对完整（轮次删除若切在中间会产生孤儿）。
+  `session.RepairOrphanToolCalls` 已存在但未接进压缩路径。
+
+**其余未移植**（见下文「架构欠账」与「未完成」段，多数仍有效）：
+- 未移植目录：`internal/cache` / `internal/config` / `internal/tui` /
+  `internal/mcp` / `internal/lsp` / `internal/auth` / `internal/skills`
+- 未移植工具：`plan` / `job` / `ast_grep` / `diff` / `git` / `web_fetch` /
+  `web_search` / `repo_map` / `read_section` / `request_path_access` /
+  `ask_image` / `skill`
+- `internal/context` 剩余：CognitiveLedger / Stigmergy / task-contract
+- session 剩余：会话恢复、会话注册表
 
 ## 建议的第一刀
 
