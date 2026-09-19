@@ -86,6 +86,23 @@ type AdvisoryBus struct {
 	// 避免数据不更新导致永久静音。
 	liftProbation map[string]bool
 
+	// efficacyStats 是**会话内**效能统计源（注入）。
+	//
+	// nil 时不做负反馈环（对账 TS 的 `if (this.efficacyStats)`）。
+	// **注意不含跨会话先验**——负反馈环看的是「本次会话里说了几次没人听」，
+	// 与 T7 排序（含先验）口径不同。
+	efficacyStats func(key string) *EfficacyStats
+	// efficacySilenced 是被会话内静默的 key（零采纳且送达达阈值）。
+	efficacySilenced map[string]bool
+	// efficacyCooldownRemaining 是 key → 剩余冷却渲染周期数。
+	efficacyCooldownRemaining map[string]int
+	// efficacyCooldownLength 是 key → 当前冷却长度（翻倍/减半作用于它）。
+	efficacyCooldownLength map[string]int
+	// positiveArmKeys 是累计采纳 >= 3 的 key（排序加成用）。
+	//
+	// **每轮重建**——不跨轮累积（对账 TS 的 `positiveArmKeys = new Set()`）。
+	positiveArmKeys map[string]bool
+
 	// efficacySignal 是效力信号源（注入）。
 	//
 	// nil 时排序退化为纯 priority（对账 TS 的 `if (!this.efficacySignal) return 0`）。
@@ -167,6 +184,33 @@ const (
 	efficacyPriorityCap = 0.79
 )
 
+// 负反馈环常量（对账 TS 同名常量）。
+const (
+	// efficacyCooldownDelivered 是进入冷却翻倍的最低会话内送达次数（零采纳前提）。
+	efficacyCooldownDelivered = 3
+	// efficacySilenceDelivered 是触发会话内静默的送达次数（零采纳前提）。
+	efficacySilenceDelivered = 6
+	// efficacyBaseCooldownRenders 是基础冷却长度（翻倍/减半的起点）。
+	efficacyBaseCooldownRenders = 2
+	// efficacyFailOpenPriority 是负反馈环的 fail-open 优先级线。
+	//
+	// **priority >= 0.8 的条目永不受负反馈约束**——高优先级提醒（含
+	// constitutional）不该被统计意义上的「无效」静默掉。
+	efficacyFailOpenPriority = 0.8
+	// positiveArmThreshold 是触发正向臂（冷却减半 + 排序加成）的最低累计采纳数。
+	positiveArmThreshold = 3
+	// positiveArmBonus 是正向臂的排序加成。
+	positiveArmBonus = 0.05
+)
+
+// EfficacyStats 是会话内效能统计（负反馈环的输入）。
+//
+// 对账 TS 的 `{ delivered, adopted }`——**只含会话内计数，不含先验**。
+type EfficacyStats struct {
+	Delivered int
+	Adopted   int
+}
+
 // EfficacySignal 是效力信号——供有效优先级做有界调整。
 //
 // 对账 EfficacySignalProvider。`Score` 归一 [0,1]（0.5 = 中性），
@@ -224,6 +268,20 @@ func ParseHoldoutRate(raw string) float64 {
 // 对账 setHabituationPolicy。缺省 = 不做习惯化对抗。
 func (b *AdvisoryBus) SetHabituationPolicy(policy HabituationPolicy) {
 	b.habituation = policy
+}
+
+// SetEfficacyStatsProvider 注入会话内效能统计源。
+//
+// 对账 setEfficacyStatsProvider（loop.ts:792）。生产装配：
+//
+//	bus.SetEfficacyStatsProvider(func(key string) *EfficacyStats {
+//	    s := readback.Stats()[key]
+//	    return &EfficacyStats{Delivered: s.Delivered, Adopted: s.Adopted}
+//	})
+//
+// **缺省 = 不做负反馈环**（对账 TS 的 `if (this.efficacyStats)`）。
+func (b *AdvisoryBus) SetEfficacyStatsProvider(provider func(key string) *EfficacyStats) {
+	b.efficacyStats = provider
 }
 
 // SetEfficacySignalProvider 注入效力信号源。
@@ -577,6 +635,111 @@ func (b *AdvisoryBus) Render(activeStarDomain string, turn int) string {
 		all = kept
 	}
 
+	// ── 1c-bis. W2 efficacy 负反馈环：发射前回读会话内 delivered/adopted ──
+	//
+	// 对账 TS 的「W2 efficacy 负反馈环」（advisory-bus.ts:869-932）。
+	//
+	// **三阶段**（零采纳前提）：
+	//   delivered >= 3 → 冷却翻倍（2→4→8…），本次放行、下次进入冷却
+	//   delivered >= 6 → **会话内静默**（不再渲染）
+	//
+	// **与习惯化静音互补**（TS 注释原文）：习惯化依赖 `ignoredStreak`，而它依赖
+	// expect 谓词——**无 expect 的 key（如 convergence 的多数变体）ignored 永远
+	// 是 0，只有这条环能拦住它**。
+	//
+	// **fail-open**：constitutional / priority >= 0.8 的条目永不受约束。
+	if b.efficacyStats != nil {
+		// 冷却计时流逝（无论该 key 本轮是否投递）
+		for k, v := range b.efficacyCooldownRemaining {
+			if v <= 1 {
+				delete(b.efficacyCooldownRemaining, k)
+			} else {
+				b.efficacyCooldownRemaining[k] = v - 1
+			}
+		}
+
+		droppedByEfficacy := map[string]bool{}
+		kept := make([]AdvisoryEntry, 0, len(all))
+		for _, e := range all {
+			// fail-open：constitutional / 高优先级条目永不受负反馈环约束
+			if e.Tier == TierConstitutional || e.Priority >= efficacyFailOpenPriority {
+				kept = append(kept, e)
+				continue
+			}
+			if b.efficacySilenced[e.Key] {
+				droppedByEfficacy[e.Key] = true
+				continue
+			}
+			stats := b.efficacyStats(e.Key)
+			// 无统计或已有采纳 → 不受约束（负反馈只针对「零采纳」）
+			if stats == nil || stats.Adopted > 0 {
+				kept = append(kept, e)
+				continue
+			}
+			if stats.Delivered >= efficacySilenceDelivered {
+				if b.efficacySilenced == nil {
+					b.efficacySilenced = map[string]bool{}
+				}
+				b.efficacySilenced[e.Key] = true
+				droppedByEfficacy[e.Key] = true
+				continue
+			}
+			if stats.Delivered >= efficacyCooldownDelivered {
+				if _, cooling := b.efficacyCooldownRemaining[e.Key]; cooling {
+					droppedByEfficacy[e.Key] = true
+					continue
+				}
+				// 放行本次送达，并把下次冷却翻倍（2→4→8…）
+				//
+				// **默认值取 base/2**（对账 TS 的 `?? EFFICACY_BASE_COOLDOWN_RENDERS / 2`）
+				// ——首次翻倍后恰好等于 base（1×2 = 2），而非 4。
+				prev := b.efficacyCooldownLength[e.Key]
+				if prev == 0 {
+					prev = efficacyBaseCooldownRenders / 2
+				}
+				next := prev * 2
+				if b.efficacyCooldownLength == nil {
+					b.efficacyCooldownLength = map[string]int{}
+				}
+				if b.efficacyCooldownRemaining == nil {
+					b.efficacyCooldownRemaining = map[string]int{}
+				}
+				b.efficacyCooldownLength[e.Key] = next
+				b.efficacyCooldownRemaining[e.Key] = next
+			}
+			kept = append(kept, e)
+		}
+		if len(droppedByEfficacy) > 0 {
+			keys := make([]string, 0, len(droppedByEfficacy))
+			for k := range droppedByEfficacy {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			b.recordDropped(keys)
+		}
+		all = kept
+
+		// ── T6 efficacy 正向臂：累计采纳 >= 3 → 冷却减半 + 排序加成 ──
+		//
+		// 负向臂让「说了没人听」的 key 退场，正向臂让「说了有人听」的 key 加速送达。
+		//
+		// **不 mutation e.Priority**（TS 注释原文）：`alive` 跨渲染周期持有同一批
+		// 引用，原地 `+= 0.05` 会复合累加，且 0.85 越过 0.8 fail-open 豁免线导致
+		// **永久逃逸负向臂**。加成只在 `effectivePriority` 里按需计算。
+		b.positiveArmKeys = map[string]bool{}
+		for _, e := range all {
+			stats := b.efficacyStats(e.Key)
+			if stats == nil || stats.Adopted < positiveArmThreshold {
+				continue
+			}
+			b.positiveArmKeys[e.Key] = true
+			// 冷却减半（作用于下次 cooldown，安全——改的是 map 不是条目对象）
+			if cur := b.efficacyCooldownLength[e.Key]; cur > 1 {
+				b.efficacyCooldownLength[e.Key] = maxInt(1, cur/2)
+			}
+		}
+	}
+
 	// ── 1d. lift 消费端：负 lift 自动静音 ──
 	//
 	// 对账 TS 的「Lift 消费端:负 lift 自动静音」（advisory-bus.ts:942-980）。
@@ -884,6 +1047,11 @@ func (b *AdvisoryBus) Reset() {
 	b.liftProbation = nil
 	b.ledgerLiftMuted = 0
 	b.ledgerHeldOut = 0
+	// efficacy 负反馈环状态（否则 Reset 后旧静默/冷却残留）
+	b.efficacySilenced = nil
+	b.efficacyCooldownRemaining = nil
+	b.efficacyCooldownLength = nil
+	b.positiveArmKeys = nil
 }
 
 // recordDropped 记 dropped 账本（去重 key，封顶）。
@@ -998,11 +1166,18 @@ func (b *AdvisoryBus) efficacyAdjust(e AdvisoryEntry) float64 {
 // **两个边界**：下限 0.05（保留参赛资格，不等于静音）、
 // 上限 0.79（不触及 0.8 的 fail-open 豁免线）。
 func (b *AdvisoryBus) effectivePriority(e AdvisoryEntry) float64 {
+	// T6 正向臂加成：累计采纳 >= 3 → +0.05（单调不减，cap 不越 0.8 豁免线）。
+	//
+	// **不写回 e.Priority**——见负反馈环段的说明（复合累加 + 永久逃逸风险）。
+	base := e.Priority
+	if b.positiveArmKeys[e.Key] {
+		base = math.Max(e.Priority, math.Min(efficacyPriorityCap, e.Priority+positiveArmBonus))
+	}
 	delta := b.efficacyAdjust(e)
 	if delta == 0 {
-		return e.Priority // 零调整时原样透传，不 clamp
+		return base // 零调整时原样透传，不 clamp
 	}
-	return math.Max(efficacyPriorityFloor, math.Min(efficacyPriorityCap, e.Priority+delta))
+	return math.Max(efficacyPriorityFloor, math.Min(efficacyPriorityCap, base+delta))
 }
 
 // formatPriority 把 priority 格式化为两位小数（对账 TS 的 toFixed(2)）。

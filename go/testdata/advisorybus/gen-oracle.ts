@@ -24,6 +24,8 @@ interface CaseSpec {
   holdout?: { rate: number; rng: number[]; eligible: string[] }
   /** T7 效力排序：key → { score, confidence }（null 模拟无样本）+ span 覆盖 */
   efficacy?: { signals: Record<string, { score: number; confidence: number } | null>; span?: number }
+  /** W2 负反馈环：key → 会话内 { delivered, adopted }（模拟 readback 统计） */
+  effStats?: Record<string, { delivered: number; adopted: number }>
 }
 
 // 用例：覆盖去重 / 排序 / 类别上限 / 预算 / TTL / 转义 / 星域预算。
@@ -607,6 +609,88 @@ const cases: Record<string, CaseSpec> = {
     renders: 1,
   },
 
+  // ── 负反馈环：delivered=3 零采纳 → 冷却（第 1 轮放行，第 2 轮起缺席）──
+  eff_cooldown_starts: {
+    effStats: { 'noisy': { delivered: 3, adopted: 0 } },
+    batches: [
+      { entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: 'N' }] },
+      { entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: 'N' }] },
+      { entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: 'N' }] },
+      { entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: 'N' }] },
+    ],
+    renders: 4,
+  },
+
+  // ── 负反馈环：delivered=6 零采纳 → 会话内静默 ──
+  eff_silenced: {
+    effStats: { 'noisy': { delivered: 6, adopted: 0 } },
+    batches: [
+      { entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: 'N' }] },
+      { entries: [{ key: 'noisy', priority: 0.6, category: 'discipline', content: 'N' }] },
+    ],
+    renders: 2,
+  },
+
+  // ── 负反馈环：delivered=2（未达阈值）→ 不受约束 ──
+  eff_below_threshold: {
+    effStats: { 'ok': { delivered: 2, adopted: 0 } },
+    batches: [
+      { entries: [{ key: 'ok', priority: 0.6, category: 'discipline', content: 'O' }] },
+      { entries: [{ key: 'ok', priority: 0.6, category: 'discipline', content: 'O' }] },
+    ],
+    renders: 2,
+  },
+
+  // ── 负反馈环：有采纳（adopted>0）→ 不受约束 ──
+  eff_has_adoption: {
+    effStats: { 'good': { delivered: 6, adopted: 1 } },
+    batches: [
+      { entries: [{ key: 'good', priority: 0.6, category: 'discipline', content: 'G' }] },
+      { entries: [{ key: 'good', priority: 0.6, category: 'discipline', content: 'G' }] },
+    ],
+    renders: 2,
+  },
+
+  // ── 负反馈环：constitutional 豁免（delivered=6 仍渲染）──
+  eff_constitutional_exempt: {
+    effStats: { 'c': { delivered: 10, adopted: 0 } },
+    batches: [
+      { entries: [{ key: 'c', priority: 0.5, category: 'constitutional', tier: 'constitutional', content: 'C' }] },
+      { entries: [{ key: 'c', priority: 0.5, category: 'constitutional', tier: 'constitutional', content: 'C' }] },
+    ],
+    renders: 2,
+  },
+
+  // ── 负反馈环：priority >= 0.8 豁免 ──
+  eff_high_priority_exempt: {
+    effStats: { 'h': { delivered: 10, adopted: 0 } },
+    batches: [
+      { entries: [{ key: 'h', priority: 0.85, category: 'discipline', content: 'H' }] },
+      { entries: [{ key: 'h', priority: 0.85, category: 'discipline', content: 'H' }] },
+    ],
+    renders: 2,
+  },
+
+  // ── 正向臂：adopted=3 → 排序加成（低 priority 胜出）──
+  eff_positive_arm_boost: {
+    effStats: { 'praised': { delivered: 5, adopted: 3 }, 'plain': { delivered: 5, adopted: 0 } },
+    batches: [{ entries: [
+      { key: 'plain', priority: 0.70, category: 'discipline', content: 'P' },
+      { key: 'praised', priority: 0.66, category: 'discipline', content: 'R' },
+    ] }],
+    renders: 1,
+  },
+
+  // ── 正向臂：adopted=2（未达阈值）→ 无加成 ──
+  eff_positive_below: {
+    effStats: { 'almost': { delivered: 5, adopted: 2 }, 'plain': { delivered: 5, adopted: 0 } },
+    batches: [{ entries: [
+      { key: 'almost', priority: 0.66, category: 'discipline', content: 'A' },
+      { key: 'plain', priority: 0.70, category: 'discipline', content: 'P' },
+    ] }],
+    renders: 1,
+  },
+
   // ── immediate 条目豁免 CVM 注入预算 ──
   immediate_exempt: {
     batches: [{ entries: [
@@ -644,6 +728,9 @@ for (const [name, spec] of Object.entries(cases)) {
   }
   if (spec.lifts) {
     bus.setLiftProvider((key: string) => spec.lifts![key] ?? null)
+  }
+  if (spec.effStats) {
+    bus.setEfficacyStatsProvider((key: string) => spec.effStats![key] ?? null)
   }
   if (spec.efficacy) {
     bus.setEfficacySignalProvider((key: string) => spec.efficacy!.signals[key] ?? null)

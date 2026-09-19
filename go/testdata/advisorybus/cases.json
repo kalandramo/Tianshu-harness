@@ -1874,6 +1874,276 @@
     ],
     "renders": 1
   },
+  "eff_cooldown_starts": {
+    "effStats": {
+      "noisy": {
+        "delivered": 3,
+        "adopted": 0
+      }
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      }
+    ],
+    "renders": 4
+  },
+  "eff_silenced": {
+    "effStats": {
+      "noisy": {
+        "delivered": 6,
+        "adopted": 0
+      }
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "noisy",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "N"
+          }
+        ]
+      }
+    ],
+    "renders": 2
+  },
+  "eff_below_threshold": {
+    "effStats": {
+      "ok": {
+        "delivered": 2,
+        "adopted": 0
+      }
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "ok",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "O"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "ok",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "O"
+          }
+        ]
+      }
+    ],
+    "renders": 2
+  },
+  "eff_has_adoption": {
+    "effStats": {
+      "good": {
+        "delivered": 6,
+        "adopted": 1
+      }
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "good",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "G"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "good",
+            "priority": 0.6,
+            "category": "discipline",
+            "content": "G"
+          }
+        ]
+      }
+    ],
+    "renders": 2
+  },
+  "eff_constitutional_exempt": {
+    "effStats": {
+      "c": {
+        "delivered": 10,
+        "adopted": 0
+      }
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "c",
+            "priority": 0.5,
+            "category": "constitutional",
+            "tier": "constitutional",
+            "content": "C"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "c",
+            "priority": 0.5,
+            "category": "constitutional",
+            "tier": "constitutional",
+            "content": "C"
+          }
+        ]
+      }
+    ],
+    "renders": 2
+  },
+  "eff_high_priority_exempt": {
+    "effStats": {
+      "h": {
+        "delivered": 10,
+        "adopted": 0
+      }
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "h",
+            "priority": 0.85,
+            "category": "discipline",
+            "content": "H"
+          }
+        ]
+      },
+      {
+        "entries": [
+          {
+            "key": "h",
+            "priority": 0.85,
+            "category": "discipline",
+            "content": "H"
+          }
+        ]
+      }
+    ],
+    "renders": 2
+  },
+  "eff_positive_arm_boost": {
+    "effStats": {
+      "praised": {
+        "delivered": 5,
+        "adopted": 3
+      },
+      "plain": {
+        "delivered": 5,
+        "adopted": 0
+      }
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "plain",
+            "priority": 0.7,
+            "category": "discipline",
+            "content": "P"
+          },
+          {
+            "key": "praised",
+            "priority": 0.66,
+            "category": "discipline",
+            "content": "R"
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
+  "eff_positive_below": {
+    "effStats": {
+      "almost": {
+        "delivered": 5,
+        "adopted": 2
+      },
+      "plain": {
+        "delivered": 5,
+        "adopted": 0
+      }
+    },
+    "batches": [
+      {
+        "entries": [
+          {
+            "key": "almost",
+            "priority": 0.66,
+            "category": "discipline",
+            "content": "A"
+          },
+          {
+            "key": "plain",
+            "priority": 0.7,
+            "category": "discipline",
+            "content": "P"
+          }
+        ]
+      }
+    ],
+    "renders": 1
+  },
   "immediate_exempt": {
     "batches": [
       {

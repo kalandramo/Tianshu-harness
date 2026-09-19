@@ -1541,6 +1541,220 @@
       ]
     ]
   },
+  "eff_cooldown_starts": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"noisy\" priority=\"0.60\" category=\"discipline\">N</entry>\n</星域-advisory>",
+      "",
+      "<星域-advisory>\n  <entry key=\"noisy\" priority=\"0.60\" category=\"discipline\">N</entry>\n</星域-advisory>",
+      ""
+    ],
+    "ledger": {
+      "submitted": 4,
+      "rendered": 2,
+      "dropped": 2,
+      "droppedKeys": [
+        "noisy"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "noisy"
+      ],
+      [],
+      [
+        "noisy"
+      ],
+      []
+    ]
+  },
+  "eff_silenced": {
+    "renders": [
+      "",
+      ""
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 0,
+      "dropped": 2,
+      "droppedKeys": [
+        "noisy"
+      ],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [],
+      []
+    ]
+  },
+  "eff_below_threshold": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"ok\" priority=\"0.60\" category=\"discipline\">O</entry>\n</星域-advisory>",
+      "<星域-advisory>\n  <entry key=\"ok\" priority=\"0.60\" category=\"discipline\">O</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 2,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "ok"
+      ],
+      [
+        "ok"
+      ]
+    ]
+  },
+  "eff_has_adoption": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"good\" priority=\"0.60\" category=\"discipline\">G</entry>\n</星域-advisory>",
+      "<星域-advisory>\n  <entry key=\"good\" priority=\"0.60\" category=\"discipline\">G</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 2,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "good"
+      ],
+      [
+        "good"
+      ]
+    ]
+  },
+  "eff_constitutional_exempt": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"c\" priority=\"0.50\" category=\"constitutional\">C</entry>\n</星域-advisory>",
+      "<星域-advisory>\n  <entry key=\"c\" priority=\"0.50\" category=\"constitutional\">C</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 2,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "c"
+      ],
+      [
+        "c"
+      ]
+    ]
+  },
+  "eff_high_priority_exempt": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"h\" priority=\"0.85\" category=\"discipline\">H</entry>\n</星域-advisory>",
+      "<星域-advisory>\n  <entry key=\"h\" priority=\"0.85\" category=\"discipline\">H</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 2,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "h"
+      ],
+      [
+        "h"
+      ]
+    ]
+  },
+  "eff_positive_arm_boost": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"praised\" priority=\"0.66\" category=\"discipline\">R</entry>\n  <entry key=\"plain\" priority=\"0.70\" category=\"discipline\">P</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 2,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "praised",
+        "plain"
+      ]
+    ]
+  },
+  "eff_positive_below": {
+    "renders": [
+      "<星域-advisory>\n  <entry key=\"plain\" priority=\"0.70\" category=\"discipline\">P</entry>\n  <entry key=\"almost\" priority=\"0.66\" category=\"discipline\">A</entry>\n</星域-advisory>"
+    ],
+    "ledger": {
+      "submitted": 2,
+      "rendered": 2,
+      "dropped": 0,
+      "droppedKeys": [],
+      "deferred": 0,
+      "revoked": 0,
+      "heldOut": 0,
+      "liftMuted": 0,
+      "srSubmitted": 0,
+      "srDropped": 0,
+      "srCarried": 0
+    },
+    "deliveredKeys": [
+      [
+        "plain",
+        "almost"
+      ]
+    ]
+  },
   "immediate_exempt": {
     "renders": [
       "<星域-advisory>\n  <entry key=\"n1\" priority=\"0.90\" category=\"todo\">N1</entry>\n  <entry key=\"n2\" priority=\"0.80\" category=\"dedup\">N2</entry>\n  <entry key=\"n3\" priority=\"0.70\" category=\"immune\">N3</entry>\n</星域-advisory>"

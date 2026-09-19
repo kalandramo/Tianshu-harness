@@ -45,6 +45,11 @@ type busCaseSpec struct {
 		} `json:"signals"`
 		Span *float64 `json:"span"`
 	} `json:"efficacy"`
+	// EffStats 是 W2 负反馈环：key → 会话内 { delivered, adopted }
+	EffStats map[string]*struct {
+		Delivered int `json:"delivered"`
+		Adopted   int `json:"adopted"`
+	} `json:"effStats"`
 	// Holdout 是反事实抽样：抽样率 + 固定 RNG 序列 + 资格 key 集
 	Holdout *struct {
 		Rate     float64   `json:"rate"`
@@ -167,6 +172,16 @@ func TestAdvisoryBusOracleParity(t *testing.T) {
 					return nil
 				})
 			}
+			if len(spec.EffStats) > 0 {
+				m := spec.EffStats
+				bus.SetEfficacyStatsProvider(func(key string) *EfficacyStats {
+					st, ok := m[key]
+					if !ok || st == nil {
+						return nil
+					}
+					return &EfficacyStats{Delivered: st.Delivered, Adopted: st.Adopted}
+				})
+			}
 			if spec.Efficacy != nil {
 				e := spec.Efficacy
 				bus.SetEfficacySignalProvider(func(key string) *EfficacySignal {
@@ -258,6 +273,16 @@ func TestAdvisoryBusLedgerParity(t *testing.T) {
 						return v
 					}
 					return nil
+				})
+			}
+			if len(spec.EffStats) > 0 {
+				m := spec.EffStats
+				bus.SetEfficacyStatsProvider(func(key string) *EfficacyStats {
+					st, ok := m[key]
+					if !ok || st == nil {
+						return nil
+					}
+					return &EfficacyStats{Delivered: st.Delivered, Adopted: st.Adopted}
 				})
 			}
 			if spec.Efficacy != nil {

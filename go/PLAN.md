@@ -1007,9 +1007,54 @@ per-key 统计随会话死亡，每个新会话都要从零攒（holdout 资格�
 **无运行时注入钩子**——生成器改用 `process.env.RIVET_ADVISORY_EFFICACY_SPAN`
 逐用例设置。Go 侧我用 `SetEfficacySpan` 显式注入（更直接，且不污染进程环境）。
 
-**下一步**：efficacy **负向臂**（会话内静默 + 冷却翻倍，`EFFICACY_BASE_COOLDOWN_RENDERS=2`）
-与**正向臂**（`adopted >= 3` → 冷却减半 + 排序加成 0.05）。两者共享
-`efficacyStats` / `efficacyCooldownLength` 两个数据结构，适合一并做。
+### 第二十三刀（已完成）：efficacy 负反馈环——负向臂 + 正向臂（2026-09-19）
+
+✅ 三阶段阈值 + fail-open + 冷却翻倍/减半 + 排序加成回填 + 8 个 oracle 用例
+
+**这一刀补全了 efficacy 子系统**（上一刀只做了 T7 排序）。
+
+**三阶段**（对账 `advisory-bus.ts:869-932`，**零采纳前提**）：
+
+| 条件 | 行为 |
+|---|---|
+| `delivered >= 3` | 冷却翻倍（2→4→8…），本次放行、下次进入冷却 |
+| `delivered >= 6` | **会话内静默**（不再渲染） |
+| `adopted >= 3` | 正向臂：冷却减半 + 排序加成 +0.05（cap 0.79） |
+
+**与习惯化静音互补**（TS 注释原文，这是本刀存在的理由）：
+
+> 习惯化依赖 `ignoredStreak`，而它依赖 expect 谓词——**无 expect 的 key
+> （如 convergence 的多数变体）ignored 永远是 0，只有这条环能拦住它**。
+
+**fail-open**：`constitutional` / `priority >= 0.8` 的条目**永不受负反馈约束**
+——高优先级提醒不该被统计意义上的「无效」静默掉。
+
+**口径差异（易混淆点）**：负反馈环用**会话内统计**（不含跨会话先验），
+而 T7 排序含先验（`GetDeliveredCount` 合并 priors）。两者看的是不同的东西：
+前者是「本次会话里说了几次没人听」，后者是「历史上这条提醒整体有效吗」。
+
+**不 mutation `e.Priority`**（TS 注释原文）：`alive` 跨渲染周期持有同一批引用，
+原地 `+= 0.05` 会复合累加，且 0.85 越过 0.8 fail-open 线导致**永久逃逸负向臂**。
+加成只在 `effectivePriority` 里按需计算（本刀回填了上一刀缺的 `positiveArmKeys`）。
+
+**用户级验收（已执行）**：
+
+- `TestEfficacyCooldownInRealRequests`——真实请求体实测
+  `present=[true false true false false false true ...]`：**冷却间隔缺席可见**
+- `TestEfficacySilenceInRealRequests`——delivered=6 零采纳 → 完全静默
+- `TestEfficacyFailOpenExempt`——三类豁免各一子用例（含 `priority = 0.8` 边界）
+- `TestEfficacyPositiveArmInSorting`——采纳 3 次的 0.66 胜出零采纳的 0.70
+- `TestEfficacyStatsExcludesPriors`——**口径验证**：播种大量先验不影响负反馈环
+- `TestEfficacyNoStatsProvider`——无 provider 时不做约束（缺省行为）
+
+**变异反证 6 个有判别力**（不做环红 10 / fail-open 失效红 10 / 不静默红 5 /
+口径错红 4 / 正向臂阈值失效红 3 / 加成失效红 3）。
+
+**oracle**：`advisorybus` 60 → **68 用例**（+8）。
+
+**下一步**：`internal/context` 剩余子系统（CognitiveLedger / Stigmergy /
+PressureMonitor / task-contract / compact-policy），或未移植的工具
+（`plan` / `job` / `git` / `web_fetch` / `repo_map` 等 11 个）。
 
 **为什么是它而不是补工具**：
 

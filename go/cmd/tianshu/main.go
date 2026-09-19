@@ -322,6 +322,24 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	// 次级排序键的回退源（priority 完全平手时用采纳率）
 	bus.SetAdoptionRateProvider(readback.GetAdoptionRate)
 
+	// W2 efficacy 负反馈环——**发射前回读会话内 delivered/adopted**（对账 loop.ts:792）。
+	//
+	// 同 key 零采纳连发 3 次后冷却翻倍、6 次后**会话内静默**。
+	//
+	// **与习惯化静音互补**（TS 注释原文）：习惯化依赖 `ignoredStreak`，而它依赖
+	// expect 谓词——**无 expect 的 key（如 convergence 的多数变体）ignored 永远
+	// 是 0，只有这条环能拦住它**。
+	//
+	// **注意口径**：这里用的是**会话内统计**（不含跨会话先验）——负反馈环看的是
+	// 「本次会话里说了几次没人听」，与 T7 排序（含先验）不同。
+	bus.SetEfficacyStatsProvider(func(key string) *agent.EfficacyStats {
+		s, ok := readback.Stats()[key]
+		if !ok {
+			return nil
+		}
+		return &agent.EfficacyStats{Delivered: s.Delivered, Adopted: s.Adopted}
+	})
+
 	// 跨会话效能信息素——**先验的加载端**（对账 loop.ts:779-790）。
 	//
 	// 这是 lift / holdout 资格 / 副驾闸门的**冷启动数据源**：readback 的 per-key
