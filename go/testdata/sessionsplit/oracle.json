@@ -1,0 +1,49 @@
+{
+  "_note": "只记录判定层（didSplit + estimatedTokens + ratio）；执行层未移植",
+  "threshold": {
+    "minWindow": 500000,
+    "minRatio": 0.86
+  },
+  "split": {
+    "small_window_never_splits": {
+      "didSplit": false,
+      "estimatedTokensBefore": null,
+      "ratioBefore": null
+    },
+    "boundary_window_499999": {
+      "didSplit": false,
+      "estimatedTokensBefore": null,
+      "ratioBefore": null
+    },
+    "boundary_window_500000": {
+      "didSplit": true,
+      "estimatedTokensBefore": 499000,
+      "ratioBefore": 0.998
+    },
+    "window_1m_under_threshold": {
+      "didSplit": false,
+      "estimatedTokensBefore": 500000,
+      "ratioBefore": 0.5
+    },
+    "window_1m_mid_ratio_0_70": {
+      "didSplit": false,
+      "estimatedTokensBefore": 700000,
+      "ratioBefore": 0.7
+    },
+    "window_1m_mid_ratio_0_85": {
+      "didSplit": false,
+      "estimatedTokensBefore": 850000,
+      "ratioBefore": 0.85
+    },
+    "window_1m_over_threshold": {
+      "didSplit": true,
+      "estimatedTokensBefore": 950000,
+      "ratioBefore": 0.95
+    },
+    "large_window_small_session": {
+      "didSplit": false,
+      "estimatedTokensBefore": 100000,
+      "ratioBefore": 0.05
+    }
+  }
+}

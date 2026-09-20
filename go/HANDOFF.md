@@ -438,6 +438,64 @@ advisor 的 `tier>=3` 短路**自己就放行**。故即便去掉 `!force` 守�
    ——那会让测试在 force 未触发时静默通过。改为 `t.Fatalf` 暴露构造问题
    （项目纪律：Skipf 是变异的隐身衣）。
 
+### session split —— 判定层（2026-09-20，回主线第三刀）
+
+**它解决的问题**：1M 窗口下，纯缓存经济会把压缩一路推迟到精度悬崖之后。
+session split 是**主动**护栏：86% 时把历史替换为结构化 handoff（task-state +
+轨迹 + 近期推理），让会话以干净状态继续，而非等上下文爆掉。
+
+**时机关键**：它在 `addUserMessage` **之前**运行（TS 的 `preUserMessageSplit`）
+——若在之后，刚发送的 user 指令会被连同历史一起摘要替换，用户观感是「消息被
+截断」（TS 注释记录的真实回归）。
+
+#### 范围（有意收窄，**不是**「等价简化版」）
+
+本刀只移植**判定层**。执行层依赖 Go 侧**全无**的三个子系统：
+
+| TS 依赖 | Go 现状 |
+|---|---|
+| `replaceWithCheckpoint`（anchor 保留 / artifact 归档 / task anchor / `resetAppendixBaseline`） | 无 |
+| `buildStructuredHandoff`（8 章节） | 仅最小子集（近期推理 + 文件清单） |
+| `extractTaskState`（`src/agent/task-state.ts`，需 trajectory） | **无** |
+| `artifact store`（`archiveDiscardedHistory`） | **无** |
+
+故 `TrySessionSplit` **只判定 + 构造候选 handoff，不改消息列表**——由调用方
+决定如何替换历史（避免半套用：判定了但替换逻辑不完整会让会话处于中间态）。
+移植那三个子系统后应**替换** `BuildSessionHandoff`，而非在其上叠加。
+
+#### 判定层语义（两条门槛，顺序敏感）
+
+1. `contextWindow < 500_000` → 不 split（**即使 ratio 极高**）
+2. `ratio < 0.86` → 不 split
+3. 否则 split
+
+**顺序敏感的证据**：oracle 的 `small_window_never_splits` 用例 ratio 高达 1.562
+但窗口 128K → false。且 TS 在窗口门槛处**提前 return**，根本不调
+`getEstimatedTokens()`——故 oracle 用小窗口用例的 token 字段为 `null`。
+
+**为什么 500K**（TS 语义）：中小窗口的缓存经济比值已压得够早，精度退化不是
+瓶颈；split 是为大窗口设的。
+
+#### oracle 生成器的两处坑（都在生成阶段被 oracle 自己暴露）
+
+1. **把非判定路径的数据混进 golden**：首版无条件记录 `session.getEstimatedTokens()`，
+   但小窗口用例根本没走到那一步。修正为「仅在窗口门槛通过后记录」。
+2. **记录时机错误**：`trySessionSplit` 成功后会把历史替换成 handoff，之后再读
+   session 得到的是**压缩后**的状态（首版记到 3098 而非判定时的 499000）。
+   修正为**判定前**取值。
+
+**这两条合起来的教训**：oracle 记录的是「哪个时刻、哪条路径」的值——时刻与
+路径错了，值再精确也是错的。
+
+#### 变异反证
+
+- **M1**（窗口检查挪到比例之后）→ 2 处红（提前返回时不该算 token），有判别力。
+- **M2**（比例门槛 0.86→0.5）→ **首轮红 0 处，是测试缺口**：首版用例集只有
+  ratio 0.5 与 0.95 两点，无法区分门槛 0.5 与 0.86。补 `ratio 0.70 / 0.85`
+  两个用例后 → 3 处红。**这是「红 0 处 = 测试缺口」的又一实例**——用例集的
+  取值点没覆盖被区分区间。
+
+
 
 与 provider cache defaults，属尚未移植的 provider 模块。当前 `reclaimProfile()`
 由 `Profile.Billing`/`Cache` + `ContextWindow` 直接派生（语义等价于 TS 的
@@ -1401,7 +1459,9 @@ Loop.Run turn 边界 (loop.go:504)
    （2026-09-20）**，见下方「缓存顾问延迟」节。
 3. **LLM 重写路径**——`partial-llm` / `full-llm` / `checkpoint`，需 `summaryClient`
    抽象（要真调模型做摘要）。这是四块里最大的。
-4. **session split**——86% 时主动切分会话（`preUserMessageSplit`）。
+4. ~~**session split**——86% 时主动切分会话（`preUserMessageSplit`）~~ **判定层已完成
+   （2026-09-20）**；执行层依赖尚未移植的 task-state/trajectory/artifact，见下方
+   「session split」节。
 
 **压缩链路的新风险面（建议排在 gate 之后）**：
 - **压缩产出的消息列表是否满足 API 格式约束**——目前无测试覆盖。特别是

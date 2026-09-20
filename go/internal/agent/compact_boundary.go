@@ -57,6 +57,11 @@ type CompactBoundary struct {
 	Advisor *cache.Advisor
 	// LastDelayed 报告最近一次是否因缓存保护而推迟。
 	LastDelayed bool
+	// LastSplitDecision 是最近一次 session split 判定（供观测/测试断言）。
+	//
+	// 与 `LastReclaimDecision` 同类：**判定与结果都记录**，让「该 split 却没
+	// split」或「为何没 split」在离线可见。
+	LastSplitDecision *compact.SessionSplitDecision
 	// LastReclaimed 是最近一次实际回收的消息数。
 	LastReclaimed int
 }
@@ -89,8 +94,12 @@ func NewCompactBoundary(contextWindow int) *CompactBoundary {
 //  5. `MicroCompactOai` 执行
 //  6. 成功 → `RecordCompactSuccess`（重置熔断器）
 //
-// **未接**：LLM 路径（partial-llm / full-llm / checkpoint）、reclaim gate、
-// 缓存顾问延迟、session split。见 PLAN.md 的架构欠账。
+// **未接**：LLM 路径（partial-llm / full-llm / checkpoint）。
+//
+// session split 是**独立入口**（见 `TrySessionSplit`）——它不在本函数的
+// 决策路径上：TS 的 `ActionSessionSplit` 不由 `DecideCompactAction` 产出，
+// 而是 `trySessionSplit` 在 `preUserMessageSplit` 时机自行判定并调用
+// `replaceWithCheckpoint` 时打的标记。
 func (b *CompactBoundary) MaybeCompact(messages []session.OaiMessage, turn int) ([]session.OaiMessage, bool) {
 	if b.ContextWindow <= 0 {
 		return messages, false
@@ -389,3 +398,57 @@ func fromOaiToolCalls(calls []session.OaiToolCall) []any {
 	}
 	return out
 }
+
+// TrySessionSplit 在 turn 边界尝试主动切分会话。
+//
+// 对账 TS `trySessionSplit`（`compaction-controller.ts:780`）。
+//
+// # 时机（关键）
+//
+// TS 在 `preUserMessageSplit` 调用它——即 **addUserMessage 之前**。
+// 若在之后，刚发送的 user 指令会被连同历史一起摘要替换，用户观感是
+// 「消息被截断」（TS 注释记录的真实回归）。
+//
+// # 与 MaybeCompact 的关系
+//
+// **独立入口**，不走 `DecideCompactAction`——TS 的 `ActionSessionSplit`
+// 不在决策层产出，是 `replaceWithCheckpoint` 的标记参数。TS 的调用序是：
+//
+//	trySessionSplit() → 若 true 则 userMessageConsumed = true（跳过 maybeCompact）
+//	否则 maybeCompact(...)
+//
+// # 范围（有意收窄）
+//
+// 本实现只做**判定 + 最小 handoff 构造**。TS 的执行层
+// （`replaceWithCheckpoint` 的 anchor 保留 / artifact 归档 / task anchor 追加 /
+// `promptEngine.resetAppendixBaseline`）依赖 Go 侧尚未移植的
+// task-state / trajectory / artifact store——需先移植那三个子系统。
+//
+// **故本函数返回判定与候选 handoff，由调用方决定如何替换历史**——不在此
+// 直接改消息列表（避免半套用：判定了但替换逻辑不完整会让会话处于中间态）。
+func (b *CompactBoundary) TrySessionSplit(messages []session.OaiMessage) SessionSplitOutcome {
+	decision := compact.ShouldSessionSplit(messages, b.ContextWindow)
+	b.LastSplitDecision = &decision
+
+	if !decision.ShouldSplit {
+		return SessionSplitOutcome{Decision: decision}
+	}
+
+	return SessionSplitOutcome{
+		Decision: decision,
+		// 候选 handoff（调用方决定是否采用）。
+		Handoff: compact.BuildSessionHandoff(messages, decision.Ratio),
+	}
+}
+
+// SessionSplitOutcome 是一次 split 尝试的结果。
+//
+// `Handoff` 非空表示判定通过且候选已构造——但**历史替换由调用方执行**
+// （见 TrySessionSplit 的范围说明）。
+type SessionSplitOutcome struct {
+	Decision compact.SessionSplitDecision
+	Handoff  string
+}
+
+// SplitTriggered 报告本次判定是否通过。
+func (o SessionSplitOutcome) SplitTriggered() bool { return o.Decision.ShouldSplit }
