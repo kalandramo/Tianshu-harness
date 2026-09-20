@@ -577,6 +577,46 @@ session split 是**主动**护栏：86% 时把历史替换为结构化 handoff�
 
 ---
 
+### read_section 的 compact-history 流式分支（2026-09-20，回主线第九刀）
+
+**目标**：消掉上一刀识别的缺口——归档已能写入大内容，但召回会撞 2MB 上限
+（「存得下、取不回」）。
+
+#### 改动（`internal/tools/readsection.go`）
+
+在 **2MB 守卫之前**插入 compact-history 快速路径（对账 TS `read-section.ts`
+的 "Compact-history recall fast path"）：
+
+- **只对行范围生效**：字符范围需全文（无法流式定位），落回通用路径
+- **不过 2MB 闸门**：走 `artifact.Store.ReadLineRange`（流式，不载入内存）
+- **前置召回标记** `[recalled <id> <section>]`：让下一次压缩能把这块折叠回
+  指针（recall-eviction，见 `context.RenderArchiveBody` 的 tool 分支）
+- 起点越界 → 报总行数（**非错误**，对账 TS 的 `isError: false`）
+- 超 `MaxRangeLines`(5000) → 附分页提示
+- 超字符上限 → 截断
+
+**顺序是关键**：该分支必须在 2MB 守卫**之前**——那正是它存在的理由
+（长线程归档常超上限，会让归档自己的目录项无法召回）。
+
+#### 依赖方向
+
+`tools → context`（新引入）。**无环**（`context` 不依赖 `tools`）。
+`tools` 包已用标准库 `context`，故 `internal/context` 以 `ctxstore` 别名导入。
+
+#### 验证
+
+- `readsection_compacthistory_test.go` 7 条，其中
+  `TestReadSectionCompactHistoryStreamsBeyond2MB` 是核心（3.2MB 归档成功召回）
+- **变异反证**：M10（流式分支失效）→ 测试红；M11（不加召回标记）→ 测试红
+- 全量 go test 连跑 3 次，22 包 0 FAIL
+
+#### 仍未做
+
+- `CheckpointDeps.TaskAnchor`（需 `getActiveContract` + `renderTaskAnchor`）
+- `promptEngine.resetAppendixBaseline`、`recordCompactEvent`
+
+---
+
 ### CheckpointDeps.ArchiveDiscarded（2026-09-20，回主线第八刀）
 
 **目标**：`replaceWithCheckpoint` 丢掉一段历史时，把它序列化存为

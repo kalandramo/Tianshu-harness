@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/kalandramo/tianshu/go/internal/artifact"
+	ctxstore "github.com/kalandramo/tianshu/go/internal/context"
 	"github.com/kalandramo/tianshu/go/internal/contract"
 )
 
@@ -194,6 +195,54 @@ func (t *readSectionTool) Execute(_ context.Context, p *CallParams) (contract.Re
 			Content: fmt.Sprintf("错误：未找到 Artifact %s——可能已被清理或从未创建。请用原始工具（bash/read_file/grep）重新生成输出。", artifactId),
 			IsError: true,
 		}, nil
+	}
+
+	// ── compact-history 召回快速路径 ──
+	//
+	// 对账 TS（`read-section.ts` 的 "Compact-history recall fast path"）：
+	// **长线程归档常超下面的 2MB 内存上限**——那会让归档自己的目录项**无法
+	// 被召回**（存得下、取不回）。故对行范围走**流式**读取：只取请求的行，
+	// 不把整个文件载入内存，也**不过 2MB 闸门**。
+	//
+	// **只对行范围生效**：字符范围需要全文（无法流式定位），故落回下方通用路径。
+	//
+	// ⚠️ **必须在 2MB 守卫之前**——那正是本分支存在的理由。
+	if a.Tool == ctxstore.CompactHistoryTool {
+		if start, end, isLine := parseLineRange(section); isLine {
+			ranged, err := store.ReadLineRange(artifactId, start, end)
+			if err != nil {
+				return contract.Result{
+					Content: fmt.Sprintf("错误：读取 artifact %s 失败：%v", artifactId, err),
+					IsError: true,
+				}, nil
+			}
+			if ranged == nil {
+				return contract.Result{
+					Content: fmt.Sprintf("错误：未找到 Artifact %s。", artifactId),
+					IsError: true,
+				}, nil
+			}
+			// 请求起点越界 → 报总行数（**不是错误**——对账 TS 的 isError: false）。
+			if len(ranged.Content) == 0 && start > ranged.TotalLines {
+				return contract.Result{
+					Content: fmt.Sprintf("[区段 %s 超出范围 — artifact 共 %d 行]", section, ranged.TotalLines),
+				}, nil
+			}
+			body := ranged.Content
+			maxChars := readSectionMaxChars(p.ContextWindow)
+			if len(body) > maxChars {
+				body = body[:maxChars] + fmt.Sprintf("\n... [已截断至 %d 字符]", maxChars)
+			}
+			if ranged.Capped {
+				body += fmt.Sprintf("\n... [范围已限制为 %d 行 — 请缩小范围分页读取]", artifact.MaxRangeLines)
+			}
+			return contract.Result{
+				// 前置召回标记——让**下一次压缩**能把这块折叠回指针
+				// （recall-eviction，见 context.RenderArchiveBody 的 tool 分支）。
+				Content: ctxstore.BuildRecallMarker(artifactId, section) + "\n" + body,
+				RawPath: a.RawPath,
+			}, nil
+		}
 	}
 
 	// 内存读取上限守卫——**先看文件大小再读**，避免把巨型文件载入内存。
