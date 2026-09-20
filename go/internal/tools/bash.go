@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kalandramo/tianshu/go/internal/contract"
+	"github.com/kalandramo/tianshu/go/internal/platform"
 )
 
 // bashTool 实现 bash（命令执行）。
@@ -142,7 +143,12 @@ func (t *bashTool) Execute(ctx context.Context, p *CallParams) (contract.Result,
 
 	// 用 exec.Command（非 CommandContext）：CommandContext 的默认取消行为是
 	// 只杀主进程，与我们要杀整组的逻辑竞争。这里自行管理取消。
-	cmd := exec.Command("bash", "-c", command)
+	//
+	// **shell 由探测决定，不是硬编码 bash**：Windows 上可能是 Git Bash /
+	// PowerShell / cmd.exe（对账 TS bash.ts 的 getShellCommand()）。
+	// 硬编码 "bash" 在没装 Git Bash 的 Windows 上直接启动失败。
+	shell := platform.HostShellCommand()
+	cmd := exec.Command(shell.Cmd, platform.BuildShellArgs(shell, command)...)
 	cmd.Dir = t.Cwd
 	// 平台组语义 + Wait 兜底（详见 prepareCommand / waitDelay 的说明）
 	prepareCommand(cmd)

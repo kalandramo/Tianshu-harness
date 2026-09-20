@@ -189,9 +189,18 @@ func TestDetectShellKind(t *testing.T) {
 			t.Errorf("非 Windows 平台应返回 sh，%s 得到 %q", p, got)
 		}
 	}
-	// Windows 暂不探测 → 空串（不注入 note）
-	if got := DetectShellKind("win32"); got != "" {
-		t.Errorf("Windows 未移植分支应返回空串，得到 %q", got)
+	// Windows：**真实探测**（Git Bash → PowerShell → cmd，对账 TS 的
+	// getShellCommand().kind）。返回值必须是四个合法 kind 之一——探测逻辑
+	// 本身的对账在 internal/platform（30 个 oracle 用例），此处只锁契约。
+	//
+	// 注意：结果**依赖本机环境**（装了 Git Bash 就是 "bash"），故不断言具体值，
+	// 只断言落在合法集合内——否则测试会在不同开发机上假红。
+	got := DetectShellKind("win32")
+	switch got {
+	case "bash", "powershell", "cmd":
+		// 合法
+	default:
+		t.Errorf("Windows 应返回真实探测到的 shell 族（bash/powershell/cmd），得到 %q", got)
 	}
 }
 

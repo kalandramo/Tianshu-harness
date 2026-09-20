@@ -1,0 +1,126 @@
+{
+  "gitBash": {
+    "nonWindows": null,
+    "overrideWins": "D:\\custom\\bash.exe",
+    "overrideIgnoredWhenMissing": null,
+    "deriveFromWhereGit": "C:\\Program Files\\Git\\bin\\bash.exe",
+    "commonInstallProgramFiles": "C:\\Program Files\\Git\\bin\\bash.exe",
+    "commonInstallProgramFilesX86": "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+    "localAppDataPortable": "C:\\Users\\me\\AppData\\Local\\Programs\\Git\\bin\\bash.exe",
+    "scoopEnvRoot": "C:\\Scoop\\apps\\git\\current\\bin\\bash.exe",
+    "scoopUserProfile": "C:\\Users\\me\\scoop\\apps\\git\\current\\bin\\bash.exe",
+    "whereBashFallback": "C:\\tools\\msys64\\usr\\bin\\bash.exe",
+    "wslBashExcluded": null,
+    "wslBashExcludedSysWOW64": null,
+    "whereGitWinsOverWhereBash": "C:\\Program Files\\Git\\bin\\bash.exe",
+    "bundledIsLastFallback": "C:\\App\\portable-git\\bin\\bash.exe",
+    "systemGitWinsOverBundled": "C:\\Program Files\\Git\\bin\\bash.exe",
+    "bundledNotExtractedYet": null,
+    "nothingFound": null
+  },
+  "shell": {
+    "nonWindows": {
+      "cmd": "sh",
+      "args": [
+        "-c"
+      ],
+      "kind": "sh"
+    },
+    "gitBashPreferred": {
+      "cmd": "C:\\Program Files\\Git\\bin\\bash.exe",
+      "args": [
+        "-c"
+      ],
+      "kind": "bash"
+    },
+    "pwshFallback": {
+      "cmd": "pwsh.exe",
+      "args": [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command"
+      ],
+      "kind": "powershell"
+    },
+    "powershellWhenOnlyItPresent": {
+      "cmd": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command"
+      ],
+      "kind": "powershell"
+    },
+    "pwshPreferredOverPowershell": {
+      "cmd": "pwsh.exe",
+      "args": [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command"
+      ],
+      "kind": "powershell"
+    },
+    "cmdFallbackViaComSpec": {
+      "cmd": "C:\\Windows\\system32\\cmd.exe",
+      "args": [
+        "/c"
+      ],
+      "kind": "cmd"
+    },
+    "cmdDefaultWhenComSpecUnset": {
+      "cmd": "cmd.exe",
+      "args": [
+        "/c"
+      ],
+      "kind": "cmd"
+    },
+    "forcePwshOverGitBash": {
+      "cmd": "pwsh.exe",
+      "args": [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command"
+      ],
+      "kind": "powershell"
+    },
+    "forcePwshTrue": {
+      "cmd": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command"
+      ],
+      "kind": "powershell"
+    },
+    "forcePwshYes": {
+      "cmd": "pwsh.exe",
+      "args": [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command"
+      ],
+      "kind": "powershell"
+    },
+    "forcePwshNoPowershellFallsToCmd": {
+      "cmd": "C:\\Windows\\system32\\cmd.exe",
+      "args": [
+        "/c"
+      ],
+      "kind": "cmd"
+    },
+    "forcePwshZeroKeepsGitBash": {
+      "cmd": "C:\\Program Files\\Git\\bin\\bash.exe",
+      "args": [
+        "-c"
+      ],
+      "kind": "bash"
+    },
+    "forcePwshInvalidValueKeepsGitBash": {
+      "cmd": "C:\\Program Files\\Git\\bin\\bash.exe",
+      "args": [
+        "-c"
+      ],
+      "kind": "bash"
+    }
+  }
+}
