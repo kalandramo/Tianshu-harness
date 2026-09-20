@@ -1,0 +1,175 @@
+{
+  "nix_npm": {
+    "command": "npm",
+    "args": [
+      "test"
+    ],
+    "shell": false
+  },
+  "nix_npx": {
+    "command": "npx",
+    "args": [
+      "vitest",
+      "run"
+    ],
+    "shell": false
+  },
+  "nix_tsx": {
+    "command": "tsx",
+    "args": [
+      "--test",
+      "a.test.ts"
+    ],
+    "shell": false
+  },
+  "nix_node": {
+    "command": "node",
+    "args": [
+      "--test",
+      "a.test.ts"
+    ],
+    "shell": false
+  },
+  "nix_pytest": {
+    "command": "pytest",
+    "args": [
+      "-q"
+    ],
+    "shell": false
+  },
+  "win_npm": {
+    "command": "npm",
+    "args": [
+      "test"
+    ],
+    "shell": true
+  },
+  "win_npx": {
+    "command": "npx",
+    "args": [
+      "vitest",
+      "run"
+    ],
+    "shell": true
+  },
+  "win_tsx_local_shim": {
+    "command": "\"C:\\proj\\node_modules\\.bin\\tsx.cmd\"",
+    "args": [
+      "--test",
+      "a.test.ts"
+    ],
+    "shell": true
+  },
+  "win_tsx_fallback_npx": {
+    "command": "npx",
+    "args": [
+      "tsx",
+      "--test",
+      "a.test.ts"
+    ],
+    "shell": true
+  },
+  "win_node": {
+    "command": "node",
+    "args": [
+      "--test",
+      "a.test.ts"
+    ],
+    "shell": false
+  },
+  "win_pytest": {
+    "command": "pytest",
+    "args": [
+      "-q"
+    ],
+    "shell": false
+  },
+  "win_quote_spaces": {
+    "command": "npx",
+    "args": [
+      "vitest",
+      "run",
+      "\"tests/My Feature.test.ts\""
+    ],
+    "shell": true
+  },
+  "win_no_double_quote": {
+    "command": "npx",
+    "args": [
+      "\"already quoted\""
+    ],
+    "shell": true
+  },
+  "win_pct_expand_filter": {
+    "command": "npm",
+    "args": [
+      "test",
+      "--",
+      "foo_PATH_"
+    ],
+    "shell": true
+  },
+  "win_pct_userprofile": {
+    "command": "npx",
+    "args": [
+      "foo_USERPROFILE_"
+    ],
+    "shell": true
+  },
+  "win_amp_injection": {
+    "command": "npx",
+    "args": [
+      "\"a&calc&b\""
+    ],
+    "shell": true
+  },
+  "win_quote_break": {
+    "command": "npx",
+    "args": [
+      "\"foo_&calc&_bar\""
+    ],
+    "shell": true
+  },
+  "win_caret_meta": {
+    "command": "npx",
+    "args": [
+      "\"a^b\""
+    ],
+    "shell": true
+  },
+  "win_pipe_meta": {
+    "command": "npx",
+    "args": [
+      "\"a|b\""
+    ],
+    "shell": true
+  },
+  "win_lt_gt_meta": {
+    "command": "npx",
+    "args": [
+      "\"a<b>c\""
+    ],
+    "shell": true
+  },
+  "win_paren_meta": {
+    "command": "npx",
+    "args": [
+      "\"a(b)c\""
+    ],
+    "shell": true
+  },
+  "win_quoted_with_pct": {
+    "command": "npx",
+    "args": [
+      "__PATH__"
+    ],
+    "shell": true
+  },
+  "win_quoted_clean": {
+    "command": "npx",
+    "args": [
+      "\"clean token\""
+    ],
+    "shell": true
+  }
+}

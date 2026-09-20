@@ -224,6 +224,54 @@ M5 OSRelease 退回 uname -r → 报 `3.6.9-b4195d69.x86_64`。
 **M5 首轮是「编译失败伪装红 0」**（去掉 fmt 使用后 import 未使用）——本轮第 15 次
 遇到该成因，按纪律加 `_ = fmt.Sprintf(...)` 保留引用后才有判别力。
 
+### run_tests 的 Windows spawn 与参数注入面（2026-09-20，第三刀）
+
+移植 `resolveTestSpawn`（`testspawn.go`）。核实后发现**Go 与 TS 的处境不同**，
+需要分别判断，不能照抄：
+
+**差异一：Go 不需要 TS 的 shell 路由**。TS（Node）拒绝在不带 `shell:true` 时
+spawn `.cmd`（抛 EINVAL），故必须路由到 shell。Go **能直接**执行 `.cmd`
+（实测 `exec.Command("npm", "--version")` 成功，Go 内部经 cmd.exe 解释）。
+所以 `shell:true` 在 Go 侧的首要目的（让命令跑起来）已由别的机制满足。
+
+**差异二：但安全层必须移植——这是真实缺口**。既然 Go 执行 `.cmd` 时参数仍经
+cmd.exe 解析，就有注入面。实测（本机 Windows，`exec.Command(someCmdShim, args...)`）：
+
+| 参数 | 结果 |
+|---|---|
+| `"a b"`（含空格） | Go **自动加引号** → 安全 |
+| `"a & b"` | 同上，`&` 被引号保护 → 安全 |
+| `"a&b"`（**无空格**） | **`&` 被解释执行** → 注入 |
+| `"a\|b"` | **命令被拆分** → 注入 |
+| `"x%PATH%"` | **变量展开** → 信息泄露 |
+| `"a^b"` | **`^` 被吞** → 数据损坏 |
+| `"x("` | 被解释 |
+
+即：**Go 的自动引号只在含空白时触发**，不含空白的元字符全部裸露。TS 的
+`quote`（`%`/`"` 消毒为 `_` + 条件加引号）正是堵这个面的，已移植为
+`quoteCmdArg`。注意**引号挡不住 `%` 展开**（实测确认）——故 `%` 必须替换而非
+仅加引号。
+
+**顺带修掉一个真实缺陷**：`buildCmd` 的 `shell:true` 路径原先硬编码
+`exec.Command("bash", "-c", ...)`。`declared` 命令（`.rivet-config.json` 的
+`verify.test`，可能是复合命令 `a && b`）在 Windows 上会走错 shell——Git Bash
+语义与 cmd.exe 不同，且未装 Git 时直接失败。改用 `platform.HostShellCommand()`
+按平台选（Windows cmd.exe / Unix sh）。对齐 TS：TS 的 `shell:true` 交给 Node，
+Node 在 Windows 用 cmd.exe。
+
+**接线点**（对账 TS `runTestCommand` 的 spawnSpec 分支）：
+`declared`（`shell:true`）**绕过** `resolveTestSpawn` 直接经平台 shell 执行；
+其余（npm/npx/tsx/node/pytest）经 `ResolveTestSpawn` 规范化。
+
+**oracle**：`testdata/testspawn/`，23 用例（TS 原 7 个 + 注入面补充）。
+**又抓到一次自己的错**：我手写的期望 `"%PATH%"` → `"_PATH_"`，oracle 显示 TS
+返回 `__PATH__`（`"` 本身也属危险字符，一并替换为 `_`）。按纪律以 oracle 为准
+修正，未自行推断。
+
+**变异反证**（3 个，全部有判别力）：M1 去掉 `%` 消毒 → 3 处红（`%PATH%` 裸露）；
+M2 永不加引号 → 6 处红（元字符全裸露）；M3 去掉「不双重加引」短路 → 2 处红
+（已引号 token 被破坏）。
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`

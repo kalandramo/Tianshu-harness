@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kalandramo/tianshu/go/internal/contract"
+	"github.com/kalandramo/tianshu/go/internal/platform"
 )
 
 // runTestsTool 实现 run_tests（项目测试运行器探测 + 结构化结果）。
@@ -97,7 +98,7 @@ func (t *runTestsTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := buildCmd(runCtx, r)
+	cmd := buildCmd(runCtx, r, t.Cwd)
 	cmd.Dir = t.Cwd
 	// 平台组语义 + Wait 兜底（详见 prepareCommand / waitDelay 的说明）
 	prepareCommand(cmd)
@@ -538,11 +539,38 @@ func sanitizeFilter(f string) string {
 }
 
 // buildCmd 构造可执行命令。
-func buildCmd(ctx context.Context, r runner) *exec.Cmd {
+//
+// 对账 TS `runTestCommand` 的 spawnSpec 分支：
+//
+//	testCommand.shell ? { 原样, shell: true } : resolveTestSpawn(...)
+//
+// 即：`declared`（完整 shell 字符串，可能是复合命令 `a && b`）**绕过**
+// resolveTestSpawn，直接经平台 shell 执行；其余（npm/npx/tsx/node/pytest）
+// 经 resolveTestSpawn 规范化。
+//
+// **平台 shell 选择**：Windows cmd.exe、Unix sh。原先硬编码 `bash -c` 在
+// Windows 上会走错 shell（Git Bash 语义与 cmd.exe 不同，且未装 Git 时直接失败）。
+// 对齐 TS：TS 的 `shell: true` 交给 Node 处理（Node 在 Windows 用 cmd.exe）。
+func buildCmd(ctx context.Context, r runner, cwd string) *exec.Cmd {
 	if r.shell {
-		return exec.Command("bash", "-c", r.command)
+		// declared：完整 shell 字符串，按平台 shell 执行。
+		shell := platform.HostShellCommand()
+		return exec.Command(shell.Cmd, platform.BuildShellArgs(shell, r.command)...)
 	}
-	return exec.Command(r.command, r.args...)
+
+	// 其余：规范化到宿主 OS 形态（Windows 上 npm/npx 是 `.cmd` shim，
+	// 参数需经 cmd.exe 语境消毒——否则 `a&calc`、`%PATH%` 可注入/展开）。
+	resolved := ResolveTestSpawn(r.command, r.args, cwd, TestSpawnDeps{
+		IsWindows: isWindowsHost(),
+		Exists:    fileExists,
+	})
+	if !resolved.Shell {
+		return exec.Command(resolved.Command, resolved.Args...)
+	}
+	// 解析结果要求 shell（如 tsx 的本地 shim）——拼成单条命令行交给平台 shell。
+	line := strings.Join(append([]string{resolved.Command}, resolved.Args...), " ")
+	shell := platform.HostShellCommand()
+	return exec.Command(shell.Cmd, platform.BuildShellArgs(shell, line)...)
 }
 
 // errorsAs 是 errors.As 的薄封装（保持 import 简洁）。
