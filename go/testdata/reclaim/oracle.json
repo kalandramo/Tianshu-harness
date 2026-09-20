@@ -1,0 +1,292 @@
+{
+  "windowBands": {
+    "0": "small",
+    "1": "small",
+    "199999": "small",
+    "200000": "medium",
+    "200001": "medium",
+    "499999": "medium",
+    "500000": "large",
+    "1000000": "large"
+  },
+  "profiles": {
+    "small_pertoken_exact": {
+      "windowBand": "small",
+      "contextWindow": 100000,
+      "effectiveInputBudget": 100000,
+      "billing": "per-token",
+      "cache": "exact-prefix",
+      "minReclaimTokens": 8192,
+      "minReclaimRatio": 0.03
+    },
+    "medium_pertoken_exact": {
+      "windowBand": "medium",
+      "contextWindow": 200000,
+      "effectiveInputBudget": 200000,
+      "billing": "per-token",
+      "cache": "exact-prefix",
+      "minReclaimTokens": 8192,
+      "minReclaimRatio": 0.03
+    },
+    "tiny_pertoken_exact": {
+      "windowBand": "small",
+      "contextWindow": 100000,
+      "effectiveInputBudget": 100000,
+      "billing": "per-token",
+      "cache": "exact-prefix",
+      "minReclaimTokens": 8192,
+      "minReclaimRatio": 0.03
+    },
+    "verytiny_pertoken_exact": {
+      "windowBand": "small",
+      "contextWindow": 10000,
+      "effectiveInputBudget": 10000,
+      "billing": "per-token",
+      "cache": "exact-prefix",
+      "minReclaimTokens": 8192,
+      "minReclaimRatio": 0.03
+    },
+    "large_pertoken_exact": {
+      "windowBand": "large",
+      "contextWindow": 500000,
+      "effectiveInputBudget": 500000,
+      "billing": "per-token",
+      "cache": "exact-prefix",
+      "minReclaimTokens": 32768,
+      "minReclaimRatio": 0.05
+    },
+    "large_pertoken_exact_1m": {
+      "windowBand": "large",
+      "contextWindow": 1000000,
+      "effectiveInputBudget": 1000000,
+      "billing": "per-token",
+      "cache": "exact-prefix",
+      "minReclaimTokens": 50000,
+      "minReclaimRatio": 0.05
+    },
+    "sub_exact": {
+      "windowBand": "medium",
+      "contextWindow": 200000,
+      "effectiveInputBudget": 200000,
+      "billing": "subscription",
+      "cache": "exact-prefix",
+      "minReclaimTokens": 4096,
+      "minReclaimRatio": 0.01
+    },
+    "pertoken_none": {
+      "windowBand": "medium",
+      "contextWindow": 200000,
+      "effectiveInputBudget": 200000,
+      "billing": "per-token",
+      "cache": "none",
+      "minReclaimTokens": 4096,
+      "minReclaimRatio": 0.01
+    },
+    "pertoken_partial": {
+      "windowBand": "medium",
+      "contextWindow": 200000,
+      "effectiveInputBudget": 200000,
+      "billing": "per-token",
+      "cache": "partial",
+      "minReclaimTokens": 4096,
+      "minReclaimRatio": 0.01
+    },
+    "sub_none_large": {
+      "windowBand": "large",
+      "contextWindow": 1000000,
+      "effectiveInputBudget": 1000000,
+      "billing": "subscription",
+      "cache": "none",
+      "minReclaimTokens": 10000,
+      "minReclaimRatio": 0.01
+    },
+    "with_output_reserve": {
+      "windowBand": "medium",
+      "contextWindow": 200000,
+      "effectiveInputBudget": 200000,
+      "outputReserveTokens": 8192,
+      "billing": "subscription",
+      "cache": "none",
+      "minReclaimTokens": 4096,
+      "minReclaimRatio": 0.01
+    }
+  },
+  "reclaim": {
+    "unchanged_same_ref": {
+      "estimate": {
+        "beforeTokens": 10,
+        "afterTokens": 10,
+        "reclaimedTokens": 0,
+        "reclaimRatio": 0,
+        "changed": false
+      },
+      "verdict": {
+        "commit": false,
+        "reason": "unchanged"
+      },
+      "record": {
+        "action": "micro",
+        "commit": false,
+        "reason": "unchanged",
+        "force": false,
+        "windowBand": "medium",
+        "billing": "per-token",
+        "cache": "exact-prefix"
+      }
+    },
+    "unchanged_same_bytes": {
+      "estimate": {
+        "beforeTokens": 20,
+        "afterTokens": 20,
+        "reclaimedTokens": 0,
+        "reclaimRatio": 0,
+        "changed": false
+      },
+      "verdict": {
+        "commit": false,
+        "reason": "unchanged"
+      },
+      "record": {
+        "action": "micro",
+        "commit": false,
+        "reason": "unchanged",
+        "force": false,
+        "windowBand": "medium",
+        "billing": "per-token",
+        "cache": "exact-prefix"
+      }
+    },
+    "negative_reclaim": {
+      "estimate": {
+        "beforeTokens": 10,
+        "afterTokens": 20,
+        "reclaimedTokens": -10,
+        "reclaimRatio": 0,
+        "changed": true
+      },
+      "verdict": {
+        "commit": false,
+        "reason": "no-reclaim"
+      },
+      "record": {
+        "action": "micro",
+        "commit": false,
+        "reason": "no-reclaim",
+        "force": false,
+        "windowBand": "medium",
+        "billing": "per-token",
+        "cache": "exact-prefix"
+      }
+    },
+    "below_floor_small": {
+      "estimate": {
+        "beforeTokens": 20,
+        "afterTokens": 18,
+        "reclaimedTokens": 2,
+        "reclaimRatio": 0.1,
+        "changed": true
+      },
+      "verdict": {
+        "commit": false,
+        "reason": "below-reclaim-floor"
+      },
+      "record": {
+        "action": "micro",
+        "commit": false,
+        "reason": "below-reclaim-floor",
+        "force": false,
+        "windowBand": "medium",
+        "billing": "per-token",
+        "cache": "exact-prefix"
+      }
+    },
+    "above_floor_big": {
+      "estimate": {
+        "beforeTokens": 9990,
+        "afterTokens": 90,
+        "reclaimedTokens": 9900,
+        "reclaimRatio": 0.990990990990991,
+        "changed": true
+      },
+      "verdict": {
+        "commit": true,
+        "reason": "reclaim-above-floor"
+      },
+      "record": {
+        "action": "micro",
+        "commit": true,
+        "reason": "reclaim-above-floor",
+        "force": false,
+        "windowBand": "medium",
+        "billing": "per-token",
+        "cache": "exact-prefix"
+      }
+    },
+    "force_below_floor": {
+      "estimate": {
+        "beforeTokens": 20,
+        "afterTokens": 18,
+        "reclaimedTokens": 2,
+        "reclaimRatio": 0.1,
+        "changed": true
+      },
+      "verdict": {
+        "commit": true,
+        "reason": "forced"
+      },
+      "record": {
+        "action": "micro",
+        "commit": true,
+        "reason": "forced",
+        "force": true,
+        "windowBand": "medium",
+        "billing": "per-token",
+        "cache": "exact-prefix"
+      }
+    },
+    "force_unchanged": {
+      "estimate": {
+        "beforeTokens": 20,
+        "afterTokens": 20,
+        "reclaimedTokens": 0,
+        "reclaimRatio": 0,
+        "changed": false
+      },
+      "verdict": {
+        "commit": false,
+        "reason": "unchanged"
+      },
+      "record": {
+        "action": "micro",
+        "commit": false,
+        "reason": "unchanged",
+        "force": true,
+        "windowBand": "medium",
+        "billing": "per-token",
+        "cache": "exact-prefix"
+      }
+    },
+    "sub_profile_below": {
+      "estimate": {
+        "beforeTokens": 20,
+        "afterTokens": 18,
+        "reclaimedTokens": 2,
+        "reclaimRatio": 0.1,
+        "changed": true
+      },
+      "verdict": {
+        "commit": false,
+        "reason": "below-reclaim-floor"
+      },
+      "record": {
+        "action": "micro",
+        "commit": false,
+        "reason": "below-reclaim-floor",
+        "force": false,
+        "windowBand": "medium",
+        "billing": "subscription",
+        "cache": "none"
+      }
+    }
+  }
+}

@@ -317,6 +317,65 @@ M2 丢弃残留 → 1 处红（只解出第一个字）；M3 退回单块 `utf8.
 未使用）——本轮第 16 次遇到该成因，加 `_ = simplifiedchinese.GBK` 保留引用后
 才有判别力。
 
+### reclaim gate —— 压缩回收量的经济闸门（2026-09-20，回主线第一刀）
+
+Windows 系列闭环后回主线，做 HANDOFF 建议的压缩执行层第一块。
+
+**它解决的问题**（TS 注释记录的真实事故）：确定性重写（micro / stale-round）
+曾**无条件提交**候选。会话 `2c1186f5` 显示重写只回收 617–1,701 token（有时
+甚至让输入变大），却每次都击碎 200k+ token 的热前缀缓存——纯亏本压缩。
+
+**两块实现**：
+
+| 落点 | 内容 |
+|---|---|
+| `internal/compact/profile.go` | `CompactionWindowBand` + `WindowBandFor` + `CompactionProfileInput` + `DeriveCompactionProfile` |
+| `internal/compact/reclaim.go` | `ReclaimEstimate` + `EstimateReclaim` + `ShouldCommitReclaim` + `BuildReclaimDecision` |
+| `internal/agent/compact_boundary.go` | 接线：候选先过 gate，不够本则**原消息原样保留** |
+
+**reclaim 地板矩阵**（`DeriveCompactionProfile`，TS plan §3.2 第一版）：
+
+| profile | minReclaimTokens | ratio |
+|---|---|---|
+| small/medium + per-token + exact-prefix | max(8192, floor(w×0.03)) | 0.03 |
+| large + per-token + exact-prefix | max(32768, floor(w×0.05)) | 0.05 |
+| subscription 或 cache none/partial | max(4096, floor(w×0.01)) | 0.01 |
+
+**两轴的经济含义**（TS 注释）：per-token provider 为 cache-miss 重建付真金
+白银，故重写必须回收够多才划算；订阅制只付延迟。而持久精确前缀缓存
+（DeepSeek/GLM/MiMo）会被任何历史重写击碎——回收不够就是纯亏。
+
+**五条判定分支**（顺序敏感）：
+1. 未改动 → **永不提交**（即使 force——提交它仍会推进 appendix 基线与
+   compact 标记，纯副作用）
+2. force（硬天花板）→ 提交任何**已改动**候选，无视地板（替代方案是 OOM）
+3. 无回收（<=0）→ 拒
+4. 绝对或相对地板未达 → 拒
+5. 否则提交
+
+**实现要点**：`floorMul` 用整数运算（`n*3/100`）而非 `int(float64(n)*0.03)`
+——后者的截断方向与 `Math.floor` 在边界上可能不同，且 0.03 无法精确表示。
+
+**oracle**：`testdata/reclaim/`，8 个 windowBand 边界 + 11 个 profile + 8 个
+reclaim 用例（覆盖全部五条分支，含「负回收」与「force+unchanged」两个边角）。
+
+**变异反证**（3 个，全部有判别力）：M1 无视 gate 判定 → 2 处红（拒绝时仍改
+历史）；M2 不查 `changed` → 4 处红（含 `force_unchanged` 被误提交）；M3 不查
+地板 → 3 处红（含接线层「应拒却放行」）。
+
+**测试构造的坑（值得记住）**：`TestCompactBoundary_ReclaimGateBlocksUnprofitable`
+首版构造错了——我按「60K 字符 tool 结果」估回收量，实测回收 10479 > 地板 8192，
+**走了放行分支**，测试「通过」但没测到想测的东西。根因是没算清截断目标：
+`ToolResultMaxTokens = floor(contextWindow × 0.3)`，回收量 ≈ tool token − 该目标。
+修正为「窗口 20000 → 目标 6000；tool 约 8000 token → 回收约 2000」后，实测
+`reclaimed=6479 < floor=8192` 命中拒绝。**教训**：断言「不该发生 X」的测试，
+必须验证 X 的可达性——否则它只是恒真断言。
+
+**未接**：`resolveCompactionEconomics`（装配层）——它依赖 `classifyCostModel`
+与 provider cache defaults，属尚未移植的 provider 模块。当前 `reclaimProfile()`
+由 `Profile.Billing`/`Cache` + `ContextWindow` 直接派生（语义等价于 TS 的
+缺省分支）。
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`
@@ -1269,9 +1328,8 @@ Loop.Run turn 边界 (loop.go:504)
 
 **压缩执行层剩余四块**（按建议优先级）：
 
-1. **reclaim gate**——`buildReclaimDecision` + `estimateReclaim`。判定回收量
-   是否够本（`minReclaimTokens` 地板），不够就回滚。当前实现是「压了就压了」，
-   可能出现「只回收 1 条却重建整个前缀」的亏本压缩。确定性逻辑，可 oracle 对账。
+1. ~~**reclaim gate**——`buildReclaimDecision` + `estimateReclaim`~~ **已完成
+   （2026-09-20）**，见下方「reclaim gate」节。
 2. **缓存顾问延迟**——`cacheAdvisor.shouldDelayCompact(tier, {...})`。热缓存时
    推迟压缩（1M 余量 > 前缀重建成本），force 动作不受此限。
 3. **LLM 重写路径**——`partial-llm` / `full-llm` / `checkpoint`，需 `summaryClient`

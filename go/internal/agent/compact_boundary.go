@@ -44,6 +44,11 @@ type CompactBoundary struct {
 
 	// LastDecision 是最近一次决策（供观测/测试断言）。
 	LastDecision *compact.CompactActionDecision
+	// LastReclaimDecision 是最近一次 reclaim gate 决策（供观测/测试断言）。
+	//
+	// 对账 TS 的 `onReclaimDecision` 回调——**提交与拒绝都记录**，让
+	// 「压了但没回收」在离线可见，而非伪装成一次成功的压缩。
+	LastReclaimDecision *compact.ReclaimDecisionRecord
 	// LastReclaimed 是最近一次实际回收的消息数。
 	LastReclaimed int
 }
@@ -130,15 +135,55 @@ func (b *CompactBoundary) MaybeCompact(messages []session.OaiMessage, turn int) 
 	// 分支之前）——超窗口请求是硬 API 失败，不该被熔断器拦住。
 
 	result := compact.MicroCompactOai(messages, b.ContextWindow, estimated)
-	b.LastReclaimed = result.Truncated
 
+	// ── reclaim gate：候选必须证明回收够本 ──
+	//
+	// 对账 TS `compact-boundary-coordinator.ts:254` 的 `buildReclaimDecision`
+	// 接线。**这是 gate 存在的理由**：确定性重写曾无条件提交，导致只回收
+	// 几百 token（有时甚至让输入变大）却击碎 200k+ token 的热前缀缓存。
+	//
+	// `decision.Force` 来自决策层（硬天花板分支）——**force 绕过地板**，
+	// 因为替代方案是 OOM 或超窗口 API 失败。
+	reclaimDecision := compact.BuildReclaimDecision(
+		decision.Action,
+		compact.EstimateReclaim(messages, result.Messages),
+		b.reclaimProfile(),
+		decision.Force,
+	)
+	b.LastReclaimDecision = &reclaimDecision
+
+	if !reclaimDecision.Commit {
+		// 不够本（或未改动）——**原消息原样保留**，下个边界重试。
+		//
+		// 不算失败：这是经济否决（与 `none` 同类），熔断器只跟踪管线错误。
+		b.LastReclaimed = 0
+		return messages, false
+	}
+
+	b.LastReclaimed = result.Truncated
 	if result.Truncated == 0 {
-		// 决策说该压但没压出东西——不算失败（可能是内容都太短）。
+		// 决策说该压、gate 也放行，但没压出东西——不算失败（内容都太短）。
 		return messages, false
 	}
 
 	b.Failures = compact.RecordCompactSuccess()
 	return result.Messages, true
+}
+
+// reclaimProfile 返回 reclaim gate 用的 profile。
+//
+// 对账 TS `reclaimProfile()`：优先用注入的 profile，否则按 economics 派生。
+// Go 侧无 `getCompactionProfile` 注入点，故直接由 `Profile` 的 billing/cache
+// 与 `ContextWindow` 派生（语义等价：TS 的缺省分支用同一组输入）。
+//
+// **注意派生而非直接用 b.Profile**：`b.Profile` 的地板字段可能是零值
+// （手工构造的 profile 不经 derive）。派生保证地板与窗口/billing/cache 一致。
+func (b *CompactBoundary) reclaimProfile() compact.CompactionProfile {
+	return compact.DeriveCompactionProfile(compact.CompactionProfileInput{
+		ContextWindow: b.ContextWindow,
+		Billing:       b.Profile.Billing,
+		Cache:         b.Profile.Cache,
+	})
 }
 
 // isDeterministicAction 报告动作是否属于确定性路径。

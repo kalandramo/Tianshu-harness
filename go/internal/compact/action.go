@@ -51,15 +51,41 @@ const (
 	CompactionCacheExactPrefix CompactionCache = "exact-prefix"
 )
 
-// CompactionProfile 是压缩决策所需的 profile 切片。
+// CompactionProfile 是压缩决策所需的 profile。
 //
-// 对账 `CompactionProfile` 的**最小必要子集**——本刀只用到 `billing` 与
-// `cache`（`llmActionRatiosFor` 的判据）。完整 profile 的其余字段
-// （windowBand / effectiveInputBudget / minReclaimTokens 等）属压缩执行层，
-// 见 PLAN 的后续条目。
+// 对账 `CompactionProfile`。分两层用途：
+//
+//   - **LLM 阶梯**：`Billing` × `Cache`（`LLMActionRatiosFor` 的判据）
+//   - **reclaim 地板**：`WindowBand` / `ContextWindow` / `MinReclaimTokens` /
+//     `MinReclaimRatio`（reclaim gate 判「回收是否够本」）
+//
+// 地板字段由 `deriveCompactionProfile` 填充。**零值语义**：手工构造的
+// profile（不经 derive）地板为 0——此时 gate 只要求「有回收」即放行
+// （`reclaimedTokens <= 0` 仍拒），不会因缺字段而误拒一切。
 type CompactionProfile struct {
 	Billing CompactionBilling
 	Cache   CompactionCache
+
+	// WindowBand 是窗口档位（reclaim 地板的分档依据）。
+	WindowBand CompactionWindowBand
+	// ContextWindow 是上下文窗口（token）。
+	ContextWindow int
+	// EffectiveInputBudget 是策略规划所用的输入预算。
+	//
+	// 第一版等于 ContextWindow——减去 max_tokens 会假设 provider 层存在
+	// 「输入窗口 = 总窗口 − 输出预留」的契约，而该契约对我们的 provider
+	// **未经核实**（TS plan §3.1）。OutputReserveTokens 是契约确认后的扩展点。
+	EffectiveInputBudget int
+	// OutputReserveTokens 是输出预留（nil = 未设置）。
+	OutputReserveTokens *int
+	// CacheWritePricePerMillion / CacheReadPricePerMillion 是缓存价格（nil = 未知）。
+	CacheWritePricePerMillion *float64
+	CacheReadPricePerMillion  *float64
+
+	// MinReclaimTokens 是绝对地板：非 force 的重写至少要回收这么多 token。
+	MinReclaimTokens int
+	// MinReclaimRatio 是相对地板：reclaimed / beforeTokens 要达到该比例。
+	MinReclaimRatio float64
 }
 
 // CompactCircuitBreakerState 是熔断器状态。
