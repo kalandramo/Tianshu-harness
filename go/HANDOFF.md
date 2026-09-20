@@ -577,6 +577,76 @@ session split 是**主动**护栏：86% 时把历史替换为结构化 handoff�
 
 ---
 
+### CheckpointDeps.ArchiveDiscarded（2026-09-20，回主线第八刀）
+
+**目标**：`replaceWithCheckpoint` 丢掉一段历史时，把它序列化存为
+`compact-history` artifact，并把「召回引用块」拼到摘要末尾——模型之后可
+`read_section` 逐字取回被丢的历史（而非只依赖有损摘要）。
+
+#### 三个新文件
+
+| 文件 | 对账 TS | 内容 |
+|------|---------|------|
+| `internal/context/compactarchive.go` | `src/agent/compact-archive.ts` | `SerializeMessagesForArchive` / `RenderArchiveBody` / `BuildArchiveCatalog` / `BuildRecallRefBlock` |
+| `internal/context/recallmarker.go` | `src/compact/recall-marker.ts` | `BuildRecallMarker` / `ParseRecallMarker` |
+| `internal/context/archiveassembly.go` | `archiveDiscardedHistory`（`compaction-controller.ts:1009`） | `BuildArchiveDiscarded`（fail-soft 装配） |
+
+接线：`cmd/tianshu/main.go` 的 `loop.CheckpointDeps.ArchiveDiscarded`。
+
+#### 序列化契约（**必须稳定**——read_section 按行定位）
+
+每条消息用固定 divider 头：
+
+```
+--- turn:N role:ROLE ---
+<body line 1>
+<body line 2>
+```
+
+**sections 按消息切分**（不是按轮）：单条 assistant 可能携带 content +
+reasoning + 多个 tool_calls 跨几十行，单条 tool 结果可能几万字符——轮→行
+映射太粗。逐消息 divider 保证字节稳定边界；catalog 再聚合成 turn→行目录。
+
+**turn 计数规则**：从 0 起，**每条 user 递增一次**（首条 user 让 `seenUser`
+变 true 但不递增）。保证 assistant/tool 归属到其所属的 user 轮。
+
+#### recall-eviction（为什么 tool 分支要折叠）
+
+被召回的 compact-history 块会**再次**进入历史。若原样重新归档，内容会在
+artifact 之间重复累积（**抵消压缩**）。故折叠为一行指针
+`[recalled → <id> <section> (see original artifact)]`——原 artifact 仍持有
+字节，指针保持可召回性而不复制内容。
+
+#### fail-soft 四条早退（对账 TS 注释）
+
+「Returns null when archiving is unavailable, the zone is empty, or the write
+fails — **compaction must never be blocked by archival**」：
+
+1. sink 为 nil（artifact store 未装配）
+2. 丢弃段为空
+3. 序列化后正文 trim 后为空
+4. 落盘失败 / id 为空
+
+Go 侧对应「返回空串」——调用方对空串就是「不追加」（与 TS 的
+`archive ? ... : ...` 分支同形）。
+
+#### 验证
+
+- `compactarchive_test.go` 20 条（序列化 8 + catalog/ref 3 + 装配 6 + recall marker 3）
+- `archive_wiring_test.go` 4 条（**端到端**：落盘 → 引用进摘要 → read_section 可召回）
+- **变异反证**：M8（不递增 turn）→ 2 条红；M9（不做 recall-eviction）→ 1 条红
+- 全量 go test 连跑 3 次，22 包 0 FAIL
+
+#### 仍未做
+
+- `CheckpointDeps.TaskAnchor`（需 `getActiveContract` + `renderTaskAnchor`）
+- `read_section` 的 **compact-history 快速路径**（流式读取 + recall 标记前置）
+  ——归档已可写，但 read_section 尚未对 `compact-history` 走流式分支
+  （当前走普通 `ReadRaw`，受 2MB 上限约束）
+- `promptEngine.resetAppendixBaseline`、`recordCompactEvent`
+
+---
+
 ### CheckpointDeps.Preflight（2026-09-20，回主线第七刀）
 
 **目标**：移植 `runResumePreflightOai`——历史替换后可能出现**孤儿 tool_call**

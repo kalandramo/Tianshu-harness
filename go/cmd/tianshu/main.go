@@ -221,6 +221,26 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 		return report.Messages
 	}
 
+	// ── checkpoint 归档装配 ──
+	//
+	// 对账 TS `deps.archiveHistory` + `archiveDiscardedHistory`
+	// （`compaction-controller.ts:1009`）。`replaceWithCheckpoint` 丢掉一段
+	// 历史时，把它序列化存为 `compact-history` artifact，并把「召回引用块」
+	// 拼到摘要末尾——模型之后可 `read_section` 逐字取回被丢的历史。
+	//
+	// **fail-soft**：归档失败绝不阻塞压缩（对账 TS 注释）。
+	// artifact store 未装配时 `sink` 为 nil → 归档函数恒返回空串（不追加）。
+	loop.CheckpointDeps.ArchiveDiscarded = ctxstore.BuildArchiveDiscarded(
+		func(in artifact.SaveInput) (string, error) {
+			if loop.Artifacts == nil {
+				return "", fmt.Errorf("artifact store 未装配")
+			}
+			return loop.Artifacts.Save(in)
+		},
+		func() int { return loop.SessionTurn() },
+		nil,
+	)
+
 	// ── CVM 装配：hook 管线 + 劝导总线 + claim store ──
 	//
 	// **为什么必须在 CLI 装**：hook 与 advisory 的逻辑再完备，不在这里装配
