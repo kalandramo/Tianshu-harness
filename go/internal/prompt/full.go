@@ -31,19 +31,23 @@ func DetectShellKind(hostPlatform string) string {
 
 // DetectHostEnv 探测宿主环境信息，供 `<environment>` 行使用。
 //
-// 关键：**Go 与 Node 的命名不同**，必须映射才能字节等价：
+// 关键：**Go 与 Node 的命名与来源都不同**，必须映射/对齐才能字节等价：
 //   - 平台名：Go 的 runtime.GOOS 是 "windows"，Node 的 process.platform 是 "win32"
 //     （darwin/linux 两者相同，仅 windows 有差异）
-//   - OS 名/版本：Node 的 os.type()/os.release() 与 `uname -s`/`uname -r` 同源
-//     （实测 Darwin 上均为 "Darwin" / "25.6.0"）
+//   - OS 名/版本：Node 的 os.type()/os.release() —— Unix 上与 `uname -s`/`-r` 同源
+//     （实测 Darwin 上均为 "Darwin" / "25.6.0"）；**Windows 上不是**，见下。
 //
-// 用 `uname` 而非 golang.org/x/sys/unix：后者需引入依赖，而 uname 是 POSIX
-// 标准且与 Node 的实现同源。Windows 无 uname，退回 runtime 常量。
+// Windows 的陷阱（实测）：Node 的 os.type()/os.release() 走 Win32
+// `RtlGetVersion`，返回 `Windows_NT` / `10.0.26200`。而 Git for Windows 的
+// `uname` 返回 `MINGW64_NT-10.0-26200` / `3.6.9-...`——**两者不等价**，且
+// uname 的结果还依赖 PATH 上有没有 Git（没有就落到 fallback，得到第三种值）。
+// 该行进 `<environment>`，是**冻结前缀**的一部分，不等价会让 Go/TS 的缓存
+// key 分叉。故 Windows 分支单独探测（hostEnvWindows），不走 uname。
 func DetectHostEnv() HostEnv {
 	return HostEnv{
 		Platform:  nodePlatformName(runtime.GOOS),
-		OSType:    unameField("-s", fallbackOSType()),
-		OSRelease: unameField("-r", ""),
+		OSType:    hostOSType(),
+		OSRelease: hostOSRelease(),
 	}
 }
 
@@ -55,7 +59,7 @@ func nodePlatformName(goos string) string {
 	return goos
 }
 
-// fallbackOSType 在 uname 不可用时给出 OS 名（Windows 路径）。
+// fallbackOSType 在 uname 不可用时给出 OS 名。
 func fallbackOSType() string {
 	switch runtime.GOOS {
 	case "windows":

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -113,6 +114,47 @@ func TestDetectHostEnv(t *testing.T) {
 	}
 	if h.OSType == "" {
 		t.Error("OSType 不应为空")
+	}
+}
+
+// TestDetectHostEnvWindowsParity —— Windows 上 OSType/OSRelease 必须与 Node 同源。
+//
+// **这是回归测试**：修复前 Windows 分支走 Git Bash 的 `uname`，得到
+// `MINGW64_NT-10.0-26200` / `3.6.9-...`，而 Node 的 os.type()/os.release()
+// 是 `Windows_NT` / `10.0.26200`。该行进 `<environment>`（冻结前缀），
+// 不等价会让 Go/TS 的缓存 key 分叉；且 uname 结果还依赖 PATH 上有没有 Git
+// ——同一二进制在不同启动环境下产出不同的冻结前缀。
+//
+// 断言的是**可独立验证的形态**（而非硬编码本机版本号——那会在别的机器上假红）：
+//   - OSType 必须是 "Windows_NT"（Node 的定值，不是 MINGW64_NT-*）
+//   - OSRelease 必须是三段数字 "X.Y.Z"（Node os.release() 的形态，
+//     不是 uname 的 "3.6.9-b4195d69.x86_64"）
+func TestDetectHostEnvWindowsParity(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("仅 Windows 适用")
+	}
+	h := DetectHostEnv()
+
+	if h.OSType != "Windows_NT" {
+		t.Errorf("OSType 应为 %q（Node os.type() 的定值），得到 %q——"+
+			"若为 MINGW64_NT-* 说明走了 uname 而非 RtlGetVersion", "Windows_NT", h.OSType)
+	}
+
+	// 形态：三个点分十进制段（Node 的 os.release() 在 Windows 上就是 major.minor.build）。
+	parts := strings.Split(h.OSRelease, ".")
+	if len(parts) != 3 {
+		t.Fatalf("OSRelease 应为三段 major.minor.build，得到 %q", h.OSRelease)
+	}
+	for _, p := range parts {
+		if p == "" {
+			t.Fatalf("OSRelease 段不应为空：%q", h.OSRelease)
+		}
+		for _, r := range p {
+			if r < '0' || r > '9' {
+				t.Errorf("OSRelease 应只含数字与点（Node 形态），得到 %q", h.OSRelease)
+				break
+			}
+		}
 	}
 }
 

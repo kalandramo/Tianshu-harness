@@ -163,6 +163,67 @@ M3 Windows 组杀改 no-op → 组杀测试红（20.9s）。
 **M2 首轮红 0 处是测试缺口**（原测试只验「子进程被杀」，不验「调用及时返回」）
 ——补耗时断言后才有判别力，这正是「红 0 成因：真测试缺口」的又一实例。
 
+### shell 探测移植（2026-09-20，第二刀）
+
+补齐 HANDOFF 记录的最后一项 Windows 未移植。核实后发现**问题比记录的大**：
+
+**它不是提示词问题**。原记录说「`DetectShellKind` 返回空串，保守选择」——
+但 TS 的 `bash.ts:537` 用 `getShellCommand()` **实际 spawn shell**，而 Go 硬编码
+`exec.Command("bash", "-c", ...)`。在没装 Git Bash 的 Windows 上，**bash 工具
+直接启动失败**（不是提示词不精确，是功能不可用）。
+
+**移植内容**：
+
+| 层 | 落点 | 说明 |
+|---|---|---|
+| 探测（纯函数） | `internal/platform/platform.go` | `ResolveShellCommand` + `ResolveGitBashPath`，与 TS 的 `ShellProbeDeps`/`GitBashProbeDeps` 同构 |
+| oracle | `testdata/shellprobe/` | 30 用例（17 git-bash + 13 shell），走 TS 真实函数调用 |
+| 接线（工具） | `internal/tools/bash.go` | `exec.Command` 改用探测出的 shell |
+| 接线（提示词） | `internal/prompt/full.go` | `DetectShellKind` 消除恒空占位 |
+
+**Windows 优先级**：Git Bash → pwsh → powershell → cmd.exe。
+Git Bash 路径探测五级：`RIVET_GIT_BASH_PATH` 覆盖 → `where git` 推导 →
+`where bash` 兜底（**排除 WSL 的 System32\bash.exe**）→ 常见安装位/Scoop →
+bundled PortableGit（**最后**，让系统 Git 优先）。
+
+**为什么做成纯函数 + 注入依赖**：探测依赖 PATH/文件系统/环境变量，直接读进程
+状态就**不可对账**（测试机与生成 golden 的机器不同）。参数化后 oracle 能记录
+「给定这组 deps，TS 返回什么」。这是 TS 自己的做法。
+
+**oracle 当场抓到一处假绿**（值得记住）：TS 的 `deps.env` 是 **`NodeJS.ProcessEnv`
+对象**，不是取值函数。生成器首版传了函数 → `deps.env['RIVET_GIT_BASH_PATH']`
+恒为 `undefined` → 所有 env 相关用例静默产出 null/wrong。**若照那份 golden 写
+Go，两边会同错**（正是 wire 字段序事故的同一模式）。oracle 的价值就在这里：
+它让这种错误在生成阶段现形，而不是在"对账通过"的假象里潜伏。
+
+### DetectHostEnv 的 Windows 字节不等价（2026-09-20，同轮发现）
+
+**端到端验证暴露**（又一次：单测全绿但生产路径有问题）。
+
+`<environment os="...">` 行在 Windows 上 Go 与 TS 不等价：
+
+| 来源 | os.type()/OSType | os.release()/OSRelease |
+|---|---|---|
+| Node（TS 生产） | `Windows_NT` | `10.0.26200` |
+| Git Bash `uname`（**原 Go 实现**） | `MINGW64_NT-10.0-26200` | `3.6.9-b4195d69.x86_64` |
+| 无 Git 时 fallback | `Windows_NT` | `""` |
+
+该行进**冻结前缀**——不等价会让 Go/TS 的缓存 key 分叉。更糟的是 `uname` 的
+结果**依赖 PATH 上有没有 Git**：同一个二进制从不同环境启动会产出不同的冻结
+前缀（第三种值），这是最坏的一类不确定性。
+
+**修法**：Windows 分支改用 Win32 `RtlGetVersion`（`hostenv_windows.go`），
+实测返回 `10.0.26200` 与 Node **逐字节相同**；Unix 分支保留 `uname`（Node 在
+Unix 上就用 uname(2)，实测 Darwin 一致）。用 `syscall.NewLazyDLL` 而非
+`golang.org/x/sys/windows`——前者是标准库，零新增依赖。
+
+**变异反证**（5 个，全部有判别力）：M1 反转 pwsh 优先级 → 1 处红；
+M2 去掉 WSL 排除 → 2 处红；M3 bundled 提前 → 1 处红；
+M4 Windows OSType 退回 uname → 报 `MINGW64_NT-10.0-26200`；
+M5 OSRelease 退回 uname -r → 报 `3.6.9-b4195d69.x86_64`。
+**M5 首轮是「编译失败伪装红 0」**（去掉 fmt 使用后 import 未使用）——本轮第 15 次
+遇到该成因，按纪律加 `_ = fmt.Sprintf(...)` 保留引用后才有判别力。
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`
@@ -402,11 +463,12 @@ printf '记住42\n那个数字\n加1等于几\n再确认\n' | \
     → runtime-env → sober
   - 变异反证 6 个（M2「不产生 host 属性」首轮红 0 处→补 environment 行
     形态断言后暴露）
-- [ ] **未移植（Windows 特有，需真实环境验证）**：
-  - `resolveShellCommand` 的 Windows 分支（探测 Git Bash 路径 / pwsh）。
-    Go 侧 `DetectShellKind` 只做非 Windows 判定（恒返回 "sh"）；Windows
-    返回空串（**保守选择**——宁不注入，也不注入可能错误的 shell 语法指引，
-    后者会诱导模型反复失败重试）
+- [x] ~~**未移植（Windows 特有，需真实环境验证）**：`resolveShellCommand`~~
+  **已完成（2026-09-20）**——新建 `internal/platform`，见下方「Windows 可移植性」节。
+  核实后发现问题比记录的大：它不只是提示词（`DetectShellKind` 返回空串），
+  TS 的 `bash.ts:537` 用 `getShellCommand()` **实际 spawn shell**，而 Go 硬编码
+  `exec.Command("bash", "-c", ...)`——在没装 Git Bash 的 Windows 上直接启动失败。
+  已按两层移植（探测 + 接线），并顺带修掉 `DetectHostEnv` 的 Windows 字节不等价。
 - [ ] `buildDynamicAppendixParts`（动态 appendix）——**依赖会话状态容器，
   建议先做最小 session 状态**
 - [ ] appendixDelta / 动态 appendix 的分段与冻结边界
