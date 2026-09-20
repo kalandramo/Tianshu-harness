@@ -1,0 +1,126 @@
+{
+  "warmth": {
+    "never_called": {
+      "temperature": "cold",
+      "opportunistic": true
+    },
+    "just_called": {
+      "temperature": "hot",
+      "opportunistic": false
+    },
+    "hot_59s": {
+      "temperature": "hot",
+      "opportunistic": false
+    },
+    "boundary_60s": {
+      "temperature": "warm",
+      "opportunistic": false
+    },
+    "warm_1h_minus_1": {
+      "temperature": "warm",
+      "opportunistic": false
+    },
+    "boundary_ttl": {
+      "temperature": "cold",
+      "opportunistic": true
+    },
+    "cold_beyond": {
+      "temperature": "cold",
+      "opportunistic": true
+    },
+    "custom_ttl_hot": {
+      "temperature": "hot",
+      "opportunistic": false
+    },
+    "custom_ttl_warm": {
+      "temperature": "warm",
+      "opportunistic": false
+    },
+    "custom_ttl_cold": {
+      "temperature": "cold",
+      "opportunistic": true
+    }
+  },
+  "delay": {
+    "tier3_never_delays": {
+      "decision": false,
+      "reason": "reactive-tier"
+    },
+    "tier4_never_delays": {
+      "decision": false,
+      "reason": "reactive-tier"
+    },
+    "hot_low_pressure_delays": {
+      "decision": true,
+      "reason": "protection"
+    },
+    "hot_high_pressure_allows": {
+      "decision": false,
+      "reason": "pressure-allow"
+    },
+    "protection_boundary_exact": {
+      "decision": true,
+      "reason": "protection"
+    },
+    "protection_just_below": {
+      "decision": false,
+      "reason": "pressure-allow"
+    },
+    "cold_low_pressure_allows": {
+      "decision": false,
+      "reason": "pressure-allow"
+    },
+    "warmth_hot_branch_delays": {
+      "decision": true,
+      "reason": "warmth-hot"
+    },
+    "warmth_hot_tier2_allows": {
+      "decision": false,
+      "reason": "pressure-allow"
+    },
+    "warmth_hot_high_pressure_allows": {
+      "decision": false,
+      "reason": "pressure-allow"
+    },
+    "legacy_hitrate_delays": {
+      "decision": true,
+      "reason": "legacy-hitrate"
+    },
+    "legacy_hitrate_boundary": {
+      "decision": true,
+      "reason": "legacy-hitrate"
+    },
+    "legacy_hitrate_below_warmth_hot": {
+      "decision": true,
+      "reason": "legacy-warmth"
+    },
+    "legacy_hitrate_below_cold_allows": {
+      "decision": false,
+      "reason": "legacy-allow"
+    },
+    "legacy_warmth_hot_delays": {
+      "decision": true,
+      "reason": "legacy-warmth"
+    },
+    "legacy_warmth_hot_tier2_allows": {
+      "decision": false,
+      "reason": "legacy-allow"
+    },
+    "legacy_allow": {
+      "decision": false,
+      "reason": "legacy-allow"
+    },
+    "null_hitrate_with_ctx_cold": {
+      "decision": false,
+      "reason": "legacy-allow"
+    },
+    "null_hitrate_no_ctx_cold": {
+      "decision": false,
+      "reason": "legacy-allow"
+    },
+    "null_hitrate_no_ctx_hot": {
+      "decision": true,
+      "reason": "legacy-warmth"
+    }
+  }
+}

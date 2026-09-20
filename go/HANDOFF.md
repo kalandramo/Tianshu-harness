@@ -376,6 +376,73 @@ reclaim 用例（覆盖全部五条分支，含「负回收」与「force+unchan
 由 `Profile.Billing`/`Cache` + `ContextWindow` 直接派生（语义等价于 TS 的
 缺省分支）。
 
+### 缓存顾问延迟 —— 热缓存时推迟压缩（2026-09-20，回主线第二刀）
+
+**它解决的问题**：压缩会击碎前缀缓存——已付费建立的前缀作废，下次请求全量
+重建。但重建成本 ∝ 命中率，而压缩收益随窗口压力上升。故存在显式权衡：
+**热缓存 + 低压力时推迟**（余量还够，不值得重建），压力升高时放行
+（1M 下 OOM 风险 > 重建成本）。
+
+**实现**（新包 `internal/cache`）：
+
+| 落点 | 内容 |
+|---|---|
+| `internal/cache/warmth.go` | `SessionWarmthTracker`（hot/warm/cold，时间经注入） |
+| `internal/cache/advisor.go` | `Advisor.ShouldDelayCompact` + 决策记录（可观测性契约） |
+| `internal/agent/compact_boundary.go` | 接线：delay 检查在 reclaim gate **之前**，force 绕过 |
+
+**判定三条分支**（顺序敏感）：
+
+1. `tier >= 3` → **永不延迟**（响应式/ceiling 是应对压力的，延迟它等于放任爆掉）
+2. 有压力上下文 + 有命中率 → `protection = hitRate × (1 − pressure)`
+   - `>= 0.45` → 延迟
+   - 否则若 `warmth=hot && tier<=1 && pressure<0.5` → 延迟
+   - 否则放行
+3. 无压力上下文 → 回退：`hitRate >= 0.8` 延迟；否则 `warmth=hot && tier<=1` 延迟
+
+**oracle**：`testdata/delaycompact/`，10 个 warmth 边界 + 20 个 delay 用例
+（覆盖三条分支 + 边界值）。
+
+**变异反证**：M2（protection 阈值 0.45→0.99）→ 3 处红（含接线层），有判别力。
+M1（去掉 `!force` 守卫）→ **红 0 处，经查证是等价变异**（见下）。
+
+#### 三个结构性发现（值得记住）
+
+**发现一：`!decision.Force` 守卫是死分支。** 探针确认：`force` 动作的 `Tier`
+**恒为 4（ceiling）**（决策层 ceiling 分支硬编码 `Tier: TierCeiling`），而
+advisor 的 `tier>=3` 短路**自己就放行**。故即便去掉 `!force` 守卫，force 场景
+也不会被延迟——M1 变异红 0 处是**等价变异**而非测试缺口。保留守卫（对齐 TS
+语义，且 tier 语义未来可能变），并用 `TestCompactBoundary_ForceTierIsCeilingSoAdvisorAllows`
+**锁定这个事实**，避免后人误以为该分支被覆盖。这与上一轮「CompactBoundary 里
+的熔断器检查是死分支」同类。
+
+**发现二：决策层 tier 受 hitRate 影响，与 advisor 的 hitRate 是两个独立输入。**
+`TierForRatio` 用 `AdaptiveCompactPolicyRatios`——`hitRate >= 0.85` 时各档
+**上移**（`Watch+0.05` 等）。故 `CompactBoundary.RecentHitRate` 与
+`Advisor.RecentHitRate` 需分别设置；测试里若只设后者，前者会走基准比值。
+
+**发现三（接线约束）**：`MaxTokens >= 1_000_000` 时决策层走**独立的 LLM 阶梯
+分支**——`ActionMicro` 只在 ceiling 时出现；且 `tier=3`（reactive）时决策层
+直接返回 `ActionNone`。故测 delay 接线必须用**中小窗口 + 低阈值**。
+
+#### 测试构造的坑（三条，都踩过）
+
+1. **oracle 生成器的 warmth 状态与用例名脱节**：首版 `makeAdvisor` 在
+   `hitRate=null` 时不调 `onTurnEnd`，于是 warmth 停在 cold，而用例名暗示 hot
+   ——名实不符。修正为显式 `warmth: 'cold' | number` 字段。
+   **教训**：oracle 的构造代码也要审——它错了会产出「看似合理」的错误 golden。
+2. **恒真断言**（上轮教训重演）：`AdvisorAllowsUnderPressure` 首版用 200K 窗口
+   + 75K token 历史 → pressure 仅 0.375，仍在延迟侧，断言「应放行」失败。
+   pressure 必须**过半**才能压过 protection 与 warmth 两支。
+3. **`Skipf` 掩盖**：`ForceBypassesDelay` 首版用 `t.Skipf` 处理「未触发 force」
+   ——那会让测试在 force 未触发时静默通过。改为 `t.Fatalf` 暴露构造问题
+   （项目纪律：Skipf 是变异的隐身衣）。
+
+
+与 provider cache defaults，属尚未移植的 provider 模块。当前 `reclaimProfile()`
+由 `Profile.Billing`/`Cache` + `ContextWindow` 直接派生（语义等价于 TS 的
+缺省分支）。
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`
@@ -1330,8 +1397,8 @@ Loop.Run turn 边界 (loop.go:504)
 
 1. ~~**reclaim gate**——`buildReclaimDecision` + `estimateReclaim`~~ **已完成
    （2026-09-20）**，见下方「reclaim gate」节。
-2. **缓存顾问延迟**——`cacheAdvisor.shouldDelayCompact(tier, {...})`。热缓存时
-   推迟压缩（1M 余量 > 前缀重建成本），force 动作不受此限。
+2. ~~**缓存顾问延迟**——`cacheAdvisor.shouldDelayCompact(tier, {...})`~~ **已完成
+   （2026-09-20）**，见下方「缓存顾问延迟」节。
 3. **LLM 重写路径**——`partial-llm` / `full-llm` / `checkpoint`，需 `summaryClient`
    抽象（要真调模型做摘要）。这是四块里最大的。
 4. **session split**——86% 时主动切分会话（`preUserMessageSplit`）。

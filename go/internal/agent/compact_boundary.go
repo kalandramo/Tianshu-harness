@@ -2,6 +2,7 @@ package agent
 
 import (
 	"github.com/kalandramo/tianshu/go/internal/api/wire"
+	"github.com/kalandramo/tianshu/go/internal/cache"
 	"github.com/kalandramo/tianshu/go/internal/compact"
 	"github.com/kalandramo/tianshu/go/internal/context"
 	"github.com/kalandramo/tianshu/go/internal/session"
@@ -49,6 +50,13 @@ type CompactBoundary struct {
 	// 对账 TS 的 `onReclaimDecision` 回调——**提交与拒绝都记录**，让
 	// 「压了但没回收」在离线可见，而非伪装成一次成功的压缩。
 	LastReclaimDecision *compact.ReclaimDecisionRecord
+	// Advisor 是缓存顾问（nil = 不做延迟判定）。
+	//
+	// 对账 TS 的 `deps.cacheAdvisor?.shouldDelayCompact(...)`——**可选依赖**，
+	// nil 时跳过延迟检查（与 TS 的可选链一致）。
+	Advisor *cache.Advisor
+	// LastDelayed 报告最近一次是否因缓存保护而推迟。
+	LastDelayed bool
 	// LastReclaimed 是最近一次实际回收的消息数。
 	LastReclaimed int
 }
@@ -133,6 +141,26 @@ func (b *CompactBoundary) MaybeCompact(messages []session.OaiMessage, turn int) 
 	//
 	// **force 优先于熔断器**的语义同样在决策层实现（ceiling 分支在 breaker
 	// 分支之前）——超窗口请求是硬 API 失败，不该被熔断器拦住。
+
+	// ── 缓存顾问延迟：热缓存 + 低压力时推迟压缩 ──
+	//
+	// 对账 TS `compaction-controller.ts:550` 的 `shouldDelayCompact` 接线。
+	// **检查在 reclaim gate 之前**（TS 顺序）：延迟判定挡住的候选**根本不产出**，
+	// 省掉一次无谓的压缩计算。
+	//
+	// `decision.Force` 绕过（TS 的 `!actionDecision.force && ...`）——硬天花板
+	// 时余量比缓存保护重要（1M 下 OOM 风险 > 重建成本）。
+	if b.Advisor != nil && !decision.Force {
+		ctx := &cache.PressureContext{
+			EstimatedTokens: estimated,
+			ContextWindow:   b.ContextWindow,
+		}
+		if b.Advisor.ShouldDelayCompact(int(decision.Tier), ctx) {
+			b.LastDelayed = true
+			return messages, false
+		}
+	}
+	b.LastDelayed = false
 
 	result := compact.MicroCompactOai(messages, b.ContextWindow, estimated)
 
