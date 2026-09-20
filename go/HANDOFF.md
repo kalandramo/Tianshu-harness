@@ -546,6 +546,12 @@ session split 是**主动**护栏：86% 时把历史替换为结构化 handoff�
 4. **测试断言的坑**：`TestHandoffTrajectoryCapped` 首版用全局 `strings.Count` 数
    `toolX`，得 20 条（第 6 章「已完成工作」也含它）——**误判成实现 bug**，实际
    第 8 章恰好 12 条。修正为只数章节内。
+5. **失败行漏了 summary 段**（**交付门禁的 YELLOW 提示抓到的**）：TS 的错误行是
+   `- [Turn N] failed: <tool> <target>: <summary> (<errorClass>)`，首版只输出
+   `... <target> (<errorClass>)`——**handoff 文本与 TS 不等价**。
+   该漏项的来源正是 `resultSummary` 字段「无读取方」的警告——**提示是对的，
+   不是噪音**。修法：补 `: <summary>` 段，回退文案 `${tool} in ${target} failed`
+   （对账 `compaction-controller.ts:671`）。三条新测试锁定格式。
 
 #### 已知差异（有意）
 

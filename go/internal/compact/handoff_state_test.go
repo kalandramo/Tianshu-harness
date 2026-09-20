@@ -58,13 +58,51 @@ func TestHandoffWithStateIncludesTaskState(t *testing.T) {
 }
 
 // TestHandoffWithStateIncludesFailureSection —— 失败记录必须出现在 handoff。
+//
+// **首版漏了 summary 段**（`- [Turn N] failed: <tool> <target>: <summary> (<ec>)`），
+// 只输出了 `... <target> (<ec>)`——handoff 文本与 TS 不等价。这条锁定完整格式。
 func TestHandoffWithStateIncludesFailureSection(t *testing.T) {
 	rec := NewTrajectoryRecorder(10)
-	rec.Record(TrajectoryEntry{Turn: 1, Tool: "run_tests", Target: "x.test.ts", Status: TrajectoryFailed, ErrorClass: "assert"})
+	rec.Record(TrajectoryEntry{
+		Turn: 1, Tool: "run_tests", Target: "x.test.ts",
+		Status: TrajectoryFailed, ErrorClass: "assert", ResultSummary: "expected 3 got 2",
+	})
 
 	got := BuildSessionHandoffWithState([]session.OaiMessage{msg("user", "hi")}, 0.9, rec, nil, "")
-	if !strings.Contains(got, "run_tests") || !strings.Contains(got, "assert") {
-		t.Errorf("handoff 应含失败记录（run_tests/assert），实得：\n%s", got)
+	// 对账 TS compaction-controller.ts:229 的逐字格式。
+	want := "- [Turn 1] failed: run_tests x.test.ts: expected 3 got 2 (assert)"
+	if !strings.Contains(got, want) {
+		t.Errorf("失败行格式不符：\n期望含 %q\n实得：\n%s", want, got)
+	}
+}
+
+// TestHandoffFailureSummaryFallback —— resultSummary 为空时用 TS 的回退文案。
+func TestHandoffFailureSummaryFallback(t *testing.T) {
+	rec := NewTrajectoryRecorder(10)
+	rec.Record(TrajectoryEntry{
+		Turn: 2, Tool: "bash", Target: "cmd.sh",
+		Status: TrajectoryFailed, ErrorClass: "timeout", ResultSummary: "",
+	})
+
+	got := BuildSessionHandoffWithState([]session.OaiMessage{msg("user", "hi")}, 0.9, rec, nil, "")
+	// 对账 TS：`${tool} in ${target} failed`
+	want := "- [Turn 2] failed: bash cmd.sh: bash in cmd.sh failed (timeout)"
+	if !strings.Contains(got, want) {
+		t.Errorf("回退文案不符：\n期望含 %q\n实得：\n%s", want, got)
+	}
+}
+
+// TestHandoffFailureErrorClassFallback —— errorClass 为空时用 "unknown"。
+func TestHandoffFailureErrorClassFallback(t *testing.T) {
+	rec := NewTrajectoryRecorder(10)
+	rec.Record(TrajectoryEntry{
+		Turn: 3, Tool: "x", Target: "y",
+		Status: TrajectoryFailed, ResultSummary: "boom",
+	})
+
+	got := BuildSessionHandoffWithState([]session.OaiMessage{msg("user", "hi")}, 0.9, rec, nil, "")
+	if !strings.Contains(got, "(unknown)") {
+		t.Errorf("errorClass 应回退为 unknown，实得：\n%s", got)
 	}
 }
 

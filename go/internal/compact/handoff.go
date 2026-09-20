@@ -156,7 +156,17 @@ func BuildSessionHandoffWithState(
 			if ec == "" {
 				ec = "unknown"
 			}
-			b.WriteString("- [Turn " + strconv.Itoa(f.Turn) + "] failed: " + f.Tool + " " + f.Target + " (" + ec + ")\n")
+			// 对账 TS（compaction-controller.ts:229）：
+			//   `- [Turn ${turn}] failed: ${tool} ${target}: ${summary} (${errorClass})`
+			// 其中 summary 的回退是 `${tool} in ${target} failed`
+			// （compaction-controller.ts:671）——**首版漏了这段**，会让 handoff
+			// 文本与 TS 不等价（`resultSummary` 无其他消费方，正是该漏项的来源）。
+			summary := f.ResultSummary
+			if summary == "" {
+				summary = f.Tool + " in " + f.Target + " failed"
+			}
+			b.WriteString("- [Turn " + strconv.Itoa(f.Turn) + "] failed: " + f.Tool + " " + f.Target +
+				": " + summary + " (" + ec + ")\n")
 		}
 	} else {
 		b.WriteString("（无错误）\n")
