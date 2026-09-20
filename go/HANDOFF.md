@@ -577,6 +577,60 @@ session split 是**主动**护栏：86% 时把历史替换为结构化 handoff�
 
 ---
 
+### CheckpointDeps.Preflight（2026-09-20，回主线第七刀）
+
+**目标**：移植 `runResumePreflightOai`——历史替换后可能出现**孤儿 tool_call**
+（`tool_calls` 无对应 `tool_result`），供应商会以
+"insufficient tool messages following tool_calls" 拒绝下一次请求。
+
+#### 两个新文件
+
+| 文件 | 对账 TS | 内容 |
+|------|---------|------|
+| `internal/context/writeevidence.go` | `src/context/write-evidence-probe.ts` | `WriteRecoveryMarker` / `FormatWriteRecoveryContent` / `ExtractTargetPath` / `CountPriorRecoveries` / `CreateWriteEvidenceProbe` |
+| `internal/context/resumepreflight.go` | `src/context/resume-preflight.ts` | `RunResumePreflightOai` / `isToolAdjacencyCleanOai` / `ResumePreflightReport` |
+
+接线：`cmd/tianshu/main.go` 的 `loop.CheckpointDeps.Preflight`（含
+`CreateWriteEvidenceProbe(cwd)`）。
+
+#### 与既有 `session.RepairOrphanToolCalls` 的区别（**关键**）
+
+| | 策略 |
+|---|---|
+| `session.RepairOrphanToolCalls` | **剔除**孤儿（丢弃 tool_call / tool_result） |
+| 本函数（`RunResumePreflightOai`） | **拉回 + 合成**：从历史任意位置拉回匹配结果；仅当根本不存在时才合成占位 |
+
+后者更接近供应商的真实要求（**邻接**，不只是 id 存在）。TS 注释明确：
+「id 存在性检查（`detectOrphanToolCallsOai`）必要但不充分」——一个结果可能
+**存在**却位于中间的 user/assistant 之后（迟到的 addToolResults），有匹配 id
+但邻接破坏。
+
+#### 本刀发现的**真实 bug**（非本刀引入）
+
+`session.NormalizeOaiMessage` 的条件是 `m.ToolCalls == nil`——**漏掉了从
+JSON 读回的空数组**。实测（探针验证）：`json.Unmarshal` 对 `"tool_calls": []`
+产出 **非 nil 空切片**（`nil=false len=0`），而那恰恰是该函数存在的理由
+（「空数组可能残留在旧会话文件里」）。
+
+**修法**：条件改为 `len(m.ToolCalls) == 0 && m.ToolCalls != nil`（nil 时提前
+返回以保持「无改动返回原消息」契约）。同时 `sameMessages` 的 nil vs 空切片
+差异必须算「不同」——否则 `Repaired` 漏报。
+
+#### 验证
+
+- `resumepreflight_test.go` 20 条（邻接判定 6 + 修复路径 6 + 文案分支 5 + 探测 3）
+- `preflight_wiring_test.go` 3 条（接线：preflight 作用于**候选**而非原文）
+- **变异反证**：M6（漏检缺失结果）→ 1 条红；M7（丢弃而非拉回）→ 2 条红
+- 全量 go test 连跑 3 次，22 包 0 FAIL
+
+#### 仍未做
+
+- `CheckpointDeps` 另两个增强：`ArchiveDiscarded`（需 `serializeMessagesForArchive`）、
+  `TaskAnchor`（需 `getActiveContract` + `renderTaskAnchor`）
+- `promptEngine.resetAppendixBaseline`、`recordCompactEvent`
+
+---
+
 ### replaceWithCheckpoint（2026-09-20，回主线第六刀）——**验收面转 met**
 
 **目标**：session split 执行层的最后一块。做完后自 `1b3a552` 起一直 blocked

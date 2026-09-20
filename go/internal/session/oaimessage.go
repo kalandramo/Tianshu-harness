@@ -59,8 +59,21 @@ var WriteToolNames = map[string]bool{
 // 空数组可能残留在旧会话文件里，故移除它（不修改调用方的对象）。
 //
 // 返回归一化后的消息与「是否发生了改动」。
+//
+// ⚠️ **必须同时覆盖 nil 与非 nil 空切片**（`len == 0` 判据）：从会话文件
+// 反序列化 `"tool_calls": []` 得到的是**非 nil 空切片**（实测
+// `json.Unmarshal` 对 `[]` 产出 `nil=false len=0`）。首版条件写作
+// `m.ToolCalls == nil` 会**漏掉从 JSON 读回的空数组**——而那恰恰是本函数
+// 存在的理由（「空数组可能残留在旧会话文件里」）。
 func NormalizeOaiMessage(m OaiMessage) (OaiMessage, bool) {
-	if m.Role != "assistant" || m.ToolCalls == nil || len(m.ToolCalls) > 0 {
+	if m.Role != "assistant" || len(m.ToolCalls) > 0 {
+		return m, false
+	}
+	// len == 0：nil 与空切片都要清除。
+	// **注意**：nil 时也走这里（`out.ToolCalls = nil` 是幂等的），
+	// 故 `changed` 对 nil 输入会是 true——为保持「无改动返回原消息」的
+	// 契约，nil 情况提前返回。
+	if m.ToolCalls == nil {
 		return m, false
 	}
 	// 移除空 tool_calls 数组；content 为 nil 时补空串

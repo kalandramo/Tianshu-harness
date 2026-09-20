@@ -203,6 +203,24 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 		fmt.Fprintf(os.Stderr, "已回收 %d 个过期 artifact 会话目录\n", cleaned)
 	}
 
+	// ── checkpoint preflight 装配 ──
+	//
+	// 对账 TS `deps.writeProbe` + `runResumePreflightOai`（`compaction-controller.ts:965`
+	// 的 `safeReplaceMessages`）。历史替换后可能出现**孤儿 tool_call**
+	// （`tool_calls` 无对应 `tool_result`）——供应商会以
+	// "insufficient tool messages following tool_calls" 拒绝下一次请求。
+	//
+	// 写类工具的孤儿由**磁盘证据**判定（文件在不在、多大）——避免模型误判
+	// 「写工具坏了」而弃用它们改用 bash 绕过。
+	writeProbe := ctxstore.CreateWriteEvidenceProbe(app.Agent.Cwd)
+	loop.CheckpointDeps.Preflight = func(msgs []session.OaiMessage) []session.OaiMessage {
+		report := ctxstore.RunResumePreflightOai(msgs, writeProbe)
+		if report.Repaired && report.SyntheticResultsInserted > 0 {
+			fmt.Fprintf(os.Stderr, "会话恢复预检：合成 %d 条缺失的工具结果\n", report.SyntheticResultsInserted)
+		}
+		return report.Messages
+	}
+
 	// ── CVM 装配：hook 管线 + 劝导总线 + claim store ──
 	//
 	// **为什么必须在 CLI 装**：hook 与 advisory 的逻辑再完备，不在这里装配
