@@ -570,9 +570,81 @@ session split 是**主动**护栏：86% 时把历史替换为结构化 handoff�
 
 #### 仍未做
 
-- **执行层** `replaceWithCheckpoint`（历史替换）——仍缺 **artifact store**
-  （task-state / trajectory 本刀已补，artifact store 未动）
+- **执行层** `replaceWithCheckpoint`（历史替换）——前置（task-state / trajectory
+  / **artifact store**）已全部补齐，**下一刀可做**
 - `Advisor.onTurnEnd`、`resolveCompactionEconomics` 装配层、LLM 重写路径
+
+
+---
+
+### artifact store（2026-09-20，回主线第五刀）
+
+**目标**：补齐 session split 执行层的最后一块前置，同时消掉
+`context_collapse.go` 里「Go 侧当前无 artifact 生产端」的已记录欠账。
+
+#### 新包 `internal/artifact`
+
+| 文件 | 对账 TS | 关键导出 |
+|------|---------|----------|
+| `types.go` | `src/artifact/types.ts` | `Artifact` / `ArtifactSection` / `ArtifactRef` / `FormatArtifactRef` |
+| `store.go` | `src/artifact/store.ts` | `Store`（`Save`/`Get`/`ReadRaw`/`ReadLines`/`ReadLineRange`/`AddFallbackSession`/`ForSession`）、`CleanupOldSessions`、`CorruptionError` |
+| `threshold.go` | `constants.ts` 的 `pruneThresholds` + `artifact-threshold.ts` | `PruneThresholdsFor` / `ToolArtifactThreshold` |
+
+#### 生产端接线（三处）
+
+1. **L1 拦截**（`internal/agent/artifact_intercept.go`）：`executeTool` 里调
+   `interceptResultForArtifact`——超阈值的大结果落盘，历史只留
+   `[artifact:ID] ... Use read_section(...)`。**在 recordTrajectory 之前**，
+   保证轨迹看到最终形态。
+2. **read_section 工具**（`internal/tools/readsection.go`）：按行/字符范围取回。
+   已注册进 `default_registry.go`。
+3. **CLI 装配**（`cmd/tianshu/main.go`）：`loop.Artifacts = NewStore(join(cwd,
+   ".rivet", "artifacts"), sessionId)` + 启动时 `CleanupOldSessions`。
+   对账 TS `loop.ts:846` 与 `bootstrap.ts:2131`。
+
+**端到端已验证**：大结果 → 拦截落盘 → 取 id → read_section 按区段取回原文。
+`artifact_e2e_test.go` 两条测试锁定（含「落盘必须是原文，不是摘要」——变异 M3
+模拟 double-save 事故时两条都红）。
+
+#### 关键约束（L0 vs L1，TS 记录的真实事故）
+
+**`l0WrappedTools`（read_file / read_section / grep / bash）不得被 L1 重复包装**：
+1. 会造成无限嵌套 `[artifact:新ID] → read_section(新ID) → ...`（tianshu v4 pro
+   2026-05-25 事故复盘）
+2. grep/bash 的 L0 标记在**尾部**，早期 L1 只查 `startsWith` 漏掉它 → 把已截断
+   的字符串又存一遍（double-save）
+
+**Go 侧现状**：工具尚无 L0 包装，故该集合当前不命中——保留是**契约完整性**。
+
+#### 本刀踩到的坑（两条，都是我的测试构造错误）
+
+1. **cleanup 测试用了固定的过去时间戳** → 所有目录都判为超 TTL，删了 51 个而非
+   预期值。TTL 是相对 `time.Now()` 的，测试必须给相对当前的时间。
+2. **cleanup 期望值算错**：52 个目录排除 active 后是 51 个候选，`51-cleaned > 50`
+   只删 1 个——首版写 2 是漏了「active 被排除」这一步。
+
+#### 已知未做（记入下一刀）
+
+- **`summarize.go`**（`src/artifact/summarize.ts`，407 行）：按文件扩展名提取
+  `sections`。**当前保存时 `sections` 恒为空**（对账 TS 的实际调用
+  `tool-pipeline.ts:607` 也传 `[]`）——只影响 read_section 的「片段名」提示质量，
+  不影响取回功能。
+- **read_section 的 `file_path` 分支**：依赖 `getFileReadMtime`（陈旧性告警）与
+  `computeModelReadCap`（按窗口/提供商算读上限），两者未移植。
+  **当前 `readSectionMaxChars` 用 `ToolArtifactThreshold("read_file", ...)` 近似**
+  ——移植 `computeModelReadCap` 后应替换。
+- **`compact-history` 快速路径**（`read_section` 对归档的流式读取 + recall 标记）：
+  依赖 `recall-marker.ts`。
+- **budget 感知的阈值缩放**（TS `remainingBudgetFraction > 0.5` 时阈值 ×3）：
+  只接了窗口 floor（TS 注释里的「L1 层」核心）。
+- **`generateArtifactSummary` 是核心分支子集**：TS 按工具分派十余 case，Go 侧
+  实现了 read_file / grep / bash / run_tests / glob + 通用兜底。
+
+#### 悬空标注（诚实披露）
+
+`FormatArtifactRef` / `ArtifactRef` **在 TS 与 Go 两侧都无生产调用方**
+（grep 确认）——TS 的实际包装文案由 `tool-pipeline.ts` 内联拼接。Go 侧保持
+忠实移植并在 `types.go` 注释里明示「不要把它当成引用格式的唯一来源」。
 
 
 #### oracle 生成器的两处坑（都在生成阶段被 oracle 自己暴露）

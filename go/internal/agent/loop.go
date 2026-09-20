@@ -19,6 +19,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/api"
 	"github.com/kalandramo/tianshu/go/internal/api/sse"
 	"github.com/kalandramo/tianshu/go/internal/api/wire"
+	"github.com/kalandramo/tianshu/go/internal/artifact"
 	"github.com/kalandramo/tianshu/go/internal/client"
 	"github.com/kalandramo/tianshu/go/internal/compact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
@@ -146,6 +147,14 @@ type Loop struct {
 	//
 	// nil 时视为空串（决策章节为空）。
 	StreamedText func() string
+
+	// Artifacts 是 artifact 存储（大工具结果的落盘与召回）。
+	//
+	// 对账 TS 的 `this.artifactStore`（`loop.ts:847` 的
+	// `new ArtifactStore(join(cwd, '.rivet', 'artifacts'), sessionId)`）。
+	//
+	// nil 时跳过 L1 拦截与 read_section 召回（增强而非必需）。
+	Artifacts *artifact.Store
 
 	// Advisories 是劝导总线（hook 投递 → 渲染 → 注入 prompt）。
 	//
@@ -572,6 +581,9 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 		Cwd:          l.cfg.Cwd,
 		ApprovalMode: l.cfg.ApprovalMode,
 		SessionID:    l.cfg.SessionID,
+		// artifact 存储注入 read_section（召回路径）。
+		ArtifactStore: l.Artifacts,
+		ContextWindow: l.artifactContextWindow(),
 	}
 	if l.ToolParams != nil {
 		// 继承注入依赖（OnFileWrite 等）
@@ -587,6 +599,12 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 			IsError: true,
 		}
 	}
+	// ── L1 artifact 拦截（大结果落盘，历史只留引用）──
+	//
+	// 对账 TS tool-pipeline 的 L1 层。**时机**：工具结果出来后、
+	// 记录轨迹与观察之前——保证轨迹与后续消费看到的是**最终形态**。
+	result = l.interceptResultForArtifact(tc, result)
+
 	// ── 轨迹记录（对账 TS turn-harness.ts:83 的 trajectory.record）──
 	//
 	// **时机**：结果出来后立即记——包括失败（失败轨迹是 handoff

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kalandramo/tianshu/go/internal/artifact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
 )
 
@@ -64,6 +65,15 @@ type CallParams struct {
 	SessionModifiedFiles []string
 	// AbortSignal 在工具级超时触发时取消。
 	AbortSignal context.Context
+	// ArtifactStore 是 artifact 存储（read_section 用）。
+	//
+	// 对账 TS 的 `params.artifactStore`（read-section.ts）。
+	// nil 时 read_section 报「未配置 artifactStore」——与 TS 一致。
+	//
+	// **依赖方向**：`tools → artifact`（artifact 不依赖 tools，无环）。
+	ArtifactStore *artifact.Store
+	// ContextWindow 是当前上下文窗口（read_section 的截断上限按它缩放）。
+	ContextWindow int
 }
 
 // Registry 是工具注册表。

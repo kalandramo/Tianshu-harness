@@ -28,6 +28,7 @@ import (
 
 	"github.com/kalandramo/tianshu/go/internal/agent"
 	"github.com/kalandramo/tianshu/go/internal/api"
+	"github.com/kalandramo/tianshu/go/internal/artifact"
 	"github.com/kalandramo/tianshu/go/internal/client"
 	ctxstore "github.com/kalandramo/tianshu/go/internal/context"
 	"github.com/kalandramo/tianshu/go/internal/prompt"
@@ -184,6 +185,23 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 		app.Agent.SessionID = session.NewID()
 	}
 	loop := agent.New(app.Agent, cl, reg)
+
+	// ── artifact store 装配 ──
+	//
+	// 对账 TS `loop.ts:846-847`：
+	//   `new ArtifactStore(join(cwd, '.rivet', 'artifacts'), sessionId)`
+	//
+	// **为什么必须在 CLI 装**：大工具结果的落盘与召回（read_section）走的是
+	// 这条真实会话路径。不装的话 `context_collapse.go` 里的 artifact 分支
+	// 永远不触发（那是已记录的架构欠账）。
+	//
+	// 顺带回收超期会话目录（对账 TS `bootstrap.ts:2131` 的
+	// `cleanupOldArtifactSessions`）——失败不影响会话（只回收磁盘）。
+	artifactDir := filepath.Join(app.Agent.Cwd, ".rivet", "artifacts")
+	loop.Artifacts = artifact.NewStore(artifactDir, app.Agent.SessionID, artifact.Options{})
+	if cleaned := artifact.CleanupOldSessions(artifactDir, app.Agent.SessionID); cleaned > 0 {
+		fmt.Fprintf(os.Stderr, "已回收 %d 个过期 artifact 会话目录\n", cleaned)
+	}
 
 	// ── CVM 装配：hook 管线 + 劝导总线 + claim store ──
 	//
