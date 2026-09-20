@@ -1,0 +1,1388 @@
+{
+  "_note": "{input, output} 数据驱动形态——Go 测试直接重放，零硬编码输入",
+  "trajectory": {
+    "empty": {
+      "input": {
+        "entries": []
+      },
+      "output": {
+        "entries": [],
+        "summarize": {
+          "totalTools": 0,
+          "failures": 0,
+          "retries": 0,
+          "avgDurationMs": 0
+        },
+        "exportJson": "[]"
+      }
+    },
+    "single_success": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "read_file",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ]
+      },
+      "output": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "read_file",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ],
+        "summarize": {
+          "totalTools": 1,
+          "failures": 0,
+          "retries": 0,
+          "avgDurationMs": 10
+        },
+        "exportJson": "[{\"turn\":0,\"tool\":\"read_file\",\"target\":\"src/a.ts\",\"durationMs\":10,\"status\":\"success\",\"inputSummary\":\"{}\",\"resultSummary\":\"ok\"}]"
+      }
+    },
+    "mixed_statuses": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "read_file",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 1,
+            "tool": "bash",
+            "target": "src/a.ts",
+            "durationMs": 20,
+            "status": "failed",
+            "inputSummary": "{}",
+            "resultSummary": "ok",
+            "errorClass": "timeout"
+          },
+          {
+            "turn": 2,
+            "tool": "bash",
+            "target": "src/a.ts",
+            "durationMs": 30,
+            "status": "retried-success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 3,
+            "tool": "run_tests",
+            "target": "src/a.ts",
+            "durationMs": 40,
+            "status": "retried-failed",
+            "inputSummary": "{}",
+            "resultSummary": "ok",
+            "errorClass": "assert"
+          }
+        ]
+      },
+      "output": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "read_file",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 1,
+            "tool": "bash",
+            "target": "src/a.ts",
+            "durationMs": 20,
+            "status": "failed",
+            "inputSummary": "{}",
+            "resultSummary": "ok",
+            "errorClass": "timeout"
+          },
+          {
+            "turn": 2,
+            "tool": "bash",
+            "target": "src/a.ts",
+            "durationMs": 30,
+            "status": "retried-success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 3,
+            "tool": "run_tests",
+            "target": "src/a.ts",
+            "durationMs": 40,
+            "status": "retried-failed",
+            "inputSummary": "{}",
+            "resultSummary": "ok",
+            "errorClass": "assert"
+          }
+        ],
+        "summarize": {
+          "totalTools": 4,
+          "failures": 2,
+          "retries": 2,
+          "avgDurationMs": 25
+        },
+        "exportJson": "[{\"turn\":0,\"tool\":\"read_file\",\"target\":\"src/a.ts\",\"durationMs\":10,\"status\":\"success\",\"inputSummary\":\"{}\",\"resultSummary\":\"ok\"},{\"turn\":1,\"tool\":\"bash\",\"target\":\"src/a.ts\",\"durationMs\":20,\"status\":\"failed\",\"inputSummary\":\"{}\",\"resultSummary\":\"ok\",\"errorClass\":\"timeout\"},{\"turn\":2,\"tool\":\"bash\",\"target\":\"src/a.ts\",\"durationMs\":30,\"status\":\"retried-success\",\"inputSummary\":\"{}\",\"resultSummary\":\"ok\"},{\"turn\":3,\"tool\":\"run_tests\",\"target\":\"src/a.ts\",\"durationMs\":40,\"status\":\"retried-failed\",\"inputSummary\":\"{}\",\"resultSummary\":\"ok\",\"errorClass\":\"assert\"}]"
+      }
+    },
+    "truncation_keeps_tail": {
+      "input": {
+        "maxEntries": 3,
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "t0",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 1,
+            "tool": "t1",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 2,
+            "tool": "t2",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 3,
+            "tool": "t3",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 4,
+            "tool": "t4",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ]
+      },
+      "output": {
+        "entries": [
+          {
+            "turn": 2,
+            "tool": "t2",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 3,
+            "tool": "t3",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 4,
+            "tool": "t4",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ],
+        "summarize": {
+          "totalTools": 3,
+          "failures": 0,
+          "retries": 0,
+          "avgDurationMs": 10
+        },
+        "exportJson": "[{\"turn\":2,\"tool\":\"t2\",\"target\":\"src/a.ts\",\"durationMs\":10,\"status\":\"success\",\"inputSummary\":\"{}\",\"resultSummary\":\"ok\"},{\"turn\":3,\"tool\":\"t3\",\"target\":\"src/a.ts\",\"durationMs\":10,\"status\":\"success\",\"inputSummary\":\"{}\",\"resultSummary\":\"ok\"},{\"turn\":4,\"tool\":\"t4\",\"target\":\"src/a.ts\",\"durationMs\":10,\"status\":\"success\",\"inputSummary\":\"{}\",\"resultSummary\":\"ok\"}]"
+      }
+    },
+    "truncation_exact_limit": {
+      "input": {
+        "maxEntries": 3,
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "t0",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 0,
+            "tool": "t1",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 0,
+            "tool": "t2",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ]
+      },
+      "output": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "t0",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 0,
+            "tool": "t1",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 0,
+            "tool": "t2",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ],
+        "summarize": {
+          "totalTools": 3,
+          "failures": 0,
+          "retries": 0,
+          "avgDurationMs": 10
+        },
+        "exportJson": "[{\"turn\":0,\"tool\":\"t0\",\"target\":\"src/a.ts\",\"durationMs\":10,\"status\":\"success\",\"inputSummary\":\"{}\",\"resultSummary\":\"ok\"},{\"turn\":0,\"tool\":\"t1\",\"target\":\"src/a.ts\",\"durationMs\":10,\"status\":\"success\",\"inputSummary\":\"{}\",\"resultSummary\":\"ok\"},{\"turn\":0,\"tool\":\"t2\",\"target\":\"src/a.ts\",\"durationMs\":10,\"status\":\"success\",\"inputSummary\":\"{}\",\"resultSummary\":\"ok\"}]"
+      }
+    },
+    "avg_rounding": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "read_file",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 0,
+            "tool": "read_file",
+            "target": "src/a.ts",
+            "durationMs": 21,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 0,
+            "tool": "read_file",
+            "target": "src/a.ts",
+            "durationMs": 32,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ]
+      },
+      "output": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "read_file",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 0,
+            "tool": "read_file",
+            "target": "src/a.ts",
+            "durationMs": 21,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 0,
+            "tool": "read_file",
+            "target": "src/a.ts",
+            "durationMs": 32,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ],
+        "summarize": {
+          "totalTools": 3,
+          "failures": 0,
+          "retries": 0,
+          "avgDurationMs": 21
+        },
+        "exportJson": "[{\"turn\":0,\"tool\":\"read_file\",\"target\":\"src/a.ts\",\"durationMs\":10,\"status\":\"success\",\"inputSummary\":\"{}\",\"resultSummary\":\"ok\"},{\"turn\":0,\"tool\":\"read_file\",\"target\":\"src/a.ts\",\"durationMs\":21,\"status\":\"success\",\"inputSummary\":\"{}\",\"resultSummary\":\"ok\"},{\"turn\":0,\"tool\":\"read_file\",\"target\":\"src/a.ts\",\"durationMs\":32,\"status\":\"success\",\"inputSummary\":\"{}\",\"resultSummary\":\"ok\"}]"
+      }
+    },
+    "after_reset": {
+      "input": {
+        "maxEntries": 10,
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "read_file",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ]
+      },
+      "output": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "read_file",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ],
+        "summarize": {
+          "totalTools": 1,
+          "failures": 0,
+          "retries": 0,
+          "avgDurationMs": 10
+        },
+        "exportJson": "[{\"turn\":0,\"tool\":\"read_file\",\"target\":\"src/a.ts\",\"durationMs\":10,\"status\":\"success\",\"inputSummary\":\"{}\",\"resultSummary\":\"ok\"}]",
+        "afterReset": {
+          "entries": [],
+          "summarize": {
+            "totalTools": 0,
+            "failures": 0,
+            "retries": 0,
+            "avgDurationMs": 0
+          },
+          "exportJson": "[]"
+        }
+      }
+    }
+  },
+  "deps": {
+    "empty": {
+      "input": {
+        "todos": []
+      },
+      "output": {
+        "deps": [],
+        "maxDepth": 0,
+        "findExecutable": [],
+        "orderPending": []
+      }
+    },
+    "structured_ids": {
+      "input": {
+        "todos": [
+          {
+            "id": "T1",
+            "content": "搭建骨架",
+            "status": "completed"
+          },
+          {
+            "id": "T2",
+            "content": "基于 T1 实现核心",
+            "status": "pending"
+          },
+          {
+            "id": "T3",
+            "content": "收尾",
+            "status": "pending"
+          }
+        ]
+      },
+      "output": {
+        "deps": [
+          {
+            "id": "T1",
+            "dependsOn": []
+          },
+          {
+            "id": "T2",
+            "dependsOn": [
+              "T1"
+            ]
+          },
+          {
+            "id": "T3",
+            "dependsOn": []
+          }
+        ],
+        "maxDepth": 1,
+        "findExecutable": [
+          "T2",
+          "T3"
+        ],
+        "orderPending": [
+          "T2",
+          "T3"
+        ]
+      }
+    },
+    "structured_id_prefix_trap": {
+      "input": {
+        "todos": [
+          {
+            "id": "T1",
+            "content": "基础",
+            "status": "completed"
+          },
+          {
+            "id": "T10",
+            "content": "独立任务",
+            "status": "pending"
+          },
+          {
+            "id": "T2",
+            "content": "基于 T1 的工作",
+            "status": "pending"
+          }
+        ]
+      },
+      "output": {
+        "deps": [
+          {
+            "id": "T1",
+            "dependsOn": []
+          },
+          {
+            "id": "T10",
+            "dependsOn": []
+          },
+          {
+            "id": "T2",
+            "dependsOn": [
+              "T1"
+            ]
+          }
+        ],
+        "maxDepth": 1,
+        "findExecutable": [
+          "T10",
+          "T2"
+        ],
+        "orderPending": [
+          "T10",
+          "T2"
+        ]
+      }
+    },
+    "bare_numeric_no_cue": {
+      "input": {
+        "todos": [
+          {
+            "id": "1",
+            "content": "第一项",
+            "status": "completed"
+          },
+          {
+            "id": "2",
+            "content": "还剩 1 个测试要写",
+            "status": "pending"
+          }
+        ]
+      },
+      "output": {
+        "deps": [
+          {
+            "id": "1",
+            "dependsOn": []
+          },
+          {
+            "id": "2",
+            "dependsOn": []
+          }
+        ],
+        "maxDepth": 0,
+        "findExecutable": [
+          "2"
+        ],
+        "orderPending": [
+          "2"
+        ]
+      }
+    },
+    "bare_numeric_with_cue": {
+      "input": {
+        "todos": [
+          {
+            "id": "1",
+            "content": "第一项",
+            "status": "completed"
+          },
+          {
+            "id": "2",
+            "content": "基于 1 继续",
+            "status": "pending"
+          }
+        ]
+      },
+      "output": {
+        "deps": [
+          {
+            "id": "1",
+            "dependsOn": []
+          },
+          {
+            "id": "2",
+            "dependsOn": [
+              "1"
+            ]
+          }
+        ],
+        "maxDepth": 1,
+        "findExecutable": [
+          "2"
+        ],
+        "orderPending": [
+          "2"
+        ]
+      }
+    },
+    "cycle": {
+      "input": {
+        "todos": [
+          {
+            "id": "A",
+            "content": "基于 B 做",
+            "status": "pending"
+          },
+          {
+            "id": "B",
+            "content": "基于 A 做",
+            "status": "pending"
+          }
+        ]
+      },
+      "output": {
+        "deps": [
+          {
+            "id": "A",
+            "dependsOn": [
+              "B"
+            ]
+          },
+          {
+            "id": "B",
+            "dependsOn": [
+              "A"
+            ]
+          }
+        ],
+        "maxDepth": "Infinity",
+        "findExecutable": [],
+        "orderPending": [
+          "A",
+          "B"
+        ]
+      }
+    },
+    "chain_depth_3": {
+      "input": {
+        "todos": [
+          {
+            "id": "A",
+            "content": "起点",
+            "status": "completed"
+          },
+          {
+            "id": "B",
+            "content": "基于 A",
+            "status": "pending"
+          },
+          {
+            "id": "C",
+            "content": "基于 B",
+            "status": "pending"
+          },
+          {
+            "id": "D",
+            "content": "基于 C",
+            "status": "pending"
+          }
+        ]
+      },
+      "output": {
+        "deps": [
+          {
+            "id": "A",
+            "dependsOn": []
+          },
+          {
+            "id": "B",
+            "dependsOn": [
+              "A"
+            ]
+          },
+          {
+            "id": "C",
+            "dependsOn": [
+              "B"
+            ]
+          },
+          {
+            "id": "D",
+            "dependsOn": [
+              "C"
+            ]
+          }
+        ],
+        "maxDepth": 3,
+        "findExecutable": [
+          "B"
+        ],
+        "orderPending": [
+          "B",
+          "C",
+          "D"
+        ]
+      }
+    },
+    "phantom_dependency_keeps_all": {
+      "input": {
+        "todos": [
+          {
+            "id": "X",
+            "content": "基于 T99 的伪依赖",
+            "status": "pending"
+          },
+          {
+            "id": "Y",
+            "content": "普通任务",
+            "status": "pending"
+          },
+          {
+            "id": "Z",
+            "content": "另一个普通任务",
+            "status": "pending"
+          }
+        ]
+      },
+      "output": {
+        "deps": [
+          {
+            "id": "X",
+            "dependsOn": []
+          },
+          {
+            "id": "Y",
+            "dependsOn": []
+          },
+          {
+            "id": "Z",
+            "dependsOn": []
+          }
+        ],
+        "maxDepth": 0,
+        "findExecutable": [
+          "X",
+          "Y",
+          "Z"
+        ],
+        "orderPending": [
+          "X",
+          "Y",
+          "Z"
+        ]
+      }
+    },
+    "english_cues": {
+      "input": {
+        "todos": [
+          {
+            "id": "T1",
+            "content": "base",
+            "status": "completed"
+          },
+          {
+            "id": "T2",
+            "content": "depends on T1 work",
+            "status": "pending"
+          }
+        ]
+      },
+      "output": {
+        "deps": [
+          {
+            "id": "T1",
+            "dependsOn": []
+          },
+          {
+            "id": "T2",
+            "dependsOn": [
+              "T1"
+            ]
+          }
+        ],
+        "maxDepth": 1,
+        "findExecutable": [
+          "T2"
+        ],
+        "orderPending": [
+          "T2"
+        ]
+      }
+    }
+  },
+  "taskState": {
+    "empty_entries": {
+      "input": {
+        "entries": [],
+        "text": "whatever"
+      },
+      "output": {
+        "completed": [],
+        "current": "starting",
+        "remaining": [],
+        "decisions": []
+      }
+    },
+    "success_only": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "read_file",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 1,
+            "tool": "edit_file",
+            "target": "src/b.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ],
+        "text": ""
+      },
+      "output": {
+        "completed": [
+          "read_file a.ts",
+          "edit_file b.ts"
+        ],
+        "current": "edit_file b.ts",
+        "remaining": [],
+        "decisions": []
+      }
+    },
+    "last_failed": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "read_file",
+            "target": "src/a.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 1,
+            "tool": "run_tests",
+            "target": "x/y.ts",
+            "durationMs": 10,
+            "status": "failed",
+            "inputSummary": "{}",
+            "resultSummary": "ok",
+            "errorClass": "assert"
+          }
+        ],
+        "text": ""
+      },
+      "output": {
+        "completed": [
+          "read_file a.ts"
+        ],
+        "current": "fixing assert in y.ts",
+        "remaining": [],
+        "decisions": []
+      }
+    },
+    "last_failed_no_errorclass": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "bash",
+            "target": "z.ts",
+            "durationMs": 10,
+            "status": "failed",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ],
+        "text": ""
+      },
+      "output": {
+        "completed": [],
+        "current": "fixing error in z.ts",
+        "remaining": [],
+        "decisions": []
+      }
+    },
+    "last_retried_failed": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "bash",
+            "target": "q.ts",
+            "durationMs": 10,
+            "status": "retried-failed",
+            "inputSummary": "{}",
+            "resultSummary": "ok",
+            "errorClass": "timeout"
+          }
+        ],
+        "text": ""
+      },
+      "output": {
+        "completed": [],
+        "current": "fixing timeout in q.ts",
+        "remaining": [],
+        "decisions": []
+      }
+    },
+    "completed_capped_at_5": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "t0",
+            "target": "f0.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 1,
+            "tool": "t1",
+            "target": "f1.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 2,
+            "tool": "t2",
+            "target": "f2.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 3,
+            "tool": "t3",
+            "target": "f3.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 4,
+            "tool": "t4",
+            "target": "f4.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 5,
+            "tool": "t5",
+            "target": "f5.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 6,
+            "tool": "t6",
+            "target": "f6.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ],
+        "text": ""
+      },
+      "output": {
+        "completed": [
+          "t2 f2.ts",
+          "t3 f3.ts",
+          "t4 f4.ts",
+          "t5 f5.ts",
+          "t6 f6.ts"
+        ],
+        "current": "t6 f6.ts",
+        "remaining": [],
+        "decisions": []
+      }
+    },
+    "retried_success_counts": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "a",
+            "target": "p/a.ts",
+            "durationMs": 10,
+            "status": "retried-success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          },
+          {
+            "turn": 1,
+            "tool": "b",
+            "target": "p/b.ts",
+            "durationMs": 10,
+            "status": "failed",
+            "inputSummary": "{}",
+            "resultSummary": "ok",
+            "errorClass": "x"
+          }
+        ],
+        "text": ""
+      },
+      "output": {
+        "completed": [
+          "a a.ts"
+        ],
+        "current": "fixing x in b.ts",
+        "remaining": [],
+        "decisions": []
+      }
+    },
+    "next_step_matches": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "t",
+            "target": "f.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ],
+        "text": "First done. 接下来做 A。然后做 B。Next I will do C. after that D."
+      },
+      "output": {
+        "completed": [
+          "t f.ts"
+        ],
+        "current": "t f.ts",
+        "remaining": [
+          "接下来做 A。",
+          "然后做 B。",
+          "Next I will do C."
+        ],
+        "decisions": []
+      }
+    },
+    "decision_matches": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "t",
+            "target": "f.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ],
+        "text": "I'll use the adapter pattern. decided to skip caching. approach: keep it simple."
+      },
+      "output": {
+        "completed": [
+          "t f.ts"
+        ],
+        "current": "t f.ts",
+        "remaining": [],
+        "decisions": [
+          "I'll use the adapter pattern.",
+          "decided to skip caching.",
+          "approach: keep it simple."
+        ]
+      }
+    },
+    "finding_matches": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "t",
+            "target": "f.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ],
+        "text": "found that the root cause is X. discovered a race. 发现原因是缓存失效。"
+      },
+      "output": {
+        "completed": [
+          "t f.ts"
+        ],
+        "current": "t f.ts",
+        "remaining": [],
+        "decisions": [
+          "found that the root cause is X.",
+          "discovered a race.",
+          "发现原因是缓存失效。"
+        ]
+      }
+    },
+    "no_regex_hits": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "t",
+            "target": "f.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ],
+        "text": "Nothing notable here. Just plain text without cues."
+      },
+      "output": {
+        "completed": [
+          "t f.ts"
+        ],
+        "current": "t f.ts",
+        "remaining": [],
+        "decisions": []
+      }
+    },
+    "target_without_slash": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "bash",
+            "target": "ls",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ],
+        "text": ""
+      },
+      "output": {
+        "completed": [
+          "bash ls"
+        ],
+        "current": "bash ls",
+        "remaining": [],
+        "decisions": []
+      }
+    },
+    "truncation_boundary_cjk": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "t",
+            "target": "f.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ],
+        "text": "接下来很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很。"
+      },
+      "output": {
+        "completed": [
+          "t f.ts"
+        ],
+        "current": "t f.ts",
+        "remaining": [
+          "接下来很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很很"
+        ],
+        "decisions": []
+      }
+    },
+    "truncation_boundary_decision": {
+      "input": {
+        "entries": [
+          {
+            "turn": 0,
+            "tool": "t",
+            "target": "f.ts",
+            "durationMs": 10,
+            "status": "success",
+            "inputSummary": "{}",
+            "resultSummary": "ok"
+          }
+        ],
+        "text": "approach: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx."
+      },
+      "output": {
+        "completed": [
+          "t f.ts"
+        ],
+        "current": "t f.ts",
+        "remaining": [],
+        "decisions": [
+          "approach: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        ]
+      }
+    }
+  },
+  "fromTodos": {
+    "empty": {
+      "input": {
+        "todos": [],
+        "decisions": []
+      },
+      "output": {
+        "completed": [],
+        "current": "working",
+        "remaining": [],
+        "decisions": []
+      }
+    },
+    "basic": {
+      "input": {
+        "todos": [
+          {
+            "id": "T1",
+            "content": "已完成项",
+            "status": "completed"
+          },
+          {
+            "id": "T2",
+            "content": "当前项",
+            "status": "in_progress"
+          },
+          {
+            "id": "T3",
+            "content": "待办 A",
+            "status": "pending"
+          },
+          {
+            "id": "T4",
+            "content": "待办 B",
+            "status": "pending"
+          }
+        ],
+        "decisions": [
+          "用 A 方案"
+        ]
+      },
+      "output": {
+        "completed": [
+          "已完成项"
+        ],
+        "current": "当前项",
+        "remaining": [
+          "待办 A",
+          "待办 B"
+        ],
+        "decisions": [
+          "用 A 方案"
+        ]
+      }
+    },
+    "no_in_progress_uses_ordered_first": {
+      "input": {
+        "todos": [
+          {
+            "id": "T1",
+            "content": "已完成",
+            "status": "completed"
+          },
+          {
+            "id": "T2",
+            "content": "待办一",
+            "status": "pending"
+          },
+          {
+            "id": "T3",
+            "content": "待办二",
+            "status": "pending"
+          }
+        ],
+        "decisions": []
+      },
+      "output": {
+        "completed": [
+          "已完成"
+        ],
+        "current": "待办一",
+        "remaining": [
+          "待办二"
+        ],
+        "decisions": []
+      }
+    },
+    "blocked_item_retained": {
+      "input": {
+        "todos": [
+          {
+            "id": "T1",
+            "content": "前置任务",
+            "status": "pending"
+          },
+          {
+            "id": "T2",
+            "content": "基于 T1 的后置",
+            "status": "pending"
+          },
+          {
+            "id": "T3",
+            "content": "独立任务",
+            "status": "pending"
+          }
+        ],
+        "decisions": []
+      },
+      "output": {
+        "completed": [],
+        "current": "前置任务",
+        "remaining": [
+          "独立任务",
+          "基于 T1 的后置"
+        ],
+        "decisions": []
+      }
+    },
+    "all_completed_fallback_working": {
+      "input": {
+        "todos": [
+          {
+            "id": "T1",
+            "content": "A",
+            "status": "completed"
+          },
+          {
+            "id": "T2",
+            "content": "B",
+            "status": "completed"
+          }
+        ],
+        "decisions": []
+      },
+      "output": {
+        "completed": [
+          "A",
+          "B"
+        ],
+        "current": "working",
+        "remaining": [],
+        "decisions": []
+      }
+    },
+    "pending_only": {
+      "input": {
+        "todos": [
+          {
+            "id": "T1",
+            "content": "唯一待办",
+            "status": "pending"
+          }
+        ],
+        "decisions": [
+          "d1",
+          "d2"
+        ]
+      },
+      "output": {
+        "completed": [],
+        "current": "唯一待办",
+        "remaining": [],
+        "decisions": [
+          "d1",
+          "d2"
+        ]
+      }
+    }
+  }
+}

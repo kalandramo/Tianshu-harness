@@ -28,7 +28,7 @@ func splitMsgs(tokens int) []session.OaiMessage {
 // 验证 split 判定在真实边界上生效：大窗口 + 高占用 → 触发，且产出候选 handoff。
 func TestCompactBoundary_TrySessionSplitTriggers(t *testing.T) {
 	b := NewCompactBoundary(1_000_000)
-	out := b.TrySessionSplit(splitMsgs(950_000))
+	out := b.TrySessionSplit(splitMsgs(950_000), nil)
 
 	if !out.SplitTriggered() {
 		t.Fatalf("95%% 占用 + 1M 窗口应触发 split（reason=%q ratio=%.3f）",
@@ -51,7 +51,7 @@ func TestCompactBoundary_TrySessionSplitTriggers(t *testing.T) {
 // 这条证明窗口门槛**不是**「比例够就行」。
 func TestCompactBoundary_TrySessionSplitWindowGate(t *testing.T) {
 	b := NewCompactBoundary(128_000)
-	out := b.TrySessionSplit(splitMsgs(200_000)) // ratio ≈ 1.56
+	out := b.TrySessionSplit(splitMsgs(200_000), nil) // ratio ≈ 1.56
 
 	if out.SplitTriggered() {
 		t.Errorf("小窗口不应 split（ratio=%.3f）", out.Decision.Ratio)
@@ -67,7 +67,7 @@ func TestCompactBoundary_TrySessionSplitWindowGate(t *testing.T) {
 // TestCompactBoundary_TrySessionSplitRatioGate —— 比例门槛。
 func TestCompactBoundary_TrySessionSplitRatioGate(t *testing.T) {
 	b := NewCompactBoundary(1_000_000)
-	out := b.TrySessionSplit(splitMsgs(500_000)) // ratio = 0.5
+	out := b.TrySessionSplit(splitMsgs(500_000), nil) // ratio = 0.5
 
 	if out.SplitTriggered() {
 		t.Errorf("50%% 占用不应 split（ratio=%.3f）", out.Decision.Ratio)
@@ -87,7 +87,7 @@ func TestCompactBoundary_TrySessionSplitDoesNotMutateMessages(t *testing.T) {
 	before := len(msgs)
 	beforeFirst := *msgs[0].Content
 
-	out := b.TrySessionSplit(msgs)
+	out := b.TrySessionSplit(msgs, nil)
 
 	if !out.SplitTriggered() {
 		t.Fatal("本用例需要触发 split")
@@ -105,7 +105,7 @@ func TestCompactBoundary_TrySessionSplitDoesNotMutateMessages(t *testing.T) {
 // 未触发时**也要记录**——离线才能看出「为何没 split」（窗口太小 / 比例不足）。
 func TestCompactBoundary_TrySessionSplitRecordsEvenWhenNotTriggered(t *testing.T) {
 	b := NewCompactBoundary(128_000)
-	b.TrySessionSplit(splitMsgs(200_000))
+	b.TrySessionSplit(splitMsgs(200_000), nil)
 
 	if b.LastSplitDecision == nil {
 		t.Fatal("未触发时也应记录判定")

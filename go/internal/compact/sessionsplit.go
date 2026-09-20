@@ -106,64 +106,16 @@ func ShouldSessionSplit(messages []session.OaiMessage, contextWindow int) Sessio
 	return dec
 }
 
-// BuildSessionHandoff 构造最小结构化 handoff 文本。
+// BuildSessionHandoff 构造 handoff 文本（**向后兼容的降级入口**）。
 //
 // 对账 TS `buildStructuredHandoff` 的**最小子集**。
 //
-// **降级说明（重要）**：TS 的完整 handoff 含 8 个章节（task-state 的
-// current/completed/remaining、工具轨迹、失败记录、近期推理、文件清单等），
-// 依赖 `extractTaskState`（`src/agent/task-state.ts`，需 trajectory）与
-// `getTrajectoryEntries`。Go 侧尚无这两个模块，故此处只产出**能从消息列表
-// 直接提取**的部分：近期推理摘要 + 文件清单。
+// **已升级**：task-state / trajectory 移植完成后，完整实现移至
+// `handoff.go` 的 `BuildSessionHandoffWithState`（9 章节）。本函数保留为
+// 向后兼容入口——**无轨迹与 todo 输入**，委托到完整实现（传 nil）。
 //
-// 这是**有意的降级**（记于 HANDOFF），不是「等价的简化版」——移植
-// task-state/trajectory 后应**替换**本函数而非叠加。
+// 新调用方应优先用 `BuildSessionHandoffWithState` 并传入真实状态，
+// 否则 handoff 缺「工具轨迹 / 错误修复 / 待办」章节（降级）。
 func BuildSessionHandoff(messages []session.OaiMessage, ratio float64) string {
-	var b []byte
-	b = append(b, "<session-handoff>"...)
-	b = append(b, "Session split at "...)
-	b = append(b, formatPercent(ratio)...)
-	b = append(b, " context.\n"...)
-
-	// 近期推理：从末尾往前取 assistant 文本，累计不超过 MAX_REASONING_CHARS。
-	const maxReasoningChars = 2000
-	var reasoning []string
-	total := 0
-	for i := len(messages) - 1; i >= 0 && total < maxReasoningChars; i-- {
-		m := messages[i]
-		if m.Role != "assistant" || m.Content == nil || *m.Content == "" {
-			continue
-		}
-		s := *m.Content
-		if total+len(s) > maxReasoningChars {
-			s = s[:maxReasoningChars-total]
-		}
-		reasoning = append([]string{s}, reasoning...)
-		total += len(s)
-	}
-	b = append(b, "\n## 近期推理\n"...)
-	if len(reasoning) > 0 {
-		for _, r := range reasoning {
-			b = append(b, r...)
-			b = append(b, '\n')
-		}
-	} else {
-		b = append(b, "（无记录）\n"...)
-	}
-
-	// 文件清单：从 tool 消息里提取路径形态的 token。
-	files := extractFilePaths(messages)
-	b = append(b, "\n## 涉及文件\n"...)
-	if len(files) > 0 {
-		for _, f := range files {
-			b = append(b, "- "...)
-			b = append(b, f...)
-			b = append(b, '\n')
-		}
-	} else {
-		b = append(b, "（无记录）\n"...)
-	}
-
-	b = append(b, "</session-handoff>"...)
-	return string(b)
+	return BuildSessionHandoffWithState(messages, ratio, nil, nil, "")
 }

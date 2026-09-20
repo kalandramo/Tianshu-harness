@@ -10,6 +10,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/api/sse"
 	"github.com/kalandramo/tianshu/go/internal/api/wire"
 	"github.com/kalandramo/tianshu/go/internal/client"
+	"github.com/kalandramo/tianshu/go/internal/compact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
 	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"github.com/kalandramo/tianshu/go/internal/session"
@@ -124,6 +126,26 @@ type Loop struct {
 	// **为什么挂在 Loop 上而非每轮新建**：熔断器状态（Failures）必须跨轮
 	// 持有——否则「连续失败 3 次禁用 3 轮」永远攒不满。
 	Compact *CompactBoundary
+
+	// Trajectory 是工具调用轨迹（跨轮累积）。
+	//
+	// 对账 TS 的 `loop.ts:285 trajectory = new TrajectoryRecorder()`。
+	// nil 时跳过记录（最小可跑路径）——**但 session split 的 handoff 会因此
+	// 缺「工具轨迹 / 错误修复」章节**（降级）。生产装配应设它。
+	Trajectory *compact.TrajectoryRecorder
+
+	// Todos 是权威 todo 清单的读取器。
+	//
+	// 对账 TS 的 `config.getTodos ?? getTodos`（进程单例）。Go 侧无单例——
+	// todo 工具持有实例字段，故由装配方注入读取函数。
+	//
+	// nil 时 handoff 的 task-state 回退到轨迹启发式（`ExtractTaskState`）。
+	Todos func() []prompt.TodoItem
+
+	// StreamedText 返回本回合模型流式文本（供 handoff 的决策提取）。
+	//
+	// nil 时视为空串（决策章节为空）。
+	StreamedText func() string
 
 	// Advisories 是劝导总线（hook 投递 → 渲染 → 注入 prompt）。
 	//
@@ -557,15 +579,84 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 		p.OnOutput = l.ToolParams.OnOutput
 	}
 
+	started := time.Now()
 	result, err := l.registry.Execute(ctx, tc.name, p)
 	if err != nil {
-		return contract.Result{
+		result = contract.Result{
 			Content: fmt.Sprintf("工具执行失败：%v", err),
 			IsError: true,
 		}
 	}
+	// ── 轨迹记录（对账 TS turn-harness.ts:83 的 trajectory.record）──
+	//
+	// **时机**：结果出来后立即记——包括失败（失败轨迹是 handoff
+	// 「错误与修复」章节的唯一来源）。
+	//
+	// **与 TS 的差异（已知且有意）**：TS 的 status 有 `retried-*` 两态
+	// （瞬时失败重试后的结局）。Go 侧的重试在 client 层，尚未把「是否重试过」
+	// 透传到此处——故当前只产出 success / failed。移植重试透传后应补齐。
+	l.recordTrajectory(tc, result, time.Since(started))
+
 	l.observeToolResult(tc.name, tc.input, result)
 	return result
+}
+
+// recordTrajectory 把一次工具调用记进轨迹。
+//
+// 对账 TS 的 `this.trajectory.record({...})`（turn-harness.ts:83）。
+// nil 时跳过（增强而非必需）。
+func (l *Loop) recordTrajectory(tc toolCall, res contract.Result, dur time.Duration) {
+	if l.Trajectory == nil {
+		return
+	}
+	status := compact.TrajectorySuccess
+	if res.IsError {
+		status = compact.TrajectoryFailed
+	}
+	inputSummary, _ := json.Marshal(tc.input)
+	l.Trajectory.Record(compact.TrajectoryEntry{
+		Turn:          l.SessionTurn(),
+		Tool:          tc.name,
+		Target:        toolTarget(tc.input),
+		DurationMs:    int(dur.Milliseconds()),
+		Status:        status,
+		InputSummary:  truncateRunes(string(inputSummary), 100),
+		ResultSummary: truncateRunes(res.Content, 200),
+	})
+}
+
+// splitState 汇总 session split 构造 handoff 所需的可选状态。
+//
+// 所有字段可缺省——缺省时 handoff 退化（见 SplitState）。
+func (l *Loop) splitState() *SplitState {
+	s := &SplitState{Trajectory: l.Trajectory}
+	if l.Todos != nil {
+		s.Todos = l.Todos()
+	}
+	if l.StreamedText != nil {
+		s.StreamedText = l.StreamedText()
+	}
+	return s
+}
+
+// truncateRunes 按**符文**截断（对账 TS 的 `String.prototype.slice` 对
+// BMP 字符的语义——见 compact.utf16Slice 的说明）。
+//
+// 这里用符文而非 UTF-16 code unit：摘要字段只进轨迹（不直接进 handoff
+// 的固定文本），且补充平面字符的 1 码点差异在实践中不可观测。**若未来
+// 该字段进前缀，须换成 utf16 语义**。
+func truncateRunes(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	i := 0
+	for pos := range s {
+		if i == n {
+			return s[:pos]
+		}
+		i++
+	}
+	return s
 }
 
 // observeToolResult 把工具调用的结果记进会话状态。
@@ -796,13 +887,16 @@ func (l *Loop) maybeCompactAtBoundary(turn int) {
 	// 真正替换历史（依赖 task-state / trajectory / artifact store——Go 侧全无）。
 	// 故此处**只判定 + 记录**，不改 `l.messages`——不谎称已完成切分。
 	// 候选 handoff 已构造（`outcome.Handoff`），待执行层就位后即可采用。
-	if split := l.Compact.TrySessionSplit(oai); split.SplitTriggered() {
+	//
+	// **state 传入真实轨迹 / todo / 流式文本**——handoff 由此产出完整
+	// 9 章节（而非降级版的推理+文件清单）。全部可缺省（nil 时退化）。
+	if split := l.Compact.TrySessionSplit(oai, l.splitState()); split.SplitTriggered() {
 		l.emit(Event{
 			Kind: "compaction",
 			Turn: turn,
 			Text: fmt.Sprintf("会话切分判定触发（占用 %.0f%%，窗口 %d）——"+
-				"handoff 候选已构造，但执行层未移植，历史未替换",
-				split.Decision.Ratio*100, l.Compact.ContextWindow),
+				"handoff 候选已构造（%d 字符），但执行层未移植，历史未替换",
+				split.Decision.Ratio*100, l.Compact.ContextWindow, len(split.Handoff)),
 		})
 		// **不 return**：判定触发但未执行，常规压缩仍应尝试——
 		// 否则「判定了但没执行」会让上下文压力完全无人处理。

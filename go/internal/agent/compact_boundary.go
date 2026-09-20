@@ -5,6 +5,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/cache"
 	"github.com/kalandramo/tianshu/go/internal/compact"
 	"github.com/kalandramo/tianshu/go/internal/context"
+	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"github.com/kalandramo/tianshu/go/internal/session"
 )
 
@@ -419,14 +420,17 @@ func fromOaiToolCalls(calls []session.OaiToolCall) []any {
 //
 // # 范围（有意收窄）
 //
-// 本实现只做**判定 + 最小 handoff 构造**。TS 的执行层
+// 本实现做**判定 + 完整 handoff 构造**。TS 的执行层
 // （`replaceWithCheckpoint` 的 anchor 保留 / artifact 归档 / task anchor 追加 /
 // `promptEngine.resetAppendixBaseline`）依赖 Go 侧尚未移植的
-// task-state / trajectory / artifact store——需先移植那三个子系统。
+// **artifact store**——需先移植该子系统。
 //
 // **故本函数返回判定与候选 handoff，由调用方决定如何替换历史**——不在此
 // 直接改消息列表（避免半套用：判定了但替换逻辑不完整会让会话处于中间态）。
-func (b *CompactBoundary) TrySessionSplit(messages []session.OaiMessage) SessionSplitOutcome {
+//
+// state 参数携带 handoff 所需的真实状态（轨迹 / todo / 流式文本）——
+// **可为 nil**（此时 handoff 退化为降级版，只有推理与文件清单）。
+func (b *CompactBoundary) TrySessionSplit(messages []session.OaiMessage, state *SplitState) SessionSplitOutcome {
 	decision := compact.ShouldSessionSplit(messages, b.ContextWindow)
 	b.LastSplitDecision = &decision
 
@@ -434,11 +438,33 @@ func (b *CompactBoundary) TrySessionSplit(messages []session.OaiMessage) Session
 		return SessionSplitOutcome{Decision: decision}
 	}
 
+	var rec *compact.TrajectoryRecorder
+	var todos []prompt.TodoItem
+	var streamed string
+	if state != nil {
+		rec = state.Trajectory
+		todos = state.Todos
+		streamed = state.StreamedText
+	}
+
 	return SessionSplitOutcome{
 		Decision: decision,
 		// 候选 handoff（调用方决定是否采用）。
-		Handoff: compact.BuildSessionHandoff(messages, decision.Ratio),
+		Handoff: compact.BuildSessionHandoffWithState(messages, decision.Ratio, rec, todos, streamed),
 	}
+}
+
+// SplitState 是 session split 构造 handoff 所需的**可选**状态。
+//
+// 全部字段可缺省（nil / 零值）——缺省时 handoff 退化为降级版。
+// 这让 `TrySessionSplit` 的调用方可以渐进接线（先接 trajectory，再补 todo）。
+type SplitState struct {
+	// Trajectory 是工具调用轨迹（nil = 无轨迹章节）。
+	Trajectory *compact.TrajectoryRecorder
+	// Todos 是权威 todo 清单（nil/空 = current 回退启发式提取）。
+	Todos []prompt.TodoItem
+	// StreamedText 是本回合模型流式文本（供启发式决策提取）。
+	StreamedText string
 }
 
 // SessionSplitOutcome 是一次 split 尝试的结果。

@@ -494,12 +494,80 @@ session split 是**主动**护栏：86% 时把历史替换为结构化 handoff�
 2. `ratio < 0.86` → 不 split
 3. 否则 split
 
+
 **顺序敏感的证据**：oracle 的 `small_window_never_splits` 用例 ratio 高达 1.562
 但窗口 128K → false。且 TS 在窗口门槛处**提前 return**，根本不调
 `getEstimatedTokens()`——故 oracle 用小窗口用例的 token 字段为 `null`。
 
 **为什么 500K**（TS 语义）：中小窗口的缓存经济比值已压得够早，精度退化不是
 瓶颈；split 是为大窗口设的。
+
+---
+
+### task-state + trajectory + todo-deps（2026-09-20，回主线第四刀）
+
+**目标**：session split 执行层的前置——TS 的 `buildStructuredHandoff` 依赖
+`extractTaskState`（需 trajectory）与 todo 依赖排序。本刀把这三个模块移植并
+**接进 handoff**（不再降级）。
+
+#### 三个新文件
+
+| 文件 | 对账 TS | 关键导出 |
+|------|---------|----------|
+| `internal/compact/trajectory.go` | `src/agent/trajectory.ts` | `TrajectoryRecorder` / `TrajectoryEntry` / `TrajectorySummary` |
+| `internal/prompt/tododeps.go` | `src/tools/todo-deps.ts` | `DetectDependencies` / `OrderPendingByExecutability` / `ComputeMaxDepth` / `FindExecutable` |
+| `internal/compact/taskstate.go` | `src/agent/task-state.ts` | `ExtractTaskState` / `TaskStateFromTodos` / `TaskState` |
+| `internal/compact/handoff.go` | `buildStructuredHandoff`（`compaction-controller.ts:199`） | `BuildSessionHandoffWithState`（**9 章节完整版**） |
+
+#### 接线（防悬空）
+
+- `Loop.Trajectory`（`loop.go`）—— `executeTool` 里调 `recordTrajectory`（**含失败**，
+  失败轨迹是 handoff「错误与修复」章节的唯一来源）
+- `Loop.Todos` / `Loop.StreamedText` —— 读取器函数（TS 是进程单例 `getTodos`，
+  Go 侧 todo 工具持有实例字段，故由装配方注入）
+- `TrySessionSplit(messages, state *SplitState)` —— **签名变更**（加了可选状态参数）。
+  既有测试已同步传 `nil`。`SplitState` 全字段可缺省，缺省时 handoff 退化。
+- `loop.go` 的 `splitState()` 汇总状态 → 传入 `TrySessionSplit`
+
+**降级入口保留**：`BuildSessionHandoff(messages, ratio)` 仍在（向后兼容），
+内部委托到 `BuildSessionHandoffWithState(..., nil, nil, "")`。新调用方应用后者。
+
+#### 本刀踩到的坑（三条）
+
+1. **UTF-16 vs 字节截断**：TS 的 `String.slice(0,60)` 按 **UTF-16 code unit** 计数。
+   中文「接下来很很很…」截 60 → TS 得 60 个字符，Go 若按字节切只得 20 个。
+   `utf16Slice` 复刻该语义；oracle 的 `truncation_boundary_cjk` 用例锁定它。
+   **变异 M1（改字节截断）→ 测试红**，有判别力。
+2. **裸数字 id 的依赖提示词要求**：`referencesID` 对纯数字 id 必须要求前置提示词
+   （「基于 1」算边，「还剩 1 个测试」不算）。**变异 M2（去掉该要求）→
+   `bare_numeric_no_cue` 用例红**。
+3. **oracle 形态**：首版只存 `output`，测试要在 Go 侧**手工重建输入**——重建一旦
+   与生成脚本不一致就是**假绿**。改为 `{input, output}` 数据驱动，测试零硬编码输入。
+4. **测试断言的坑**：`TestHandoffTrajectoryCapped` 首版用全局 `strings.Count` 数
+   `toolX`，得 20 条（第 6 章「已完成工作」也含它）——**误判成实现 bug**，实际
+   第 8 章恰好 12 条。修正为只数章节内。
+
+#### 已知差异（有意）
+
+- `TrajectoryRecorder` 的 status **只有 success / failed**——TS 还有
+  `retried-success` / `retried-failed`（瞬时失败重试后的结局）。Go 侧重试在
+  client 层，尚未把「是否重试过」透传到 `executeTool`。移植后应补齐。
+- `NewTrajectoryRecorder(0)` 用默认上限 200（TS 显式传 0 会得 maxEntries=0，
+  记录一条即清空）——**有意差异**，避免 Go 调用方零值构造时静默失效。
+- `ComputeMaxDepth` 用 **-1 表示环**（TS 用 `Infinity`；Go 无 int Infinity）。
+- `truncateRunes` 按符文（非 UTF-16）——仅用于轨迹摘要字段（不进 handoff 固定文本）。
+
+#### oracle
+
+`go/testdata/taskstate/gen-oracle.ts` + `oracle.json`（34 用例，sha256 见生成输出）。
+生成：`node_modules/.bin/tsx go/testdata/taskstate/gen-oracle.ts`
+
+#### 仍未做
+
+- **执行层** `replaceWithCheckpoint`（历史替换）——仍缺 **artifact store**
+  （task-state / trajectory 本刀已补，artifact store 未动）
+- `Advisor.onTurnEnd`、`resolveCompactionEconomics` 装配层、LLM 重写路径
+
 
 #### oracle 生成器的两处坑（都在生成阶段被 oracle 自己暴露）
 
