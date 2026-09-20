@@ -8,8 +8,6 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
-	"sync"
-	"syscall"
 	"time"
 
 	"github.com/kalandramo/tianshu/go/internal/contract"
@@ -146,8 +144,8 @@ func (t *bashTool) Execute(ctx context.Context, p *CallParams) (contract.Result,
 	// 只杀主进程，与我们要杀整组的逻辑竞争。这里自行管理取消。
 	cmd := exec.Command("bash", "-c", command)
 	cmd.Dir = t.Cwd
-	// 独立进程组：超时时可杀整组，不留孤儿进程
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// 平台组语义 + Wait 兜底（详见 prepareCommand / waitDelay 的说明）
+	prepareCommand(cmd)
 
 	var stdout, stderr bytes.Buffer
 	stdoutW := &limitedWriter{buf: &stdout, limit: maxOut}
@@ -166,31 +164,15 @@ func (t *bashTool) Execute(ctx context.Context, p *CallParams) (contract.Result,
 		}, nil
 	}
 
-	// 超时/取消时**立即**杀整个进程组。
+	// 超时/取消时**立即**杀整个进程树。
 	//
 	// 关键：不能等 cmd.Wait() 返回后再杀。exec.CommandContext 的默认行为是在
 	// ctx 超时时只杀主进程（bash 本身），而 bash 派生的子进程（`sh -c '...' &`）
 	// 会继续存活成为孤儿。且主进程一死，其进程组组长身份消失，事后 kill(-pid)
 	// 可能命中已回收的 pgid。
 	//
-	// 这里用独立 goroutine 在 ctx.Done() 时主动 kill(-pgid)，与 Wait 并行。
-	done := make(chan struct{})
-	var doneOnce sync.Once
-	signalDone := func() { doneOnce.Do(func() { close(done) }) }
-	go func() {
-		select {
-		case <-runCtx.Done():
-			if cmd.Process != nil {
-				pid := cmd.Process.Pid
-				// 先杀整个进程组（负 pid = 整组）
-				_ = syscall.Kill(-pid, syscall.SIGKILL)
-				// 兜底：若 Setpgid 未生效（pid != pgid），再直接杀主进程
-				_ = syscall.Kill(pid, syscall.SIGKILL)
-			}
-		case <-done:
-			// Wait 已返回，无需清理
-		}
-	}()
+	// 平台差异（进程组 vs taskkill /F /T）封装在 killProcessTree 内。
+	signalDone := watchAndKillOnCancel(runCtx, cmd)
 
 	waitErr := cmd.Wait()
 	duration := time.Since(start)

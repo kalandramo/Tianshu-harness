@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,8 +45,10 @@ func TestCLIEndToEndAdvisoryReachesRequest(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		switch n {
 		case 1:
-			fmt.Fprint(w, sseToolCall("c1", "write_file",
-				`{"file_path":"`+target+`","content":"export const x = 1\n"}`))
+			fmt.Fprint(w, sseToolCallArgs("c1", "write_file", map[string]any{
+				"file_path": target,
+				"content":   "export const x = 1\n",
+			}))
 		case 2:
 			fmt.Fprint(w, sseToolCall("c2", "run_tests", `{}`))
 		default:
@@ -55,12 +58,7 @@ func TestCLIEndToEndAdvisoryReachesRequest(t *testing.T) {
 	defer srv.Close()
 
 	// 构建真实二进制
-	bin := filepath.Join(t.TempDir(), "tianshu-test")
-	build := exec.Command("go", "build", "-o", bin, ".")
-	build.Dir = "."
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("构建失败：%v\n%s", err, out)
-	}
+	bin := buildCLIBinary(t, "tianshu-test")
 
 	cmd := exec.Command(bin,
 		"-p", "改一下 foo.ts 并跑测试",
@@ -117,8 +115,10 @@ func TestCLIEndToEndHooksReached(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		switch n {
 		case 1:
-			fmt.Fprint(w, sseToolCall("c1", "write_file",
-				`{"file_path":"`+target+`","content":"export const y = 2\n"}`))
+			fmt.Fprint(w, sseToolCallArgs("c1", "write_file", map[string]any{
+				"file_path": target,
+				"content":   "export const y = 2\n",
+			}))
 		case 2:
 			fmt.Fprint(w, sseToolCall("c2", "run_tests", `{}`))
 		default:
@@ -127,12 +127,7 @@ func TestCLIEndToEndHooksReached(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	bin := filepath.Join(t.TempDir(), "tianshu-test")
-	build := exec.Command("go", "build", "-o", bin, ".")
-	build.Dir = "."
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("构建失败：%v\n%s", err, out)
-	}
+	bin := buildCLIBinary(t, "tianshu-test")
 
 	cmd := exec.Command(bin, "-p", "改 bar.ts", "--base-url", srv.URL, "--model", "test-model")
 	cmd.Dir = root
@@ -168,6 +163,23 @@ func sseToolCall(id, name, args string) string {
 	return "data: " + payload + "\n\n" +
 		`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}` + "\n\n" +
 		"data: [DONE]\n\n"
+}
+
+// sseToolCallArgs 同 sseToolCall，但参数用 json.Marshal 序列化。
+//
+// **为什么需要它**：`sseToolCall(..., `{"file_path":"`+path+`"}`)` 在 Windows
+// 上产出 `{"file_path":"C:\Users\..."}`——`\U` 是**非法 JSON 转义**，模型侧
+// 参数解析失败（工具报 error），测试于是以「hook 未触发」等间接症状失败，
+// 掩盖真实根因（夹具坏了，不是链路断了）。
+//
+// jsonStr 只转义**外层**嵌入，救不了本来就是非法 JSON 的 args 输入。
+// 任何嵌入路径的 args 都必须经这里构造，不要手拼。
+func sseToolCallArgs(id, name string, args map[string]any) string {
+	b, err := json.Marshal(args)
+	if err != nil {
+		panic("sseToolCallArgs: 参数不可序列化：" + err.Error())
+	}
+	return sseToolCall(id, name, string(b))
 }
 
 func jsonStr(s string) string {

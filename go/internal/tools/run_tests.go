@@ -11,8 +11,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
-	"syscall"
 	"time"
 
 	"github.com/kalandramo/tianshu/go/internal/contract"
@@ -101,7 +99,8 @@ func (t *runTestsTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 
 	cmd := buildCmd(runCtx, r)
 	cmd.Dir = t.Cwd
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// 平台组语义 + Wait 兜底（详见 prepareCommand / waitDelay 的说明）
+	prepareCommand(cmd)
 
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -117,21 +116,9 @@ func (t *runTestsTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 		}, scope), nil
 	}
 
-	// 超时时杀整个进程组（与 bash 同一纪律：不留孤儿进程）
-	done := make(chan struct{})
-	var doneOnce sync.Once
-	signalDone := func() { doneOnce.Do(func() { close(done) }) }
-	go func() {
-		select {
-		case <-runCtx.Done():
-			if cmd.Process != nil {
-				pid := cmd.Process.Pid
-				_ = syscall.Kill(-pid, syscall.SIGKILL)
-				_ = syscall.Kill(pid, syscall.SIGKILL)
-			}
-		case <-done:
-		}
-	}()
+	// 超时时杀整个进程树（与 bash 同一纪律：不留孤儿进程）。
+	// 平台差异（进程组 vs taskkill /F /T）封装在 killProcessTree 内。
+	signalDone := watchAndKillOnCancel(runCtx, cmd)
 
 	waitErr := cmd.Wait()
 	signalDone()

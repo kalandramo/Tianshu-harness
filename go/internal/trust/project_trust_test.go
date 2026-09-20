@@ -233,20 +233,17 @@ func TestTrustStoreNeverInRepo(t *testing.T) {
 	}
 }
 
-// TestTrustStorePermission0600 —— 信任文件权限为 0o600（用户私有）。
+// TestTrustStorePermission0600 —— 信任文件权限为用户私有。
+//
+// 平台差异由 assertTrustFilePerm 承担（Unix 断言 0o600；Windows 断言非全局可写
+// ——那里的 mode 位无法表达 POSIX 语义，真实边界是 NTFS ACL；详见 perm_*_test.go）。
 func TestTrustStorePermission0600(t *testing.T) {
 	home := withTempHome(t)
 	proj := t.TempDir()
 	if err := TrustProject(proj); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(filepath.Join(home, "project-trust.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("权限应为 0o600，得到 %o", perm)
-	}
+	assertTrustFilePerm(t, filepath.Join(home, "project-trust.json"))
 }
 
 // TestDismissPromptDoesNotTrust —— **安全断言**：dismiss 不授信。

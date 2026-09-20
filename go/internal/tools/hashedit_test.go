@@ -339,8 +339,10 @@ func TestChooseEOL(t *testing.T) {
 	if got := chooseEOL("x.txt", EOLCRLF); got != EOLCRLF {
 		t.Errorf("应保留既有 CRLF，得到 %q", got)
 	}
-	if got := chooseEOL("x.txt", ""); got != EOLLF {
-		t.Errorf("非 Windows 默认应为 LF，得到 %q", got)
+	if got := chooseEOL("x.txt", ""); got != targetEOL() {
+		// 默认 EOL 随目标平台（Windows=CRLF，其余=LF）——断言平台真实默认，
+		// 不硬编码某一侧（那会让另一个平台上的**正确**行为被误判为缺陷）。
+		t.Errorf("无既有信息时应回落到平台默认 %q，得到 %q", targetEOL(), got)
 	}
 	if got := chooseEOL("X.BAT", EOLLF); got != EOLCRLF {
 		t.Errorf("扩展名应大小写不敏感，得到 %q", got)

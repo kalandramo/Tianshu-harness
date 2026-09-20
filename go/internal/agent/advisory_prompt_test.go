@@ -29,7 +29,7 @@ func TestE2EAdvisoryReachesPrompt(t *testing.T) {
 	// 三轮：write_file → run_tests → 终答。
 	// 第 3 轮的请求体应含 advisory（在第 2 轮 postTurn 触发后渲染）。
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "write_file", `{"file_path":"`+target+`","content":"export const x = 1\n"}`),
+		toolTurnArgs("c1", "write_file", map[string]any{"file_path": target, "content": "export const x = 1\n"}),
 		toolTurn("c2", "run_tests", `{}`),
 		textTurn("完成"),
 	}}
@@ -79,9 +79,9 @@ func TestE2EAdvisoryNotDuplicatedWithinRequest(t *testing.T) {
 	}
 
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "write_file", `{"file_path":"`+target+`","content":"export const y = 2\n"}`),
+		toolTurnArgs("c1", "write_file", map[string]any{"file_path": target, "content": "export const y = 2\n"}),
 		toolTurn("c2", "run_tests", `{}`),
-		toolTurn("c3", "read_file", `{"file_path":"`+target+`"}`),
+		toolTurnArgs("c3", "read_file", map[string]any{"file_path": target}),
 		textTurn("完成"),
 	}}
 	srv := httptest.NewServer(sc.handler())
@@ -126,7 +126,7 @@ func TestE2EAdvisoryWrappedAsSystemReminder(t *testing.T) {
 	}
 
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "write_file", `{"file_path":"`+target+`","content":"export const w = 1\n"}`),
+		toolTurnArgs("c1", "write_file", map[string]any{"file_path": target, "content": "export const w = 1\n"}),
 		toolTurn("c2", "run_tests", `{}`),
 		textTurn("完成"),
 	}}
@@ -200,7 +200,7 @@ func TestE2EAdvisoryStarDomainBudget(t *testing.T) {
 	}
 
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "write_file", `{"file_path":"`+target+`","content":"export const d = 1\n"}`),
+		toolTurnArgs("c1", "write_file", map[string]any{"file_path": target, "content": "export const d = 1\n"}),
 		toolTurn("c2", "run_tests", `{}`),
 		textTurn("完成"),
 	}}
@@ -269,10 +269,10 @@ func TestE2EAdvisoryNotPersistedAfterInjectionTurn(t *testing.T) {
 	}
 
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "write_file", `{"file_path":"`+target+`","content":"export const p = 1\n"}`),
+		toolTurnArgs("c1", "write_file", map[string]any{"file_path": target, "content": "export const p = 1\n"}),
 		toolTurn("c2", "run_tests", `{}`),
-		toolTurn("c3", "read_file", `{"file_path":"`+target+`"}`),
-		toolTurn("c4", "read_file", `{"file_path":"`+target+`"}`),
+		toolTurnArgs("c3", "read_file", map[string]any{"file_path": target}),
+		toolTurnArgs("c4", "read_file", map[string]any{"file_path": target}),
 		textTurn("完成"),
 	}}
 	srv := httptest.NewServer(sc.handler())

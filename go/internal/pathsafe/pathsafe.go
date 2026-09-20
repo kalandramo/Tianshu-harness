@@ -158,9 +158,31 @@ func MustValidate(cwd, filePath string, mode Mode, opts *Options) (string, error
 }
 
 // resolveUnder 以 base 为基准解析 target（target 为绝对路径时按绝对处理）。
+//
+// 对账 Node 的 `path.resolve(base, target)`。这里有一处**平台语义陷阱**：
+// Go 的 `filepath.IsAbs` 与 Node 的 `path.isAbsolute` 对「根相对路径」判定不同。
+//
+//	路径               Node win32.isAbsolute   Go filepath.IsAbs (Windows)
+//	/etc/passwd        true                    false
+//	\Windows\System32  true                    false
+//	\\server\share     true                    true
+//	C:\x               true                    true
+//
+// Node 把 `/x`（无卷、以分隔符开头）视为**绝对**——`path.win32.resolve('D:\ws',
+// '/etc/passwd')` = `D:\etc\passwd`，即**重基到 base 的卷**（不是拼进 base）。
+// 若照 Go 的 IsAbs 判定（false）走 Join 分支，`/etc/passwd` 会被静默拼成
+// `D:\ws\etc\passwd`——一个位于工作区内的路径，逃逸检查**永不触发**。
+// 这是 fail-open 的安全缺口（TS 侧正确拦截，Go 侧放行）。
+//
+// 故此处显式复刻 Node 语义：先看 IsAbs（覆盖带卷的形态），再看「以分隔符开头」
+// （覆盖根相对形态）。后者用 `VolumeName(base)` 取基准卷做重基。
 func resolveUnder(base, target string) string {
 	if filepath.IsAbs(target) {
 		return filepath.Clean(target)
+	}
+	// 根相对路径（/x 或 \x）：Node 视为绝对，重基到 base 的卷。
+	if target != "" && os.IsPathSeparator(target[0]) {
+		return filepath.Clean(filepath.VolumeName(base) + target)
 	}
 	return filepath.Join(base, target)
 }

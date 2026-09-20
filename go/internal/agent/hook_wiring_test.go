@@ -26,7 +26,7 @@ func TestE2EHooksReachedFromRealLoop(t *testing.T) {
 
 	// 脚本：第 1 轮调 write_file 写 .ts；第 2 轮调 run_tests；第 3 轮终答。
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "write_file", `{"file_path":"`+target+`","content":"export const x = 1\n"}`),
+		toolTurnArgs("c1", "write_file", map[string]any{"file_path": target, "content": "export const x = 1\n"}),
 		toolTurn("c2", "run_tests", `{}`),
 		textTurn("完成"),
 	}}
@@ -73,7 +73,7 @@ func TestE2EHookNotTriggeredWhenTypecheckRan(t *testing.T) {
 	}
 
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "write_file", `{"file_path":"`+target+`","content":"export const y = 2\n"}`),
+		toolTurnArgs("c1", "write_file", map[string]any{"file_path": target, "content": "export const y = 2\n"}),
 		toolTurn("c2", "run_tests", `{}`),
 		textTurn("完成"),
 	}}
@@ -122,7 +122,7 @@ func TestE2EConsistencyCheckReachedFromRealLoop(t *testing.T) {
 	}
 
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "write_file", `{"file_path":"`+target+`","content":"export const z = 3\n"}`),
+		toolTurnArgs("c1", "write_file", map[string]any{"file_path": target, "content": "export const z = 3\n"}),
 		textTurn("完成"),
 	}}
 	srv := httptest.NewServer(sc.handler())

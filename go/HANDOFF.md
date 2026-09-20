@@ -104,12 +104,64 @@ go/
 
 ## 环境注意
 
+- **Windows 原生可移植性**（2026-09-20 修复，详见下节）——此前 `go build ./...`
+  在 Windows 上**编译不过**（`internal/tools` 用了 Unix-only 的 `syscall.Setpgid`
+  / `syscall.Kill`），连带 `internal/agent` 与 CLI 入口全红。现已修复。
 - `golangci-lint`（go1.25 构建）与 `staticcheck` **无法**在 Go 1.27 下运行
   （前者报版本低于目标，后者报导出数据版本过旧）。替代验证：`go vet` + `gofmt`
 - 项目 `node_modules` 需 `npm install` 后才有；`npx tsx` 会走临时目录导致
   `zod` 等传递依赖解析失败。用 `node_modules/.bin/tsx` 跑 oracle 生成器
 - 端到端冒烟可用**本地 mock 端点**完成，无需真实 API key：写一个返回构造
   SSE 的临时 HTTP 服务，用 `TIANSHU_BASE_URL` 指过去
+
+### Windows 可移植性（2026-09-20 修复）
+
+**背景**：此前所有开发在 macOS 上完成，Windows 上 `go build ./...` exit=1——
+不是测试问题，是**编译期**失败。修复涉及 4 类根因：
+
+| # | 根因 | 修复 |
+|---|---|---|
+| 1 | `syscall.Setpgid` / `syscall.Kill` / `SIGKILL` 在 Windows 的 `syscall` 包中**不存在** | 按平台拆分 `internal/tools/proctree_{unix,windows}.go`（build tag）；Windows 走 `taskkill /F /T /PID` |
+| 2 | `pathsafe.resolveUnder` 的绝对性判定与 Node 分叉——Go `filepath.IsAbs("/etc/passwd")`=**false**，Node `path.win32.isAbsolute`=**true** | 显式复刻 Node 语义：根相对路径重基到 base 的卷 |
+| 3 | **超时在 Windows 上形同虚设**——孙进程继承管道写端句柄，`cmd.Wait()` 阻塞到 EOF | `cmd.WaitDelay`（`prepareCommand` 统一设置，两平台通用） |
+| 4 | 测试夹具的平台假设（手拼 JSON 嵌 Windows 路径、`.exe` 后缀、mode 位、EOL 默认） | 见下 |
+
+**关键实测数据**（本机 Windows，可复现）：
+
+- **根因 3 的代价**：`bash -c "sh -c 'sleep 20' & sleep 20"` + timeout 500ms
+  → `cmd.Wait()` 实测阻塞 **19–20 秒**。taskkill 确实杀掉了整棵树（杀后无残留），
+  但句柄未释放，调用被吊住。加 `WaitDelay=2s` 后 → **2.0s** 返回。
+  探针对照（pipe 20.3s vs DevNull **0s**）确证是管道句柄问题。
+- **根因 2 的代价**：`/etc/passwd` 在 Windows 上被静默重基进工作区
+  （`<tmp>\etc\passwd`）——**fail-open 的安全缺口**（TS 正确拦截，Go 放行）。
+
+**测试夹具的平台陷阱（4 类，值得记住）**：
+
+1. **手拼 JSON 嵌路径**：`` `{"file_path":"`+path+`"}` `` 在 Windows 上产出
+   `{"file_path":"C:\Users\..."}`——`\U` 是**非法 JSON 转义**，工具报 error，
+   测试以「hook 未触发」「工具结果未回灌」等**间接症状**失败，掩盖真实根因
+   （夹具坏了，不是链路断了）。共 21 处，改用 `json.Marshal` 的
+   `toolTurnArgs` / `sseToolCallArgs` / `sseToolCallArgsCLI2` 辅助。
+   **注意**：外层 `jsonStr` 只转义嵌入，救不了本身就是非法 JSON 的输入。
+2. **`.exe` 后缀**：`go build -o tianshu-test` 在 Windows 上产出的无扩展名文件，
+   **bash 能跑但 Go 的 `exec.Command` 找不到**（走 `PATHEXT` 补扩展名查找）。
+   CLI E2E 因此整片红且报错指向「找不到可执行文件」。改用 `buildCLIBinary`。
+3. **mode 位**：Windows 上 `os.WriteFile(..., 0o600)` 的 mode **恒为 0666**
+   （`os.Chmod` 只支持只读位），POSIX 语义无法表达，真实边界是 NTFS ACL。
+   信任文件权限测试改为平台感知断言（`perm_{unix,windows}_test.go`）。
+4. **EOL 默认**：`chooseEOL` 的平台默认随 `runtime.GOOS`，测试硬编码「非 Windows
+   应为 LF」在本机误报。改为断言 `targetEOL()`。
+
+**验证基线**（本机 Windows，2026-09-20）：`go build ./...` exit=0、
+`go vet ./...` exit=0、`gofmt -l` 零违规、`go test ./... -count=1` **连跑 3 次全绿**
+（20 包 ok、0 FAIL）。修复前：3 包 `[build failed]` + 2 包 FAIL。
+
+**变异反证**（3 个，全部有判别力）：
+M1 去掉 pathsafe 根相对分支 → 2 处红（原 bug 症状）；
+M2 去掉 `WaitDelay` → 组杀测试红（耗时 20.2s，断言命中）；
+M3 Windows 组杀改 no-op → 组杀测试红（20.9s）。
+**M2 首轮红 0 处是测试缺口**（原测试只验「子进程被杀」，不验「调用及时返回」）
+——补耗时断言后才有判别力，这正是「红 0 成因：真测试缺口」的又一实例。
 
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 

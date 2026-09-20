@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -47,19 +48,14 @@ func TestCLIEndToEndClaimProduced(t *testing.T) {
 		bodies = append(bodies, string(body))
 		w.Header().Set("Content-Type", "text/event-stream")
 		if n == 1 {
-			fmt.Fprint(w, sseToolCallCLI2("c1", "read_file", `{"file_path":"`+srcFile+`"}`))
+			fmt.Fprint(w, sseToolCallArgsCLI2("c1", "read_file", map[string]any{"file_path": srcFile}))
 		} else {
 			fmt.Fprint(w, sseTextCLI2("完成"))
 		}
 	}))
 	defer srv.Close()
 
-	bin := filepath.Join(t.TempDir(), "tianshu-e2e")
-	build := exec.Command("go", "build", "-o", bin, ".")
-	build.Dir = "."
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("构建失败：%v\n%s", err, out)
-	}
+	bin := buildCLIBinary(t, "tianshu-e2e")
 
 	cmd := exec.Command(bin, "-p", "看看 widget.ts", "--base-url", srv.URL, "--model", "test-model")
 	cmd.Dir = root
@@ -135,6 +131,23 @@ func sseToolCallCLI2(id, name, args string) string {
 		"data: [DONE]\n\n"
 }
 
+// sseToolCallArgsCLI2 同 sseToolCallCLI2，但参数用 json.Marshal 序列化。
+//
+// **为什么需要它**：`sseToolCallCLI2(..., `{"file_path":"`+path+`"}`)` 在
+// Windows 上产出 `{"file_path":"C:\Users\..."}`——`\U`/`\M` 是**非法 JSON
+// 转义**，模型侧参数解析失败（工具报 error），测试于是以「工具结果未回灌」
+// 等间接症状失败，掩盖真实根因（夹具坏了，不是链路断了）。
+//
+// jsonStrCLI2 只转义**外层**嵌入，救不了本来就是非法 JSON 的 args 输入。
+// 任何嵌入路径的 args 都必须经这里构造，不要手拼。
+func sseToolCallArgsCLI2(id, name string, args map[string]any) string {
+	b, err := json.Marshal(args)
+	if err != nil {
+		panic("sseToolCallArgsCLI2: 参数不可序列化：" + err.Error())
+	}
+	return sseToolCallCLI2(id, name, string(b))
+}
+
 func jsonStrCLI2(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
@@ -181,23 +194,20 @@ func TestCLIEndToEndClaimLifecycle(t *testing.T) {
 		switch n {
 		case 1:
 			// 第一轮：读文件（产生 claim）
-			fmt.Fprint(w, sseToolCallCLI2("c1", "read_file", `{"file_path":"`+srcFile+`"}`))
+			fmt.Fprint(w, sseToolCallArgsCLI2("c1", "read_file", map[string]any{"file_path": srcFile}))
 		case 2:
 			// 第二轮：写同一文件（应触发 claim 过期）
-			fmt.Fprint(w, sseToolCallCLI2("c2", "write_file",
-				`{"file_path":"`+srcFile+`","content":"export function alpha() { /* changed */ }\nexport const BETA = 3;\n"}`))
+			fmt.Fprint(w, sseToolCallArgsCLI2("c2", "write_file", map[string]any{
+				"file_path": srcFile,
+				"content":   "export function alpha() { /* changed */ }\nexport const BETA = 3;\n",
+			}))
 		default:
 			fmt.Fprint(w, sseTextCLI2("完成"))
 		}
 	}))
 	defer srv.Close()
 
-	bin := filepath.Join(t.TempDir(), "tianshu-lifecycle")
-	build := exec.Command("go", "build", "-o", bin, ".")
-	build.Dir = "."
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("构建失败：%v\n%s", err, out)
-	}
+	bin := buildCLIBinary(t, "tianshu-lifecycle")
 
 	cmd := exec.Command(bin, "-p", "读后改 lifecycle.ts", "--base-url", srv.URL, "--model", "test-model")
 	cmd.Dir = root

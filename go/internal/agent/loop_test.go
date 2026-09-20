@@ -47,6 +47,23 @@ func toolTurn(id, name, args string) string {
 	}}}) + "data: [DONE]\n\n"
 }
 
+// toolTurnArgs 构造工具调用回合，参数用 json.Marshal 序列化。
+//
+// **为什么需要它**：手拼 `{"file_path":"`+path+`"}` 在 Windows 上会产出
+// `{"file_path":"C:\Users\..."}`——`\U` 是**非法 JSON 转义**，模型侧参数解析
+// 失败、工具根本不执行，测试于是以「hook 未触发」等间接症状失败，掩盖真实
+// 根因（是测试夹具坏了，不是被测链路断了）。用 json.Marshal 让反斜杠、
+// 引号、换行都得到正确转义，夹具在三个平台上产出同样的语义。
+//
+// 测试夹具里**任何**嵌入路径/文本的 JSON 都应走这里，不要手拼。
+func toolTurnArgs(id, name string, args map[string]any) string {
+	b, err := json.Marshal(args)
+	if err != nil {
+		panic("toolTurnArgs: 参数不可序列化：" + err.Error())
+	}
+	return toolTurn(id, name, string(b))
+}
+
 // scriptedServer 按脚本依次返回响应，并记录收到的请求体。
 type scriptedServer struct {
 	responses []string

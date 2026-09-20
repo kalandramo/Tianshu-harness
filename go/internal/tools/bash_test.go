@@ -192,10 +192,20 @@ func TestBashTimeoutKillsProcessGroup(t *testing.T) {
 	// 启动一个会派生子进程的命令；超时后两者都应被清理
 	marker := filepath.Join(root, "still-alive.txt")
 	cmd := "sh -c 'sleep 20 && touch " + marker + "' & sleep 20"
+	start := time.Now()
 	_, _ = tool.Execute(context.Background(), call(root, map[string]any{
 		"command": cmd,
 		"timeout": 500,
 	}))
+	elapsed := time.Since(start)
+
+	// **耗时断言**：超时后 Execute 必须**及时返回**，不能被孙进程持有的管道
+	// 句柄吊住。没有 cmd.WaitDelay 时实测阻塞 19–20 秒（等满孙进程的 sleep）
+	// ——超时形同虚设。这条断言是 WaitDelay 修复的判别力来源（M2 变异）。
+	if elapsed > 5*time.Second {
+		t.Fatalf("超时未及时返回——耗时 %v（孙进程管道句柄未被兜底释放，"+
+			"WaitDelay 可能失效）", elapsed)
+	}
 
 	// 等一段时间，确认后台子进程没有继续运行到写标记
 	time.Sleep(2 * time.Second)

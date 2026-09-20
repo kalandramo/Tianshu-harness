@@ -28,10 +28,10 @@ func TestE2EGovernanceCooldownInPrompt(t *testing.T) {
 
 	// 5 轮：每轮 postTurn 都投递同一个注册 key（readonly-spiral，3 轮冷却）
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "read_file", `{"file_path":"`+target+`"}`),
-		toolTurn("c2", "read_file", `{"file_path":"`+target+`"}`),
-		toolTurn("c3", "read_file", `{"file_path":"`+target+`"}`),
-		toolTurn("c4", "read_file", `{"file_path":"`+target+`"}`),
+		toolTurnArgs("c1", "read_file", map[string]any{"file_path": target}),
+		toolTurnArgs("c2", "read_file", map[string]any{"file_path": target}),
+		toolTurnArgs("c3", "read_file", map[string]any{"file_path": target}),
+		toolTurnArgs("c4", "read_file", map[string]any{"file_path": target}),
 		textTurn("完成"),
 	}}
 	srv := httptest.NewServer(sc.handler())
@@ -92,7 +92,7 @@ func TestE2EGovernanceMutexInPrompt(t *testing.T) {
 	}
 
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "read_file", `{"file_path":"`+target+`"}`),
+		toolTurnArgs("c1", "read_file", map[string]any{"file_path": target}),
 		textTurn("完成"),
 	}}
 	srv := httptest.NewServer(sc.handler())
