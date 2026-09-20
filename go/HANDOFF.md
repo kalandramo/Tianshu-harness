@@ -577,236 +577,6 @@ session split 是**主动**护栏：86% 时把历史替换为结构化 handoff�
 
 ---
 
-### read_section 的 compact-history 流式分支（2026-09-20，回主线第九刀）
-
-**目标**：消掉上一刀识别的缺口——归档已能写入大内容，但召回会撞 2MB 上限
-（「存得下、取不回」）。
-
-#### 改动（`internal/tools/readsection.go`）
-
-在 **2MB 守卫之前**插入 compact-history 快速路径（对账 TS `read-section.ts`
-的 "Compact-history recall fast path"）：
-
-- **只对行范围生效**：字符范围需全文（无法流式定位），落回通用路径
-- **不过 2MB 闸门**：走 `artifact.Store.ReadLineRange`（流式，不载入内存）
-- **前置召回标记** `[recalled <id> <section>]`：让下一次压缩能把这块折叠回
-  指针（recall-eviction，见 `context.RenderArchiveBody` 的 tool 分支）
-- 起点越界 → 报总行数（**非错误**，对账 TS 的 `isError: false`）
-- 超 `MaxRangeLines`(5000) → 附分页提示
-- 超字符上限 → 截断
-
-**顺序是关键**：该分支必须在 2MB 守卫**之前**——那正是它存在的理由
-（长线程归档常超上限，会让归档自己的目录项无法召回）。
-
-#### 依赖方向
-
-`tools → context`（新引入）。**无环**（`context` 不依赖 `tools`）。
-`tools` 包已用标准库 `context`，故 `internal/context` 以 `ctxstore` 别名导入。
-
-#### 验证
-
-- `readsection_compacthistory_test.go` 7 条，其中
-  `TestReadSectionCompactHistoryStreamsBeyond2MB` 是核心（3.2MB 归档成功召回）
-- **变异反证**：M10（流式分支失效）→ 测试红；M11（不加召回标记）→ 测试红
-- 全量 go test 连跑 3 次，22 包 0 FAIL
-
-#### 仍未做
-
-- `CheckpointDeps.TaskAnchor`（需 `getActiveContract` + `renderTaskAnchor`）
-- `promptEngine.resetAppendixBaseline`、`recordCompactEvent`
-
----
-
-### CheckpointDeps.ArchiveDiscarded（2026-09-20，回主线第八刀）
-
-**目标**：`replaceWithCheckpoint` 丢掉一段历史时，把它序列化存为
-`compact-history` artifact，并把「召回引用块」拼到摘要末尾——模型之后可
-`read_section` 逐字取回被丢的历史（而非只依赖有损摘要）。
-
-#### 三个新文件
-
-| 文件 | 对账 TS | 内容 |
-|------|---------|------|
-| `internal/context/compactarchive.go` | `src/agent/compact-archive.ts` | `SerializeMessagesForArchive` / `RenderArchiveBody` / `BuildArchiveCatalog` / `BuildRecallRefBlock` |
-| `internal/context/recallmarker.go` | `src/compact/recall-marker.ts` | `BuildRecallMarker` / `ParseRecallMarker` |
-| `internal/context/archiveassembly.go` | `archiveDiscardedHistory`（`compaction-controller.ts:1009`） | `BuildArchiveDiscarded`（fail-soft 装配） |
-
-接线：`cmd/tianshu/main.go` 的 `loop.CheckpointDeps.ArchiveDiscarded`。
-
-#### 序列化契约（**必须稳定**——read_section 按行定位）
-
-每条消息用固定 divider 头：
-
-```
---- turn:N role:ROLE ---
-<body line 1>
-<body line 2>
-```
-
-**sections 按消息切分**（不是按轮）：单条 assistant 可能携带 content +
-reasoning + 多个 tool_calls 跨几十行，单条 tool 结果可能几万字符——轮→行
-映射太粗。逐消息 divider 保证字节稳定边界；catalog 再聚合成 turn→行目录。
-
-**turn 计数规则**：从 0 起，**每条 user 递增一次**（首条 user 让 `seenUser`
-变 true 但不递增）。保证 assistant/tool 归属到其所属的 user 轮。
-
-#### recall-eviction（为什么 tool 分支要折叠）
-
-被召回的 compact-history 块会**再次**进入历史。若原样重新归档，内容会在
-artifact 之间重复累积（**抵消压缩**）。故折叠为一行指针
-`[recalled → <id> <section> (see original artifact)]`——原 artifact 仍持有
-字节，指针保持可召回性而不复制内容。
-
-#### fail-soft 四条早退（对账 TS 注释）
-
-「Returns null when archiving is unavailable, the zone is empty, or the write
-fails — **compaction must never be blocked by archival**」：
-
-1. sink 为 nil（artifact store 未装配）
-2. 丢弃段为空
-3. 序列化后正文 trim 后为空
-4. 落盘失败 / id 为空
-
-Go 侧对应「返回空串」——调用方对空串就是「不追加」（与 TS 的
-`archive ? ... : ...` 分支同形）。
-
-#### 验证
-
-- `compactarchive_test.go` 20 条（序列化 8 + catalog/ref 3 + 装配 6 + recall marker 3）
-- `archive_wiring_test.go` 4 条（**端到端**：落盘 → 引用进摘要 → read_section 可召回）
-- **变异反证**：M8（不递增 turn）→ 2 条红；M9（不做 recall-eviction）→ 1 条红
-- 全量 go test 连跑 3 次，22 包 0 FAIL
-
-#### 仍未做
-
-- `CheckpointDeps.TaskAnchor`（需 `getActiveContract` + `renderTaskAnchor`）
-- `read_section` 的 **compact-history 快速路径**（流式读取 + recall 标记前置）
-  ——归档已可写，但 read_section 尚未对 `compact-history` 走流式分支
-  （当前走普通 `ReadRaw`，受 2MB 上限约束）
-- `promptEngine.resetAppendixBaseline`、`recordCompactEvent`
-
----
-
-### CheckpointDeps.Preflight（2026-09-20，回主线第七刀）
-
-**目标**：移植 `runResumePreflightOai`——历史替换后可能出现**孤儿 tool_call**
-（`tool_calls` 无对应 `tool_result`），供应商会以
-"insufficient tool messages following tool_calls" 拒绝下一次请求。
-
-#### 两个新文件
-
-| 文件 | 对账 TS | 内容 |
-|------|---------|------|
-| `internal/context/writeevidence.go` | `src/context/write-evidence-probe.ts` | `WriteRecoveryMarker` / `FormatWriteRecoveryContent` / `ExtractTargetPath` / `CountPriorRecoveries` / `CreateWriteEvidenceProbe` |
-| `internal/context/resumepreflight.go` | `src/context/resume-preflight.ts` | `RunResumePreflightOai` / `isToolAdjacencyCleanOai` / `ResumePreflightReport` |
-
-接线：`cmd/tianshu/main.go` 的 `loop.CheckpointDeps.Preflight`（含
-`CreateWriteEvidenceProbe(cwd)`）。
-
-#### 与既有 `session.RepairOrphanToolCalls` 的区别（**关键**）
-
-| | 策略 |
-|---|---|
-| `session.RepairOrphanToolCalls` | **剔除**孤儿（丢弃 tool_call / tool_result） |
-| 本函数（`RunResumePreflightOai`） | **拉回 + 合成**：从历史任意位置拉回匹配结果；仅当根本不存在时才合成占位 |
-
-后者更接近供应商的真实要求（**邻接**，不只是 id 存在）。TS 注释明确：
-「id 存在性检查（`detectOrphanToolCallsOai`）必要但不充分」——一个结果可能
-**存在**却位于中间的 user/assistant 之后（迟到的 addToolResults），有匹配 id
-但邻接破坏。
-
-#### 本刀发现的**真实 bug**（非本刀引入）
-
-`session.NormalizeOaiMessage` 的条件是 `m.ToolCalls == nil`——**漏掉了从
-JSON 读回的空数组**。实测（探针验证）：`json.Unmarshal` 对 `"tool_calls": []`
-产出 **非 nil 空切片**（`nil=false len=0`），而那恰恰是该函数存在的理由
-（「空数组可能残留在旧会话文件里」）。
-
-**修法**：条件改为 `len(m.ToolCalls) == 0 && m.ToolCalls != nil`（nil 时提前
-返回以保持「无改动返回原消息」契约）。同时 `sameMessages` 的 nil vs 空切片
-差异必须算「不同」——否则 `Repaired` 漏报。
-
-#### 验证
-
-- `resumepreflight_test.go` 20 条（邻接判定 6 + 修复路径 6 + 文案分支 5 + 探测 3）
-- `preflight_wiring_test.go` 3 条（接线：preflight 作用于**候选**而非原文）
-- **变异反证**：M6（漏检缺失结果）→ 1 条红；M7（丢弃而非拉回）→ 2 条红
-- 全量 go test 连跑 3 次，22 包 0 FAIL
-
-#### 仍未做
-
-- `CheckpointDeps` 另两个增强：`ArchiveDiscarded`（需 `serializeMessagesForArchive`）、
-  `TaskAnchor`（需 `getActiveContract` + `renderTaskAnchor`）
-- `promptEngine.resetAppendixBaseline`、`recordCompactEvent`
-
----
-
-### replaceWithCheckpoint（2026-09-20，回主线第六刀）——**验收面转 met**
-
-**目标**：session split 执行层的最后一块。做完后自 `1b3a552` 起一直 blocked
-的验收面「1M 窗口 + 86% 占用 → 会话历史真的被切分」**转 met**。
-
-#### 两个新文件 + 一处替换
-
-| 文件 | 对账 TS | 内容 |
-|------|---------|------|
-| `internal/agent/checkpoint.go` | `replaceWithCheckpoint`（`compaction-controller.ts:1082`） | `ReplaceWithCheckpoint` + `CheckpointParams`/`CheckpointDeps`/`CheckpointOutcome` |
-| `internal/session/listener.go`（替换占位） | `compactOai`（`session-persist.ts:424`） | `OnReplace` 从「未实现占位」改为**真的全量原子重写** |
-| `internal/session/persist.go` | 同上 | `rewriteTranscript`（tmp + rename 原子写） |
-
-#### 核心语义（逐条对账）
-
-1. **锚保留**：前 `CacheAnchorMessages`（2）条**逐字节不动**——前缀缓存的前提。
-2. **尾随未消费 user 保护**：末尾是 user（模型未消费）时其原文保留在末尾、
-   不进归档——否则用户刚发的指令被摘要替换（观感 = 消息被截断）。
-   判据 `len-1 >= anchorCount`（含 index == anchorCount 的最小边界）。
-3. **摘要角色**：有尾随原文时用 **assistant**——避免中间出现第二条 user
-   （promptEngine 对非 trailer 的 user 会 volatileBlock 回退注入，双份膨胀）。
-4. **reclaim gate**：不提交则**不碰历史**（`force=true` 时必提交——split 的
-   替代方案是超窗 API 失败）。
-5. **审计行保留**（`OnReplace` 侧）：重写只从内存消息重建文件，而审计行
-   （compact_start / compact_end / model_switch）**从不进内存**——不保留就会
-   在第一次重写时**静默销毁审计轨迹**（TS 注释记录的回归）。
-
-#### 接线
-
-`loop.go` 的 `maybeCompactAtBoundary`：split 判定触发 → `ReplaceWithCheckpoint`
-（force=true）→ 提交则 `replaceHistory`（重写 `l.messages` + `Listener.OnReplace`）
-并 **return**（历史已是新形态，不再走常规压缩）；被 gate 拒绝则记录原因后继续
-常规压缩。新增 `Loop.CheckpointDeps` 字段注入三项增强。
-
-#### 行为变更（三条既有测试随之反转）
-
-`replaceWithCheckpoint` 落地让「执行层未移植」时期的降级断言**与事实相反**：
-
-| 测试 | 旧断言 | 新断言 |
-|------|--------|--------|
-| `_SplitDoesNotReplaceHistory` | 历史长度不变 | **已删除**——被 `_SplitReplacesHistory` 取代（历史应变短） |
-| `_SplitDoesNotBlockCompact` | split 后仍走常规压缩 | 改为验证**未触发 split** 时常规压缩照常 |
-| `_SessionSplitHasProductionCaller` | 事件含「执行层未移植」 | 事件含「会话切分执行」+ 替换结果 |
-| `TestSplitHandoffUsesRealState` | 经 `maybeCompactAtBoundary` 取 handoff | 直接调 `TrySessionSplit`（前者现在会替换历史） |
-
-#### 依赖分层（未移植项显式留口）
-
-`CheckpointDeps` 三个字段，nil 时跳过（行为与 TS 的缺省分支一致）：
-- `ArchiveDiscarded` ← `archiveDiscardedHistory`（需 `serializeMessagesForArchive`）
-- `TaskAnchor` ← `buildTaskAnchorAppendix`（需 `getActiveContract` + `renderTaskAnchor`）
-- `Preflight` ← `runResumePreflightOai`（`src/context/resume-preflight.ts`，251 行）
-
-#### 验证
-
-- `checkpoint_test.go` 10 条 + `listener_replace_test.go` 6 条 + `sessionsplit_e2e_test.go` 4 条
-- **变异反证**：M4（去掉尾随 user 保护）→ 2 条红；M5（不保留审计行）→ 1 条红
-- 全量 go test 连跑 3 次，22 包 0 FAIL
-
-#### 仍未做
-
-- 上面三个 `CheckpointDeps` 增强（archive / task-anchor / preflight）
-- `promptEngine.resetAppendixBaseline`（Go 侧无 promptEngine 的 appendix 机制）
-- `recordCompactEvent`（Go 侧 metadata 有 `CompactEvents` 字段，但未被填充）
-
----
-
 ### artifact store（2026-09-20，回主线第五刀）
 **目标**：补齐 session split 执行层的最后一块前置，同时消掉
 `context_collapse.go` 里「Go 侧当前无 artifact 生产端」的已记录欠账。
@@ -900,6 +670,236 @@ JSON 读回的空数组**。实测（探针验证）：`json.Unmarshal` 对 `"to
 与 provider cache defaults，属尚未移植的 provider 模块。当前 `reclaimProfile()`
 由 `Profile.Billing`/`Cache` + `ContextWindow` 直接派生（语义等价于 TS 的
 缺省分支）。
+
+---
+
+### replaceWithCheckpoint（2026-09-20，回主线第六刀）——**验收面转 met**
+
+**目标**：session split 执行层的最后一块。做完后自 `1b3a552` 起一直 blocked
+的验收面「1M 窗口 + 86% 占用 → 会话历史真的被切分」**转 met**。
+
+#### 两个新文件 + 一处替换
+
+| 文件 | 对账 TS | 内容 |
+|------|---------|------|
+| `internal/agent/checkpoint.go` | `replaceWithCheckpoint`（`compaction-controller.ts:1082`） | `ReplaceWithCheckpoint` + `CheckpointParams`/`CheckpointDeps`/`CheckpointOutcome` |
+| `internal/session/listener.go`（替换占位） | `compactOai`（`session-persist.ts:424`） | `OnReplace` 从「未实现占位」改为**真的全量原子重写** |
+| `internal/session/persist.go` | 同上 | `rewriteTranscript`（tmp + rename 原子写） |
+
+#### 核心语义（逐条对账）
+
+1. **锚保留**：前 `CacheAnchorMessages`（2）条**逐字节不动**——前缀缓存的前提。
+2. **尾随未消费 user 保护**：末尾是 user（模型未消费）时其原文保留在末尾、
+   不进归档——否则用户刚发的指令被摘要替换（观感 = 消息被截断）。
+   判据 `len-1 >= anchorCount`（含 index == anchorCount 的最小边界）。
+3. **摘要角色**：有尾随原文时用 **assistant**——避免中间出现第二条 user
+   （promptEngine 对非 trailer 的 user 会 volatileBlock 回退注入，双份膨胀）。
+4. **reclaim gate**：不提交则**不碰历史**（`force=true` 时必提交——split 的
+   替代方案是超窗 API 失败）。
+5. **审计行保留**（`OnReplace` 侧）：重写只从内存消息重建文件，而审计行
+   （compact_start / compact_end / model_switch）**从不进内存**——不保留就会
+   在第一次重写时**静默销毁审计轨迹**（TS 注释记录的回归）。
+
+#### 接线
+
+`loop.go` 的 `maybeCompactAtBoundary`：split 判定触发 → `ReplaceWithCheckpoint`
+（force=true）→ 提交则 `replaceHistory`（重写 `l.messages` + `Listener.OnReplace`）
+并 **return**（历史已是新形态，不再走常规压缩）；被 gate 拒绝则记录原因后继续
+常规压缩。新增 `Loop.CheckpointDeps` 字段注入三项增强。
+
+#### 行为变更（三条既有测试随之反转）
+
+`replaceWithCheckpoint` 落地让「执行层未移植」时期的降级断言**与事实相反**：
+
+| 测试 | 旧断言 | 新断言 |
+|------|--------|--------|
+| `_SplitDoesNotReplaceHistory` | 历史长度不变 | **已删除**——被 `_SplitReplacesHistory` 取代（历史应变短） |
+| `_SplitDoesNotBlockCompact` | split 后仍走常规压缩 | 改为验证**未触发 split** 时常规压缩照常 |
+| `_SessionSplitHasProductionCaller` | 事件含「执行层未移植」 | 事件含「会话切分执行」+ 替换结果 |
+| `TestSplitHandoffUsesRealState` | 经 `maybeCompactAtBoundary` 取 handoff | 直接调 `TrySessionSplit`（前者现在会替换历史） |
+
+#### 依赖分层（未移植项显式留口）
+
+`CheckpointDeps` 三个字段，nil 时跳过（行为与 TS 的缺省分支一致）：
+- `ArchiveDiscarded` ← `archiveDiscardedHistory`（需 `serializeMessagesForArchive`）
+- `TaskAnchor` ← `buildTaskAnchorAppendix`（需 `getActiveContract` + `renderTaskAnchor`）
+- `Preflight` ← `runResumePreflightOai`（`src/context/resume-preflight.ts`，251 行）
+
+#### 验证
+
+- `checkpoint_test.go` 10 条 + `listener_replace_test.go` 6 条 + `sessionsplit_e2e_test.go` 4 条
+- **变异反证**：M4（去掉尾随 user 保护）→ 2 条红；M5（不保留审计行）→ 1 条红
+- 全量 go test 连跑 3 次，22 包 0 FAIL
+
+#### 仍未做
+
+- 上面三个 `CheckpointDeps` 增强（archive / task-anchor / preflight）
+- `promptEngine.resetAppendixBaseline`（Go 侧无 promptEngine 的 appendix 机制）
+- `recordCompactEvent`（Go 侧 metadata 有 `CompactEvents` 字段，但未被填充）
+
+---
+
+### CheckpointDeps.Preflight（2026-09-20，回主线第七刀）
+
+**目标**：移植 `runResumePreflightOai`——历史替换后可能出现**孤儿 tool_call**
+（`tool_calls` 无对应 `tool_result`），供应商会以
+"insufficient tool messages following tool_calls" 拒绝下一次请求。
+
+#### 两个新文件
+
+| 文件 | 对账 TS | 内容 |
+|------|---------|------|
+| `internal/context/writeevidence.go` | `src/context/write-evidence-probe.ts` | `WriteRecoveryMarker` / `FormatWriteRecoveryContent` / `ExtractTargetPath` / `CountPriorRecoveries` / `CreateWriteEvidenceProbe` |
+| `internal/context/resumepreflight.go` | `src/context/resume-preflight.ts` | `RunResumePreflightOai` / `isToolAdjacencyCleanOai` / `ResumePreflightReport` |
+
+接线：`cmd/tianshu/main.go` 的 `loop.CheckpointDeps.Preflight`（含
+`CreateWriteEvidenceProbe(cwd)`）。
+
+#### 与既有 `session.RepairOrphanToolCalls` 的区别（**关键**）
+
+| | 策略 |
+|---|---|
+| `session.RepairOrphanToolCalls` | **剔除**孤儿（丢弃 tool_call / tool_result） |
+| 本函数（`RunResumePreflightOai`） | **拉回 + 合成**：从历史任意位置拉回匹配结果；仅当根本不存在时才合成占位 |
+
+后者更接近供应商的真实要求（**邻接**，不只是 id 存在）。TS 注释明确：
+「id 存在性检查（`detectOrphanToolCallsOai`）必要但不充分」——一个结果可能
+**存在**却位于中间的 user/assistant 之后（迟到的 addToolResults），有匹配 id
+但邻接破坏。
+
+#### 本刀发现的**真实 bug**（非本刀引入）
+
+`session.NormalizeOaiMessage` 的条件是 `m.ToolCalls == nil`——**漏掉了从
+JSON 读回的空数组**。实测（探针验证）：`json.Unmarshal` 对 `"tool_calls": []`
+产出 **非 nil 空切片**（`nil=false len=0`），而那恰恰是该函数存在的理由
+（「空数组可能残留在旧会话文件里」）。
+
+**修法**：条件改为 `len(m.ToolCalls) == 0 && m.ToolCalls != nil`（nil 时提前
+返回以保持「无改动返回原消息」契约）。同时 `sameMessages` 的 nil vs 空切片
+差异必须算「不同」——否则 `Repaired` 漏报。
+
+#### 验证
+
+- `resumepreflight_test.go` 20 条（邻接判定 6 + 修复路径 6 + 文案分支 5 + 探测 3）
+- `preflight_wiring_test.go` 3 条（接线：preflight 作用于**候选**而非原文）
+- **变异反证**：M6（漏检缺失结果）→ 1 条红；M7（丢弃而非拉回）→ 2 条红
+- 全量 go test 连跑 3 次，22 包 0 FAIL
+
+#### 仍未做
+
+- `CheckpointDeps` 另两个增强：`ArchiveDiscarded`（需 `serializeMessagesForArchive`）、
+  `TaskAnchor`（需 `getActiveContract` + `renderTaskAnchor`）
+- `promptEngine.resetAppendixBaseline`、`recordCompactEvent`
+
+---
+
+### CheckpointDeps.ArchiveDiscarded（2026-09-20，回主线第八刀）
+
+**目标**：`replaceWithCheckpoint` 丢掉一段历史时，把它序列化存为
+`compact-history` artifact，并把「召回引用块」拼到摘要末尾——模型之后可
+`read_section` 逐字取回被丢的历史（而非只依赖有损摘要）。
+
+#### 三个新文件
+
+| 文件 | 对账 TS | 内容 |
+|------|---------|------|
+| `internal/context/compactarchive.go` | `src/agent/compact-archive.ts` | `SerializeMessagesForArchive` / `RenderArchiveBody` / `BuildArchiveCatalog` / `BuildRecallRefBlock` |
+| `internal/context/recallmarker.go` | `src/compact/recall-marker.ts` | `BuildRecallMarker` / `ParseRecallMarker` |
+| `internal/context/archiveassembly.go` | `archiveDiscardedHistory`（`compaction-controller.ts:1009`） | `BuildArchiveDiscarded`（fail-soft 装配） |
+
+接线：`cmd/tianshu/main.go` 的 `loop.CheckpointDeps.ArchiveDiscarded`。
+
+#### 序列化契约（**必须稳定**——read_section 按行定位）
+
+每条消息用固定 divider 头：
+
+```
+--- turn:N role:ROLE ---
+<body line 1>
+<body line 2>
+```
+
+**sections 按消息切分**（不是按轮）：单条 assistant 可能携带 content +
+reasoning + 多个 tool_calls 跨几十行，单条 tool 结果可能几万字符——轮→行
+映射太粗。逐消息 divider 保证字节稳定边界；catalog 再聚合成 turn→行目录。
+
+**turn 计数规则**：从 0 起，**每条 user 递增一次**（首条 user 让 `seenUser`
+变 true 但不递增）。保证 assistant/tool 归属到其所属的 user 轮。
+
+#### recall-eviction（为什么 tool 分支要折叠）
+
+被召回的 compact-history 块会**再次**进入历史。若原样重新归档，内容会在
+artifact 之间重复累积（**抵消压缩**）。故折叠为一行指针
+`[recalled → <id> <section> (see original artifact)]`——原 artifact 仍持有
+字节，指针保持可召回性而不复制内容。
+
+#### fail-soft 四条早退（对账 TS 注释）
+
+「Returns null when archiving is unavailable, the zone is empty, or the write
+fails — **compaction must never be blocked by archival**」：
+
+1. sink 为 nil（artifact store 未装配）
+2. 丢弃段为空
+3. 序列化后正文 trim 后为空
+4. 落盘失败 / id 为空
+
+Go 侧对应「返回空串」——调用方对空串就是「不追加」（与 TS 的
+`archive ? ... : ...` 分支同形）。
+
+#### 验证
+
+- `compactarchive_test.go` 20 条（序列化 8 + catalog/ref 3 + 装配 6 + recall marker 3）
+- `archive_wiring_test.go` 4 条（**端到端**：落盘 → 引用进摘要 → read_section 可召回）
+- **变异反证**：M8（不递增 turn）→ 2 条红；M9（不做 recall-eviction）→ 1 条红
+- 全量 go test 连跑 3 次，22 包 0 FAIL
+
+#### 仍未做
+
+- `CheckpointDeps.TaskAnchor`（需 `getActiveContract` + `renderTaskAnchor`）
+- `read_section` 的 **compact-history 快速路径**（流式读取 + recall 标记前置）
+  ——归档已可写，但 read_section 尚未对 `compact-history` 走流式分支
+  （当前走普通 `ReadRaw`，受 2MB 上限约束）
+- `promptEngine.resetAppendixBaseline`、`recordCompactEvent`
+
+---
+
+### read_section 的 compact-history 流式分支（2026-09-20，回主线第九刀）
+
+**目标**：消掉上一刀识别的缺口——归档已能写入大内容，但召回会撞 2MB 上限
+（「存得下、取不回」）。
+
+#### 改动（`internal/tools/readsection.go`）
+
+在 **2MB 守卫之前**插入 compact-history 快速路径（对账 TS `read-section.ts`
+的 "Compact-history recall fast path"）：
+
+- **只对行范围生效**：字符范围需全文（无法流式定位），落回通用路径
+- **不过 2MB 闸门**：走 `artifact.Store.ReadLineRange`（流式，不载入内存）
+- **前置召回标记** `[recalled <id> <section>]`：让下一次压缩能把这块折叠回
+  指针（recall-eviction，见 `context.RenderArchiveBody` 的 tool 分支）
+- 起点越界 → 报总行数（**非错误**，对账 TS 的 `isError: false`）
+- 超 `MaxRangeLines`(5000) → 附分页提示
+- 超字符上限 → 截断
+
+**顺序是关键**：该分支必须在 2MB 守卫**之前**——那正是它存在的理由
+（长线程归档常超上限，会让归档自己的目录项无法召回）。
+
+#### 依赖方向
+
+`tools → context`（新引入）。**无环**（`context` 不依赖 `tools`）。
+`tools` 包已用标准库 `context`，故 `internal/context` 以 `ctxstore` 别名导入。
+
+#### 验证
+
+- `readsection_compacthistory_test.go` 7 条，其中
+  `TestReadSectionCompactHistoryStreamsBeyond2MB` 是核心（3.2MB 归档成功召回）
+- **变异反证**：M10（流式分支失效）→ 测试红；M11（不加召回标记）→ 测试红
+- 全量 go test 连跑 3 次，22 包 0 FAIL
+
+#### 仍未做
+
+- `CheckpointDeps.TaskAnchor`（需 `getActiveContract` + `renderTaskAnchor`）
+- `promptEngine.resetAppendixBaseline`、`recordCompactEvent`
 
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
