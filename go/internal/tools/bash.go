@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/kalandramo/tianshu/go/internal/contract"
 	"github.com/kalandramo/tianshu/go/internal/platform"
@@ -154,8 +155,10 @@ func (t *bashTool) Execute(ctx context.Context, p *CallParams) (contract.Result,
 	prepareCommand(cmd)
 
 	var stdout, stderr bytes.Buffer
-	stdoutW := &limitedWriter{buf: &stdout, limit: maxOut}
-	stderrW := &limitedWriter{buf: &stderr, limit: maxOut}
+	// 解码器：Windows 中文控制台（代码页 936）输出 GBK 字节，直读会乱码。
+	// 每流一个独立解码器（stdout/stderr 编码可能不同，且各自首块探测）。
+	stdoutW := &limitedWriter{buf: &stdout, limit: maxOut, dec: newWinStreamDecoder(isWindowsHost())}
+	stderrW := &limitedWriter{buf: &stderr, limit: maxOut, dec: newWinStreamDecoder(isWindowsHost())}
 	cmd.Stdout = stdoutW
 	cmd.Stderr = stderrW
 
@@ -258,10 +261,18 @@ func (t *bashTool) Execute(ctx context.Context, p *CallParams) (contract.Result,
 }
 
 // limitedWriter 是带上限的缓冲写入器，超限后丢弃并标记。
+//
+// 同时负责**解码**：Windows 中文控制台输出 GBK 字节，直读会乱码（实测
+// `cmd /c "echo 中文"` → `d6 d0 ce c4...`）。解码在写入时进行，以保持跨块
+// 状态（多字节字符可能跨 chunk 边界）。
+//
+// 限流按**原始字节**计（对账 TS 的 OutputStreamBudget），但截断前先解码——
+// 否则可能切断多字节字符产出乱码。
 type limitedWriter struct {
 	buf       *bytes.Buffer
 	limit     int
 	truncated bool
+	dec       *winStreamDecoder
 }
 
 func (w *limitedWriter) Write(p []byte) (int, error) {
@@ -270,13 +281,33 @@ func (w *limitedWriter) Write(p []byte) (int, error) {
 		w.truncated = true
 		return len(p), nil // 丢弃但报告已写，避免调用方报错
 	}
-	if len(p) > remaining {
-		w.buf.Write(p[:remaining])
+	// 先解码再按剩余额度写入：解码后的字节数可能与原始不同（GBK 2 字节 →
+	// UTF-8 3 字节），故用解码结果的长度重新计算额度。
+	s := string(p)
+	if w.dec != nil {
+		s = w.dec.write(p)
+	}
+	if len(s) > remaining {
+		// 按 rune 边界截断，避免切断 UTF-8 字符。
+		w.buf.WriteString(truncateAtRuneBoundary(s, remaining))
 		w.truncated = true
 		return len(p), nil
 	}
-	w.buf.Write(p)
+	w.buf.WriteString(s)
 	return len(p), nil
+}
+
+// truncateAtRuneBoundary 在不超过 limit 字节的前提下，取尽量多的完整字符。
+func truncateAtRuneBoundary(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	// 回退到不切断 UTF-8 序列的位置。
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 // isEnvironmentError 识别「环境缺东西」而非「命令执行失败」。

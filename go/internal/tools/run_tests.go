@@ -104,8 +104,12 @@ func (t *runTestsTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 	prepareCommand(cmd)
 
 	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
+	// 解码器：Windows 中文控制台输出 GBK 字节（如 `cmd` 跑的测试运行器），
+	// 直读会让中文测试名乱码。stdout/stderr 合并到同一流，故共用一个解码器。
+	dec := newWinStreamDecoder(isWindowsHost())
+	decodeW := &decodingWriter{buf: &out, dec: dec}
+	cmd.Stdout = decodeW
+	cmd.Stderr = decodeW
 
 	start := time.Now()
 	if err := cmd.Start(); err != nil {

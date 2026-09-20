@@ -272,6 +272,51 @@ Node 在 Windows 用 cmd.exe。
 M2 永不加引号 → 6 处红（元字符全裸露）；M3 去掉「不双重加引」短路 → 2 处红
 （已引号 token 被破坏）。
 
+### Windows 控制台输出乱码——流式编码解码器（2026-09-20，第四刀）
+
+上轮遗留项「`WinStreamDecoder` 未移植」的处置。**核实后确认是真缺陷**，且与
+上一刀的 shell 探测**直接耦合**。
+
+**问题**：本机代码页是 **936（GBK）**。实测：
+
+| 命令 | 原始字节 | 直读结果 |
+|---|---|---|
+| `cmd /c "echo 中文测试"` | `d6 d0 ce c4 b2 e2 ca d4`（GBK） | `\xd6\xd0\xceĲ...` **乱码** |
+| `bash -c "echo 中文测试"` | `e4 b8 ad e6 96 87...`（UTF-8） | `中文测试` ✓ |
+| `cmd /c chcp` | `bb ee b6 af...`（GBK） | `活动代码页: 936`（修复后） |
+
+**耦合点**：shell 由探测决定——**未装 Git Bash 时回落 cmd.exe**，那时中文必乱码。
+所以上一刀引入的探测能力，让这个缺陷从「理论存在」变成「可达路径」。
+
+TS 侧的处置（`WinStreamDecoder`）是首块探测 UTF-8/GBK + 流式解码；TS 注释记录
+他们**移除**了 `chcp 65001` 前缀（`nul` 重定向在沙箱环境失败），改由解码器兜底。
+
+**Go 实现有两处必须比 TS 更小心**（都是探针实测出来的，不是推的）：
+
+1. **`transform.Bytes` 每次调用重置状态**。逐块调用会让每个多字节字符的首字节
+   单独解码成替换字符——探针实测全部产出 `ef bf bd`。必须持有
+   `transform.Transformer` 反复调 `Transform`。
+2. **单块 `utf8.Valid` 不是可靠的编码判据**。探针实测：单字节 `d6`（GBK 首字节）
+   与 `e4`（UTF-8 首字节）的 `utf8.Valid` **都是 false**——无法区分「残缺（等更多
+   字节）」与「非法（判 GBK）」。故实现 `utf8PrefixStatus` 显式区分这两种状态，
+   未判定期间累积字节。
+3. **GBK 转换器对不完整序列返回 `nSrc=0`**（一个字节都不消费），要求调用方累积
+   重试。故 `transformChunk` 返回未消费的**残留字节**，解码器持有到下次拼接——
+   丢弃残留会让半个字符永久丢失（实测症状：逐字节喂入只解出第一个字）。
+
+**接线**：`bash` 的 `limitedWriter` 与 `run_tests` 的 `decodingWriter` 在写入时
+解码（保持跨块状态）；限流仍按原始字节，但截断落在 rune 边界
+（`truncateAtRuneBoundary`），避免切断 UTF-8 字符。
+
+**新增依赖**：`golang.org/x/text`（`encoding/simplifiedchinese` + `transform`）。
+
+**变异反证**（3 个，全部有判别力）：M1 不切 GBK → 4 处红（全乱码）；
+M2 丢弃残留 → 1 处红（只解出第一个字）；M3 退回单块 `utf8.Valid` → 1 处红
+（UTF-8 被误判为 GBK，产出 `涓�枃`）。
+**M1 首轮是「编译失败伪装红 0」**（去掉 `simplifiedchinese` 使用后 import
+未使用）——本轮第 16 次遇到该成因，加 `_ = simplifiedchinese.GBK` 保留引用后
+才有判别力。
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`
