@@ -156,6 +156,13 @@ type Loop struct {
 	// nil 时跳过 L1 拦截与 read_section 召回（增强而非必需）。
 	Artifacts *artifact.Store
 
+	// CheckpointDeps 是 checkpoint 替换的可注入增强。
+	//
+	// 对账 TS 的 `archiveDiscardedHistory` / `buildTaskAnchorAppendix` /
+	// `runResumePreflightOai`——三者未移植，故此处以依赖注入形式留口
+	// （nil 时对应增强跳过，行为与 TS 的缺省分支一致）。
+	CheckpointDeps CheckpointDeps
+
 	// Advisories 是劝导总线（hook 投递 → 渲染 → 注入 prompt）。
 	//
 	// nil 时跳过 advisory 注入——增强而非必需。
@@ -904,20 +911,46 @@ func (l *Loop) maybeCompactAtBoundary(turn int) {
 	// **执行层未移植**：TS 的 `trySessionSplit` 内部调 `replaceWithCheckpoint`
 	// 真正替换历史（依赖 task-state / trajectory / artifact store——Go 侧全无）。
 	// 故此处**只判定 + 记录**，不改 `l.messages`——不谎称已完成切分。
-	// 候选 handoff 已构造（`outcome.Handoff`），待执行层就位后即可采用。
+	// 候选 handoff 已构造（`outcome.Handoff`）。
 	//
-	// **state 传入真实轨迹 / todo / 流式文本**——handoff 由此产出完整
+	// **执行层已接**：判定通过后用 `ReplaceWithCheckpoint` **真的替换历史**
+	// （anchor 保留 + 尾随 user 保护 + reclaim gate）。
+	//
+	// state 传入真实轨迹 / todo / 流式文本——handoff 由此产出完整
 	// 9 章节（而非降级版的推理+文件清单）。全部可缺省（nil 时退化）。
 	if split := l.Compact.TrySessionSplit(oai, l.splitState()); split.SplitTriggered() {
+		// **force=true**：split 的替代方案是超窗 API 失败（对账 TS 的
+		// force 语义——ceiling / session split 的 substitute 是灾难）。
+		outcome := l.Compact.ReplaceWithCheckpoint(oai, CheckpointParams{
+			Tier:         4, // session split 属最高层（对账 TS 的 ceiling tier）
+			Reason:       fmt.Sprintf("session split at %.0f%% context", split.Decision.Ratio*100),
+			Summary:      split.Handoff,
+			FallbackText: split.Handoff,
+			Action:       compact.ActionSessionSplit,
+			Force:        true,
+		}, l.CheckpointDeps)
+
+		if outcome.Committed {
+			l.replaceHistory(outcome.Messages)
+			l.emit(Event{
+				Kind: "compaction",
+				Turn: turn,
+				Text: fmt.Sprintf("会话切分执行（占用 %.0f%%，窗口 %d）——"+
+					"历史替换为 %d 条（回收 %d token）",
+					split.Decision.Ratio*100, l.Compact.ContextWindow,
+					len(outcome.Messages), outcome.ReclaimedTokens),
+			})
+			// **已替换历史 → 不再走常规压缩**（历史已是新形态）。
+			return
+		}
+
+		// 未提交（gate 拒绝）→ 如实记录，继续走常规压缩。
 		l.emit(Event{
 			Kind: "compaction",
 			Turn: turn,
-			Text: fmt.Sprintf("会话切分判定触发（占用 %.0f%%，窗口 %d）——"+
-				"handoff 候选已构造（%d 字符），但执行层未移植，历史未替换",
-				split.Decision.Ratio*100, l.Compact.ContextWindow, len(split.Handoff)),
+			Text: fmt.Sprintf("会话切分被 reclaim gate 拒绝（%s）——未替换历史",
+				outcome.Reason),
 		})
-		// **不 return**：判定触发但未执行，常规压缩仍应尝试——
-		// 否则「判定了但没执行」会让上下文压力完全无人处理。
 	}
 
 	compacted, changed := l.Compact.MaybeCompact(oai, turn)
@@ -931,4 +964,18 @@ func (l *Loop) maybeCompactAtBoundary(turn int) {
 		Text: fmt.Sprintf("压缩：回收 %d 条消息（窗口 %d）",
 			l.Compact.LastReclaimed, l.Compact.ContextWindow),
 	})
+}
+
+// replaceHistory 用替换后的历史重写内存消息并镜像到持久化。
+//
+// 对账 TS `safeReplaceMessages`：`session.replaceMessages` → mutation
+// listener 的 `replace` 分支 → `compactOai` 全量原子重写。
+//
+// **preflight 已由 ReplaceWithCheckpoint 的 deps 处理**（若注入）——此处
+// 只做替换与持久化。
+func (l *Loop) replaceHistory(messages []session.OaiMessage) {
+	l.messages = oaiToOrderedMaps(messages)
+	if l.Listener != nil {
+		l.Listener.OnReplace(messages)
+	}
 }

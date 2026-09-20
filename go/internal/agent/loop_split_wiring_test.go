@@ -35,62 +35,76 @@ func TestMaybeCompactAtBoundary_SessionSplitHasProductionCaller(t *testing.T) {
 	}
 
 	// 必须发出可见事件——**不静默**。
+	//
+	// **行为变更**：首版断言事件文案含「执行层未移植」（当时只判定不执行）。
+	// `replaceWithCheckpoint` 落地后事件改为「会话切分执行」+ 替换结果。
 	var sawSplit bool
 	for _, e := range events {
-		if strings.Contains(e.Text, "会话切分判定触发") {
+		if strings.Contains(e.Text, "会话切分执行") {
 			sawSplit = true
-			if !strings.Contains(e.Text, "执行层未移植") {
-				t.Errorf("事件应如实说明执行层未移植，实得 %q", e.Text)
+			// 事件应如实报告替换结果（条数 + 回收 token）。
+			if !strings.Contains(e.Text, "历史替换为") || !strings.Contains(e.Text, "回收") {
+				t.Errorf("事件应如实报告替换结果，实得 %q", e.Text)
 			}
 		}
 	}
 	if !sawSplit {
-		t.Errorf("应发出切分判定事件（不静默），实得事件 %+v", events)
+		t.Errorf("应发出切分执行事件（不静默），实得事件 %+v", events)
 	}
 }
 
-// TestMaybeCompactAtBoundary_SplitDoesNotReplaceHistory —— **不谎称已切分**。
+// （`TestMaybeCompactAtBoundary_SplitDoesNotReplaceHistory` 已移除：
+// 它断言的是「执行层未移植」时期的降级行为。`replaceWithCheckpoint` 落地后
+// 该断言与事实相反——由下面的 `_SplitReplacesHistory` 取代，断言方向反转。）
+
+// TestMaybeCompactAtBoundary_SplitReplacesHistory —— **执行层已接**。
 //
-// 执行层（`replaceWithCheckpoint`）未移植——故判定触发时**不得**改动
-// `l.messages`。这条锁定诚实性：不假装完成了它没做的事。
-func TestMaybeCompactAtBoundary_SplitDoesNotReplaceHistory(t *testing.T) {
+// 首版这条测试断言「执行层未移植时不应改动历史长度」——那是当时的**有意
+// 降级**（判定 + 候选，不替换）。`replaceWithCheckpoint` 落地后行为反转：
+// 判定通过 → **真的替换历史**。这条测试随之反转断言，记录这次行为变更。
+func TestMaybeCompactAtBoundary_SplitReplacesHistory(t *testing.T) {
 	l := &Loop{
 		Compact:  NewCompactBoundary(1_000_000),
 		messages: oaiToOrderedMaps(splitMsgs(950_000)),
 	}
 	before := len(l.messages)
-	beforeFirst := l.messages[0].Keys()
+	l.Emit = func(Event) {}
 
 	l.maybeCompactAtBoundary(0)
 
 	if !l.Compact.LastSplitDecision.ShouldSplit {
 		t.Fatal("本用例需要 split 判定触发")
 	}
-	if len(l.messages) != before {
-		t.Errorf("执行层未移植时不应改动历史长度：%d → %d", before, len(l.messages))
+	// 历史应被替换（anchor + 摘要，远短于原 950 条）。
+	if len(l.messages) >= before {
+		t.Errorf("执行层已接——历史应被替换为更短形态：%d → %d", before, len(l.messages))
 	}
-	if len(l.messages) > 0 && len(l.messages[0].Keys()) != len(beforeFirst) {
-		t.Error("不应改动首条消息的键集")
+	if len(l.messages) == 0 {
+		t.Error("替换后不应为空")
 	}
 }
 
-// TestMaybeCompactAtBoundary_SplitDoesNotBlockCompact —— split 判定不阻断常规压缩。
+// TestMaybeCompactAtBoundary_SplitDoesNotBlockCompact —— split **未提交**时不阻断常规压缩。
 //
-// 判定触发但**未执行**——若因此 return，上下文压力会完全无人处理。
-// 故 split 之后仍应尝试 maybeCompact（TS 是 split 成功才 userMessageConsumed=true；
-// Go 侧执行层未移植 = 未成功，故不该阻断）。
+// **行为变更说明**：首版断言「split 判定不阻断压缩」——当时 split 不替换
+// 历史，故必须继续压缩。现在 split **提交后**会 return（历史已是新形态，
+// 无需再压）；仅当 gate 拒绝时才继续走常规压缩。
+//
+// 本测试改为验证**未触发 split 的场景**下常规压缩照常发生（守住「不阻断」
+// 的原意）。
 func TestMaybeCompactAtBoundary_SplitDoesNotBlockCompact(t *testing.T) {
+	// 10% 占用 → split 不触发 → 常规压缩路径应正常走。
 	l := &Loop{
 		Compact:  NewCompactBoundary(1_000_000),
-		messages: oaiToOrderedMaps(splitMsgs(950_000)),
+		messages: oaiToOrderedMaps(splitMsgs(100_000)),
 	}
 	l.Emit = func(Event) {}
 
 	l.maybeCompactAtBoundary(0)
 
-	// 常规压缩的决策也应发生（证明没被 split 的 return 阻断）。
+	// 常规压缩的决策也应发生。
 	if l.Compact.LastDecision == nil {
-		t.Error("split 判定不应阻断常规压缩（LastDecision 为 nil）")
+		t.Error("未触发 split 时常规压缩应照常决策（LastDecision 为 nil）")
 	}
 }
 

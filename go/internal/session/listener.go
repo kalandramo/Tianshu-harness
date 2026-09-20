@@ -1,7 +1,9 @@
 package session
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"os"
 	"strings"
 
@@ -142,13 +144,106 @@ func (l *PersistListener) updateMetadata(m OaiMessage) {
 	}
 }
 
-// OnReplace 处理一次全量替换（压缩 / 重置）。
+// OnReplace 处理一次全量替换（压缩 / 会话切分 / 重置）。
 //
-// 对账 mutation listener 的 `replace` 分支（TS 走 `compactOaiAsync`）。
-// **本移植未实现压缩重写**——见 HANDOFF 欠账。当前仅记录意图，避免
-// 调用方以为替换已生效。
+// 对账 TS `compactOai`（`session-persist.ts:424`）：**全量原子重写**文件，
+// 而不是追加——历史已被替换，旧行必须消失。
+//
+// # 三步（对账 TS 的 compactOai）
+//
+//  1. **先 flush** 排空待写缓冲——否则缓冲里的旧行会在重写后又被写出
+//  2. **保留审计行**（`collectAuditLines`）：重写只从内存消息重建文件，
+//     而审计行（compact_start / compact_end / model_switch）**从不进内存**
+//     （`parseSessionLine` 在回放时跳过它们）。不保留的话，第一次重写就会
+//     **静默销毁审计轨迹**（TS 注释记录的回归）。
+//  3. **原子写**（tmp + rename）——中途崩溃不会留下半个文件
+//
+// **本实现替代了此前的显式未实现占位**（原先只 report 一个错误，
+// 让调用方以为替换没生效）。
 func (l *PersistListener) OnReplace(messages []OaiMessage) {
-	l.report(fmt.Errorf("OnReplace 未实现（压缩重写属未移植范围，%d 条消息被忽略）", len(messages)))
+	if err := l.replaceAll(messages); err != nil {
+		l.report(fmt.Errorf("会话全量重写失败：%w", err))
+	}
+}
+
+// replaceAll 执行全量原子重写（对账 TS compactOai 的三步）。
+func (l *PersistListener) replaceAll(messages []OaiMessage) error {
+	// 1) flush 排空缓冲——TS 的 `batchWriter.flushSync()`。
+	if err := l.persist.Flush(); err != nil {
+		return err
+	}
+
+	// 2) 收集审计行（从磁盘上的既有内容里挑出审计类型）。
+	audit := l.persist.collectAuditLines()
+
+	// 3) 组装：审计行 + 全部消息（各带校验和），原子写。
+	lines := make([]string, 0, len(audit)+len(messages))
+	lines = append(lines, audit...)
+	for _, m := range messages {
+		lines = append(lines, prompt.AppendChecksum(
+			SerializeOaiSessionMessage(m, MaxSessionMessageJSONChars)))
+	}
+	content := strings.Join(lines, "\n") + "\n"
+	return l.persist.rewriteTranscript(content)
+}
+
+// collectAuditLines 从既有文件里挑出审计行（重新加校验和）。
+//
+// 对账 TS `collectAuditLines`。**为什么必须保留**：重写只从内存消息重建文件，
+// 而审计行从不进内存（回放时被跳过）——不保留就会在第一次重写时静默销毁
+// 审计轨迹。
+//
+// 无法读取时返回空切片（不阻塞重写）。
+func (p *Persist) collectAuditLines() []string {
+	content := p.ReadTranscriptText()
+	if content == "" {
+		return nil
+	}
+	out := []string{}
+	for _, line := range strings.Split(strings.TrimSpace(content), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// 审计行是带 type 字段的裸 JSON（非 OAI 消息形态）。
+		// 直接解析原始行——校验和在重写时重新生成。
+		raw, ok := stripChecksum(line)
+		if !ok {
+			continue // 校验和不符——损坏行，跳过
+		}
+		var probe struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(raw), &probe); err != nil {
+			continue
+		}
+		if auditLineTypes[probe.Type] {
+			out = append(out, prompt.AppendChecksum(raw))
+		}
+	}
+	return out
+}
+
+// auditLineTypes 对账 TS 的 `AUDIT_LINE_TYPES`。
+//
+// **必须逐字相同**——这些类型名是文件格式的一部分。
+var auditLineTypes = map[string]bool{
+	"compact_start": true,
+	"compact_end":   true,
+	"model_switch":  true,
+}
+
+// stripChecksum 去掉行尾的校验和后缀，返回裸 JSON。
+//
+// 复用 `prompt.VerifyAndExtract`（对账 TS 的 `verifyAndExtract`）——
+// 它已处理所有边界：无 `|`、`|` 后非校验和格式、`|` 是内容一部分。
+// 校验失败（Valid=false）时返回错误——审计行不该损坏。
+func stripChecksum(line string) (string, bool) {
+	r := prompt.VerifyAndExtract(line)
+	if r.Valid {
+		return r.JSON, true
+	}
+	return "", false
 }
 
 // Drain 排空待写缓冲（会话结束 / 切换目录 / 中止路径调用）。

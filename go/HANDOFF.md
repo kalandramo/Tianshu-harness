@@ -577,8 +577,73 @@ session split 是**主动**护栏：86% 时把历史替换为结构化 handoff�
 
 ---
 
-### artifact store（2026-09-20，回主线第五刀）
+### replaceWithCheckpoint（2026-09-20，回主线第六刀）——**验收面转 met**
 
+**目标**：session split 执行层的最后一块。做完后自 `1b3a552` 起一直 blocked
+的验收面「1M 窗口 + 86% 占用 → 会话历史真的被切分」**转 met**。
+
+#### 两个新文件 + 一处替换
+
+| 文件 | 对账 TS | 内容 |
+|------|---------|------|
+| `internal/agent/checkpoint.go` | `replaceWithCheckpoint`（`compaction-controller.ts:1082`） | `ReplaceWithCheckpoint` + `CheckpointParams`/`CheckpointDeps`/`CheckpointOutcome` |
+| `internal/session/listener.go`（替换占位） | `compactOai`（`session-persist.ts:424`） | `OnReplace` 从「未实现占位」改为**真的全量原子重写** |
+| `internal/session/persist.go` | 同上 | `rewriteTranscript`（tmp + rename 原子写） |
+
+#### 核心语义（逐条对账）
+
+1. **锚保留**：前 `CacheAnchorMessages`（2）条**逐字节不动**——前缀缓存的前提。
+2. **尾随未消费 user 保护**：末尾是 user（模型未消费）时其原文保留在末尾、
+   不进归档——否则用户刚发的指令被摘要替换（观感 = 消息被截断）。
+   判据 `len-1 >= anchorCount`（含 index == anchorCount 的最小边界）。
+3. **摘要角色**：有尾随原文时用 **assistant**——避免中间出现第二条 user
+   （promptEngine 对非 trailer 的 user 会 volatileBlock 回退注入，双份膨胀）。
+4. **reclaim gate**：不提交则**不碰历史**（`force=true` 时必提交——split 的
+   替代方案是超窗 API 失败）。
+5. **审计行保留**（`OnReplace` 侧）：重写只从内存消息重建文件，而审计行
+   （compact_start / compact_end / model_switch）**从不进内存**——不保留就会
+   在第一次重写时**静默销毁审计轨迹**（TS 注释记录的回归）。
+
+#### 接线
+
+`loop.go` 的 `maybeCompactAtBoundary`：split 判定触发 → `ReplaceWithCheckpoint`
+（force=true）→ 提交则 `replaceHistory`（重写 `l.messages` + `Listener.OnReplace`）
+并 **return**（历史已是新形态，不再走常规压缩）；被 gate 拒绝则记录原因后继续
+常规压缩。新增 `Loop.CheckpointDeps` 字段注入三项增强。
+
+#### 行为变更（三条既有测试随之反转）
+
+`replaceWithCheckpoint` 落地让「执行层未移植」时期的降级断言**与事实相反**：
+
+| 测试 | 旧断言 | 新断言 |
+|------|--------|--------|
+| `_SplitDoesNotReplaceHistory` | 历史长度不变 | **已删除**——被 `_SplitReplacesHistory` 取代（历史应变短） |
+| `_SplitDoesNotBlockCompact` | split 后仍走常规压缩 | 改为验证**未触发 split** 时常规压缩照常 |
+| `_SessionSplitHasProductionCaller` | 事件含「执行层未移植」 | 事件含「会话切分执行」+ 替换结果 |
+| `TestSplitHandoffUsesRealState` | 经 `maybeCompactAtBoundary` 取 handoff | 直接调 `TrySessionSplit`（前者现在会替换历史） |
+
+#### 依赖分层（未移植项显式留口）
+
+`CheckpointDeps` 三个字段，nil 时跳过（行为与 TS 的缺省分支一致）：
+- `ArchiveDiscarded` ← `archiveDiscardedHistory`（需 `serializeMessagesForArchive`）
+- `TaskAnchor` ← `buildTaskAnchorAppendix`（需 `getActiveContract` + `renderTaskAnchor`）
+- `Preflight` ← `runResumePreflightOai`（`src/context/resume-preflight.ts`，251 行）
+
+#### 验证
+
+- `checkpoint_test.go` 10 条 + `listener_replace_test.go` 6 条 + `sessionsplit_e2e_test.go` 4 条
+- **变异反证**：M4（去掉尾随 user 保护）→ 2 条红；M5（不保留审计行）→ 1 条红
+- 全量 go test 连跑 3 次，22 包 0 FAIL
+
+#### 仍未做
+
+- 上面三个 `CheckpointDeps` 增强（archive / task-anchor / preflight）
+- `promptEngine.resetAppendixBaseline`（Go 侧无 promptEngine 的 appendix 机制）
+- `recordCompactEvent`（Go 侧 metadata 有 `CompactEvents` 字段，但未被填充）
+
+---
+
+### artifact store（2026-09-20，回主线第五刀）
 **目标**：补齐 session split 执行层的最后一块前置，同时消掉
 `context_collapse.go` 里「Go 侧当前无 artifact 生产端」的已记录欠账。
 

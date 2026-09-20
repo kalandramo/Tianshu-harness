@@ -318,8 +318,13 @@ func TestListenerTokenUsageFromState(t *testing.T) {
 	}
 }
 
-// TestListenerReplaceUnimplemented —— OnReplace 报告未实现（不静默吞掉）。
-func TestListenerReplaceUnimplemented(t *testing.T) {
+// TestListenerReplaceImplemented —— OnReplace 真的重写文件（不再报告未实现）。
+//
+// **行为变更**：本测试原名 `TestListenerReplaceUnimplemented`，断言「OnReplace
+// 报告未实现」——那是 `replaceWithCheckpoint` 未移植时的**显式占位**。
+// 实现落地后该断言与事实相反（且会因 captured==nil 而 panic）。
+// 现改为验证真行为：替换生效、无错误上报。
+func TestListenerReplaceImplemented(t *testing.T) {
 	dir := t.TempDir()
 	p, err := NewPersist("lrep", dir)
 	if err != nil {
@@ -327,16 +332,25 @@ func TestListenerReplaceUnimplemented(t *testing.T) {
 	}
 	defer p.Close()
 
+	// 先写一条旧消息。
+	if err := p.AppendOai(OaiMessage{Role: "user", Content: strPtr("old")}, true); err != nil {
+		t.Fatal(err)
+	}
+
 	var captured error
 	l := NewPersistListener(p, New("lrep"))
 	l.SetErrorHandler(func(e error) { captured = e })
-	l.OnReplace([]OaiMessage{{Role: "user"}})
+	l.OnReplace([]OaiMessage{{Role: "user", Content: strPtr("new")}})
 
-	if captured == nil {
-		t.Error("OnReplace 应报告未实现，不能静默")
+	if captured != nil {
+		t.Errorf("OnReplace 已实现——不应上报错误，实得 %v", captured)
 	}
-	if !strings.Contains(captured.Error(), "未实现") {
-		t.Errorf("错误消息应说明未实现，得到 %q", captured.Error())
+	loaded := p.LoadOai()
+	if len(loaded) != 1 {
+		t.Fatalf("替换后应只有 1 条，实得 %d", len(loaded))
+	}
+	if loaded[0].Content == nil || *loaded[0].Content != "new" {
+		t.Errorf("内容应为 new，实得 %v", loaded[0].Content)
 	}
 }
 

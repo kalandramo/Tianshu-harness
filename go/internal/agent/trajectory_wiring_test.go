@@ -113,14 +113,15 @@ func TestSplitHandoffUsesRealState(t *testing.T) {
 	l.Emit = func(Event) {}
 
 	// 95% 占用 → 判定必触发。
-	l.messages = oaiToOrderedMaps(splitMsgs(950_000))
-	l.maybeCompactAtBoundary(0)
-
-	if l.Compact.LastSplitDecision == nil || !l.Compact.LastSplitDecision.ShouldSplit {
+	//
+	// **注意**：直接调 `TrySessionSplit` 取 handoff——不要走
+	// `maybeCompactAtBoundary`，后者现在会**真的替换历史**
+	// （replaceWithCheckpoint 已接），替换后再判定就不触发了。
+	bigHistory := splitMsgs(950_000)
+	out := l.Compact.TrySessionSplit(bigHistory, l.splitState())
+	if !out.SplitTriggered() {
 		t.Fatal("本用例需要 split 判定触发")
 	}
-	// 直接验证 handoff 构造（通过 TrySessionSplit 的返回值）。
-	out := l.Compact.TrySessionSplit(orderedMapsToOai(l.messages), l.splitState())
 	if out.Handoff == "" {
 		t.Fatal("handoff 不应为空")
 	}

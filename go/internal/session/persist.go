@@ -115,6 +115,22 @@ func (p *Persist) Flush() error {
 	return p.metadata.Flush()
 }
 
+// rewriteTranscript 用给定文本**全量原子重写** transcript。
+//
+// 对账 TS `compactOai` 的 `writeFileAtomicSync(this.filePath,
+// encodeBatch(content))`——压缩/会话切分后历史已变，旧行必须消失
+// （不能用追加）。
+//
+// **原子性**：tmp 文件 + rename——中途崩溃不会留下半个会话文件。
+// **编码**：内容经 `EncodeBatch` 转成单帧（与 append 路径同一编码器，
+// 保证文件格式一致）。
+//
+// 调用方须**先 Flush**（否则缓冲里的旧行会在重写后又被写出）。
+func (p *Persist) rewriteTranscript(content string) error {
+	frame := p.writer.transcript.EncodeBatch(content)
+	return writeFileAtomic(p.filePath, frame)
+}
+
 // ReadTranscriptText 读会话文件并解码为 JSONL 文本（含未 flush 的 pending）。
 //
 // 对账 readTranscriptText：进程内读者必须看到仍在写缓冲里的行
