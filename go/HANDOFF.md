@@ -463,6 +463,31 @@ session split 是**主动**护栏：86% 时把历史替换为结构化 handoff�
 决定如何替换历史（避免半套用：判定了但替换逻辑不完整会让会话处于中间态）。
 移植那三个子系统后应**替换** `BuildSessionHandoff`，而非在其上叠加。
 
+#### 悬空缺口与修复（2026-09-20 当日补）
+
+**首版交付漏报的问题**：`TrySessionSplit` 落地时**没有生产调用方**——只在
+定义（`compact_boundary.go`）与测试里出现。这是项目纪律明确警告的
+`type-without-consumer`（悬空代码），而当时的交付报告**没有指出**。
+
+**发现方式**：交付后自检时 grep 消费方，确认 `loop.go:784` 只调
+`MaybeCompact`，没有 `TrySessionSplit`——而 TS 的调用序是
+**先 split、再 maybeCompact**（`compact-boundary-coordinator.ts:124`）。
+
+**修复**：接到 `loop.maybeCompactAtBoundary`（`loop.go:799`），置于
+`MaybeCompact` **之前**（顺序有意义：split 的判定依据是历史占用，若先走常规
+压缩，占用已被改动）。
+
+**执行层未移植下的诚实处理**（三点）：
+1. **不替换历史**——`replaceWithCheckpoint` 未移植，故 `l.messages` 不动。
+2. **发可见事件**——文案含「执行层未移植，历史未替换」，不静默、不谎称完成。
+3. **不阻断常规压缩**——TS 是 split **成功**才 `userMessageConsumed = true`；
+   Go 侧未执行 = 未成功，故不该 return（否则上下文压力无人处理）。
+
+**回归测试**：`loop_split_wiring_test.go` 五条，其中
+`TestMaybeCompactAtBoundary_SessionSplitHasProductionCaller` 专门锁定「有生产
+调用方」——防止未来重构再次让它悬空。变异反证 M1（移除调用）→ 测试 panic
+（`LastSplitDecision` 为 nil 被解引用），有判别力。
+
 #### 判定层语义（两条门槛，顺序敏感）
 
 1. `contextWindow < 500_000` → 不 split（**即使 ratio 极高**）

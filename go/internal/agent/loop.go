@@ -774,13 +774,40 @@ var _ = errors.New
 // 一次往返。**只有真发生压缩才回写**（`changed == true`），避免无谓的对象
 // 重建（每次重建都会让后续的键序断言失效风险上升）。
 //
-// **未接**（见 PLAN.md 架构欠账）：session split（86% 会话切分）、
-// reclaim gate（回收量是否够本）、缓存顾问延迟、LLM 重写路径。
+// **未接**（见 PLAN.md 架构欠账）：LLM 重写路径（partial-llm / full-llm /
+// checkpoint）——需 summaryClient 抽象（真调模型做摘要）。
+//
+// **session split**：判定层已接（见下），但**执行层未移植**——判定通过时
+// 无法替换历史，故只记录判定与候选 handoff，不谎称已完成切分。
 func (l *Loop) maybeCompactAtBoundary(turn int) {
 	if l.Compact == nil {
 		return
 	}
 	oai := orderedMapsToOai(l.messages)
+
+	// ── session split：**先于**常规压缩 ──
+	//
+	// 对账 TS `runCompaction`（compact-boundary-coordinator.ts:124）的调用序：
+	// `if (await trySessionSplit()) userMessageConsumed = true` → 再 maybeCompact。
+	// split 是更激进的处置（整段历史换 handoff），若先走常规压缩，split 的
+	// 判定依据（历史占用）已被压缩改动。
+	//
+	// **执行层未移植**：TS 的 `trySessionSplit` 内部调 `replaceWithCheckpoint`
+	// 真正替换历史（依赖 task-state / trajectory / artifact store——Go 侧全无）。
+	// 故此处**只判定 + 记录**，不改 `l.messages`——不谎称已完成切分。
+	// 候选 handoff 已构造（`outcome.Handoff`），待执行层就位后即可采用。
+	if split := l.Compact.TrySessionSplit(oai); split.SplitTriggered() {
+		l.emit(Event{
+			Kind: "compaction",
+			Turn: turn,
+			Text: fmt.Sprintf("会话切分判定触发（占用 %.0f%%，窗口 %d）——"+
+				"handoff 候选已构造，但执行层未移植，历史未替换",
+				split.Decision.Ratio*100, l.Compact.ContextWindow),
+		})
+		// **不 return**：判定触发但未执行，常规压缩仍应尝试——
+		// 否则「判定了但没执行」会让上下文压力完全无人处理。
+	}
+
 	compacted, changed := l.Compact.MaybeCompact(oai, turn)
 	if !changed {
 		return
