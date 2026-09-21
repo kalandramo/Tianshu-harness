@@ -1,0 +1,331 @@
+[
+ {
+  "label": "cnts-匹配英文标识符",
+  "filePath": "src/a.ts",
+  "inputContent": "import { foo } from './foo'\nimport { bar } from './bar'\n\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\n  return result\n}\n\nexport class SessionManager {\n  private sessions: Map<string, Session> = new Map()\n\n  registerSession(id: string) {\n    this.sessions.set(id, createSession(id))\n  }\n}\n\nfunction helperThatNobodyCaresAbout() {\n  return 42\n}",
+  "focus": "commitAction",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 2,
+  "ranges": [
+   {
+    "startLine": 1,
+    "endLine": 5,
+    "score": 35
+   }
+  ],
+  "matchedLines": 5,
+  "omittedLines": 14,
+  "matched": true,
+  "outputContent": "[focused-read] src/a.ts\nfocus: commitAction\nsource: 19 lines, 381 chars; showing 5 relevant lines\nstructural summary: ts file, 19 lines. Exports: commitAction, SessionManager Functions: helperThatNobodyCaresAbout\nOnly the ranges below are selected evidence; this is not the complete file.\n\n--- L2-L6 (relevance 35) ---\n    2 | import { bar } from './bar'\n    3 | \n    4 | export function commitAction(payload: Payload) {\n    5 |   const result = validate(payload)\n    6 |   return result\n\n[focused-read] omitted 14 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": false
+ },
+ {
+  "label": "cnts-匹配多个 token",
+  "filePath": "src/a.ts",
+  "inputContent": "import { foo } from './foo'\nimport { bar } from './bar'\n\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\n  return result\n}\n\nexport class SessionManager {\n  private sessions: Map<string, Session> = new Map()\n\n  registerSession(id: string) {\n    this.sessions.set(id, createSession(id))\n  }\n}\n\nfunction helperThatNobodyCaresAbout() {\n  return 42\n}",
+  "focus": "session manager",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 2,
+  "ranges": [
+   {
+    "startLine": 6,
+    "endLine": 14,
+    "score": 22
+   }
+  ],
+  "matchedLines": 9,
+  "omittedLines": 10,
+  "matched": true,
+  "outputContent": "[focused-read] src/a.ts\nfocus: session manager\nsource: 19 lines, 381 chars; showing 9 relevant lines\nstructural summary: ts file, 19 lines. Exports: commitAction, SessionManager Functions: helperThatNobodyCaresAbout\nOnly the ranges below are selected evidence; this is not the complete file.\n\n--- L7-L15 (relevance 22) ---\n    7 | }\n    8 | \n    9 | export class SessionManager {\n   10 |   private sessions: Map<string, Session> = new Map()\n   11 | \n   12 |   registerSession(id: string) {\n   13 |     this.sessions.set(id, createSession(id))\n   14 |   }\n   15 | }\n\n[focused-read] omitted 10 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": false
+ },
+ {
+  "label": "cnts-无匹配",
+  "filePath": "src/a.ts",
+  "inputContent": "import { foo } from './foo'\nimport { bar } from './bar'\n\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\n  return result\n}\n\nexport class SessionManager {\n  private sessions: Map<string, Session> = new Map()\n\n  registerSession(id: string) {\n    this.sessions.set(id, createSession(id))\n  }\n}\n\nfunction helperThatNobodyCaresAbout() {\n  return 42\n}",
+  "focus": "zzzznonexistent",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 2,
+  "ranges": [],
+  "matchedLines": 0,
+  "omittedLines": 19,
+  "matched": false,
+  "outputContent": "[focused-read] src/a.ts\nfocus: zzzznonexistent\nsource: 19 lines, 381 chars; showing 0 relevant lines\nstructural summary: ts file, 19 lines. Exports: commitAction, SessionManager Functions: helperThatNobodyCaresAbout\nOnly the ranges below are selected evidence; this is not the complete file.\n\nNo direct focus match. Structural outline only:\nimport { foo } from './foo'\nimport { bar } from './bar'\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\nexport class SessionManager {\nfunction helperThatNobodyCaresAbout() {\n\n[focused-read] omitted 19 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": true
+ },
+ {
+  "label": "cnts-停用词",
+  "filePath": "src/a.ts",
+  "inputContent": "import { foo } from './foo'\nimport { bar } from './bar'\n\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\n  return result\n}\n\nexport class SessionManager {\n  private sessions: Map<string, Session> = new Map()\n\n  registerSession(id: string) {\n    this.sessions.set(id, createSession(id))\n  }\n}\n\nfunction helperThatNobodyCaresAbout() {\n  return 42\n}",
+  "focus": "the code",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 2,
+  "ranges": [],
+  "matchedLines": 0,
+  "omittedLines": 19,
+  "matched": false,
+  "outputContent": "[focused-read] src/a.ts\nfocus: the code\nsource: 19 lines, 381 chars; showing 0 relevant lines\nstructural summary: ts file, 19 lines. Exports: commitAction, SessionManager Functions: helperThatNobodyCaresAbout\nOnly the ranges below are selected evidence; this is not the complete file.\n\nNo direct focus match. Structural outline only:\nimport { foo } from './foo'\nimport { bar } from './bar'\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\nexport class SessionManager {\nfunction helperThatNobodyCaresAbout() {\n\n[focused-read] omitted 19 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": true
+ },
+ {
+  "label": "cnts-空 focus",
+  "filePath": "src/a.ts",
+  "inputContent": "import { foo } from './foo'\nimport { bar } from './bar'\n\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\n  return result\n}\n\nexport class SessionManager {\n  private sessions: Map<string, Session> = new Map()\n\n  registerSession(id: string) {\n    this.sessions.set(id, createSession(id))\n  }\n}\n\nfunction helperThatNobodyCaresAbout() {\n  return 42\n}",
+  "focus": "",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 2,
+  "ranges": [],
+  "matchedLines": 0,
+  "omittedLines": 19,
+  "matched": false,
+  "outputContent": "[focused-read] src/a.ts\nfocus: \nsource: 19 lines, 381 chars; showing 0 relevant lines\nstructural summary: ts file, 19 lines. Exports: commitAction, SessionManager Functions: helperThatNobodyCaresAbout\nOnly the ranges below are selected evidence; this is not the complete file.\n\nNo direct focus match. Structural outline only:\nimport { foo } from './foo'\nimport { bar } from './bar'\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\nexport class SessionManager {\nfunction helperThatNobodyCaresAbout() {\n\n[focused-read] omitted 19 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": true
+ },
+ {
+  "label": "cnts-中文分词",
+  "filePath": "src/a.ts",
+  "inputContent": "import { foo } from './foo'\nimport { bar } from './bar'\n\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\n  return result\n}\n\nexport class SessionManager {\n  private sessions: Map<string, Session> = new Map()\n\n  registerSession(id: string) {\n    this.sessions.set(id, createSession(id))\n  }\n}\n\nfunction helperThatNobodyCaresAbout() {\n  return 42\n}",
+  "focus": "会话管理",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 2,
+  "ranges": [],
+  "matchedLines": 0,
+  "omittedLines": 19,
+  "matched": false,
+  "outputContent": "[focused-read] src/a.ts\nfocus: 会话管理\nsource: 19 lines, 381 chars; showing 0 relevant lines\nstructural summary: ts file, 19 lines. Exports: commitAction, SessionManager Functions: helperThatNobodyCaresAbout\nOnly the ranges below are selected evidence; this is not the complete file.\n\nNo direct focus match. Structural outline only:\nimport { foo } from './foo'\nimport { bar } from './bar'\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\nexport class SessionManager {\nfunction helperThatNobodyCaresAbout() {\n\n[focused-read] omitted 19 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": true
+ },
+ {
+  "label": "cnts-下划线标识符",
+  "filePath": "src/a.ts",
+  "inputContent": "import { foo } from './foo'\nimport { bar } from './bar'\n\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\n  return result\n}\n\nexport class SessionManager {\n  private sessions: Map<string, Session> = new Map()\n\n  registerSession(id: string) {\n    this.sessions.set(id, createSession(id))\n  }\n}\n\nfunction helperThatNobodyCaresAbout() {\n  return 42\n}",
+  "focus": "helperThatNobodyCaresAbout",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 2,
+  "ranges": [
+   {
+    "startLine": 14,
+    "endLine": 18,
+    "score": 35
+   }
+  ],
+  "matchedLines": 5,
+  "omittedLines": 14,
+  "matched": true,
+  "outputContent": "[focused-read] src/a.ts\nfocus: helperThatNobodyCaresAbout\nsource: 19 lines, 381 chars; showing 5 relevant lines\nstructural summary: ts file, 19 lines. Exports: commitAction, SessionManager Functions: helperThatNobodyCaresAbout\nOnly the ranges below are selected evidence; this is not the complete file.\n\n--- L15-L19 (relevance 35) ---\n   15 | }\n   16 | \n   17 | function helperThatNobodyCaresAbout() {\n   18 |   return 42\n   19 | }\n\n[focused-read] omitted 14 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": false
+ },
+ {
+  "label": "cnts-maxMatches=1",
+  "filePath": "src/a.ts",
+  "inputContent": "import { foo } from './foo'\nimport { bar } from './bar'\n\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\n  return result\n}\n\nexport class SessionManager {\n  private sessions: Map<string, Session> = new Map()\n\n  registerSession(id: string) {\n    this.sessions.set(id, createSession(id))\n  }\n}\n\nfunction helperThatNobodyCaresAbout() {\n  return 42\n}",
+  "focus": "session",
+  "maxChars": 8000,
+  "maxMatches": 1,
+  "contextLines": 2,
+  "ranges": [
+   {
+    "startLine": 6,
+    "endLine": 10,
+    "score": 35
+   }
+  ],
+  "matchedLines": 5,
+  "omittedLines": 14,
+  "matched": true,
+  "outputContent": "[focused-read] src/a.ts\nfocus: session\nsource: 19 lines, 381 chars; showing 5 relevant lines\nstructural summary: ts file, 19 lines. Exports: commitAction, SessionManager Functions: helperThatNobodyCaresAbout\nOnly the ranges below are selected evidence; this is not the complete file.\n\n--- L7-L11 (relevance 35) ---\n    7 | }\n    8 | \n    9 | export class SessionManager {\n   10 |   private sessions: Map<string, Session> = new Map()\n   11 | \n\n[focused-read] omitted 14 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": false
+ },
+ {
+  "label": "cnts-contextLines=0",
+  "filePath": "src/a.ts",
+  "inputContent": "import { foo } from './foo'\nimport { bar } from './bar'\n\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\n  return result\n}\n\nexport class SessionManager {\n  private sessions: Map<string, Session> = new Map()\n\n  registerSession(id: string) {\n    this.sessions.set(id, createSession(id))\n  }\n}\n\nfunction helperThatNobodyCaresAbout() {\n  return 42\n}",
+  "focus": "session",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 0,
+  "ranges": [
+   {
+    "startLine": 8,
+    "endLine": 9,
+    "score": 35
+   },
+   {
+    "startLine": 11,
+    "endLine": 12,
+    "score": 31
+   }
+  ],
+  "matchedLines": 4,
+  "omittedLines": 15,
+  "matched": true,
+  "outputContent": "[focused-read] src/a.ts\nfocus: session\nsource: 19 lines, 381 chars; showing 4 relevant lines\nstructural summary: ts file, 19 lines. Exports: commitAction, SessionManager Functions: helperThatNobodyCaresAbout\nOnly the ranges below are selected evidence; this is not the complete file.\n\n--- L9-L10 (relevance 35) ---\n    9 | export class SessionManager {\n   10 |   private sessions: Map<string, Session> = new Map()\n\n--- L12-L13 (relevance 31) ---\n   12 |   registerSession(id: string) {\n   13 |     this.sessions.set(id, createSession(id))\n\n[focused-read] omitted 15 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": false
+ },
+ {
+  "label": "cnts-contextLines=8",
+  "filePath": "src/a.ts",
+  "inputContent": "import { foo } from './foo'\nimport { bar } from './bar'\n\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\n  return result\n}\n\nexport class SessionManager {\n  private sessions: Map<string, Session> = new Map()\n\n  registerSession(id: string) {\n    this.sessions.set(id, createSession(id))\n  }\n}\n\nfunction helperThatNobodyCaresAbout() {\n  return 42\n}",
+  "focus": "session",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 8,
+  "ranges": [
+   {
+    "startLine": 0,
+    "endLine": 18,
+    "score": 35
+   }
+  ],
+  "matchedLines": 19,
+  "omittedLines": 0,
+  "matched": true,
+  "outputContent": "[focused-read] src/a.ts\nfocus: session\nsource: 19 lines, 381 chars; showing 19 relevant lines\nstructural summary: ts file, 19 lines. Exports: commitAction, SessionManager Functions: helperThatNobodyCaresAbout\nOnly the ranges below are selected evidence; this is not the complete file.\n\n--- L1-L19 (relevance 35) ---\n    1 | import { foo } from './foo'\n    2 | import { bar } from './bar'\n    3 | \n    4 | export function commitAction(payload: Payload) {\n    5 |   const result = validate(payload)\n    6 |   return result\n    7 | }\n    8 | \n    9 | export class SessionManager {\n   10 |   private sessions: Map<string, Session> = new Map()\n   11 | \n   12 |   registerSession(id: string) {\n   13 |     this.sessions.set(id, createSession(id))\n   14 |   }\n   15 | }\n   16 | \n   17 | function helperThatNobodyCaresAbout() {\n   18 |   return 42\n   19 | }\n\n[focused-read] omitted 0 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": false
+ },
+ {
+  "label": "cnts-小 maxChars",
+  "filePath": "src/a.ts",
+  "inputContent": "import { foo } from './foo'\nimport { bar } from './bar'\n\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\n  return result\n}\n\nexport class SessionManager {\n  private sessions: Map<string, Session> = new Map()\n\n  registerSession(id: string) {\n    this.sessions.set(id, createSession(id))\n  }\n}\n\nfunction helperThatNobodyCaresAbout() {\n  return 42\n}",
+  "focus": "session",
+  "maxChars": 800,
+  "maxMatches": 8,
+  "contextLines": 2,
+  "ranges": [
+   {
+    "startLine": 6,
+    "endLine": 14,
+    "score": 35
+   }
+  ],
+  "matchedLines": 9,
+  "omittedLines": 10,
+  "matched": true,
+  "outputContent": "[focused-read] src/a.ts\nfocus: session\nsource: 19 lines, 381 chars; showing 9 relevant lines\nstructural summary: ts file, 19 lines. Exports: commitAction, SessionManager Functions: helperThatNobodyCaresAbout\nOnly the ranges below are selected evidence; this is not the complete file.\n\n--- L7-L15 (relevance 35) ---\n    7 | }\n    8 | \n    9 | export class SessionManager {\n   10 |   private sessions: Map<string, Session> = new Map()\n   11 | \n   12 |   registerSession(id: string) {\n   13 |     this.sessions.set(id, createSession(id))\n   14 |   }\n   15 | }\n\n[focused-read] omitted 10 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": false
+ },
+ {
+  "label": "cnts-极长 focus",
+  "filePath": "src/a.ts",
+  "inputContent": "import { foo } from './foo'\nimport { bar } from './bar'\n\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\n  return result\n}\n\nexport class SessionManager {\n  private sessions: Map<string, Session> = new Map()\n\n  registerSession(id: string) {\n    this.sessions.set(id, createSession(id))\n  }\n}\n\nfunction helperThatNobodyCaresAbout() {\n  return 42\n}",
+  "focus": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 2,
+  "ranges": [],
+  "matchedLines": 0,
+  "omittedLines": 19,
+  "matched": false,
+  "outputContent": "[focused-read] src/a.ts\nfocus: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nsource: 19 lines, 381 chars; showing 0 relevant lines\nstructural summary: ts file, 19 lines. Exports: commitAction, SessionManager Functions: helperThatNobodyCaresAbout\nOnly the ranges below are selected evidence; this is not the complete file.\n\nNo direct focus match. Structural outline only:\nimport { foo } from './foo'\nimport { bar } from './bar'\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\nexport class SessionManager {\nfunction helperThatNobodyCaresAbout() {\n\n[focused-read] omitted 19 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": true
+ },
+ {
+  "label": "cnts-空内容",
+  "filePath": "src/a.ts",
+  "inputContent": "",
+  "focus": "x",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 2,
+  "ranges": [],
+  "matchedLines": 0,
+  "omittedLines": 1,
+  "matched": false,
+  "outputContent": "[focused-read] src/a.ts\nfocus: x\nsource: 1 lines, 0 chars; showing 0 relevant lines\nstructural summary: ts file, 1 lines.\nOnly the ranges below are selected evidence; this is not the complete file.\n\nNo direct focus match. Structural outline only:\n\n\n[focused-read] omitted 1 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": true
+ },
+ {
+  "label": "cnts-单行",
+  "filePath": "src/a.ts",
+  "inputContent": "const x = 1",
+  "focus": "x",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 2,
+  "ranges": [],
+  "matchedLines": 0,
+  "omittedLines": 1,
+  "matched": false,
+  "outputContent": "[focused-read] src/a.ts\nfocus: x\nsource: 1 lines, 11 chars; showing 0 relevant lines\nstructural summary: ts file, 1 lines.\nOnly the ranges below are selected evidence; this is not the complete file.\n\nNo direct focus match. Structural outline only:\nconst x = 1\n\n[focused-read] omitted 1 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": true
+ },
+ {
+  "label": "cnts-只空白",
+  "filePath": "src/a.ts",
+  "inputContent": "\n\n\n",
+  "focus": "x",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 2,
+  "ranges": [],
+  "matchedLines": 0,
+  "omittedLines": 4,
+  "matched": false,
+  "outputContent": "[focused-read] src/a.ts\nfocus: x\nsource: 4 lines, 3 chars; showing 0 relevant lines\nstructural summary: ts file, 4 lines.\nOnly the ranges below are selected evidence; this is not the complete file.\n\nNo direct focus match. Structural outline only:\n\n\n\n\n\n[focused-read] omitted 4 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": true
+ },
+ {
+  "label": "cnts-中文内容",
+  "filePath": "src/a.ts",
+  "inputContent": "第一行无关\n第二行目标函数\n第三行无关",
+  "focus": "目标",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 2,
+  "ranges": [
+   {
+    "startLine": 0,
+    "endLine": 2,
+    "score": 3
+   }
+  ],
+  "matchedLines": 3,
+  "omittedLines": 0,
+  "matched": true,
+  "outputContent": "[focused-read] src/a.ts\nfocus: 目标\nsource: 3 lines, 19 chars; showing 3 relevant lines\nstructural summary: ts file, 3 lines.\nOnly the ranges below are selected evidence; this is not the complete file.\n\n--- L1-L3 (relevance 3) ---\n    1 | 第一行无关\n    2 | 第二行目标函数\n    3 | 第三行无关\n\n[focused-read] omitted 0 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": false
+ },
+ {
+  "label": "cnts-结构行",
+  "filePath": "src/a.ts",
+  "inputContent": "import { foo } from './foo'\nimport { bar } from './bar'\n\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\n  return result\n}\n\nexport class SessionManager {\n  private sessions: Map<string, Session> = new Map()\n\n  registerSession(id: string) {\n    this.sessions.set(id, createSession(id))\n  }\n}\n\nfunction helperThatNobodyCaresAbout() {\n  return 42\n}",
+  "focus": "export",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 2,
+  "ranges": [
+   {
+    "startLine": 1,
+    "endLine": 10,
+    "score": 35
+   }
+  ],
+  "matchedLines": 10,
+  "omittedLines": 9,
+  "matched": true,
+  "outputContent": "[focused-read] src/a.ts\nfocus: export\nsource: 19 lines, 381 chars; showing 10 relevant lines\nstructural summary: ts file, 19 lines. Exports: commitAction, SessionManager Functions: helperThatNobodyCaresAbout\nOnly the ranges below are selected evidence; this is not the complete file.\n\n--- L2-L11 (relevance 35) ---\n    2 | import { bar } from './bar'\n    3 | \n    4 | export function commitAction(payload: Payload) {\n    5 |   const result = validate(payload)\n    6 |   return result\n    7 | }\n    8 | \n    9 | export class SessionManager {\n   10 |   private sessions: Map<string, Session> = new Map()\n   11 | \n\n[focused-read] omitted 9 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": false
+ },
+ {
+  "label": "cnts-超长 focus",
+  "filePath": "src/a.ts",
+  "inputContent": "import { foo } from './foo'\nimport { bar } from './bar'\n\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\n  return result\n}\n\nexport class SessionManager {\n  private sessions: Map<string, Session> = new Map()\n\n  registerSession(id: string) {\n    this.sessions.set(id, createSession(id))\n  }\n}\n\nfunction helperThatNobodyCaresAbout() {\n  return 42\n}",
+  "focus": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx commitAction",
+  "maxChars": 8000,
+  "maxMatches": 8,
+  "contextLines": 2,
+  "ranges": [],
+  "matchedLines": 0,
+  "omittedLines": 19,
+  "matched": false,
+  "outputContent": "[focused-read] src/a.ts\nfocus: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nsource: 19 lines, 381 chars; showing 0 relevant lines\nstructural summary: ts file, 19 lines. Exports: commitAction, SessionManager Functions: helperThatNobodyCaresAbout\nOnly the ranges below are selected evidence; this is not the complete file.\n\nNo direct focus match. Structural outline only:\nimport { foo } from './foo'\nimport { bar } from './bar'\nexport function commitAction(payload: Payload) {\n  const result = validate(payload)\nexport class SessionManager {\nfunction helperThatNobodyCaresAbout() {\n\n[focused-read] omitted 19 source lines; use read_file(offset, limit) for an exact range.",
+  "noMatchBranch": true
+ }
+]

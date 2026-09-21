@@ -1417,6 +1417,69 @@ read_file 无 store 时返回的是原 body（未截断，因为截断已在更�
    （`ArtifactMarkerRegex` 的字符类不含冒号）。
 
 
+### focused-read（2026-09-21，回主线第十七刀）
+
+**做了什么**：移植 TS `src/tools/focused-read.ts`（193 行）并**接线到 `read_file`**。
+
+**修的是一个静默失效**：`read_file` 的 schema 声明了 `focus` / `focus_max_matches`
+参数，但 Go 侧**完全未实现**——用户传 focus 时被忽略、返回全文件，而模型以为
+拿到了聚焦结果。**静默失效比未移植更糟**：模型基于错误前提推理（以为「没看到
+的代码就是不相关」）。
+
+**实现**（`focusedread.go`）：`BuildFocusedReadView` + 完整子逻辑
+（normalizeFocus / tokenizeFocus / scoreLine / mergeRanges / renderRanges /
+renderFocusedContent / structuralSkeleton）。核心是**确定性打分**：
+
+- `normalizeFocus`：空白折叠 + 截断 240
+- `tokenizeFocus`：英文片段（>=2 且非停用词）整词入；中文片段产**所有 bigram**
+- `scoreLine`：整 focus 命中 +24；每 token 命中 +3（含 `_` 或 >=6 字符 +7）；
+  多 token 命中 +matches*2；命中且是结构行 +4
+- `mergeRanges`：相邻区间合并（`start <= prev.end + 1`），score 取 max
+- 预算裁剪：超限时**丢弃最低分**区间（保留高分证据）
+
+**接线**（`read_file.go`）：条件对账 TS 的
+`focusedRead = focus.length > 0 && offset === undefined && limit === undefined`
+——**有显式范围时 focus 不生效**（范围是更精确的意图表达）。
+
+**与 TS 的已知差异（明示）**：TS 的 `structuralSkeleton`（**仅无匹配分支**）优先用
+`foldCode`（`src/compact/code-fold.ts`，428 行，**未移植**）产折叠骨架。Go 侧走
+TS 自身的回退路径（`STRUCTURAL_LINE` 过滤前 100 行）。差异仅限「无匹配」分支的
+骨架内容；header/footer 形态与有匹配分支的 content **逐字一致**。
+**后续若移植 foldCode，应回头替换此回退**。
+
+**验证**
+
+- **差分 oracle 18 例**（`testdata/focused/gen_oracle.ts`）：覆盖英文标识符 /
+  多 token / 无匹配 / 停用词 / 空 focus / 中文 bigram / 下划线标识符 /
+  maxMatches 与 contextLines 边界 / 小 maxChars / 超长 focus / 空内容 / 单行 /
+  结构行加分。对账 `ranges`/`matchedLines`/`omittedLines`/`matched` + 匹配分支
+  的 `content` 逐字
+- **8 条单元/集成测试** + **3 条端到端**（read_file 传 focus 走聚焦分支 /
+  有范围时 focus 不生效 / 空 focus 不触发）
+- **变异反证**：M40（focus 分支不接线）→ 1 红；M41（tokenize 不过滤停用词）→ 2 红；
+  M42（预算裁剪丢最高分）→ 1 红
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+**测试构造坑（第二次踩同类）**：M42 首版 **0 红**——我的预算裁剪测试只造了 2 个
+区间且渲染长度未超预算，**裁剪根本没发生**，故「丢最高分」与「丢最低分」在
+该输入下**产出相同结果**。改为 3 个区间 + 每段填充 200 字符长行后才触发裁剪、
+M42 变红。**这与第十六刀（grep L0）的坑同源**：验证「A 而非 B」的测试必须
+构造使 A 与 B 可区分的输入。
+
+#### 仍未做
+
+1. **`foldCode`**（`src/compact/code-fold.ts`，428 行）：被 focused-read 的
+   无匹配分支、`applyFoldThenPartial`（readFilePayload 的 partial 分支）共同依赖。
+   **一刀可解两处**，建议单开。
+2. **`readFilePayload` 的其余分支**：office 转换、`buildLogPreviewContent`、
+   `buildFileUiOutput`、`reject-with-range` 的行为。
+3. **gitignore 过滤**（`getGitignoreFilter` + `isRivetStatePath` 豁免）。
+4. **dedup 子系统**（`read-file.ts:190-255`）：两张表 + `repeatWarning` +
+   read-ref。跨 6 个模块有消费者，**最大的一块**。
+5. **`bash` 的 L0 包装**：依赖面宽（`buildModelOutput`/`meta`/`errorClass`/
+   `successFold`/`persistRawSafe`），建议单开一刀。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`

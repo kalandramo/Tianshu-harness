@@ -110,6 +110,32 @@ func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 	text := string(data)
 	lines := strings.Split(text, "\n")
 
+	// ── focus 分支（对账 TS `read-file.ts:780,931-948`）──
+	//
+	// **条件**：focus 非空 **且** 未给 offset/limit（TS 的 `focusedRead`）。
+	// 有显式范围时 focus 不生效——范围读取是更精确的意图表达。
+	//
+	// **修复的缺陷**：此前 Go 侧声明了 `focus`/`focus_max_matches` 参数但
+	// **完全未实现**——传 focus 时静默返回全文件，模型以为拿到聚焦结果。
+	// 静默失效比未移植更糟：模型基于错误前提推理。
+	focus := strings.TrimSpace(strArg(p.Input, "focus"))
+	hasExplicitRange := p.Input["offset"] != nil || p.Input["limit"] != nil
+	if focus != "" && !hasExplicitRange {
+		maxChars := ComputeModelReadCap(ModelReadCapInput{
+			ContextWindow:   p.ContextWindow,
+			ProviderProfile: p.ProviderProfile,
+		}).MaxChars
+		res := BuildFocusedReadView(FocusedReadOptions{
+			FilePath:     path,
+			Content:      text,
+			Focus:        focus,
+			MaxChars:     maxChars,
+			MaxMatches:   intArg(p.Input, "focus_max_matches", defaultMaxMatches),
+			ContextLines: defaultContextLines,
+		})
+		return contract.Result{Content: res.Content}, nil
+	}
+
 	// offset/limit
 	offset := intArg(p.Input, "offset", 1)
 	limit := intArg(p.Input, "limit", 0)
