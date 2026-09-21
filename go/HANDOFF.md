@@ -1615,6 +1615,68 @@ L0；`content` 在 L0 之前被 `focusedContent` 替换（模型可见 = 聚焦�
    `successFold`/`persistRawSafe`），建议单开一刀。
 
 
+### code-fold（2026-09-21，回主线第二十刀）
+
+**做了什么**：移植 TS `src/compact/code-fold.ts`（428 行，五分支）并**接线到
+focused-read 的无匹配分支**（替换第十九刀记下的回退路径）。
+
+**一刀解两处**：`foldCode` 被两个消费者依赖——focused-read 的
+`structuralSkeleton`（**本刀接线**）+ `applyFoldThenPartial`（readFilePayload
+的 partial 分支，仍未移植）。
+
+**实现**（`codefold.go`，651 行）
+
+- **语言分派**：ts/tsx/js/jsx/mjs/cjs → foldTsLike；py/pyi → foldPython；
+  json → foldJSON；md/mdx → foldMarkdown；unknown → 不折叠
+- **ts-like**：正则分类（import → structural → signature，**顺序敏感**）+
+  花括号深度追踪（字符串/字符字面量感知）；体折叠为 `  { … }`
+- **python**：缩进追踪（`indentOf` **只数前导空格**，不含 tab）
+- **json**：键结构骨架（值替换为 `typeof` 名）
+- **markdown**：保留标题 + 标题后首个主题句 + 代码围栏
+- **前置门**：`originalLines < 50` 直接返回不折叠（**在分派之前**）
+
+**这一刀踩到两个 JS 语义坑（都靠差分 oracle 抓出）**
+
+1. **`slice(0, 负数)` 不是空数组**。TS 的 maxLines 截断用
+   `output.slice(0, headCount)`，`headCount = maxLines - 21` 在 maxLines 小时为
+   **负**——JS 语义是 `[0, len+headCount)`（探针实测：len=26、`slice(0,-10)` 得
+   前 16 个）。我首版按「负→空」实现，导致 3 个用例红。
+   这也解释了 **`maxLines=10` 时 foldedLines（202）反而 > originalLines（200）**
+   ——head 取 len-10 条 + 1 条省略标记 + 20 条 tail，总数可超原长。
+2. **`?? ` 与零值**：TS 的 `options.maxLines ?? DEFAULT` 中 `??` **只对
+   null/undefined 生效**——显式 `maxLines: 0` **保持 0**（不是默认 200）。
+   Go 的 int 零值无法区分「未设」与「显式 0」，故加 `MaxLinesSet` 标志。
+   （首个 `maxLines=0` 用例因此红。）
+
+**JSON 键序的已知局限（明示）**：TS 的 `Object.keys` 保**插入序**；Go 的 map
+无序，本实现按**字典序**排。对 JSON 骨架（值已替换为类型名）的影响仅在键顺序。
+oracle 的 json 用例已通过——因为生成器的对象键恰好是字典序。**若未来遇到
+键序敏感的场景，需改用保序解析。**
+
+**验证**
+
+- **差分 oracle 32 例**（`testdata/codefold/gen_oracle.ts`）：**真跑 TS 原实现**
+  （foldCode 无外部依赖）。覆盖 ts/tsx/js/mjs / 49-50 行边界 / maxLines
+  10/1/0 / 块在下一行开 / 单行自闭合 / 字符串花括号 / 未知扩展名 /
+  py/pyi / json 嵌套与非法 / md/mdx。对账全字段（folded/originalLines/
+  foldedLines/signatures/wasFolded）
+- **8 条测试**：oracle / 短文件不折叠 / 未知语言不折叠 / ts 折叠体 /
+  md 保留标题 / json 骨架 / py 缩进 / **focused-read 接线验证**
+- **变异反证**：M49（不接线到 focused-read）→ 1 红；M50（负索引返回空）→ 1 红；
+  M51（零值当默认）→ 1 红
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+#### 仍未做（更新）
+
+1. **`readFilePayload` 的其余分支**：office 转换、`buildLogPreviewContent`、
+   `buildFileUiOutput`、`reject-with-range`、gitignore 过滤，以及
+   **`applyFoldThenPartial`**（foldCode 的第二个消费者，现已就绪）。
+2. **dedup 子系统**（`read-file.ts:190-255`）：两张表 + `repeatWarning` +
+   read-ref。跨 6 个模块有消费者，**最大的一块**。
+3. **`bash` 的 L0 包装**：依赖面宽（`buildModelOutput`/`meta`/`errorClass`/
+   `successFold`/`persistRawSafe`），建议单开一刀。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`

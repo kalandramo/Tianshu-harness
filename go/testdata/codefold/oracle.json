@@ -1,0 +1,326 @@
+[
+ {
+  "label": "ts-主路径",
+  "filePath": "a.ts",
+  "content": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "maxLines": 200,
+  "folded": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  { … }\n\nfunction hidden() {\n  { … }\n\nexport class Beta {\n  { … }\n\nconst arrow = (a: number) => {\n  { … }\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "originalLines": 60,
+  "foldedLines": 52,
+  "signatures": [
+   "export interface Config {",
+   "export function alpha(x: number) {",
+   "function hidden() {",
+   "export class Beta {",
+   "const arrow = (a: number) => {"
+  ],
+  "wasFolded": true
+ },
+ {
+  "label": "tsx",
+  "filePath": "a.tsx",
+  "content": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "maxLines": 200,
+  "folded": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  { … }\n\nfunction hidden() {\n  { … }\n\nexport class Beta {\n  { … }\n\nconst arrow = (a: number) => {\n  { … }\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "originalLines": 60,
+  "foldedLines": 52,
+  "signatures": [
+   "export interface Config {",
+   "export function alpha(x: number) {",
+   "function hidden() {",
+   "export class Beta {",
+   "const arrow = (a: number) => {"
+  ],
+  "wasFolded": true
+ },
+ {
+  "label": "js",
+  "filePath": "a.js",
+  "content": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "maxLines": 200,
+  "folded": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  { … }\n\nfunction hidden() {\n  { … }\n\nexport class Beta {\n  { … }\n\nconst arrow = (a: number) => {\n  { … }\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "originalLines": 60,
+  "foldedLines": 52,
+  "signatures": [
+   "export interface Config {",
+   "export function alpha(x: number) {",
+   "function hidden() {",
+   "export class Beta {",
+   "const arrow = (a: number) => {"
+  ],
+  "wasFolded": true
+ },
+ {
+  "label": "mjs",
+  "filePath": "a.mjs",
+  "content": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "maxLines": 200,
+  "folded": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  { … }\n\nfunction hidden() {\n  { … }\n\nexport class Beta {\n  { … }\n\nconst arrow = (a: number) => {\n  { … }\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "originalLines": 60,
+  "foldedLines": 52,
+  "signatures": [
+   "export interface Config {",
+   "export function alpha(x: number) {",
+   "function hidden() {",
+   "export class Beta {",
+   "const arrow = (a: number) => {"
+  ],
+  "wasFolded": true
+ },
+ {
+  "label": "ts-短文件",
+  "filePath": "a.ts",
+  "content": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}",
+  "maxLines": 200,
+  "folded": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}",
+  "originalLines": 33,
+  "foldedLines": 33,
+  "signatures": [],
+  "wasFolded": false
+ },
+ {
+  "label": "ts-49行",
+  "filePath": "a.ts",
+  "content": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "maxLines": 200,
+  "folded": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "originalLines": 49,
+  "foldedLines": 49,
+  "signatures": [],
+  "wasFolded": false
+ },
+ {
+  "label": "ts-50行",
+  "filePath": "a.ts",
+  "content": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "maxLines": 200,
+  "folded": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  { … }\n\nfunction hidden() {\n  { … }\n\nexport class Beta {\n  { … }\n\nconst arrow = (a: number) => {\n  { … }\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "originalLines": 50,
+  "foldedLines": 42,
+  "signatures": [
+   "export interface Config {",
+   "export function alpha(x: number) {",
+   "function hidden() {",
+   "export class Beta {",
+   "const arrow = (a: number) => {"
+  ],
+  "wasFolded": true
+ },
+ {
+  "label": "ts-maxLines=10",
+  "filePath": "a.ts",
+  "content": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "maxLines": 10,
+  "folded": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  { … }\n\nfunction hidden() {\n  { … }\n\nexport class Beta {\n  { … }\n\nconst arrow = (a: number) => {\n  { … }\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n  … (183 lines omitted) …\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "originalLines": 200,
+  "foldedLines": 202,
+  "signatures": [
+   "export interface Config {",
+   "export function alpha(x: number) {",
+   "function hidden() {",
+   "export class Beta {",
+   "const arrow = (a: number) => {"
+  ],
+  "wasFolded": false
+ },
+ {
+  "label": "ts-maxLines=1",
+  "filePath": "a.ts",
+  "content": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "maxLines": 1,
+  "folded": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  { … }\n\nfunction hidden() {\n  { … }\n\nexport class Beta {\n  { … }\n\nconst arrow = (a: number) => {\n  { … }\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n  … (92 lines omitted) …\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "originalLines": 100,
+  "foldedLines": 93,
+  "signatures": [
+   "export interface Config {",
+   "export function alpha(x: number) {",
+   "function hidden() {",
+   "export class Beta {",
+   "const arrow = (a: number) => {"
+  ],
+  "wasFolded": true
+ },
+ {
+  "label": "ts-maxLines=0",
+  "filePath": "a.ts",
+  "content": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "maxLines": 0,
+  "folded": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  { … }\n\nfunction hidden() {\n  { … }\n\nexport class Beta {\n  { … }\n\nconst arrow = (a: number) => {\n  { … }\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n  … (93 lines omitted) …\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "originalLines": 100,
+  "foldedLines": 92,
+  "signatures": [
+   "export interface Config {",
+   "export function alpha(x: number) {",
+   "function hidden() {",
+   "export class Beta {",
+   "const arrow = (a: number) => {"
+  ],
+  "wasFolded": true
+ },
+ {
+  "label": "ts-块在下一行",
+  "filePath": "a.ts",
+  "content": "export function nextLineBlock()\n{\n  const a = 1\n  return a\n}\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "maxLines": 200,
+  "folded": "export function nextLineBlock()\n  { … }\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\nconst x = 1\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "originalLines": 60,
+  "foldedLines": 57,
+  "signatures": [
+   "export function nextLineBlock()"
+  ],
+  "wasFolded": true
+ },
+ {
+  "label": "ts-单行自闭合",
+  "filePath": "a.ts",
+  "content": "export const inline = { a: 1, b: 2 }\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "maxLines": 200,
+  "folded": "export const inline = { a: 1, b: 2 }\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\nconst y = 2\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "originalLines": 60,
+  "foldedLines": 60,
+  "signatures": [],
+  "wasFolded": false
+ },
+ {
+  "label": "ts-字符串花括号",
+  "filePath": "a.ts",
+  "content": "export function withBrace() {\n  const s = \"} not a real brace {\"\n  return s\n}\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\n// filler comment line",
+  "maxLines": 200,
+  "folded": "export function withBrace() {\n  { … }\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\nconst z = 3\n// filler comment line",
+  "originalLines": 60,
+  "foldedLines": 58,
+  "signatures": [
+   "export function withBrace() {"
+  ],
+  "wasFolded": true
+ },
+ {
+  "label": "未知扩展名",
+  "filePath": "a.txt",
+  "content": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "maxLines": 200,
+  "folded": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "originalLines": 60,
+  "foldedLines": 60,
+  "signatures": [],
+  "wasFolded": false
+ },
+ {
+  "label": "无扩展名",
+  "filePath": "noext",
+  "content": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "maxLines": 200,
+  "folded": "import { foo } from './foo'\nimport type { Bar } from './bar'\n\nexport interface Config {\n  name: string\n  value: number\n}\n\nexport type Alias = Config | null\n\nexport function alpha(x: number) {\n  const y = x + 1\n  return y\n}\n\nfunction hidden() {\n  return 1\n}\n\nexport class Beta {\n  private x = 1\n  method() {\n    return this.x\n  }\n}\n\nconst arrow = (a: number) => {\n  return a * 2\n}\n\nexport default function main() {\n  console.log('hi')\n}\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "originalLines": 60,
+  "foldedLines": 60,
+  "signatures": [],
+  "wasFolded": false
+ },
+ {
+  "label": "py-主路径",
+  "filePath": "a.py",
+  "content": "import os\n\nclass Foo:\n    def bar(self):\n        pass\n    def baz(self):\n        return 1\n\ndef top():\n    pass\n\n@decorator\ndef decorated():\n    return 2\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "maxLines": 200,
+  "folded": "import os\n\nclass Foo:\n  { … }\ndef top():\n  { … }\n@decorator\ndef decorated():\n  { … }\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "originalLines": 60,
+  "foldedLines": 55,
+  "signatures": [
+   "class Foo:",
+   "def top():",
+   "def decorated():"
+  ],
+  "wasFolded": true
+ },
+ {
+  "label": "pyi",
+  "filePath": "a.pyi",
+  "content": "import os\n\nclass Foo:\n    def bar(self):\n        pass\n    def baz(self):\n        return 1\n\ndef top():\n    pass\n\n@decorator\ndef decorated():\n    return 2\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "maxLines": 200,
+  "folded": "import os\n\nclass Foo:\n  { … }\ndef top():\n  { … }\n@decorator\ndef decorated():\n  { … }\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line\n// filler comment line",
+  "originalLines": 60,
+  "foldedLines": 55,
+  "signatures": [
+   "class Foo:",
+   "def top():",
+   "def decorated():"
+  ],
+  "wasFolded": true
+ },
+ {
+  "label": "py-短",
+  "filePath": "a.py",
+  "content": "import os\n\nclass Foo:\n    def bar(self):\n        pass\n    def baz(self):\n        return 1\n\ndef top():\n    pass\n\n@decorator\ndef decorated():\n    return 2",
+  "maxLines": 200,
+  "folded": "import os\n\nclass Foo:\n    def bar(self):\n        pass\n    def baz(self):\n        return 1\n\ndef top():\n    pass\n\n@decorator\ndef decorated():\n    return 2",
+  "originalLines": 14,
+  "foldedLines": 14,
+  "signatures": [],
+  "wasFolded": false
+ },
+ {
+  "label": "json-嵌套",
+  "filePath": "a.json",
+  "content": "{\n  \"name\": \"x\",\n  \"nested\": {\n    \"a\": 1,\n    \"b\": {\n      \"c\": 2\n    }\n  },\n  \"arr\": [\n    1,\n    2,\n    3\n  ],\n  \"empty\": [],\n  \"nil\": null,\n  \"num\": 5\n}",
+  "maxLines": 200,
+  "folded": "{\n  \"name\": \"x\",\n  \"nested\": {\n    \"a\": 1,\n    \"b\": {\n      \"c\": 2\n    }\n  },\n  \"arr\": [\n    1,\n    2,\n    3\n  ],\n  \"empty\": [],\n  \"nil\": null,\n  \"num\": 5\n}",
+  "originalLines": 17,
+  "foldedLines": 17,
+  "signatures": [],
+  "wasFolded": false
+ },
+ {
+  "label": "json-非法",
+  "filePath": "a.json",
+  "content": "{not json",
+  "maxLines": 200,
+  "folded": "{not json",
+  "originalLines": 1,
+  "foldedLines": 1,
+  "signatures": [],
+  "wasFolded": false
+ },
+ {
+  "label": "json-数组",
+  "filePath": "a.json",
+  "content": "[1,2,3]",
+  "maxLines": 200,
+  "folded": "[1,2,3]",
+  "originalLines": 1,
+  "foldedLines": 1,
+  "signatures": [],
+  "wasFolded": false
+ },
+ {
+  "label": "md-标题与正文",
+  "filePath": "a.md",
+  "content": "# Title\ntopic sentence\nbody paragraph one\nbody paragraph two\n## Section\nsection topic\nmore body\n```\ncode here\n```\ntail body",
+  "maxLines": 200,
+  "folded": "# Title\ntopic sentence\nbody paragraph one\nbody paragraph two\n## Section\nsection topic\nmore body\n```\ncode here\n```\ntail body",
+  "originalLines": 11,
+  "foldedLines": 11,
+  "signatures": [],
+  "wasFolded": false
+ },
+ {
+  "label": "md-无标题",
+  "filePath": "a.md",
+  "content": "just\nbody\ntext\nmore\nlines\nand\nmore",
+  "maxLines": 200,
+  "folded": "just\nbody\ntext\nmore\nlines\nand\nmore",
+  "originalLines": 7,
+  "foldedLines": 7,
+  "signatures": [],
+  "wasFolded": false
+ },
+ {
+  "label": "mdx",
+  "filePath": "a.mdx",
+  "content": "# H\nbody\nmore body",
+  "maxLines": 200,
+  "folded": "# H\nbody\nmore body",
+  "originalLines": 3,
+  "foldedLines": 3,
+  "signatures": [],
+  "wasFolded": false
+ }
+]

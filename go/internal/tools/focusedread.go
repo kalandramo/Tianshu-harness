@@ -224,21 +224,29 @@ func stableSortByStart(rs []FocusedReadRange) {
 	}
 }
 
-// structuralSkeleton 对账 TS `structuralSkeleton` 的**回退路径**。
+// structuralSkeleton 对账 TS `structuralSkeleton`。
 //
-// TS 首选用 `foldCode` 产折叠骨架；Go 侧未移植 foldCode，走同一回退：
-// `STRUCTURAL_LINE` 过滤前 100 行。
-func structuralSkeleton(lines []string, maxChars int) string {
-	structural := []string{}
-	for _, l := range lines {
-		if structuralLineRe.MatchString(l) {
-			structural = append(structural, l)
-			if len(structural) >= 100 {
-				break
+// TS 首选 `foldCode` 产折叠骨架；`wasFolded=false` 时回退到
+// `STRUCTURAL_LINE` 过滤前 100 行。**本刀已移植 foldCode**，故走首选路径。
+func structuralSkeleton(filePath string, lines []string, content string, maxChars int) string {
+	folded := FoldCode(content, FoldOptions{FilePath: filePath, MaxLines: 100, MaxLinesSet: true})
+	var structural string
+	if folded.WasFolded {
+		structural = folded.Folded
+	} else {
+		// 回退（对账 TS 的 `: lines.filter(...).slice(0, 100).join('\n')`）。
+		parts := []string{}
+		for _, l := range lines {
+			if structuralLineRe.MatchString(l) {
+				parts = append(parts, l)
+				if len(parts) >= 100 {
+					break
+				}
 			}
 		}
+		structural = strings.Join(parts, "\n")
 	}
-	body := jsTrimSpace(strings.Join(structural, "\n"))
+	body := jsTrimSpace(structural)
 	if body == "" {
 		end := 40
 		if len(lines) < end {
@@ -325,7 +333,7 @@ func renderFocusedContent(filePath, focus string, lines []string, summary string
 			inner = 800
 		}
 		body = "No direct focus match. Structural outline only:\n" +
-			structuralSkeleton(lines, inner)
+			structuralSkeleton(filePath, lines, strings.Join(lines, "\n"), inner)
 	}
 	omitted := len(lines) - shownLines
 	if omitted < 0 {
