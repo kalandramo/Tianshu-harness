@@ -106,6 +106,64 @@ func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 		}, nil
 	}
 
+	// ── 读取策略判定（对账 TS `read-file.ts:594`）──
+	//
+	// **本刀接线的正是第八刀移植却从未被消费的 `DecideReadPolicy`。**
+	// TS 注释（`read-file.ts:930`）记录过同型 bug：
+	//
+	//   the entire decideReadPolicy layer (PARTIAL view for >80KB source,
+	//   log preview, >100KB guard) was **dead wiring** for single-file tool reads
+	//
+	// Go 侧重演了它：判定函数及其 101 例差分 oracle 都在，但 `read_file.go`
+	// **零调用**。这是**第五例「移植了但未接线」**。
+	//
+	// **顺序对账 TS**：TS 的 `readFilePayload` 是 **先 stat → 判 policy →
+	// 必要时拒绝 → 才 readFile**（`:594` 判定，`:603` 才读）。Go 此前把
+	// `os.ReadFile` 放在最前——意味着 focus 拒绝、oversize 拒绝**都要先把
+	// 整个文件读进内存**（实测 2.6MB 文件在 Windows 上因此长时间阻塞）。
+	// 故本段必须在 `os.ReadFile` **之前**。
+	//
+	// **不 early return 的边界**：partial/preview 分支不能 return（Go 把
+	// payload 层与工具层合在 `Execute` 里，L0 与 dedup 都在尾部），故它们
+	// 只**设置模型可见内容**，`text`（全文）保持不变。而 focus/oversize/
+	// reject 三种**拒绝**可以立即 return——它们本来就不该产出内容。
+	focus := strings.TrimSpace(strArg(p.Input, "focus"))
+	hasExplicitRange := inputProvided(p.Input, "offset") || inputProvided(p.Input, "limit")
+	fileSize := int(info.Size())
+	policy := DecideReadPolicy(ReadPolicyInput{
+		FilePath:         path,
+		SizeBytes:        fileSize,
+		HasExplicitRange: hasExplicitRange,
+	})
+	hasFocus := focus != "" && !hasExplicitRange
+
+	// 聚焦读拒绝超大文件（对账 TS `:598-602`）——避免无界扫描。
+	if hasFocus && fileSize > maxFocusScanBytes {
+		return contract.Result{
+			Content: fmt.Sprintf("聚焦读拒绝超过 %dMB 的文件。先用 grep 或显式 offset/limit 定位区间。",
+				maxFocusScanBytes/1024/1024),
+			IsError: true,
+		}, nil
+	}
+
+	// 超大文件且无范围无 focus（对账 TS `:602-616`）：partial 放行，其余报错。
+	oversizeNoRange := fileSize > maxToolInputBytes && !hasExplicitRange && !hasFocus
+	if oversizeNoRange && policy.Action != ActionPartial {
+		return contract.Result{
+			Content: fmt.Sprintf("文件过大（%dKB，约 %d 行）。用 offset 与 limit 读指定区间。",
+				fileSize/1024, (fileSize+79)/80),
+			IsError: true,
+		}, nil
+	}
+
+	// generated/minified 无范围读 → 拒绝（对账 TS `:627-629`）。
+	if policy.Action == ActionRejectWithRange && !hasExplicitRange {
+		return contract.Result{
+			Content: policy.Reason + "。用 offset 与 limit 读指定区间。",
+			IsError: true,
+		}, nil
+	}
+
 	data, err := os.ReadFile(vr.Path)
 	if err != nil {
 		return contract.Result{Content: fmt.Sprintf("读取失败：%v", err), IsError: true}, nil
@@ -137,8 +195,6 @@ func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 	// `rawContent` 仍是**全文**，外层 L0 用全文长度判阈值——故大文件聚焦读取
 	// **仍落盘全文 + artifact 标记**。若此处提前 return，会绕过 L0（审查发现
 	// 的真实偏差）。
-	focus := strings.TrimSpace(strArg(p.Input, "focus"))
-	hasExplicitRange := inputProvided(p.Input, "offset") || inputProvided(p.Input, "limit")
 	focusedContent := ""
 	if focus != "" && !hasExplicitRange {
 		maxChars := ComputeModelReadCap(ModelReadCapInput{
@@ -163,6 +219,29 @@ func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 	// offset/limit
 	offset := intArg(p.Input, "offset", 1)
 	limit := intArg(p.Input, "limit", 0)
+
+	// 越界与非法 offset 的检查（对账 TS `:667-687`）。
+	//
+	// **此前 Go 是静默 clamp**（`start > len(lines)` → `start = len(lines)`），
+	// 产出空内容且模型不知越界。TS 显式给出错误文本 + 总行数。
+	//
+	// **不设 IsError**（看似反直觉，但对账 TS）：TS 的 `readFilePayload` 在此
+	// **return** 而非 **throw**，只有 throw 才让工具层设 `isError`。故模型看到
+	// "Error: ..." 文本但结果不是错误——照移植。
+	if offset > 1 || limit > 0 {
+		if offset-1 >= len(lines) {
+			msg := fmt.Sprintf(
+				"Error: offset %d exceeds file length (%d lines). File has %d lines. Re-read without offset or use a smaller offset value.",
+				offset, len(lines), len(lines))
+			return contract.Result{Content: msg}, nil
+		}
+		if offset < 1 {
+			return contract.Result{
+				Content: fmt.Sprintf("Error: offset must be >= 1 (got %d). Lines are 1-based.", offset),
+			}, nil
+		}
+	}
+
 	start := offset - 1
 	if start < 0 {
 		start = 0
@@ -219,6 +298,38 @@ func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 	// **但 L0 仍用全文 `text` 判阈值并落盘全文**——这正是不在此提前 return 的原因。
 	if focusedContent != "" {
 		content = focusedContent
+	}
+
+	// ── 策略分支：partial / preview / full-with-hint（对账 TS `:647-711`）──
+	//
+	// 三个分支都**只改模型可见内容**，`text`（全文）不动——L0 与 dedup 需要全文。
+	// 顺序对账 TS：preview 在 partial 之前判定（但两者条件互斥：preview 仅 log/jsonl，
+	// partial 仅 source/unknown）。
+	if !hasExplicitRange && !hasFocus {
+		cap := ComputeModelReadCap(ModelReadCapInput{
+			ContextWindow:   p.ContextWindow,
+			ProviderProfile: p.ProviderProfile,
+		})
+		if p.perFileCapMax > 0 {
+			cap.MaxChars = p.perFileCapMax
+			cap.HeadChars = p.perFileCapHead
+			cap.TailChars = p.perFileCapTail
+		}
+		switch {
+		case oversizeNoRange || policy.Action == ActionPartial:
+			// 大源文件：折叠骨架 + partial 视图（**而非截断全文**）。
+			content = ApplyFoldThenPartial(text, path, cap)
+		case policy.Action == ActionPreview:
+			// 日志/JSONL：有界头尾预览 + 后续读取指引。
+			content = TruncateContent(BuildLogPreviewContent(path, text),
+				cap.MaxChars, cap.HeadChars, cap.TailChars)
+		}
+	}
+	// full-with-hint：中等文件全量返回 + 编辑指引（对账 TS `:711-713`）。
+	if policy.Action == ActionFullWithHint && !hasExplicitRange && !hasFocus {
+		content += fmt.Sprintf(
+			"\n\n── Note: this file is %d lines. For editing, consider: grep to locate target → hash_edit with anchors. ──",
+			len(lines))
 	}
 
 	// ── 读去重（对账 TS `read-file.ts:838-908`）──

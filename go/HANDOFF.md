@@ -1818,6 +1818,85 @@ unit**（JS 字符串语义），不是字节——Go 用 `UTF16Len`（本会话
    本刀未动（属既有偏差，与读去重无关）——**记此备忘**。
 
 
+### 读取策略层接线（2026-09-21，回主线第二十三刀）
+
+**做了什么**：把第八刀移植却**从未被消费**的 `DecideReadPolicy` 接进
+`read_file.go`，并补上三个执行侧 helper（`readpayload.go`）。
+
+**这是第五例「移植了但未接线」**（前四例：`focus`、`file_paths`、read_file L0、
+grep L0）。而且 TS 注释（`read-file.ts:930`）**记录过同型 bug**：
+
+> the entire decideReadPolicy layer (PARTIAL view for >80KB source, log preview,
+> >100KB guard) was **dead wiring** for single-file tool reads
+
+Go 侧重演了它：判定函数 + 101 例差分 oracle 都在，`read_file.go` **零调用**。
+
+**补的三个 helper**（`readpayload.go`，对账 TS `:398-508`）
+- `ApplyFoldThenPartial`：折叠骨架 + partial 视图，折叠无益时回退
+- `BuildLogPreviewContent`：日志/JSONL 的有界头尾预览 + 后续读取指引
+- `BuildFileUiOutput`：TUI 展示（带行号头尾）
+- 三个常量：`maxToolInputBytes`(100KB) / `maxFocusScanBytes`(2MB) / `logPreviewLines`(80)
+
+**接线的四个 action + 三类拒绝**
+- `partial`（>80KB 源文件）→ 折叠骨架（**而非截断全文**）
+- `preview`（>16KB 日志/JSONL）→ 有界头尾预览
+- `full-with-hint`（20KB–80KB 源文件）→ 全文 + 编辑指引
+- `reject-with-range`（generated/minified）→ 报错 + 指引 offset/limit
+- 另加：focus 超 2MB 拒绝、>100KB 非 partial 拒绝、offset 越界/非法报错
+
+**本刀抓到的两个真实缺陷**
+
+1. **`os.ReadFile` 在所有判定之前**（顺序倒置）。TS 的 `readFilePayload` 是
+   **先 stat → 判 policy → 必要时拒绝 → 才 readFile**（`:594` 判定，`:603` 才读）。
+   Go 把 `os.ReadFile` 放在最前——意味着 focus 拒绝、oversize 拒绝**都要先把
+   整个文件读进内存**。实测：2.6MB 文件的 focus 拒绝测试**挂住 98 秒**
+   （Windows 上打开大文件阻塞），修顺序后 **0.01 秒**。
+   **定位手段**：`runtime.Stack` 探针——栈显示挂在
+   `os.ReadFile → syscall.Open`，直接指出顺序问题。
+2. **offset 越界此前静默 clamp**（`start = len(lines)`）→ 产出空内容且模型
+   不知越界。TS 显式给出错误文本 + 总行数。**注意 TS 在此 `return` 而非
+   `throw`**，故**不设 `IsError`**（看似反直觉，照移植）。
+
+**接线的边界（有意）**：partial/preview 分支**不能 early return**——Go 把
+payload 层与工具层合在 `Execute` 里，L0 与 dedup 都在尾部；分支若 return 会
+绕过它们。TS 能 return 是因为它在独立的 payload 层。故这两个分支只**设置模型
+可见内容**，`text`（全文）不动。而三类**拒绝**可以立即 return。
+
+**验证**
+- **11 条接线测试**（`readpolicy_wiring_test.go`）：partial / preview /
+  reject（含放行）/ full-with-hint / 小文件无指引 / offset 越界 /
+  focus 超 2MB / >100KB 非 partial 拒绝
+- **变异反证**：M59（不接 partial）→1 红；M60（不接 preview）→1 红；
+  M61（不接 reject）→1 红；M62（不接越界检查）→1 红；
+  M65（折叠不生效）→1 红
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+**两处修正既有测试的 fixture**（断言未动）：`TestReadFileTruncationMarked` /
+`TestReadFileTruncationKeepsTail` 的 `.txt` fixture 原本 >80KB——接线后走 partial
+分支（**对账 TS 的正确行为**），使它们要验证的 `TruncateContent` 接线被绕过。
+缩到 <20KB 使截断路径可达，断言原样保留。
+
+**一次等价变异的教训**：M64（折叠阈值 0.7 → 1.0）**0 红**，我一度以为是测试
+缺口，探针实测后发现——`foldedLines` 被 `maxLines=200` 约束，ratio 恒 ≤0.7，
+**阈值放宽不改变路径**（等价变异）。真正能区分两条路径的是**头部标记**
+（`SKELETON view` vs `PARTIAL view`），已据此改写断言并换用有效变异 M65。
+**教训**：0 红有两种成因，等价变异与测试缺口——先探针确认变异是否真的
+改变了**可观测行为**，再决定补测试。
+
+#### 仍未做（更新）
+
+1. **artifact re-serve**（`read-file.ts:794-828`）：依赖 `sliceFromArtifact`（未移植）。
+2. **邻居提示**（`maybeAppendNeighborHint`，`RIVET_NEIGHBOR_HINT=1`，默认关）。
+3. **`buildModelOutput` 层**（`output-store.ts`）：bash 的模型可见输出格式化。
+4. **`preferFoldOnOverflow`**（TS `:695-704`）：`readCapOverride` 激活时溢出走
+   折叠骨架而非头尾截断。Go 侧无 `readCapOverride` 概念，**未移植**。
+5. **office 转换 / `buildFileUiOutput` 接线**：`BuildFileUiOutput` 已实现，
+   但 Go 的 `UIContent` 目前只在多读分支用（单读分支的 UI 输出待接）。
+6. **`trimLastKnownLocked` 的裁剪语义分歧**（`filestate.go`）：Go 裁
+   `size - max`（501→500），TS 裁 `ceil(size*0.2)`（501→400）。**不等价**。
+7. **bash 的超时/错误路径 L0**。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`

@@ -115,7 +115,11 @@ func TestReadFileBinaryRejected(t *testing.T) {
 // 截断的观测不能支撑负向结论——标记是这条纪律的技术保障。
 func TestReadFileTruncationMarked(t *testing.T) {
 	root := t.TempDir()
-	big := strings.Repeat("x", 200_000)
+	// **尺寸有讲究**（第二十三刀接线策略层后修正）：`.txt` 归 `unknown` 类，
+	// >80KB 会走 partial 分支（骨架视图），>100KB 更是直接返回 partial——
+	// 那是对账 TS 的正确行为，但会让本测试验证的 `TruncateContent` 路径被绕过。
+	// 控制在 20KB 以下（action=full）使截断路径可达。断言未变。
+	big := strings.Repeat("x", 16_000)
 	mustWriteFile(t, filepath.Join(root, "big.txt"), big)
 
 	tool := ReadFile(root, nil)

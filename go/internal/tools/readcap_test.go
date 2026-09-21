@@ -147,9 +147,15 @@ func TestReadFileUsesScaledCapNotHardcoded(t *testing.T) {
 func TestReadFileTruncationKeepsTail(t *testing.T) {
 	root := t.TempDir()
 	// 造可辨识的头尾标记，长度超地板 cap（8000）。
+	//
+	// **尺寸有讲究**（第二十三刀接线策略层后修正）：`.txt` 归 `unknown` 类，
+	// 而 `unknown` + >80KB 会走 **partial 分支**（折叠骨架，不含尾部）——
+	// 那是对账 TS 的正确行为，但会让本测试验证的 `TruncateContent` 接线
+	// **被绕过**。故 fixture 控制在 20KB 以下（action=full），使截断路径可达。
+	// 断言未变：仍要求头 + 尾都在。
 	var b strings.Builder
 	b.WriteString("HEADMARKER_START\n")
-	for i := 0; i < 3000; i++ {
+	for i := 0; i < 400; i++ {
 		b.WriteString("padding line to exceed the cap value here\n")
 	}
 	b.WriteString("TAILMARKER_END\n")
