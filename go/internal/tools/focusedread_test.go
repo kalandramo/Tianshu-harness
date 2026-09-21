@@ -315,3 +315,83 @@ func TestReadFileFocusEmptyStringIgnored(t *testing.T) {
 		}
 	}
 }
+
+// TestReadFileFocusStillWrapsArtifact —— **审查发现的偏差**：focus 读大文件
+// **仍应落盘全文 artifact + 尾部标记**（对账 TS）。
+//
+// TS 侧：focus 分支只决定 `modelContent`，`rawContent` 仍是全文；外层 L0 用
+// `payload.rawContent.length` 判阈值（`read-file.ts:1002`）——故大文件聚焦读取
+// **仍落盘全文**。
+//
+// 我首版在 focus 分支提前 return，绕过了 L0（`read_file.go:136` vs `:189`）。
+// **这条测试的价值在于它设了 ArtifactStore**——首版端到端测试没设，故偏差不可见。
+func TestReadFileFocusStillWrapsArtifact(t *testing.T) {
+	root := t.TempDir()
+	// 大文件（超阈值 1600）且含 focus 目标。
+	var b strings.Builder
+	for i := 0; i < 300; i++ {
+		b.WriteString("const filler = 1\n")
+	}
+	b.WriteString("export function commitAction() { return 1 }\n")
+	for i := 0; i < 300; i++ {
+		b.WriteString("const filler2 = 2\n")
+	}
+	full := b.String()
+	mustWriteFile(t, rootDir(root)+"big.ts", full)
+
+	store := newReadFileStore(t)
+	tool := ReadFile(root, nil)
+	p := call(root, map[string]any{"file_path": "big.ts", "focus": "commitAction"})
+	p.ArtifactStore = store
+	p.ContextWindow = 0
+
+	r, _ := tool.Execute(t.Context(), p)
+	// 模型可见内容应是聚焦视图。
+	if !strings.Contains(r.Content, "[focused-read]") {
+		t.Fatalf("应走聚焦分支：%.200s", r.Content)
+	}
+	// **关键**：仍应有 artifact 标记（focus 不绕过 L0）。
+	m := artifactMarkerTailRe.FindStringSubmatch(r.Content)
+	if m == nil {
+		t.Fatalf("focus 读大文件仍应落盘 artifact（TS 行为）：%.300s", r.Content)
+	}
+	// 落盘的应是**全文**（不是聚焦视图）。
+	raw, err := store.ReadRaw(m[1])
+	if err != nil {
+		t.Fatalf("ReadRaw 失败：%v", err)
+	}
+	if raw != full {
+		t.Errorf("落盘应是全文（%d 字节），实得 %d 字节", len(full), len(raw))
+	}
+}
+
+// TestReadFileExplicitRangeNullSemantics —— `offset: null` 算「提供了」
+// （对账 TS 的 `!== undefined`）。
+//
+// 探针：TS 里 `{offset: null}` 使 `hasExplicitRange = true`（focus 不生效）；
+// Go 首版用 `!= nil` 判为 false（focus 生效）——语义漂移。
+func TestReadFileExplicitRangeNullSemantics(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, rootDir(root)+"a.ts", "line1\nline2\nline3\nline4\nline5")
+
+	tool := ReadFile(root, nil)
+	// offset 显式为 nil（模拟 JSON null）。
+	p := call(root, map[string]any{"file_path": "a.ts", "focus": "line2", "offset": nil})
+	r, _ := tool.Execute(t.Context(), p)
+	if strings.Contains(r.Content, "[focused-read]") {
+		t.Errorf("offset:null 应算「提供了范围」→ focus 不生效：%.200s", r.Content)
+	}
+}
+
+// TestReadFileExplicitRangeAbsentFocusWorks —— 键**缺失**时 focus 生效（对照组）。
+func TestReadFileExplicitRangeAbsentFocusWorks(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, rootDir(root)+"a.ts", "line1\nline2 target\nline3")
+
+	tool := ReadFile(root, nil)
+	p := call(root, map[string]any{"file_path": "a.ts", "focus": "target"})
+	r, _ := tool.Execute(t.Context(), p)
+	if !strings.Contains(r.Content, "[focused-read]") {
+		t.Errorf("无 offset/limit 时 focus 应生效：%.200s", r.Content)
+	}
+}

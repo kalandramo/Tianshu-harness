@@ -118,8 +118,14 @@ func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 	// **修复的缺陷**：此前 Go 侧声明了 `focus`/`focus_max_matches` 参数但
 	// **完全未实现**——传 focus 时静默返回全文件，模型以为拿到聚焦结果。
 	// 静默失效比未移植更糟：模型基于错误前提推理。
+	//
+	// **不在此 return**（对账 TS）：TS 的 focus 分支只决定 `modelContent`，
+	// `rawContent` 仍是**全文**，外层 L0 用全文长度判阈值——故大文件聚焦读取
+	// **仍落盘全文 + artifact 标记**。若此处提前 return，会绕过 L0（审查发现
+	// 的真实偏差）。
 	focus := strings.TrimSpace(strArg(p.Input, "focus"))
-	hasExplicitRange := p.Input["offset"] != nil || p.Input["limit"] != nil
+	hasExplicitRange := inputProvided(p.Input, "offset") || inputProvided(p.Input, "limit")
+	focusedContent := ""
 	if focus != "" && !hasExplicitRange {
 		maxChars := ComputeModelReadCap(ModelReadCapInput{
 			ContextWindow:   p.ContextWindow,
@@ -133,7 +139,7 @@ func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 			MaxMatches:   intArg(p.Input, "focus_max_matches", defaultMaxMatches),
 			ContextLines: defaultContextLines,
 		})
-		return contract.Result{Content: res.Content}, nil
+		focusedContent = res.Content
 	}
 
 	// offset/limit
@@ -184,6 +190,11 @@ func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 	if limit > 0 || offset > 1 {
 		content = fmt.Sprintf("[%s 第 %d-%d 行，共 %d 行]\n%s",
 			path, start+1, end, len(lines), body)
+	}
+	// focus 生效时，**模型可见内容**换成聚焦视图（对账 TS 的 `modelContent`）。
+	// **但 L0 仍用全文 `text` 判阈值并落盘全文**——这正是不在此提前 return 的原因。
+	if focusedContent != "" {
+		content = focusedContent
 	}
 
 	// ── L0 artifact 包装（对账 TS `read-file.ts:992-1042`）──
@@ -254,6 +265,19 @@ func isBinary(data []byte) bool {
 		}
 	}
 	return false
+}
+
+// inputProvided 复刻 TS 的 `params.input.X !== undefined` 语义。
+//
+// **为什么不能直接用 `p.Input[k] != nil`**：JSON 里显式 `null` 会被解码成
+// Go 的 `nil`，与「键缺失」不可区分；而 TS 的 `null !== undefined` 为 **true**
+// （null 算「提供了」）。故必须查**键是否存在**，而非值是否为 nil。
+//
+// 探针实测：`{"offset": null}` 在 TS 里使 `hasExplicitRange = true`（focus 不生效），
+// 用 `!= nil` 则判为 false（focus 生效）——语义漂移。
+func inputProvided(input map[string]any, key string) bool {
+	_, ok := input[key]
+	return ok
 }
 
 // intArg 从入参取整数（容忍 float64 —— JSON 解码的默认形态）。

@@ -1480,6 +1480,75 @@ M42 变红。**这与第十六刀（grep L0）的坑同源**：验证「A 而非
    `successFold`/`persistRawSafe`），建议单开一刀。
 
 
+### 审查修复：focus 绕过 L0 + null 语义（2026-09-21，回主线第十八刀）
+
+**背景**：第十七刀（`e03cfdf`）的提交后审查报了 4 条 CRITICAL。逐条独立核验
+（`grep`/`read` 确认 file:line）后**全部成立**，其中 2 条是我引入的真实偏差。
+
+#### 偏差 1：focus 分支绕过 L0 artifact 包装（已修）
+
+**证据**：Go 的 focus 分支在 `read_file.go:136` `return`，而 L0 包装在 `:189`
+——focus 时永不落盘。而 **TS 侧不是这样**：focus 分支只决定 `modelContent`，
+`rawContent` 仍是**全文**（`read-file.ts:635`），外层 L0 用
+`payload.rawContent.length` 判阈值（`:1002`）——故 TS 大文件聚焦读取
+**仍落盘全文 + artifact 标记**。
+
+**修复**：focus 分支不再 `return`，改为设 `focusedContent` 后让控制流继续到
+L0；`content` 在 L0 之前被 `focusedContent` 替换（模型可见 = 聚焦视图），
+而 L0 仍用全文 `text` 判阈值并落盘全文。
+
+**为什么测试没发现**：首版的 `TestReadFileFocusEndToEnd` **没设
+`p.ArtifactStore`**——无 store 时 L0 分支本就不执行，偏差不可见。
+新增 `TestReadFileFocusStillWrapsArtifact`（**设了 store**）后，变异 M43
+（恢复提前 return）→ 1 红。
+
+**教训**：验证「某分支不影响另一机制」的测试，必须**让那个机制处于可观测状态**
+（此处即注入 ArtifactStore）。否则断言恒真。
+
+#### 偏差 2：`hasExplicitRange` 的 null 语义漂移（已修）
+
+**证据**：Go 用 `p.Input["offset"] != nil` 代理 TS 的 `!== undefined`——二者在
+**JSON null** 形态下不等价：`{"offset": null}` 在 TS 里 `null !== undefined` 为
+**true**（算「提供了范围」→ focus 不生效），Go 判为 false（focus 生效）。
+
+**修复**：新增 `inputProvided(input, key)`，查**键是否存在**而非值是否为 nil
+（JSON null 与缺失在 Go 里都解成 nil，只能靠键存在性区分）。
+新增 `TestReadFileExplicitRangeNullSemantics`，变异 M44（改回 `!= nil`）→ 1 红。
+
+#### 未修：`file_paths` 静默失效（记入下一刀）
+
+**证据**：`file_paths` 在 Go 的 `read_file.go` **只出现在 schema 声明**（2 处：
+参数列表 + `arrayPropOrdered`），`Execute` 内**无任何分支处理**。TS 侧有完整
+多读分支（`read-file.ts:756+`，最多 5 文件、`content: sections.join('
+
+')`）。
+
+**与第十七刀的 `focus` 同类**（schema 声明但未实现 = 静默失效），但**规模更大**
+（多读分支 + 每文件的 header/错误处理 + 与 cap 的除法分配
+`Math.floor(computedCap.maxChars / paths.length)`）。**建议单开一刀**。
+
+#### 验证
+
+- **3 条新测试**：`TestReadFileFocusStillWrapsArtifact`（设 store，验证落盘全文）/
+  `TestReadFileExplicitRangeNullSemantics`（null 算提供）/ 对照组
+  `TestReadFileExplicitRangeAbsentFocusWorks`
+- **变异反证**：M43（focus 提前 return）→ 1 红；M44（`!= nil` 旧语义）→ 1 红
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+#### 仍未做（更新）
+
+1. **`file_paths` 多读分支**（本刀发现，同 `focus` 类的静默失效）。
+2. **`foldCode`**（`src/compact/code-fold.ts`，428 行）：被 focused-read 的无匹配
+   分支 + `applyFoldThenPartial` 共同依赖，一刀可解两处。
+3. **`readFilePayload` 的其余分支**：office 转换、`buildLogPreviewContent`、
+   `buildFileUiOutput`、`reject-with-range` 的行为。
+4. **gitignore 过滤**（`getGitignoreFilter` + `isRivetStatePath` 豁免）。
+5. **dedup 子系统**（`read-file.ts:190-255`）：两张表 + `repeatWarning` +
+   read-ref。跨 6 个模块有消费者，**最大的一块**。
+6. **`bash` 的 L0 包装**：依赖面宽（`buildModelOutput`/`meta`/`errorClass`/
+   `successFold`/`persistRawSafe`），建议单开一刀。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`
