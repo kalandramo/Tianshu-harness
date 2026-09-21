@@ -1078,6 +1078,74 @@ M17（去掉 `(?m)`）→ **0 例红，是等价变异**（逐行调用时 `^` �
 grep 该字段在 TS 侧的全部读取点（含 `.sections` 解构、`sections` 实参传递、
 类型使用点——三个角度交叉）。
 
+### truncation.go —— 工具输出的截断与 PARTIAL 视图（2026-09-21，回主线第十二刀）
+
+**做了什么**：新建 `internal/tools/truncation.go`（195 行），逐字移植 TS
+`src/tools/truncation.ts`（76 行）的两个导出：`TruncateContent`（头尾截断）
+与 `BuildPartialView`（PARTIAL / SKELETON 两形态）。
+
+**为什么先做它**：它是 `read_file` L0 包装的**前置依赖**——TS 的
+`modelContent = truncateContent(content, cap.maxChars, cap.headChars, cap.tailChars)`
+（`read-file.ts:707`）就是「原文 / 模型可见内容」的分野算法。没有它，
+L0 包装里的 `payload.rawContent` 无从谈起。
+
+**与 `internal/prompt/truncate.go` 的区别**（勿混用）：那个对账
+`volatile.ts:1209` 的 `truncateBlock`，是 **frozen 块的预算截断**，语义不同源。
+两者共享的只是「UTF-16 切片 + 孤立代理转 U+FFFD」这一手法。
+
+**这一刀的核心难点：JS 的 UTF-16 code unit 语义**（探针实测确认）
+
+1. **`slice(-0)` 返回整个串**——JS 里 `-0 === 0`，故 `slice(-0)` ≡ `slice(0)`。
+   `TruncateContent` 的 `keepTail=0` 分支因此是**全文**而非空串。若实现成
+   「k==0 → 空串」，尾部内容会**静默全丢**。
+2. **切在代理对中间产生孤立代理** → UTF-8 编码为 U+FFFD（`ef bf bd`）：
+   `"a😀bc".slice(0,2)` → `61 ef bf bd`；`slice(-3)` → `ef bf bd 62 63`
+   （**尾部切同样会切断**）。Go 的 `[]rune` 切片按码点切、永不切断，
+   直接照搬会产出不同字节。故 `jsSliceHead` / `jsSliceTail` 走
+   `utf16.Encode` → 切片 → `utf16.Decode`（孤立代理自动成 RuneError）→ 显式写 U+FFFD。
+3. **`keptLines` 至少为 1**（对账 `Math.max(1, keptLines)`）——预算为 0 时
+   仍保留首行，否则 PARTIAL 视图会是空的（模型什么都看不到）。
+
+**验证：差分 oracle**（复用 summarize 刀的基建）
+
+- `testdata/truncation/gen_oracle.ts` 用 `tsx` 跑 TS 原实现，产出 **28 条**
+  黄金用例，含 `result`（字符串）与 **`resultBytes`（UTF-8 十六进制）**
+- `truncation_test.go` **双重比对**：字符串 + 字节。字节比对是必需的——
+  孤立代理→U+FFFD 的编码差异只在字节层暴露
+- 生成命令：`node_modules/.bin/tsx go/testdata/truncation/gen_oracle.ts`
+- 覆盖边界：`keepTail=0` / `keepHead=0` / 双 0 / `maxChars` 为 0 与负 /
+  空串 / 全 emoji / 中文 / 超界（`keepHead` > 长度）/ 恰好等于长度 /
+  skeleton 三形态 / 零预算至少 1 行
+
+**变异反证**：M24（`slice(-0)` 返回空串）→ 3 测试红；
+M25（改字节切而非 UTF-16）→ 3 红；M26（去掉 `max(1, ...)`）→ 3 红。
+
+**全量验证**：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、
+`go test ./... -count=1` 22 包 ok / 0 FAIL。oracle 重生成**字节一致**（可复现）。
+
+#### 仍未做（L0 包装的依赖链，按依赖顺序）
+
+补 L0 包装前还缺这些（**每项都是独立的刀**）：
+
+1. **`readFilePayload` 的 raw/model 分野**（`read-file.ts:555`）：产出
+   `{canonicalPath, rawContent, modelContent, uiContent}` 四元组。Go 侧
+   `read_file` 当前只有一个 `body`。依赖本刀（`TruncateContent`）+ 下面 2、3。
+2. **`decideReadPolicy`**：`full-with-hint` / `partial` / `reject-with-range`
+   三态，含 `MAX_TOOL_INPUT_BYTES`（100KB）/ `MAX_FOCUS_SCAN_BYTES`（2MB）常量。
+3. **gitignore 过滤**（`getGitignoreFilter`）。
+4. **`cap` 接入**：把 `MaxBytes`（当前硬编码 100_000）换成
+   `ComputeModelReadCap` 的结果——`modelreadcap.go` 已就绪，只是没接。
+5. **L0 包装本体**（`read-file.ts:992-1042`）：`ToolArtifactThreshold('read_file', ...)`
+   判阈值 → `summarizeFileContent` → `store.Save` → summaryBlock 拼接 →
+   `[artifact:id]` **尾部**约定。
+6. **dedup 子系统**（`read-file.ts:190-255`）：`readHistory` / `fileReadHistory`
+   两张表 + `repeatWarning` 文案 + read-ref 机制。跨 6 个模块有消费者
+   （`cross-session-hook.ts` / `loop-factory.ts` / `turn-step-producer.ts` /
+   `edit.ts` / `grep.ts`），是**最大的一块**。
+
+**建议顺序**：1 → 4 → 2/3 → 5 → 6。第 1 步做完，`read_file` 就有了原文/模型
+分野（即使还没落盘），模型看到的截断行为立即与 TS 对齐。
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`
