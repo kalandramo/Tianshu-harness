@@ -37,7 +37,7 @@ func NewDefaultRegistry(opts Options) *Registry {
 	r.Register(Grep(cwd))
 	// read_section：artifact 召回路径（大工具结果被拦截后按区段取回）。
 	// 对账 TS 的 read-section.ts——属 read 类，minimal preset 也含。
-	r.Register(ReadSection())
+	r.Register(ReadSection(cwd, opts.Grants))
 
 	// ── 执行 ──
 	r.Register(Bash(cwd))

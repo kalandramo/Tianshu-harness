@@ -901,6 +901,114 @@ Go 侧对应「返回空串」——调用方对空串就是「不追加」（�
 - `CheckpointDeps.TaskAnchor`（需 `getActiveContract` + `renderTaskAnchor`）
 - `promptEngine.resetAppendixBaseline`、`recordCompactEvent`
 
+---
+
+### read_section 的 file_path 分支（2026-09-20，回主线第十刀）
+
+**目标**：补 `read_section(file_path=...)`——从磁盘活动文件按区段读取，配合
+read-ref 引用恢复本会话早前读过的文件内容。同时消掉一处**已知偏差**。
+
+#### 三个新文件
+
+| 文件 | 对账 TS | 内容 |
+|------|---------|------|
+| `internal/tools/modelreadcap.go` | `src/tools/model-read-cap.ts` | `ComputeModelReadCap`（窗口感知 + 策略系数 + 120K 硬上限） |
+| `internal/tools/filestate.go` | `read-file.ts` 的 `lastKnownFileState` | `NoteFileObserved` / `GetFileReadMtime`（会话隔离 + 500 条上限） |
+| `readsection.go`（改） | `read-section.ts` 的 "B3" 分支 | `readFromDisk` |
+
+#### 分支语义（对账 TS，顺序敏感）
+
+1. **路径校验**（fail-closed，`pathsafe.Validate`）
+2. **陈旧性检查**：mtime 与上次观察不符 → 前置告警
+   （`⚠ 文件自上次 read_file 后已变更（mtime 不匹配）…`）
+3. **大文件守卫**：>2MB → 报错并建议 grep/head
+4. 读取 + `extractSection`
+5. 按 `ComputeModelReadCap` 截断
+
+**优先级**：`file_path && !artifactId` —— 两者同时提供时走 artifactId 分支
+（防 file_path 静默劫持 artifact 召回）。
+
+#### 消掉的已知偏差（**重要**）
+
+`readSectionMaxChars` 首版用 `artifact.ToolArtifactThreshold("read_file", ...)`
+**近似** `computeModelReadCap`，注释里标注「移植后应替换」。实测偏差：
+
+| 窗口 | 近似值（旧） | 真值（新） | 偏差 |
+|------|-------------|-----------|------|
+| 1M | 300000 | **120000** | 高 2.5 倍 |
+
+真值算法：`0.05 × 1M × 4(chars/token) × 1.0(balanced)` = 200000 → 封顶
+`ABSOLUTE_MAX_CHARS(120000)`。
+
+#### 接口变更（消费方同步）
+
+`ReadSection()` → `ReadSection(cwd, grants)`（对齐 `Grep(cwd)` /
+`ReadFile(cwd, grants)`）。**消费方核对抓到一个漏网调用点**
+（`internal/agent/artifact_e2e_test.go:54`）——`go vet ./...` 报出来的。
+
+#### 验证
+
+- `readsection_filepath_test.go` 14 条（分支 8 + 文件状态 3 + readCap 3）
+- **变异反证**：M12（去掉陈旧性告警）→ 测试红；M13（file_path 劫持）→ 2 条红
+- 全量 go test 连跑 3 次，22 包 0 FAIL
+
+#### 仍未做
+
+- `CheckpointDeps.TaskAnchor`（经核实**不是「两个小模块」**——见下）
+- `summarize.go`（artifact sections 提取，407 行）
+- `resolveCompactionEconomics`、`Advisor.onTurnEnd`、LLM 重写路径
+
+#### ⚠️ 对 `TaskAnchor` 称量的修正（2026-09-20 本刀核实）
+
+此前 HANDOFF 把 `TaskAnchor` 排为「当前最高优先级，需 `getActiveContract` +
+`renderTaskAnchor`（两个小模块）」。**该称量有误**，核实结果：
+
+- 数据源 `TaskContract` 在 Go 侧**完全不存在**（`grep TaskContract` 零命中）
+- `src/context/task-contract.ts` **566 行 / 12 个导出函数**（`classifyTurnMode`
+  / `extractTaskContract` / `classifyTaskDepth` / `classifyPlanMethodology` 等，
+  互相调用）
+- 生产者链在 `turn-step-producer.ts:282`（Go 侧无 turn-step 等价物）
+- **结论**：接上去只能恒返回空串——是**空壳**。应先把契约的**生产 + 演进**
+  整条链移植进 Go，再谈锚。
+
+
+
+**目标**：消掉上一刀识别的缺口——归档已能写入大内容，但召回会撞 2MB 上限
+（「存得下、取不回」）。
+
+#### 改动（`internal/tools/readsection.go`）
+
+在 **2MB 守卫之前**插入 compact-history 快速路径（对账 TS `read-section.ts`
+的 "Compact-history recall fast path"）：
+
+- **只对行范围生效**：字符范围需全文（无法流式定位），落回通用路径
+- **不过 2MB 闸门**：走 `artifact.Store.ReadLineRange`（流式，不载入内存）
+- **前置召回标记** `[recalled <id> <section>]`：让下一次压缩能把这块折叠回
+  指针（recall-eviction，见 `context.RenderArchiveBody` 的 tool 分支）
+- 起点越界 → 报总行数（**非错误**，对账 TS 的 `isError: false`）
+- 超 `MaxRangeLines`(5000) → 附分页提示
+- 超字符上限 → 截断
+
+**顺序是关键**：该分支必须在 2MB 守卫**之前**——那正是它存在的理由
+（长线程归档常超上限，会让归档自己的目录项无法召回）。
+
+#### 依赖方向
+
+`tools → context`（新引入）。**无环**（`context` 不依赖 `tools`）。
+`tools` 包已用标准库 `context`，故 `internal/context` 以 `ctxstore` 别名导入。
+
+#### 验证
+
+- `readsection_compacthistory_test.go` 7 条，其中
+  `TestReadSectionCompactHistoryStreamsBeyond2MB` 是核心（3.2MB 归档成功召回）
+- **变异反证**：M10（流式分支失效）→ 测试红；M11（不加召回标记）→ 测试红
+- 全量 go test 连跑 3 次，22 包 0 FAIL
+
+#### 仍未做
+
+- `CheckpointDeps.TaskAnchor`（需 `getActiveContract` + `renderTaskAnchor`）
+- `promptEngine.resetAppendixBaseline`、`recordCompactEvent`
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`

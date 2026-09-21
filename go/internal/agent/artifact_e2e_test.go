@@ -51,7 +51,7 @@ func TestArtifactEndToEndInterceptThenRecall(t *testing.T) {
 	}
 
 	// 3) 用 read_section 取回（模拟模型的下一次调用）。
-	tool := tools.ReadSection()
+	tool := tools.ReadSection("", nil)
 	res, err := tool.Execute(context.Background(), &tools.CallParams{
 		Input:         map[string]any{"artifactId": id, "section": "L1-L3"},
 		ArtifactStore: store,

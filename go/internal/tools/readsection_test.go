@@ -28,7 +28,7 @@ func newReadSectionStore(t *testing.T, content string) (*artifact.Store, string)
 
 func TestReadSectionLineRange(t *testing.T) {
 	store, id := newReadSectionStore(t, "L1\nL2\nL3\nL4\nL5")
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 
 	res, err := tool.Execute(context.Background(), &CallParams{
 		Input:         map[string]any{"artifactId": id, "section": "L2-L4"},
@@ -51,7 +51,7 @@ func TestReadSectionLineRange(t *testing.T) {
 // TestReadSectionBareNumberRange —— "100-200"（无 L 前缀）也应解析。
 func TestReadSectionBareNumberRange(t *testing.T) {
 	store, id := newReadSectionStore(t, "a\nb\nc")
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 	res, _ := tool.Execute(context.Background(), &CallParams{
 		Input: map[string]any{"artifactId": id, "section": "1-2"}, ArtifactStore: store,
 	})
@@ -62,7 +62,7 @@ func TestReadSectionBareNumberRange(t *testing.T) {
 
 func TestReadSectionCharRange(t *testing.T) {
 	store, id := newReadSectionStore(t, "abcdefghij")
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 	res, _ := tool.Execute(context.Background(), &CallParams{
 		Input: map[string]any{"artifactId": id, "section": "c2-c5"}, ArtifactStore: store,
 	})
@@ -76,7 +76,7 @@ func TestReadSectionCharRange(t *testing.T) {
 
 func TestReadSectionOutOfRangeLine(t *testing.T) {
 	store, id := newReadSectionStore(t, "a\nb\nc")
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 	res, _ := tool.Execute(context.Background(), &CallParams{
 		Input: map[string]any{"artifactId": id, "section": "L100-L200"}, ArtifactStore: store,
 	})
@@ -92,7 +92,7 @@ func TestReadSectionOutOfRangeLine(t *testing.T) {
 // ── 错误分支（文案逐字对账 TS）──
 
 func TestReadSectionMissingSection(t *testing.T) {
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 	res, _ := tool.Execute(context.Background(), &CallParams{Input: map[string]any{}})
 	if !res.IsError || res.Content != "错误：需要提供 section" {
 		t.Errorf("文案不符：%q", res.Content)
@@ -100,7 +100,7 @@ func TestReadSectionMissingSection(t *testing.T) {
 }
 
 func TestReadSectionInvalidFormat(t *testing.T) {
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 	res, _ := tool.Execute(context.Background(), &CallParams{
 		Input: map[string]any{"artifactId": "x", "section": "garbage"},
 	})
@@ -114,7 +114,7 @@ func TestReadSectionInvalidFormat(t *testing.T) {
 }
 
 func TestReadSectionMissingArtifactID(t *testing.T) {
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 	res, _ := tool.Execute(context.Background(), &CallParams{
 		Input: map[string]any{"section": "L1-L2"},
 	})
@@ -124,7 +124,7 @@ func TestReadSectionMissingArtifactID(t *testing.T) {
 }
 
 func TestReadSectionNilStore(t *testing.T) {
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 	res, _ := tool.Execute(context.Background(), &CallParams{
 		Input: map[string]any{"artifactId": "x", "section": "L1-L2"},
 	})
@@ -135,7 +135,7 @@ func TestReadSectionNilStore(t *testing.T) {
 
 func TestReadSectionUnknownArtifact(t *testing.T) {
 	store, _ := newReadSectionStore(t, "x")
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 	res, _ := tool.Execute(context.Background(), &CallParams{
 		Input: map[string]any{"artifactId": "nope:1", "section": "L1-L2"}, ArtifactStore: store,
 	})
@@ -155,7 +155,7 @@ func TestReadSectionCorruptionDetected(t *testing.T) {
 	if err := os.WriteFile(a.RawPath, []byte("tampered"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 	res, _ := tool.Execute(context.Background(), &CallParams{
 		Input: map[string]any{"artifactId": id, "section": "L1-L1"}, ArtifactStore: store,
 	})
@@ -211,6 +211,12 @@ func TestParseCharRange(t *testing.T) {
 }
 
 // TestReadSectionMaxCharsFloor —— 小窗口下仍不低于 8000 地板。
+//
+// **行为变更**：首版断言「1M 窗口 → 300000」——那是 `artifact.
+// ToolArtifactThreshold("read_file", ...)` 的近似值（2.0 × 150K），
+// 比 TS 真值**高 2.5 倍**。改用真实 `ComputeModelReadCap` 后是 120000：
+//
+//	0.05 × 1M × 4 × 1.0(balanced) = 200000 → 封顶 ABSOLUTE_MAX_CHARS(120000)
 func TestReadSectionMaxCharsFloor(t *testing.T) {
 	if got := readSectionMaxChars(0); got != legacyMaxSectionChars {
 		t.Errorf("窗口未知应为地板 %d，实得 %d", legacyMaxSectionChars, got)
@@ -218,9 +224,13 @@ func TestReadSectionMaxCharsFloor(t *testing.T) {
 	if got := readSectionMaxChars(64_000); got != legacyMaxSectionChars {
 		t.Errorf("小窗口应为地板 %d，实得 %d", legacyMaxSectionChars, got)
 	}
-	// 1M 窗口 → read_file 阈值 300K > 8000。
-	if got := readSectionMaxChars(1_000_000); got != 300_000 {
-		t.Errorf("1M 窗口应为 300000，实得 %d", got)
+	// 1M 窗口 → 200000 封顶到 120000（对账 TS 的 ABSOLUTE_MAX_CHARS）。
+	if got := readSectionMaxChars(1_000_000); got != absoluteMaxChars {
+		t.Errorf("1M 窗口应封顶 %d，实得 %d", absoluteMaxChars, got)
+	}
+	// 300K 窗口 → 0.03 × 300000 × 4 = 36000（未封顶）。
+	if got := readSectionMaxChars(300_000); got != 36_000 {
+		t.Errorf("300K 窗口应为 36000，实得 %d", got)
 	}
 }
 

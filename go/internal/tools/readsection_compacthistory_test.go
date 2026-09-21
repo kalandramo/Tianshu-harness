@@ -43,7 +43,7 @@ func TestReadSectionCompactHistoryStreamsBeyond2MB(t *testing.T) {
 	}
 
 	store, id := newCompactHistoryStore(t, big)
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 
 	res, err := tool.Execute(context.Background(), &CallParams{
 		Input:         map[string]any{"artifactId": id, "section": "L1-L3"},
@@ -74,7 +74,7 @@ func TestReadSectionNonCompactHistoryStillGated(t *testing.T) {
 	})
 	id, _ := s.Save(artifact.SaveInput{Tool: "read_file", Target: "a.ts", RawContent: b.String(), Summary: "s"})
 
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 	res, _ := tool.Execute(context.Background(), &CallParams{
 		Input: map[string]any{"artifactId": id, "section": "L1-L3"}, ArtifactStore: s,
 	})
@@ -95,7 +95,7 @@ func TestReadSectionCompactHistoryCharRangeFallsThrough(t *testing.T) {
 		b.WriteString(strings.Repeat("z", 1000) + "\n")
 	}
 	store, id := newCompactHistoryStore(t, b.String())
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 	res, _ := tool.Execute(context.Background(), &CallParams{
 		Input: map[string]any{"artifactId": id, "section": "c0-c100"}, ArtifactStore: store,
 	})
@@ -110,7 +110,7 @@ func TestReadSectionCompactHistoryCharRangeFallsThrough(t *testing.T) {
 // 标记让**下一次压缩**能把这块折叠回指针（recall-eviction）。
 func TestReadSectionCompactHistoryPrefixesRecallMarker(t *testing.T) {
 	store, id := newCompactHistoryStore(t, "--- turn:0 role:user ---\nhello\n--- turn:0 role:assistant ---\nworld")
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 	res, err := tool.Execute(context.Background(), &CallParams{
 		Input:         map[string]any{"artifactId": id, "section": "L1-L2"},
 		ArtifactStore: store,
@@ -139,7 +139,7 @@ func TestReadSectionCompactHistoryCappedNotice(t *testing.T) {
 		b.WriteString("line\n")
 	}
 	store, id := newCompactHistoryStore(t, b.String())
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 	res, err := tool.Execute(context.Background(), &CallParams{
 		Input:         map[string]any{"artifactId": id, "section": "L1-L" + itoaT(total)},
 		ArtifactStore: store,
@@ -156,7 +156,7 @@ func TestReadSectionCompactHistoryCappedNotice(t *testing.T) {
 // TestReadSectionCompactHistoryOutOfRange —— 起点越界报总行数（非错误）。
 func TestReadSectionCompactHistoryOutOfRange(t *testing.T) {
 	store, id := newCompactHistoryStore(t, "a\nb\nc")
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 	res, err := tool.Execute(context.Background(), &CallParams{
 		Input:         map[string]any{"artifactId": id, "section": "L100-L200"},
 		ArtifactStore: store,
@@ -181,7 +181,7 @@ func TestReadSectionCompactHistoryTruncatesAtMaxChars(t *testing.T) {
 		b.WriteString(strings.Repeat("q", 200) + "\n") // 每行 200 字符
 	}
 	store, id := newCompactHistoryStore(t, b.String())
-	tool := ReadSection()
+	tool := ReadSection("", nil)
 	res, err := tool.Execute(context.Background(), &CallParams{
 		Input:         map[string]any{"artifactId": id, "section": "L1-L100"},
 		ArtifactStore: store,

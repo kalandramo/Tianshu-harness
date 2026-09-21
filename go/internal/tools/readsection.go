@@ -34,6 +34,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/artifact"
 	ctxstore "github.com/kalandramo/tianshu/go/internal/context"
 	"github.com/kalandramo/tianshu/go/internal/contract"
+	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 )
 
 // maxRawBytes 是单个 artifact 原文的内存读取上限（对账 TS 的 2MB）。
@@ -129,11 +130,25 @@ func extractSection(rawContent, sectionID string) string {
 // readSectionTool 实现 read_section。
 type readSectionTool struct {
 	def contract.Definition
+	// Cwd 是工作目录（file_path 分支的路径校验基准）。
+	Cwd string
+	// Grants 是越界路径授权判定（对账 TS `validatePath(params.cwd, file_path)`）。
+	Grants pathsafe.GrantChecker
+	// ContextWindow 是默认上下文窗口（调用方可按次覆盖）。
+	//
+	// 对账 TS 的 `params.contextWindow`——Go 侧 CallParams 也带该字段，
+	// 但工具装配时的默认值在此（供未传参的调用方）。
+	ContextWindow int
+	// session 是会话 ID（mtime 表按会话隔离）。
+	session string
 }
 
 // ReadSection 构造 read_section 工具。
-func ReadSection() Tool {
-	t := &readSectionTool{}
+//
+// 对账 TS `READ_SECTION_TOOL`。cwd/grants 供 `file_path` 分支做路径校验
+// （对账 TS `validatePath(params.cwd, file_path)`）。
+func ReadSection(cwd string, grants pathsafe.GrantChecker) Tool {
+	t := &readSectionTool{Cwd: cwd, Grants: grants}
 	t.def = contract.Definition{
 		Name: "read_section",
 		Description: `从之前保存的 artifact 中读取指定区段。
@@ -165,6 +180,7 @@ func (t *readSectionTool) Timeout(*CallParams) time.Duration { return 0 }
 // 对账 TS 的 artifactId 分支。**错误文案逐字对账**。
 func (t *readSectionTool) Execute(_ context.Context, p *CallParams) (contract.Result, error) {
 	artifactId, _ := p.Input["artifactId"].(string)
+	filePath, _ := p.Input["file_path"].(string)
 	section, _ := p.Input["section"].(string)
 
 	if section == "" {
@@ -180,8 +196,16 @@ func (t *readSectionTool) Execute(_ context.Context, p *CallParams) (contract.Re
 		}, nil
 	}
 
-	if artifactId == "" {
+	if artifactId == "" && filePath == "" {
 		return contract.Result{Content: "错误：需要提供 artifactId 或 file_path", IsError: true}, nil
+	}
+
+	// ── file_path 分支：从磁盘活动文件读（对账 TS 的 "B3" 分支）──
+	//
+	// 用途：配合 read-ref 引用恢复本会话早前读过的文件内容。
+	// **必须置于 artifactId 分支之前**（对账 TS 的 `if (file_path && !artifactId)`）。
+	if filePath != "" && artifactId == "" {
+		return t.readFromDisk(filePath, section)
 	}
 
 	store := p.ArtifactStore
@@ -287,22 +311,86 @@ func (t *readSectionTool) Execute(_ context.Context, p *CallParams) (contract.Re
 	return contract.Result{Content: truncated, RawPath: a.RawPath}, nil
 }
 
+// readFromDisk 实现 file_path 分支：从磁盘活动文件按区段读取。
+//
+// 对账 TS `read-section.ts` 的 file_path 分支（"B3"）。**顺序敏感**：
+//
+//  1. 路径校验（fail-closed）
+//  2. **陈旧性检查**：mtime 与上次观察不符 → 前置告警
+//  3. 大文件守卫（>2MB → 报错并建议 grep/head）
+//  4. 读取 + 切区段
+//  5. 按 `computeModelReadCap` 截断（**不是** artifact 阈值近似）
+func (t *readSectionTool) readFromDisk(filePath, section string) (contract.Result, error) {
+	// 1) 路径校验——fail-closed。
+	vr := pathsafe.Validate(t.Cwd, filePath, pathsafe.ModeRead, &pathsafe.Options{Grants: t.Grants})
+	if !vr.OK {
+		return contract.Result{Content: vr.Error, IsError: true}, nil
+	}
+	canonical := vr.Path
+
+	// 2) 陈旧性检查（对账 TS）：文件自上次 read_file 后变更过 → 告警。
+	//    **先 stat 再判**——stat 失败不报错（文件可能不存在，交给下一步）。
+	stalenessNote := ""
+	var sizeBytes int64
+	if fi, err := os.Stat(canonical); err == nil {
+		sizeBytes = fi.Size()
+		if lastMtime, ok := GetFileReadMtime(canonical, t.sessionID()); ok {
+			if fi.ModTime().UnixMilli() != lastMtime {
+				stalenessNote = "\n⚠ 文件自上次 read_file 后已变更（mtime 不匹配）。以下内容为当前磁盘版本，可能与上文不一致。\n"
+			}
+		}
+	}
+
+	// 3) 大文件守卫（对账 TS 的 `_rawSize > MAX_RAW_BYTES`）。
+	if sizeBytes > maxRawBytes {
+		return contract.Result{
+			Content: fmt.Sprintf(
+				"错误：文件 %s 过大（%.1fMB > %dMB 上限）。请用 grep 或 bash 配合 head/tail 直接查看。",
+				canonical, float64(sizeBytes)/1024/1024, maxRawBytes/1024/1024),
+			IsError: true,
+		}, nil
+	}
+
+	// 4) 读取 + 切区段。
+	raw, err := os.ReadFile(canonical)
+	if err != nil {
+		return contract.Result{
+			Content: fmt.Sprintf("错误：读取文件失败：%v", err),
+			IsError: true,
+		}, nil
+	}
+	sectionContent := extractSection(string(raw), section)
+
+	// 5) 按模型读上限截断（对账 TS 的 `Math.max(cap.maxChars, LEGACY...)`）。
+	maxChars := readSectionMaxChars(t.ContextWindow)
+	truncated := sectionContent
+	if len(sectionContent) > maxChars {
+		truncated = sectionContent[:maxChars] + fmt.Sprintf("\n... [已截断至 %d 字符]", maxChars)
+	}
+
+	return contract.Result{
+		Content: stalenessNote + truncated,
+		RawPath: canonical,
+	}, nil
+}
+
+// sessionID 返回工具装配时的会话 ID（file_path 分支的 mtime 表按会话隔离）。
+//
+// **注意**：`CallParams.SessionID` 是**按次调用**的会话 ID，此处用工具装配
+// 时的值——两者在正常装配下一致；差异只在测试手工构造 CallParams 时出现。
+func (t *readSectionTool) sessionID() string { return t.session }
+
 // readSectionMaxChars 返回 read_section 的单次输出上限（字符）。
 //
 // 对账 TS：`Math.max(computeModelReadCap(...).maxChars, LEGACY_MAX_SECTION_CHARS)`。
 //
-// **Go 侧的简化**：`computeModelReadCap` 需 providerProfile，尚未移植——
-// 此处用 artifact 包的窗口感知阈值作近似（同源：都基于上下文窗口缩放），
-// 再取与 8000 的较大值。**移植 computeModelReadCap 后应替换**。
+// **已消掉此前的近似偏差**：首版用 `artifact.ToolArtifactThreshold("read_file",
+// ...)` 近似（注释里标注「移植 computeModelReadCap 后应替换」）——现改用真实
+// 的 `ComputeModelReadCap`，含提供商策略系数与 120K 硬上限。
 func readSectionMaxChars(contextWindow int) int {
-	// 窗口未知 → 只用地板值（对账 TS 的 cap 缺省行为）。
-	cap := 0
-	if contextWindow > 0 {
-		// read_file 的阈值即「读取类工具」的上限口径。
-		cap = artifact.ToolArtifactThreshold("read_file", contextWindow)
-	}
-	if cap < legacyMaxSectionChars {
+	cap := ComputeModelReadCap(ModelReadCapInput{ContextWindow: contextWindow})
+	if cap.MaxChars < legacyMaxSectionChars {
 		return legacyMaxSectionChars
 	}
-	return cap
+	return cap.MaxChars
 }
