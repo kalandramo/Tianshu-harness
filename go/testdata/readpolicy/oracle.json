@@ -1,0 +1,1012 @@
+[
+ {
+  "filePath": "src/tools/read-file.ts",
+  "sizeBytes": 500,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "src/artifact/summarize.ts",
+  "sizeBytes": 500,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "go/HANDOFF.md",
+  "sizeBytes": 500,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "package.json",
+  "sizeBytes": 500,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "README.md",
+  "sizeBytes": 500,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "docs/architecture-overview.md",
+  "sizeBytes": 500,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "src/tui/engine/app.ts",
+  "sizeBytes": 500,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "desktop/src/App.tsx",
+  "sizeBytes": 500,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "go/internal/tools/readpolicy.go",
+  "sizeBytes": 500,
+  "hasExplicitRange": false,
+  "kind": "unknown",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "D:\\proj\\dist\\a.ts",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "D:\\proj\\build\\b.js",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "C:\\x\\coverage\\c.ts",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "D:\\proj\\.next\\d.ts",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "D:\\proj\\src\\a.ts",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "dist/a.ts",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "./dist/a.ts",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "x/dist/y/a.ts",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "x/DIST/a.js",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "build/a.ts",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "coverage/a.ts",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": ".next/a.ts",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "x/.next/y/a.ts",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a/dist",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "unknown",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "xdist/a.ts",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.min.js",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "minified",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.min.css",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "minified",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.MIN.JS",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "minified",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "x/a.min.js",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "minified",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.min.ts",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.jsonl",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "jsonl",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.ndjson",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "jsonl",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.jsonl.1",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "jsonl",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.ndjson.99",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "jsonl",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.jsonl.x",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "unknown",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.log",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.out",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.err",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.trace",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.log.2",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.LOG",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "x/y/a.jsonl",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "jsonl",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.ts",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.tsx",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.js",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.jsx",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.mjs",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.cjs",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.json",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.md",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.css",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.scss",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.html",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.yml",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.yaml",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.txt",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "unknown",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.rs",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "unknown",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.go",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "unknown",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.py",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "unknown",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "noext",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "unknown",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "unknown",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": ".hidden",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "unknown",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.TXT",
+  "sizeBytes": 100,
+  "hasExplicitRange": false,
+  "kind": "unknown",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.ts",
+  "sizeBytes": 16383,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.log",
+  "sizeBytes": 16383,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "dist/a.ts",
+  "sizeBytes": 16383,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.ts",
+  "sizeBytes": 16384,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.log",
+  "sizeBytes": 16384,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "dist/a.ts",
+  "sizeBytes": 16384,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.ts",
+  "sizeBytes": 16385,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.log",
+  "sizeBytes": 16385,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "preview",
+  "reason": "log-like file over preview guard",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "dist/a.ts",
+  "sizeBytes": 16385,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.ts",
+  "sizeBytes": 20479,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.log",
+  "sizeBytes": 20479,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "preview",
+  "reason": "log-like file over preview guard",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "dist/a.ts",
+  "sizeBytes": 20479,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.ts",
+  "sizeBytes": 20480,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.log",
+  "sizeBytes": 20480,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "preview",
+  "reason": "log-like file over preview guard",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "dist/a.ts",
+  "sizeBytes": 20480,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.ts",
+  "sizeBytes": 20481,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full-with-hint",
+  "reason": "medium source file — full read with editing hints",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.log",
+  "sizeBytes": 20481,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "preview",
+  "reason": "log-like file over preview guard",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "dist/a.ts",
+  "sizeBytes": 20481,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.ts",
+  "sizeBytes": 81919,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full-with-hint",
+  "reason": "medium source file — full read with editing hints",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.log",
+  "sizeBytes": 81919,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "preview",
+  "reason": "log-like file over preview guard",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "dist/a.ts",
+  "sizeBytes": 81919,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.ts",
+  "sizeBytes": 81920,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full-with-hint",
+  "reason": "medium source file — full read with editing hints",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.log",
+  "sizeBytes": 81920,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "preview",
+  "reason": "log-like file over preview guard",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "dist/a.ts",
+  "sizeBytes": 81920,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.ts",
+  "sizeBytes": 81921,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "partial",
+  "reason": "large source file — returning first page with navigation hints",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.log",
+  "sizeBytes": 81921,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "preview",
+  "reason": "log-like file over preview guard",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "dist/a.ts",
+  "sizeBytes": 81921,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.ts",
+  "sizeBytes": 0,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.log",
+  "sizeBytes": 0,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "dist/a.ts",
+  "sizeBytes": 0,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.ts",
+  "sizeBytes": 1,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.log",
+  "sizeBytes": 1,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "full",
+  "reason": "safe default read",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "dist/a.ts",
+  "sizeBytes": 1,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "dist/a.ts",
+  "sizeBytes": 999999,
+  "hasExplicitRange": true,
+  "kind": "generated",
+  "action": "full",
+  "reason": "explicit range requested",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.min.js",
+  "sizeBytes": 999999,
+  "hasExplicitRange": true,
+  "kind": "minified",
+  "action": "full",
+  "reason": "explicit range requested",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.log",
+  "sizeBytes": 999999,
+  "hasExplicitRange": true,
+  "kind": "log",
+  "action": "full",
+  "reason": "explicit range requested",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.ts",
+  "sizeBytes": 999999,
+  "hasExplicitRange": true,
+  "kind": "source",
+  "action": "full",
+  "reason": "explicit range requested",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "dist/a.log",
+  "sizeBytes": 999999,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "preview",
+  "reason": "log-like file over preview guard",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ },
+ {
+  "filePath": "a.min.jsonl",
+  "sizeBytes": 999999,
+  "hasExplicitRange": false,
+  "kind": "jsonl",
+  "action": "preview",
+  "reason": "log-like file over preview guard",
+  "previewLines": 80,
+  "maxRangeLines": 200
+ }
+]

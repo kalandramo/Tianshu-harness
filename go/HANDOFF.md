@@ -1146,6 +1146,82 @@ M25（改字节切而非 UTF-16）→ 3 红；M26（去掉 `max(1, ...)`）→ 3
 **建议顺序**：1 → 4 → 2/3 → 5 → 6。第 1 步做完，`read_file` 就有了原文/模型
 分野（即使还没落盘），模型看到的截断行为立即与 TS 对齐。
 
+### readpolicy.go —— 文件读取策略判定（2026-09-21，回主线第十三刀）
+
+**做了什么**：新建 `internal/tools/readpolicy.go`（188 行），逐字移植 TS
+`src/tools/read-policy.ts`（62 行，零外部依赖）：`classifyPath`（六类归类）
+与 `DecideReadPolicy`（五类动作）。
+
+**为什么先做它**：它是 `readFilePayload` 的**内联依赖**（`read-file.ts:594`），
+但比 payload 本身更独立——62 行、零依赖、单消费者。
+
+**Windows 路径的关键行为**（探针实测，**勿"优化"**）
+
+`classifyPath` 的 generated 检测用 `/(?:^|\/)(?:dist|build|coverage|\.next)\//`
+——**只认正斜杠**：
+
+| 输入 | TS 判定 |
+|---|---|
+| `D:\proj\dist.ts` | **source**（反斜杠不匹配） |
+| `D:/proj/dist/a.ts` | **generated** |
+
+这是 TS 的**真实行为**，Go 侧原样复刻——**不要**把 `\` 归一化为 `/`。
+变异 M27（加归一化）让 2 条测试变红，正是这条约束的守卫。
+
+**其它对账要点**
+
+- **归类顺序敏感**：jsonl → log → minified → generated → source → unknown，
+  先匹配者胜（`a.jsonl` 是 jsonl 而非 source；`a.min.js` 是 minified 而非 source）
+- **带数字后缀**：`\.(?:jsonl|ndjson)(?:\.\d+)?$` —— `a.jsonl.1` 是 jsonl，
+  但 `a.jsonl.x` 是 unknown；同理 `a.ts.3` 是 unknown（source 正则要求以扩展名**结尾**）
+- **`hasExplicitRange` 最高优先**：即使 generated/minified/log 也放行 `full`
+- **阈值是严格大于**：16KB preview guard / 20KB source-small / 80KB source-large
+
+**验证**
+
+- **差分 oracle 101 例**（`gen_oracle.ts`）：六 kind 全覆盖（source 40 /
+  generated 20 / log 19 / unknown 11 / jsonl 6 / minified 5），五 action
+  全覆盖（full 65 / reject-with-range 23 / preview 9 / full-with-hint 3 / partial 1）
+- **用户级验收 103 例**（`gen_useraccept.ts` + `useraccept_main.go`）：11 个
+  **真实仓库文件**用 `statSync` 读真实字节数 + 合成 size 跨三档阈值 +
+  Windows 反斜杠/正斜杠对比。**103 通过 / 0 失败**
+- **变异反证**：M27（归一化反斜杠）→ 2 红；M28（阈值改 `>=`）→ 2 红；
+  M29（归类顺序调换）→ 4 红
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+**方法论坑（本刀踩到）**：M27 首版用 `python -c` 注入变异，`chr(92)` 被当作
+**字面量**写进文件（未求值），变异静默未生效 → 误判为「测试缺口」（失败数 0）。
+**这是坑 10 的重演**——变异反证必须核实变异真的落地（`grep` 确认锚点已改、
+`go build` 通过）。
+
+**HANDOFF 编辑事故（本刀踩到，代价较大）**：用 `edit_file` 追加本章节时，
+`old_string` 选了 `### 真实端点验证怎么跑` —— 该锚点在文件中**唯一**，工具报
+「内容仍能匹配」并成功，但结果是**整个刀章区被复制了一遍**（原 1-12 刀 +
+新 13 刀 + 原 11-12 刀的错乱结构），且 `### 真实端点验证怎么跑` 标题被吞。
+诊断靠 `git show HEAD:go/HANDOFF.md` 与当前文件的标题计数比对（HEAD 各 1 个，
+当前 2 个）。修复：`git show HEAD:go/HANDOFF.md > HANDOFF.md` 恢复基线，
+再用 Python 按**行号锚点**插入本章节。
+
+**教训**：往长文档追加章节时，`edit_file` 的字符串锚点不可靠——**恢复基线 +
+按行号插入**（或用 `hash_edit` 的行锚点）才是稳妥做法。编辑后必须用
+`grep -c` 核对标题出现次数（应恰为 1），并与 `git show HEAD:` 版本比对。
+
+#### 仍未做（L0 包装的依赖链，更新后）
+
+1. **`readFilePayload` 的 raw/model 分野**（`read-file.ts:555`）：组装
+   `{canonicalPath, rawContent, modelContent, uiContent}`。依赖已就绪：
+   `DecideReadPolicy`（本刀）+ `TruncateContent`/`BuildPartialView`（第十二刀）
+   + `ComputeModelReadCap`（已移植未接）。**仍缺**：gitignore 过滤、
+   `applyFoldThenPartial`（fold 骨架）、office/binary/image 分支。
+2. **`cap` 接入**：把 `read_file.go` 的 `MaxBytes`（硬编码 100_000）换成
+   `ComputeModelReadCap` 结果。
+3. **gitignore 过滤**（`getGitignoreFilter` + `isRivetStatePath` 豁免）。
+4. **L0 包装本体**（`read-file.ts:992-1042`）：阈值判定 → `summarizeFileContent`
+   → `store.Save` → summaryBlock → `[artifact:id]` **尾部**约定。
+5. **dedup 子系统**（`read-file.ts:190-255`）：两张表 + `repeatWarning` +
+   read-ref。跨 6 个模块有消费者，**最大的一块**。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`

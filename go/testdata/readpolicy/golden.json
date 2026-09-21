@@ -1,0 +1,826 @@
+[
+ {
+  "filePath": "src/tools/read-file.ts",
+  "sizeBytes": 54104,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full-with-hint",
+  "reason": "medium source file — full read with editing hints"
+ },
+ {
+  "filePath": "src/tools/read-file.ts",
+  "sizeBytes": 54104,
+  "hasExplicitRange": true,
+  "kind": "source",
+  "action": "full",
+  "reason": "explicit range requested"
+ },
+ {
+  "filePath": "src/artifact/summarize.ts",
+  "sizeBytes": 14833,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "src/artifact/summarize.ts",
+  "sizeBytes": 14833,
+  "hasExplicitRange": true,
+  "kind": "source",
+  "action": "full",
+  "reason": "explicit range requested"
+ },
+ {
+  "filePath": "src/tools/truncation.ts",
+  "sizeBytes": 2880,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "src/tools/truncation.ts",
+  "sizeBytes": 2880,
+  "hasExplicitRange": true,
+  "kind": "source",
+  "action": "full",
+  "reason": "explicit range requested"
+ },
+ {
+  "filePath": "src/tools/read-policy.ts",
+  "sizeBytes": 2447,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "src/tools/read-policy.ts",
+  "sizeBytes": 2447,
+  "hasExplicitRange": true,
+  "kind": "source",
+  "action": "full",
+  "reason": "explicit range requested"
+ },
+ {
+  "filePath": "go/HANDOFF.md",
+  "sizeBytes": 140343,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "partial",
+  "reason": "large source file — returning first page with navigation hints"
+ },
+ {
+  "filePath": "go/HANDOFF.md",
+  "sizeBytes": 140343,
+  "hasExplicitRange": true,
+  "kind": "source",
+  "action": "full",
+  "reason": "explicit range requested"
+ },
+ {
+  "filePath": "package.json",
+  "sizeBytes": 4212,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "package.json",
+  "sizeBytes": 4212,
+  "hasExplicitRange": true,
+  "kind": "source",
+  "action": "full",
+  "reason": "explicit range requested"
+ },
+ {
+  "filePath": "README.md",
+  "sizeBytes": 22801,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full-with-hint",
+  "reason": "medium source file — full read with editing hints"
+ },
+ {
+  "filePath": "README.md",
+  "sizeBytes": 22801,
+  "hasExplicitRange": true,
+  "kind": "source",
+  "action": "full",
+  "reason": "explicit range requested"
+ },
+ {
+  "filePath": "go/internal/tools/readpolicy.go",
+  "sizeBytes": 5896,
+  "hasExplicitRange": false,
+  "kind": "unknown",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "go/internal/tools/readpolicy.go",
+  "sizeBytes": 5896,
+  "hasExplicitRange": true,
+  "kind": "unknown",
+  "action": "full",
+  "reason": "explicit range requested"
+ },
+ {
+  "filePath": "go/internal/artifact/summarize.go",
+  "sizeBytes": 22856,
+  "hasExplicitRange": false,
+  "kind": "unknown",
+  "action": "full-with-hint",
+  "reason": "medium source file — full read with editing hints"
+ },
+ {
+  "filePath": "go/internal/artifact/summarize.go",
+  "sizeBytes": 22856,
+  "hasExplicitRange": true,
+  "kind": "unknown",
+  "action": "full",
+  "reason": "explicit range requested"
+ },
+ {
+  "filePath": "src/tui/engine/app.ts",
+  "sizeBytes": 368815,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "partial",
+  "reason": "large source file — returning first page with navigation hints"
+ },
+ {
+  "filePath": "src/tui/engine/app.ts",
+  "sizeBytes": 368815,
+  "hasExplicitRange": true,
+  "kind": "source",
+  "action": "full",
+  "reason": "explicit range requested"
+ },
+ {
+  "filePath": "go/PLAN.md",
+  "sizeBytes": 85822,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "partial",
+  "reason": "large source file — returning first page with navigation hints"
+ },
+ {
+  "filePath": "go/PLAN.md",
+  "sizeBytes": 85822,
+  "hasExplicitRange": true,
+  "kind": "source",
+  "action": "full",
+  "reason": "explicit range requested"
+ },
+ {
+  "filePath": "src/tools/read-file.ts",
+  "sizeBytes": 0,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "src/tools/read-file.ts",
+  "sizeBytes": 1,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "src/tools/read-file.ts",
+  "sizeBytes": 16384,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "src/tools/read-file.ts",
+  "sizeBytes": 16385,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "src/tools/read-file.ts",
+  "sizeBytes": 20480,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "src/tools/read-file.ts",
+  "sizeBytes": 20481,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full-with-hint",
+  "reason": "medium source file — full read with editing hints"
+ },
+ {
+  "filePath": "src/tools/read-file.ts",
+  "sizeBytes": 81920,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full-with-hint",
+  "reason": "medium source file — full read with editing hints"
+ },
+ {
+  "filePath": "src/tools/read-file.ts",
+  "sizeBytes": 81921,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "partial",
+  "reason": "large source file — returning first page with navigation hints"
+ },
+ {
+  "filePath": "src/tools/read-file.ts",
+  "sizeBytes": 1000000,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "partial",
+  "reason": "large source file — returning first page with navigation hints"
+ },
+ {
+  "filePath": "go/HANDOFF.md",
+  "sizeBytes": 0,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "go/HANDOFF.md",
+  "sizeBytes": 1,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "go/HANDOFF.md",
+  "sizeBytes": 16384,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "go/HANDOFF.md",
+  "sizeBytes": 16385,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "go/HANDOFF.md",
+  "sizeBytes": 20480,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "go/HANDOFF.md",
+  "sizeBytes": 20481,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full-with-hint",
+  "reason": "medium source file — full read with editing hints"
+ },
+ {
+  "filePath": "go/HANDOFF.md",
+  "sizeBytes": 81920,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full-with-hint",
+  "reason": "medium source file — full read with editing hints"
+ },
+ {
+  "filePath": "go/HANDOFF.md",
+  "sizeBytes": 81921,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "partial",
+  "reason": "large source file — returning first page with navigation hints"
+ },
+ {
+  "filePath": "go/HANDOFF.md",
+  "sizeBytes": 1000000,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "partial",
+  "reason": "large source file — returning first page with navigation hints"
+ },
+ {
+  "filePath": "dist/bundle.js",
+  "sizeBytes": 0,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "dist/bundle.js",
+  "sizeBytes": 1,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "dist/bundle.js",
+  "sizeBytes": 16384,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "dist/bundle.js",
+  "sizeBytes": 16385,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "dist/bundle.js",
+  "sizeBytes": 20480,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "dist/bundle.js",
+  "sizeBytes": 20481,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "dist/bundle.js",
+  "sizeBytes": 81920,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "dist/bundle.js",
+  "sizeBytes": 81921,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "dist/bundle.js",
+  "sizeBytes": 1000000,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "a.min.js",
+  "sizeBytes": 0,
+  "hasExplicitRange": false,
+  "kind": "minified",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "a.min.js",
+  "sizeBytes": 1,
+  "hasExplicitRange": false,
+  "kind": "minified",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "a.min.js",
+  "sizeBytes": 16384,
+  "hasExplicitRange": false,
+  "kind": "minified",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "a.min.js",
+  "sizeBytes": 16385,
+  "hasExplicitRange": false,
+  "kind": "minified",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "a.min.js",
+  "sizeBytes": 20480,
+  "hasExplicitRange": false,
+  "kind": "minified",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "a.min.js",
+  "sizeBytes": 20481,
+  "hasExplicitRange": false,
+  "kind": "minified",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "a.min.js",
+  "sizeBytes": 81920,
+  "hasExplicitRange": false,
+  "kind": "minified",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "a.min.js",
+  "sizeBytes": 81921,
+  "hasExplicitRange": false,
+  "kind": "minified",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "a.min.js",
+  "sizeBytes": 1000000,
+  "hasExplicitRange": false,
+  "kind": "minified",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "logs/app.log",
+  "sizeBytes": 0,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "logs/app.log",
+  "sizeBytes": 1,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "logs/app.log",
+  "sizeBytes": 16384,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "logs/app.log",
+  "sizeBytes": 16385,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "preview",
+  "reason": "log-like file over preview guard"
+ },
+ {
+  "filePath": "logs/app.log",
+  "sizeBytes": 20480,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "preview",
+  "reason": "log-like file over preview guard"
+ },
+ {
+  "filePath": "logs/app.log",
+  "sizeBytes": 20481,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "preview",
+  "reason": "log-like file over preview guard"
+ },
+ {
+  "filePath": "logs/app.log",
+  "sizeBytes": 81920,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "preview",
+  "reason": "log-like file over preview guard"
+ },
+ {
+  "filePath": "logs/app.log",
+  "sizeBytes": 81921,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "preview",
+  "reason": "log-like file over preview guard"
+ },
+ {
+  "filePath": "logs/app.log",
+  "sizeBytes": 1000000,
+  "hasExplicitRange": false,
+  "kind": "log",
+  "action": "preview",
+  "reason": "log-like file over preview guard"
+ },
+ {
+  "filePath": "data/events.jsonl",
+  "sizeBytes": 0,
+  "hasExplicitRange": false,
+  "kind": "jsonl",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "data/events.jsonl",
+  "sizeBytes": 1,
+  "hasExplicitRange": false,
+  "kind": "jsonl",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "data/events.jsonl",
+  "sizeBytes": 16384,
+  "hasExplicitRange": false,
+  "kind": "jsonl",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "data/events.jsonl",
+  "sizeBytes": 16385,
+  "hasExplicitRange": false,
+  "kind": "jsonl",
+  "action": "preview",
+  "reason": "log-like file over preview guard"
+ },
+ {
+  "filePath": "data/events.jsonl",
+  "sizeBytes": 20480,
+  "hasExplicitRange": false,
+  "kind": "jsonl",
+  "action": "preview",
+  "reason": "log-like file over preview guard"
+ },
+ {
+  "filePath": "data/events.jsonl",
+  "sizeBytes": 20481,
+  "hasExplicitRange": false,
+  "kind": "jsonl",
+  "action": "preview",
+  "reason": "log-like file over preview guard"
+ },
+ {
+  "filePath": "data/events.jsonl",
+  "sizeBytes": 81920,
+  "hasExplicitRange": false,
+  "kind": "jsonl",
+  "action": "preview",
+  "reason": "log-like file over preview guard"
+ },
+ {
+  "filePath": "data/events.jsonl",
+  "sizeBytes": 81921,
+  "hasExplicitRange": false,
+  "kind": "jsonl",
+  "action": "preview",
+  "reason": "log-like file over preview guard"
+ },
+ {
+  "filePath": "data/events.jsonl",
+  "sizeBytes": 1000000,
+  "hasExplicitRange": false,
+  "kind": "jsonl",
+  "action": "preview",
+  "reason": "log-like file over preview guard"
+ },
+ {
+  "filePath": "x/build/y.ts",
+  "sizeBytes": 0,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "x/build/y.ts",
+  "sizeBytes": 1,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "x/build/y.ts",
+  "sizeBytes": 16384,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "x/build/y.ts",
+  "sizeBytes": 16385,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "x/build/y.ts",
+  "sizeBytes": 20480,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "x/build/y.ts",
+  "sizeBytes": 20481,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "x/build/y.ts",
+  "sizeBytes": 81920,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "x/build/y.ts",
+  "sizeBytes": 81921,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "x/build/y.ts",
+  "sizeBytes": 1000000,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "D:\\proj\\dist\\a.ts",
+  "sizeBytes": 0,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "D:\\proj\\dist\\a.ts",
+  "sizeBytes": 1,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "D:\\proj\\dist\\a.ts",
+  "sizeBytes": 16384,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "D:\\proj\\dist\\a.ts",
+  "sizeBytes": 16385,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "D:\\proj\\dist\\a.ts",
+  "sizeBytes": 20480,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full",
+  "reason": "safe default read"
+ },
+ {
+  "filePath": "D:\\proj\\dist\\a.ts",
+  "sizeBytes": 20481,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full-with-hint",
+  "reason": "medium source file — full read with editing hints"
+ },
+ {
+  "filePath": "D:\\proj\\dist\\a.ts",
+  "sizeBytes": 81920,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "full-with-hint",
+  "reason": "medium source file — full read with editing hints"
+ },
+ {
+  "filePath": "D:\\proj\\dist\\a.ts",
+  "sizeBytes": 81921,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "partial",
+  "reason": "large source file — returning first page with navigation hints"
+ },
+ {
+  "filePath": "D:\\proj\\dist\\a.ts",
+  "sizeBytes": 1000000,
+  "hasExplicitRange": false,
+  "kind": "source",
+  "action": "partial",
+  "reason": "large source file — returning first page with navigation hints"
+ },
+ {
+  "filePath": "C:/proj/dist/b.ts",
+  "sizeBytes": 0,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "C:/proj/dist/b.ts",
+  "sizeBytes": 1,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "C:/proj/dist/b.ts",
+  "sizeBytes": 16384,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "C:/proj/dist/b.ts",
+  "sizeBytes": 16385,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "C:/proj/dist/b.ts",
+  "sizeBytes": 20480,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "C:/proj/dist/b.ts",
+  "sizeBytes": 20481,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "C:/proj/dist/b.ts",
+  "sizeBytes": 81920,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "C:/proj/dist/b.ts",
+  "sizeBytes": 81921,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ },
+ {
+  "filePath": "C:/proj/dist/b.ts",
+  "sizeBytes": 1000000,
+  "hasExplicitRange": false,
+  "kind": "generated",
+  "action": "reject-with-range",
+  "reason": "generated or minified file requires an explicit range"
+ }
+]
