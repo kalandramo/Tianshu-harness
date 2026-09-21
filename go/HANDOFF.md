@@ -1356,6 +1356,67 @@ TS 侧有测试（`artifact-format.test.ts`）覆盖此正则，但用的样例 
 6. **L1 collapse 路径接上时**，需处理上面的 id/正则不一致。
 
 
+### grep 的 L0 包装（2026-09-21，回主线第十六刀）
+
+**做了什么**：给 `grep` 补 L0 artifact 包装（对账 TS `grep.ts:147-162`）。
+与第十五刀（read_file）**同构**——`grep` 也在 `l0WrappedTools` 里，L1 跳过它，
+故大结果必须由工具自己落盘。
+
+**实现**：`hintedText`（grep 的完整输出）→ 超阈值判 `ToolArtifactThreshold("grep", ...)`
+→ `SummarizeGrepResult` → `store.Save({RawContent: hintedText})`（**原文**）→
+拼 `truncated + "\n\n" + summary + 使用指引 + "\n[artifact:id]"`。
+
+**与 read_file 的文案差异**（对账 TS，**不可混用**）：
+
+- read_file：`content + "\n\n── Structural outline ──\n" + summary + "\n[artifact:id]"`
+- grep：`truncated + "\n\n" + summary + "\n使用 read_section(artifactId=\"…\", section=\"L1-L500\") 获取完整匹配列表。\n[artifact:id]"`
+
+grep 的 `[artifact:id]` 同样在**末尾**（同一不变量的两次应用）。
+
+**无 store 时行为**：仍走 `TruncateContent`（截断但无标记）——对账 TS 的
+`return { content: truncateContent(hintedText, ...) }`。注意**与 read_file 不同**：
+read_file 无 store 时返回的是原 body（未截断，因为截断已在更早处发生）。
+
+**测试构造的关键（本刀踩的坑）**
+
+「验落盘是原文而非截断版」这条测试**必须让截断真的发生**，否则原文 ≡ 截断版，
+断言无区分力：
+
+- 首版用 800 个短匹配行 → 输出约 5KB < cap 8000 → **截断没发生** →
+  变异 M37（改存截断版）**0 红**，误判为「测试缺口其实不存在」
+- 改为 200 行长匹配（每行 ~280 字符）→ 输出约 30KB ≫ cap 8000 → 截断发生 →
+  M37 变红（落盘 6094 字节 < 8000 即暴露）
+
+**教训**：验证「A 而非 B」的测试，必须构造**使 A 与 B 可区分**的输入。若两者
+在测试输入下等价，测试永远是绿的——这正是变异反证的价值：它会把这个盲区照出来。
+
+**另一处细节**：grep 自身有 `maxResults` 上限（默认 100），故「原文」是
+**上限截断后**的完整输出。断言计数时不能用裸模式名（summary 里也含它），
+要用匹配行格式。
+
+**验证**
+
+- **6 条测试**（`grep_l0_test.go`）：大结果包装 / 小结果跳过 / 存原文非截断版 /
+  **端到端 read_section 取回** / Save 失败优雅降级 / **无 store 行为不变**
+- **变异反证**：M37（存截断版）→ 1 红；M38（标记放开头）→ 3 红；
+  M39（总是包装）→ 1 红
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+#### 仍未做
+
+1. **`bash` 的 L0 包装**（`bash.ts:744+`）：**依赖面比 grep 宽得多**——与
+   `buildModelOutput` / `meta` / `errorClass` / `successFold` / `persistRawSafe`
+   交织。`successFold`（成功且行数超 `SUCCESS_INLINE_LINES` 时折叠输出）是
+   独立逻辑。**建议单开一刀**，不要与 grep 混。
+2. **`readFilePayload` 的其余分支**：office 转换、`applyFoldThenPartial`、
+   `buildLogPreviewContent`、`buildFileUiOutput`、focus 读取、`reject-with-range`。
+3. **gitignore 过滤**（`getGitignoreFilter` + `isRivetStatePath` 豁免）。
+4. **dedup 子系统**（`read-file.ts:190-255`）：两张表 + `repeatWarning` +
+   read-ref。跨 6 个模块有消费者，**最大的一块**。
+5. **L1 collapse 路径接上时**，需处理第十三刀记录的 id/正则不一致
+   （`ArtifactMarkerRegex` 的字符类不含冒号）。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`

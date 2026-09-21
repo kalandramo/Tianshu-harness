@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kalandramo/tianshu/go/internal/artifact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
 	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 )
@@ -158,7 +159,42 @@ func (t *grepTool) Execute(_ context.Context, p *CallParams) (contract.Result, e
 	if total >= maxResults {
 		fmt.Fprintf(&sb, "\n[已达上限 %d 条——结果被截断，请收窄 pattern 或 glob]\n", maxResults)
 	}
-	return contract.Result{Content: strings.TrimRight(sb.String(), "\n")}, nil
+	hintedText := strings.TrimRight(sb.String(), "\n")
+
+	// ── L0 artifact 包装（对账 TS `grep.ts:147-162`）──
+	//
+	// 与 read_file 同构：grep 也在 `l0WrappedTools` 里（L1 跳过），故大结果
+	// 必须由工具自己落盘。**文案与 read_file 不同**——TS 用
+	// 「使用 read_section(artifactId=..., section="L1-L500") 获取完整匹配列表。」
+	modelCap := ComputeModelReadCap(ModelReadCapInput{
+		ContextWindow:   p.ContextWindow,
+		ProviderProfile: p.ProviderProfile,
+	})
+	truncated := TruncateContent(hintedText, modelCap.MaxChars, modelCap.HeadChars, modelCap.TailChars)
+
+	if p.ArtifactStore != nil {
+		threshold := artifact.ToolArtifactThreshold("grep", p.ContextWindow)
+		if UTF16Len(hintedText) >= threshold {
+			searchPath := strArg(p.Input, "path")
+			res := artifact.SummarizeGrepResult(hintedText, pattern)
+			id, err := p.ArtifactStore.Save(artifact.SaveInput{
+				Tool: "grep", Target: searchPath,
+				RawContent: hintedText, // **原文**（非截断版）
+				Summary:    res.Summary,
+				Sections:   res.Sections,
+			})
+			if err == nil {
+				// 顺序对账 TS：截断内容 + summary + 使用指引 + **尾部标记**。
+				return contract.Result{
+					Content: truncated + "\n\n" + res.Summary +
+						"\n使用 read_section(artifactId=\"" + id +
+						"\", section=\"L1-L500\") 获取完整匹配列表。\n[artifact:" + id + "]",
+				}, nil
+			}
+			// Save 失败 → 优雅降级。
+		}
+	}
+	return contract.Result{Content: truncated}, nil
 }
 
 // scanFileForPattern 扫描单文件，返回匹配行（含上下文）。
