@@ -99,15 +99,20 @@ func TestReadSectionMissingSection(t *testing.T) {
 	}
 }
 
+// TestReadSectionInvalidFormat —— 真无效格式仍报错。
+//
+// **行为变更**：首版用 `garbage` 作无效输入。命名片段支持落地后，`garbage`
+// 是**合法的标识符形态**（可能是个片段名），会被放行到 artifact 判定——
+// 故改用含**非法字符**的输入（`@@@` 不在片段名字符集内）。
 func TestReadSectionInvalidFormat(t *testing.T) {
 	tool := ReadSection("", nil)
 	res, _ := tool.Execute(context.Background(), &CallParams{
-		Input: map[string]any{"artifactId": "x", "section": "garbage"},
+		Input: map[string]any{"artifactId": "x", "section": "@@@"},
 	})
 	if !res.IsError {
 		t.Fatal("无效格式应报错")
 	}
-	want := `错误：无效的区段格式：garbage。行范围用 "L100-L200"，字符范围用 "c0-c5000"。`
+	want := `错误：无效的区段格式：@@@。行范围用 "L100-L200"，字符范围用 "c0-c5000"。`
 	if res.Content != want {
 		t.Errorf("文案不符：\n期望 %q\n实得 %q", want, res.Content)
 	}
