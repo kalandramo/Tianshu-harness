@@ -1677,6 +1677,60 @@ oracle 的 json 用例已通过——因为生成器的对象键恰好是字典�
    `successFold`/`persistRawSafe`），建议单开一刀。
 
 
+### bash 的 L0 包装（2026-09-21，回主线第二十一刀）
+
+**做了什么**：给 `bash` 补 L0 artifact 包装（对账 TS `bash.ts:744-800`）。
+**L0 覆盖至此完成**——`l0WrappedTools` 四个工具（read_file / read_section /
+grep / bash）中，三个已有 L0，read_section 自身就是召回工具（不需 L0）。
+
+**scope 决策（明示，本刀有意收窄）**
+
+侦察发现 TS 的 bash 包装段**还牵出另一层**：`buildModelOutput`
+（`output-store.ts:92`）——独立的输出格式化层（error-aware 提取 +
+MODEL_MAX_LINES head/tail + 各阈值常量）。Go 侧**完全没有这一层**。
+
+**故本刀只接「artifact 包装 + successFold」，不引入 `buildModelOutput`**。
+理由：L0 的价值（大结果落盘可召回）**不依赖** `buildModelOutput` 的细节；
+把两层混在一刀会让范围失控。模型可见内容仍是 `sb.String()`（Go 既有的输出构造）。
+
+**实现**
+
+- 阈值判定 `ToolArtifactThreshold("bash", ContextWindow)`（bash 乘数 1.0）
+- 超阈值 → `SummarizeBashOutput(filtered, command, exitCode)` → `store.Save`
+- **successFold**（对账 TS）：成功且 `lineCount > SUCCESS_INLINE_LINES(20)` 时，
+  模型可见输出折叠为一行 `[<cmd>] exit=0 (N lines) — success output folded,
+  full output recoverable below`——原文从 artifact 召回
+- 拼接 `modelOutput + "\n\nUse read_section(...) ...\n[artifact:id]"`（标记在末尾）
+- Save 失败 → 优雅降级
+
+**接入点**：**仅成功路径**（最后的 `return result, nil`）。超时与非零退出路径
+**未接**——它们的 `result.Content` 已含诊断信息（超时提示/exit code），且 TS 的
+对应逻辑主要在成功路径。**这是有意的收窄，已记入下一刀**。
+
+**验证**
+
+- **7 条测试**（`bash_l0_test.go`）：大输出包装 / successFold / 小输出跳过 /
+  存原文 / **端到端 read_section 取回** / Save 失败降级 / 无 store 不变
+- **命令选择**：用 `seq 1 3000` 而非 `for` 循环——Go 的 bash 在 Windows 上走
+  shell 探测（`platform.ResolveShellCommand`），`for` 语法不跨 shell 兼容。
+  测试对命令不可用的环境用 `t.Skipf` 降级（不伪装成通过）
+- **变异反证**：M52（不接线）→ 4 红；M53（successFold 阈值过大）→ 1 红；
+  M54（总是包装）→ 1 红
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+#### 仍未做（更新）
+
+1. **`buildModelOutput` 层**（`output-store.ts`，本刀侦察发现）：error-aware
+   提取 + MODEL_MAX_LINES head/tail。影响**所有** bash 结果的模型可见形态，
+   是独立的一刀。
+2. **bash 的超时/错误路径 L0**（本刀有意未接）。
+3. **`readFilePayload` 的其余分支**：office 转换、`buildLogPreviewContent`、
+   `buildFileUiOutput`、`reject-with-range`、gitignore 过滤，以及
+   **`applyFoldThenPartial`**（foldCode 已就绪）。
+4. **dedup 子系统**（`read-file.ts:190-255`）：两张表 + `repeatWarning` +
+   read-ref。跨 6 个模块有消费者，**最大的一块**。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`

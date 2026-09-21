@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/kalandramo/tianshu/go/internal/artifact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
 	"github.com/kalandramo/tianshu/go/internal/platform"
 )
@@ -257,8 +258,51 @@ func (t *bashTool) Execute(ctx context.Context, p *CallParams) (contract.Result,
 	}
 
 	_ = duration
+
+	// ── L0 artifact 包装（对账 TS `bash.ts:744-800`）──
+	//
+	// **为什么在这一层**：bash 在 `l0WrappedTools` 里，L1 跳过它（防无限嵌套 +
+	// double-save）。故大结果必须由工具自己落盘。
+	//
+	// **scope 说明（明示）**：TS 此段还调 `buildModelOutput`（`output-store.ts`
+	// 的独立格式化层：error-aware 提取 + head/tail + MODEL_MAX_LINES）——Go 侧
+	// 无该层，故本刀只接 **artifact 包装 + successFold**，模型可见内容仍是
+	// `sb.String()`。这是**有意的最小实现**：L0 的价值（大结果落盘可召回）
+	// 不依赖 `buildModelOutput` 的细节。
+	if p.ArtifactStore != nil {
+		filtered := result.Content
+		threshold := artifact.ToolArtifactThreshold("bash", p.ContextWindow)
+		if UTF16Len(filtered) >= threshold {
+			res := artifact.SummarizeBashOutput(filtered, command, exitCode)
+			id, err := p.ArtifactStore.Save(artifact.SaveInput{
+				Tool: "bash", Target: command,
+				RawContent: filtered, // **原文**（模型可见版尚未经 buildModelOutput）
+				Summary:    res.Summary,
+				Sections:   res.Sections,
+			})
+			if err == nil {
+				// successFold（对账 TS）：成功且行数超 SUCCESS_INLINE_LINES 时，
+				// 模型可见输出折叠为一行提示——原文可从 artifact 召回。
+				lineCount := strings.Count(filtered, "\n") + 1
+				var modelOutput string
+				if exitCode == 0 && lineCount > successInlineLines {
+					modelOutput = fmt.Sprintf("[%s] exit=0 (%d lines) — success output folded, full output recoverable below",
+						command, lineCount)
+				} else {
+					modelOutput = filtered
+				}
+				result.Content = modelOutput + "\n\nUse read_section(artifactId=\"" + id +
+					"\", section=\"L1-L500\") to load full output if the head/tail above is not enough.\n[artifact:" + id + "]"
+			}
+			// Save 失败 → 优雅降级（保持原 content）。
+		}
+	}
+
 	return result, nil
 }
+
+// successInlineLines 对账 TS 的 `SUCCESS_INLINE_LINES`（成功输出折叠阈值）。
+const successInlineLines = 20
 
 // limitedWriter 是带上限的缓冲写入器，超限后丢弃并标记。
 //
