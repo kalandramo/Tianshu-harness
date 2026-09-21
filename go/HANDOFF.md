@@ -1683,6 +1683,12 @@ oracle 的 json 用例已通过——因为生成器的对象键恰好是字典�
 **L0 覆盖至此完成**——`l0WrappedTools` 四个工具（read_file / read_section /
 grep / bash）中，三个已有 L0，read_section 自身就是召回工具（不需 L0）。
 
+**命名消歧（本刀踩过，务必记住）**：同一概念在两棵树里**大小写不同**——
+Go 侧 `l0WrappedTools`（`internal/agent/artifact_intercept.go:50`，小驼峰是 Go
+惯例），TS 侧 `L0_WRAPPED_TOOLS`（`src/agent/tool-pipeline.ts:502`）。本文档提到
+它时一律用 **Go 名**（因为描述的是 Go 侧 L1 行为）。**教训**：在 Go 树里 grep
+TS 名会零命中——零命中不等于「标识符是幻觉」，先确认你搜的是哪棵树。
+
 **scope 决策（明示，本刀有意收窄）**
 
 侦察发现 TS 的 bash 包装段**还牵出另一层**：`buildModelOutput`
