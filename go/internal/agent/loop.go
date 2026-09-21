@@ -582,16 +582,7 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 		}
 	}
 
-	p := &tools.CallParams{
-		Input:        tc.input,
-		ToolUseID:    tc.id,
-		Cwd:          l.cfg.Cwd,
-		ApprovalMode: l.cfg.ApprovalMode,
-		SessionID:    l.cfg.SessionID,
-		// artifact 存储注入 read_section（召回路径）。
-		ArtifactStore: l.Artifacts,
-		ContextWindow: l.artifactContextWindow(),
-	}
+	p := l.buildToolCallParams(tc)
 	if l.ToolParams != nil {
 		// 继承注入依赖（OnFileWrite 等）
 		p.OnFileWrite = l.ToolParams.OnFileWrite

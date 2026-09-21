@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/kalandramo/tianshu/go/internal/artifact"
+	"github.com/kalandramo/tianshu/go/internal/compact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
 )
 
@@ -162,4 +163,73 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// TestProviderProfileReachesCallParams —— **接线测试**：Loop 把
+// Compact.ProviderProfile 传到 CallParams。
+//
+// 防的是「字段有读取方、无写入方」——本刀首版就是这个问题：
+// read_file 读 p.ProviderProfile，但 loop 的构造点从未赋值，字段恒为 nil。
+// 这种缺陷不会让任何单元测试变红（nil 是合法默认），只有接线测试能抓。
+func TestProviderProfileReachesCallParams(t *testing.T) {
+	l := newArtifactLoop(t, 1_000_000)
+	if l.Compact == nil {
+		t.Fatal("Compact 应为非 nil")
+	}
+	// CompactBoundary 构造时设了默认 profile（CacheNone）。
+	l.Compact.ProviderProfile = &compact.CompactRatioProfile{
+		CacheType:  compact.CacheExactPrefix,
+		Persistent: true,
+	}
+	got := l.providerProfile()
+	if got == nil {
+		t.Fatal("providerProfile() 应返回 Compact 的 profile")
+	}
+	if got.CacheType != compact.CacheExactPrefix {
+		t.Errorf("CacheType 不符：%s", got.CacheType)
+	}
+}
+
+// TestProviderProfileNilWhenNoCompact —— 无 Compact 时返回 nil（走 balanced）。
+func TestProviderProfileNilWhenNoCompact(t *testing.T) {
+	l := &Loop{}
+	if got := l.providerProfile(); got != nil {
+		t.Errorf("无 Compact 应返回 nil，实得 %+v", got)
+	}
+}
+
+// TestBuildToolCallParamsCarriesProfile —— **经过构造点**的接线测试。
+//
+// 上一版测试只验 `providerProfile()` 辅助，变异改构造点时不会红
+// （M33 实证：改 `ProviderProfile: nil` 后 0 红）。这条走 `buildToolCallParams`，
+// 覆盖真实赋值路径。
+func TestBuildToolCallParamsCarriesProfile(t *testing.T) {
+	l := newArtifactLoop(t, 1_000_000)
+	l.Compact.ProviderProfile = &compact.CompactRatioProfile{
+		CacheType:  compact.CacheExactPrefix,
+		Persistent: true,
+	}
+	p := l.buildToolCallParams(toolCall{id: "t1", name: "read_file"})
+	if p.ProviderProfile == nil {
+		t.Fatal("buildToolCallParams 应携带 ProviderProfile（否则 read_file 恒走 balanced）")
+	}
+	if p.ProviderProfile.CacheType != compact.CacheExactPrefix {
+		t.Errorf("CacheType 不符：%s", p.ProviderProfile.CacheType)
+	}
+	// ContextWindow 同样应接线（read_section/read_file 的 cap 依赖它）。
+	if p.ContextWindow != 1_000_000 {
+		t.Errorf("ContextWindow 不符：%d", p.ContextWindow)
+	}
+}
+
+// TestBuildToolCallParamsNilProfileWhenNoCompact —— 无 Compact → nil（balanced）。
+func TestBuildToolCallParamsNilProfileWhenNoCompact(t *testing.T) {
+	l := &Loop{}
+	p := l.buildToolCallParams(toolCall{id: "t1", name: "read_file"})
+	if p.ProviderProfile != nil {
+		t.Errorf("无 Compact 应给 nil，实得 %+v", p.ProviderProfile)
+	}
+	if p.ContextWindow != 0 {
+		t.Errorf("无 Compact 应给窗口 0，实得 %d", p.ContextWindow)
+	}
 }

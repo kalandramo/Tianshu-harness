@@ -1222,6 +1222,78 @@ M25（改字节切而非 UTF-16）→ 3 红；M26（去掉 `max(1, ...)`）→ 3
    read-ref。跨 6 个模块有消费者，**最大的一块**。
 
 
+### read_file 的 cap 接入（2026-09-21，回主线第十四刀）
+
+**做了什么**：把 `read_file` 的截断从**硬编码近似**换成真实的
+`ComputeModelReadCap` + `TruncateContent`：
+
+- 删除 `readFileTool.MaxBytes`（硬编码 100_000，且只被写入从不读取——
+  典型的 type-without-consumer）
+- 截断改用 `ComputeModelReadCap({ContextWindow, ProviderProfile})` 算 cap，
+  再走 `TruncateContent(body, cap.MaxChars, cap.HeadChars, cap.TailChars)`
+- `CallParams` 新增 `ProviderProfile` 字段，并在 `Loop` 侧补上**生产接线**
+
+**修掉的两处偏差**（旧实现 vs TS）
+
+| 维度 | 旧（MaxBytes 近似） | 新（对账 TS） |
+|---|---|---|
+| cap 来源 | 硬编码 100_000 | 窗口感知 + 策略系数 + 120K 硬上限 |
+| 截断形态 | 只保留**头部** | head + tail（尾部常含总结/错误） |
+| 多字节处理 | 逐字节回退至 UTF-8 有效 | UTF-16 code unit（与 JS 同语义） |
+
+真实文件上的可观察差异（`src/tools/read-file.ts`，54104 code unit）：
+旧实现三档窗口都截到 100000（即不截断）；新实现 win=0 截到 6125、
+win=128K 截到 9341、win=1M 不截断——**随窗口缩放**。
+
+**这一刀发现的真实缺陷：字段有读取方、无写入方**
+
+`CallParams.ProviderProfile` 首版只在 `read_file` 里被**读**，但 `loop.go`
+的构造点从未**赋值**——字段恒为 nil。这与「有写入无读取」是同一类缺陷的
+镜像，且**不会让任何单元测试变红**（nil 是合法默认值，走 balanced）。
+
+**教训**：`CallParams` 这类跨层参数包，新增字段后必须 grep **两个方向**——
+读取方（消费者）与写入方（生产者）。只查一个方向会漏。
+
+**为让接线可测，提取了 `buildToolCallParams`**：原来 `CallParams` 是
+`executeTool` 内的内联构造，无法单测。提取后接线路径可直接验证。
+（变异 M33 实证：改构造点为 `ProviderProfile: nil` 时，只测辅助函数的
+测试不会红——必须测**经过构造点**的路径。）
+
+**验证**
+
+- **差分 oracle 60 例**（`gen_oracle.ts`）：4 类内容样本（ascii/cjk/emoji/short）
+  × 5 档窗口 × 3 种 profile → cap + 截断输出**双层逐字节对账**
+- **用户级验收**（`useraccept_main.go` + `verify_ts.ts`）：真实仓库文件
+  端到端，Go 与 TS 的截断判定与保留长度逐项对照
+- **变异反证**：M30（cap 改硬编码）→ 1 红；M31（截断改只留头）→ 1 红；
+  M33（构造点不传 profile）→ 1 红
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+**量纲坑（验收脚本踩到）**：Go 的 `len(s)` 是**字节**，TS 的 `.length` 是
+**UTF-16 code unit**——含中文的文件上两者不同（7018 vs 5650）。跨语言比对
+长度必须用 `UTF16Len`，否则会误判为「输出不一致」。
+
+**已知且有意保留的差异**：截断后 Go 追加
+`[output truncated: 文件共 N 行 / M 字节。用 offset/limit 读后续区间。]`
+（含行数与字节数），TS 的 `truncateContent` 只加固定 note
+`... (truncated, use offset/limit for more specific ranges)`。故截断档位的
+输出长度差约 26 字符——**截断判定与保留内容完全一致**，仅提示文案不同。
+
+#### 仍未做（L0 包装的依赖链，更新后）
+
+1. **`readFilePayload` 的 raw/model 分野**（`read-file.ts:555`）：组装
+   `{canonicalPath, rawContent, modelContent, uiContent}`。依赖已全部就绪：
+   `DecideReadPolicy`（第十三刀）+ `TruncateContent`（第十二刀）+
+   `ComputeModelReadCap`（本刀接入）。**仍缺**：gitignore 过滤、
+   `applyFoldThenPartial`（fold 骨架）、office/binary/image 分支、
+   `policy.action` 的分派（`preview` / `reject-with-range` 的行为）。
+2. **gitignore 过滤**（`getGitignoreFilter` + `isRivetStatePath` 豁免）。
+3. **L0 包装本体**（`read-file.ts:992-1042`）：阈值判定 → `summarizeFileContent`
+   → `store.Save` → summaryBlock → `[artifact:id]` **尾部**约定。
+4. **dedup 子系统**（`read-file.ts:190-255`）：两张表 + `repeatWarning` +
+   read-ref。跨 6 个模块有消费者，**最大的一块**。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`

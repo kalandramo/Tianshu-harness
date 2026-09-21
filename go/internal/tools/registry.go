@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kalandramo/tianshu/go/internal/artifact"
+	"github.com/kalandramo/tianshu/go/internal/compact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
 )
 
@@ -74,6 +75,11 @@ type CallParams struct {
 	ArtifactStore *artifact.Store
 	// ContextWindow 是当前上下文窗口（read_section 的截断上限按它缩放）。
 	ContextWindow int
+	// ProviderProfile 是提供商切片（read_file 的读上限按策略系数缩放）。
+	//
+	// 对账 TS 的 `params.providerProfile`（`tool-pipeline.ts:465,840` 注入）。
+	// nil = 无 profile，走 balanced（系数 1.0）——与 TS 的默认一致。
+	ProviderProfile *compact.CompactRatioProfile
 }
 
 // Registry 是工具注册表。

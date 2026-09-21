@@ -39,7 +39,9 @@ import (
 	"strings"
 
 	"github.com/kalandramo/tianshu/go/internal/artifact"
+	"github.com/kalandramo/tianshu/go/internal/compact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
+	"github.com/kalandramo/tianshu/go/internal/tools"
 )
 
 // l0WrappedTools 是**自己做 L0 包装**的工具——L1 不得重复包装。
@@ -151,6 +153,41 @@ func (l *Loop) artifactContextWindow() int {
 		return l.Compact.ContextWindow
 	}
 	return 0
+}
+
+// providerProfile 返回提供商切片（nil = 无 profile，走 balanced）。
+//
+// 对账 TS `config.providerProfile`（`tool-pipeline.ts:465`）。
+// 消费者：`read_file` 的 `ComputeModelReadCap`（策略系数影响读上限）。
+func (l *Loop) providerProfile() *compact.CompactRatioProfile {
+	if l.Compact != nil {
+		return l.Compact.ProviderProfile
+	}
+	return nil
+}
+
+// buildToolCallParams 构造工具调用参数（**提取以便接线可测**）。
+//
+// 对账 TS `tool-pipeline.ts` 的 params 组装。提取自 `executeTool` 内联构造
+// ——原来内联时无法单测，导致「字段有读取方、无写入方」的缺陷（read_file
+// 读 `p.ProviderProfile` 但构造点从未赋值）不会被任何测试抓到。
+func (l *Loop) buildToolCallParams(tc toolCall) *tools.CallParams {
+	return &tools.CallParams{
+		Input:        tc.input,
+		ToolUseID:    tc.id,
+		Cwd:          l.cfg.Cwd,
+		ApprovalMode: l.cfg.ApprovalMode,
+		SessionID:    l.cfg.SessionID,
+		// artifact 存储注入 read_section（召回路径）。
+		ArtifactStore: l.Artifacts,
+		ContextWindow: l.artifactContextWindow(),
+		// ProviderProfile 注入 read_file（读上限按提供商策略系数缩放）。
+		//
+		// 对账 TS `tool-pipeline.ts:465,840` 的 `providerProfile: config.providerProfile`。
+		// **来源**：CompactBoundary 持有（bootstrap 时按 provider 名 + 窗口算出）。
+		// 无 Compact 时为 nil → 走 balanced（系数 1.0），与 TS 默认一致。
+		ProviderProfile: l.providerProfile(),
+	}
 }
 
 // generateArtifactSummary 生成注入历史的启发式摘要。

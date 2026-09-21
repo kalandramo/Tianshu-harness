@@ -24,15 +24,13 @@ type readFileTool struct {
 	baseTool
 	// Cwd 是工作目录（构造时绑定）。
 	Cwd string
-	// MaxBytes 是单次读取的字符上限（0 = 默认 100_000）。
-	MaxBytes int
 	// Grants 是越界路径授权判定。
 	Grants pathsafe.GrantChecker
 }
 
 // ReadFile 构造 read_file 工具。
 func ReadFile(cwd string, grants pathsafe.GrantChecker) Tool {
-	t := &readFileTool{Cwd: cwd, Grants: grants, MaxBytes: 100_000}
+	t := &readFileTool{Cwd: cwd, Grants: grants}
 	t.def = contract.Definition{
 		Name: "read_file",
 		Description: `从文件系统读取文件，支持可选的行范围。
@@ -128,19 +126,31 @@ func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 	selected := lines[start:end]
 	body := strings.Join(selected, "\n")
 
-	// 截断（标记 lossiness——截断观测不能支撑负向结论）
+	// 截断（标记 lossiness——截断观测不能支撑负向结论）。
+	//
+	// **对账 TS**：TS 的 `modelContent = truncateContent(content, cap.maxChars,
+	// cap.headChars, cap.tailChars)`（`read-file.ts:707`）——**头+尾截断**，
+	// 而非只保留头部。cap 来自 `ComputeModelReadCap`（窗口感知 + 提供商策略
+	// 系数 + 120K 硬上限），不是静态阈值。
+	//
+	// **此前的近似**：`MaxBytes` 硬编码 100_000 + 只保留头部。两处偏差：
+	//   1. 不随上下文窗口缩放（1M 窗口下 TS 给 120K）
+	//   2. 丢弃尾部（TS 保留 head + tail，尾部常含总结/错误）
 	var lossiness *contract.Lossiness
-	if t.MaxBytes > 0 && len(body) > t.MaxBytes {
-		body = body[:t.MaxBytes]
-		// 避免切断多字节字符
-		for len(body) > 0 && !utf8.ValidString(body) {
-			body = body[:len(body)-1]
+	if len(body) > 0 {
+		cap := ComputeModelReadCap(ModelReadCapInput{
+			ContextWindow:   p.ContextWindow,
+			ProviderProfile: p.ProviderProfile,
+		})
+		if UTF16Len(body) > cap.MaxChars {
+			// 对账 TS 的 `truncateContent`：head + 提示 + tail（UTF-16 语义）。
+			body = TruncateContent(body, cap.MaxChars, cap.HeadChars, cap.TailChars)
+			l := contract.LossinessTruncated
+			lossiness = &l
+			body += fmt.Sprintf(
+				"\n\n[output truncated: 文件共 %d 行 / %d 字节。用 offset/limit 读后续区间。]",
+				len(lines), len(data))
 		}
-		l := contract.LossinessTruncated
-		lossiness = &l
-		body += fmt.Sprintf(
-			"\n\n[output truncated: 显示前 %d 字符，文件共 %d 行 / %d 字节。用 offset/limit 读后续区间。]",
-			len(body), len(lines), len(data))
 	}
 
 	content := body
