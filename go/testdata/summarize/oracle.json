@@ -1,0 +1,677 @@
+[
+ {
+  "kind": "file",
+  "content": "import { foo } from './foo'\nimport bar from 'bar'\nimport './side-effect'\nexport { a, b as c } from './re'\nexport function alpha() {\n  return 1\n}\nfunction hidden() {}\nexport class Beta {\n  x = 1\n}\nclass Hidden {}\nexport const gamma = 1\nexport { delta }\nexport { e as f }",
+  "arg": "a.ts",
+  "extra": 0,
+  "summary": "ts file, 15 lines. Exports: alpha, Beta, gamma, delta, f Functions: hidden Classes: Hidden",
+  "sections": [
+   {
+    "name": "imports",
+    "lineStart": 1,
+    "lineEnd": 4,
+    "charCount": 28
+   },
+   {
+    "name": "export:alpha",
+    "lineStart": 5,
+    "lineEnd": 7,
+    "charCount": 38
+   },
+   {
+    "name": "export:Beta",
+    "lineStart": 9,
+    "lineEnd": 11,
+    "charCount": 29
+   },
+   {
+    "name": "export:gamma",
+    "lineStart": 13,
+    "lineEnd": 14,
+    "charCount": 39
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "",
+  "arg": "empty.ts",
+  "extra": 0,
+  "summary": "ts file, 1 lines.",
+  "sections": []
+ },
+ {
+  "kind": "file",
+  "content": "const x = 1",
+  "arg": "one.ts",
+  "extra": 0,
+  "summary": "ts file, 1 lines.",
+  "sections": []
+ },
+ {
+  "kind": "file",
+  "content": "export function upper() {}",
+  "arg": "UPPER.TS",
+  "extra": 0,
+  "summary": "TS file, 1 lines. Exports: upper",
+  "sections": [
+   {
+    "name": "export:upper",
+    "lineStart": 1,
+    "lineEnd": 1,
+    "charCount": 26
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "plain text",
+  "arg": "noext",
+  "extra": 0,
+  "summary": "noext file, 1 lines. low-detail summary, consider read_section for details.",
+  "sections": []
+ },
+ {
+  "kind": "file",
+  "content": "export function j() {}",
+  "arg": "a.jsx",
+  "extra": 0,
+  "summary": "jsx file, 1 lines. Exports: j",
+  "sections": [
+   {
+    "name": "export:j",
+    "lineStart": 1,
+    "lineEnd": 1,
+    "charCount": 22
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "export function a() {\n}\nexport function b() {\n  const x = { y: 1 }\n}\nexport function c() {}",
+  "arg": "multi.ts",
+  "extra": 0,
+  "summary": "ts file, 6 lines. Exports: a, b, c",
+  "sections": [
+   {
+    "name": "export:a",
+    "lineStart": 1,
+    "lineEnd": 2,
+    "charCount": 23
+   },
+   {
+    "name": "export:b",
+    "lineStart": 3,
+    "lineEnd": 5,
+    "charCount": 44
+   },
+   {
+    "name": "export:c",
+    "lineStart": 6,
+    "lineEnd": 6,
+    "charCount": 22
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "import os\nclass Foo:\n    def bar(self):\n        pass\n    def baz(self):\n        return 1\ndef top():\n    pass\nasync def atop():\n    pass",
+  "arg": "p.py",
+  "extra": 0,
+  "summary": "py file, 10 lines. Classes: Foo Functions: top, atop",
+  "sections": [
+   {
+    "name": "class:Foo",
+    "lineStart": 2,
+    "lineEnd": 6,
+    "charCount": 78
+   },
+   {
+    "name": "function:top",
+    "lineStart": 7,
+    "lineEnd": 8,
+    "charCount": 19
+   },
+   {
+    "name": "function:atop",
+    "lineStart": 9,
+    "lineEnd": 10,
+    "charCount": 26
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "",
+  "arg": "blank.py",
+  "extra": 0,
+  "summary": "py file, 1 lines.",
+  "sections": []
+ },
+ {
+  "kind": "file",
+  "content": "def f():\n    if x:\n        pass\n    return 1\ndef g():\n    pass",
+  "arg": "indent.py",
+  "extra": 0,
+  "summary": "py file, 6 lines. Functions: f, g",
+  "sections": [
+   {
+    "name": "function:f",
+    "lineStart": 1,
+    "lineEnd": 4,
+    "charCount": 44
+   },
+   {
+    "name": "function:g",
+    "lineStart": 5,
+    "lineEnd": 6,
+    "charCount": 17
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "\ndef f():\n    pass",
+  "arg": "blankfirst.py",
+  "extra": 0,
+  "summary": "py file, 3 lines. Functions: f",
+  "sections": [
+   {
+    "name": "function:f",
+    "lineStart": 2,
+    "lineEnd": 3,
+    "charCount": 17
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "use std::io\npub fn alpha() {\n  let x = 1;\n}\nfn hidden() {}\npub struct S { x: i32 }\nenum E { A }\npub trait T {}\nimpl S {\n  fn m(&self) {}\n}\nimpl T for S {}",
+  "arg": "r.rs",
+  "extra": 0,
+  "summary": "rs file, 12 lines. Structs: S Enums: E Traits: T Impls: S, S Fns: alpha, hidden",
+  "sections": [
+   {
+    "name": "fn:alpha",
+    "lineStart": 2,
+    "lineEnd": 4,
+    "charCount": 0
+   },
+   {
+    "name": "fn:hidden",
+    "lineStart": 5,
+    "lineEnd": 5,
+    "charCount": 0
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "package main\n\nfunc main() {}\n",
+  "arg": "g.go",
+  "extra": 0,
+  "summary": "go file, 4 lines. low-detail summary (no Go structural parser yet), consider read_section for details.",
+  "sections": []
+ },
+ {
+  "kind": "file",
+  "content": "# Title\ntext\n## Sub\nmore\n### Deep\nd\n## Sub2\nx\n# Title2\ny",
+  "arg": "m.md",
+  "extra": 0,
+  "summary": "md file, 10 lines. Headings: Title, Sub, Deep, Sub2, Title2",
+  "sections": [
+   {
+    "name": "heading:Title",
+    "lineStart": 1,
+    "lineEnd": 8,
+    "charCount": 45
+   },
+   {
+    "name": "heading:Sub",
+    "lineStart": 3,
+    "lineEnd": 6,
+    "charCount": 22
+   },
+   {
+    "name": "heading:Deep",
+    "lineStart": 5,
+    "lineEnd": 6,
+    "charCount": 10
+   },
+   {
+    "name": "heading:Sub2",
+    "lineStart": 7,
+    "lineEnd": 8,
+    "charCount": 9
+   },
+   {
+    "name": "heading:Title2",
+    "lineStart": 9,
+    "lineEnd": 10,
+    "charCount": 10
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "# A\n## B\n",
+  "arg": "m.mdx",
+  "extra": 0,
+  "summary": "md file, 3 lines. Headings: A, B",
+  "sections": [
+   {
+    "name": "heading:A",
+    "lineStart": 1,
+    "lineEnd": 3,
+    "charCount": 9
+   },
+   {
+    "name": "heading:B",
+    "lineStart": 2,
+    "lineEnd": 3,
+    "charCount": 5
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "no headings here",
+  "arg": "h.md",
+  "extra": 0,
+  "summary": "md file, 1 lines.",
+  "sections": []
+ },
+ {
+  "kind": "file",
+  "content": "{\n  \"alpha\": 1,\n  \"beta\": { \"n\": 1 },\n  \"gamma\": [1,2],\n  \"delta\": null\n}",
+  "arg": "j.json",
+  "extra": 0,
+  "summary": "json file, 6 lines. Keys: alpha, beta, gamma, delta Nested: beta, gamma",
+  "sections": [
+   {
+    "name": "key:alpha",
+    "lineStart": 2,
+    "lineEnd": 2,
+    "charCount": 0
+   },
+   {
+    "name": "key:beta",
+    "lineStart": 3,
+    "lineEnd": 3,
+    "charCount": 0
+   },
+   {
+    "name": "key:gamma",
+    "lineStart": 4,
+    "lineEnd": 4,
+    "charCount": 0
+   },
+   {
+    "name": "key:delta",
+    "lineStart": 5,
+    "lineEnd": 5,
+    "charCount": 0
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "[1,2,3]",
+  "arg": "arr.json",
+  "extra": 0,
+  "summary": "json file, 1 lines.",
+  "sections": []
+ },
+ {
+  "kind": "file",
+  "content": "{not json",
+  "arg": "bad.json",
+  "extra": 0,
+  "summary": "json file, 1 lines.",
+  "sections": []
+ },
+ {
+  "kind": "file",
+  "content": "",
+  "arg": "empty.json",
+  "extra": 0,
+  "summary": "json file, 1 lines.",
+  "sections": []
+ },
+ {
+  "kind": "file",
+  "content": "{\"a\":{\"b\":{\"c\":1}}}",
+  "arg": "nested.json",
+  "extra": 0,
+  "summary": "json file, 1 lines. Keys: a Nested: a",
+  "sections": [
+   {
+    "name": "key:a",
+    "lineStart": 1,
+    "lineEnd": 1,
+    "charCount": 0
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "{\"a\":1,\"a\":2}",
+  "arg": "dup.json",
+  "extra": 0,
+  "summary": "json file, 1 lines. Keys: a",
+  "sections": [
+   {
+    "name": "key:a",
+    "lineStart": 1,
+    "lineEnd": 1,
+    "charCount": 0
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "{\"a\":1,\"a\":{\"b\":2}}",
+  "arg": "dupobj.json",
+  "extra": 0,
+  "summary": "json file, 1 lines. Keys: a Nested: a",
+  "sections": [
+   {
+    "name": "key:a",
+    "lineStart": 1,
+    "lineEnd": 1,
+    "charCount": 0
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "{\"a\":{\"b\":2},\"a\":1}",
+  "arg": "duprev.json",
+  "extra": 0,
+  "summary": "json file, 1 lines. Keys: a",
+  "sections": [
+   {
+    "name": "key:a",
+    "lineStart": 1,
+    "lineEnd": 1,
+    "charCount": 0
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "{\"outer\":{\"inner\":{\"x\":1}}}",
+  "arg": "deepkey.json",
+  "extra": 0,
+  "summary": "json file, 1 lines. Keys: outer Nested: outer",
+  "sections": [
+   {
+    "name": "key:outer",
+    "lineStart": 1,
+    "lineEnd": 1,
+    "charCount": 0
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "hello\nworld",
+  "arg": "x.txt",
+  "extra": 0,
+  "summary": "txt file, 2 lines. low-detail summary, consider read_section for details.",
+  "sections": []
+ },
+ {
+  "kind": "file",
+  "content": "a: 1",
+  "arg": "x.yaml",
+  "extra": 0,
+  "summary": "yaml file, 1 lines. low-detail summary, consider read_section for details.",
+  "sections": []
+ },
+ {
+  "kind": "file",
+  "content": "content",
+  "arg": "a.",
+  "extra": 0,
+  "summary": " file, 1 lines. low-detail summary, consider read_section for details.",
+  "sections": []
+ },
+ {
+  "kind": "file",
+  "content": "content",
+  "arg": ".hidden",
+  "extra": 0,
+  "summary": "hidden file, 1 lines. low-detail summary, consider read_section for details.",
+  "sections": []
+ },
+ {
+  "kind": "file",
+  "content": "export function deep() {}",
+  "arg": "a.b.c.ts",
+  "extra": 0,
+  "summary": "ts file, 1 lines. Exports: deep",
+  "sections": [
+   {
+    "name": "export:deep",
+    "lineStart": 1,
+    "lineEnd": 1,
+    "charCount": 25
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "export function bom() {}",
+  "arg": "﻿a.ts",
+  "extra": 0,
+  "summary": "ts file, 1 lines. Exports: bom",
+  "sections": [
+   {
+    "name": "export:bom",
+    "lineStart": 1,
+    "lineEnd": 1,
+    "charCount": 24
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "export function nbsp() {}",
+  "arg": "a.ts",
+  "extra": 0,
+  "summary": "ts file, 1 lines. Exports: nbsp",
+  "sections": [
+   {
+    "name": "export:nbsp",
+    "lineStart": 1,
+    "lineEnd": 1,
+    "charCount": 25
+   }
+  ]
+ },
+ {
+  "kind": "file",
+  "content": "　export function ideo() {}",
+  "arg": "a.ts",
+  "extra": 0,
+  "summary": "ts file, 1 lines.",
+  "sections": []
+ },
+ {
+  "kind": "file",
+  "content": "export function 😀😀😀() {}",
+  "arg": "emoji.ts",
+  "extra": 0,
+  "summary": "ts file, 1 lines.",
+  "sections": []
+ },
+ {
+  "kind": "grep",
+  "content": "src/a.ts:12:const x = 1\nsrc/a.ts:13:const y = 2\nsrc/b.ts:1:hi",
+  "arg": "const",
+  "extra": 0,
+  "summary": "grep \"const\": 3 matches in 2 files. Files: src/a.ts, src/b.ts",
+  "sections": []
+ },
+ {
+  "kind": "grep",
+  "content": "C:/foo/bar.ts:42:match here\nD:/x/y.ts:7:other",
+  "arg": "match",
+  "extra": 0,
+  "summary": "grep \"match\": 2 matches in 2 files. Files: C:/foo/bar.ts, D:/x/y.ts",
+  "sections": []
+ },
+ {
+  "kind": "grep",
+  "content": "a-b/c.ts-5-context line",
+  "arg": "ctx",
+  "extra": 0,
+  "summary": "grep \"ctx\": 1 matches in 1 files. Files: a-b/c.ts",
+  "sections": []
+ },
+ {
+  "kind": "grep",
+  "content": "",
+  "arg": "empty",
+  "extra": 0,
+  "summary": "grep \"empty\": 0 matches in 0 files. Files: ",
+  "sections": []
+ },
+ {
+  "kind": "grep",
+  "content": "plain text no match format",
+  "arg": "p",
+  "extra": 0,
+  "summary": "grep \"p\": 1 matches in 1 files. Files: plain text no match format",
+  "sections": []
+ },
+ {
+  "kind": "grep",
+  "content": "src/a.ts:1:x\nsrc/a.ts:2:y\nsrc/b.ts:3:z\nsrc/c.ts:4:w\nsrc/d.ts:5:v\nsrc/e.ts:6:u\nsrc/f.ts:7:t",
+  "arg": "many",
+  "extra": 0,
+  "summary": "grep \"many\": 7 matches in 6 files. Files: src/a.ts, src/b.ts, src/c.ts, src/d.ts, src/e.ts (+1)",
+  "sections": []
+ },
+ {
+  "kind": "grep",
+  "content": "a.ts:1:x\n\n\nb.ts:2:y",
+  "arg": "blank-lines",
+  "extra": 0,
+  "summary": "grep \"blank-lines\": 2 matches in 2 files. Files: a.ts, b.ts",
+  "sections": []
+ },
+ {
+  "kind": "grep",
+  "content": "a.ts:1:x\n﻿\nb.ts:2:y",
+  "arg": "feff-line",
+  "extra": 0,
+  "summary": "grep \"feff-line\": 2 matches in 2 files. Files: a.ts, b.ts",
+  "sections": []
+ },
+ {
+  "kind": "grep",
+  "content": "﻿a.ts:1:x﻿",
+  "arg": "feff-edge",
+  "extra": 0,
+  "summary": "grep \"feff-edge\": 1 matches in 1 files. Files: a.ts",
+  "sections": []
+ },
+ {
+  "kind": "bash",
+  "content": "3 tests passed\nall good",
+  "arg": "npm test",
+  "extra": 0,
+  "summary": "[npm test] success, 2 lines. 3 tests passed",
+  "sections": []
+ },
+ {
+  "kind": "bash",
+  "content": "2 tests failed\nError: boom",
+  "arg": "npm test",
+  "extra": 1,
+  "summary": "[npm test] failed (exit 1), 2 lines. 2 tests failed Errors: 2 tests failed; Error: boom",
+  "sections": []
+ },
+ {
+  "kind": "bash",
+  "content": "line1\nline2",
+  "arg": "ls -la",
+  "extra": 0,
+  "summary": "[ls -la] success, 2 lines. line2",
+  "sections": []
+ },
+ {
+  "kind": "bash",
+  "content": "",
+  "arg": "true",
+  "extra": 0,
+  "summary": "[true] success, 1 lines.",
+  "sections": []
+ },
+ {
+  "kind": "bash",
+  "content": "error at foo\nError bar\nFAIL baz\nError qux",
+  "arg": "make",
+  "extra": 2,
+  "summary": "[make] failed (exit 2), 4 lines. Errors: error at foo; Error bar; FAIL baz",
+  "sections": []
+ },
+ {
+  "kind": "bash",
+  "content": "total 100\nok",
+  "arg": "go test",
+  "extra": 0,
+  "summary": "[go test] success, 2 lines. total 100",
+  "sections": []
+ },
+ {
+  "kind": "bash",
+  "content": "a very long command that exceeds forty characters for sure here",
+  "arg": "x",
+  "extra": 0,
+  "summary": "[x] success, 1 lines. a very long command that exceeds forty characters for sure here",
+  "sections": []
+ },
+ {
+  "kind": "bash",
+  "content": "out",
+  "arg": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+  "extra": 0,
+  "summary": "[😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀] success, 1 lines. out",
+  "sections": []
+ },
+ {
+  "kind": "bash",
+  "content": "错误：中文错误信息非常非常非常非常非常非常非常非常非常非常非常非常长的一行",
+  "arg": "make",
+  "extra": 1,
+  "summary": "[make] failed (exit 1), 1 lines.",
+  "sections": []
+ },
+ {
+  "kind": "bash",
+  "content": "line1\n\n\n",
+  "arg": "ls",
+  "extra": 0,
+  "summary": "[ls] success, 4 lines. line1",
+  "sections": []
+ },
+ {
+  "kind": "bash",
+  "content": "first\n﻿",
+  "arg": "ls",
+  "extra": 0,
+  "summary": "[ls] success, 2 lines. first",
+  "sections": []
+ },
+ {
+  "kind": "bash",
+  "content": "out",
+  "arg": "﻿cmd here",
+  "extra": 0,
+  "summary": "[﻿cmd here] success, 1 lines. out",
+  "sections": []
+ }
+]

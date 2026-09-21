@@ -624,10 +624,11 @@ session split 是**主动**护栏：86% 时把历史替换为结构化 handoff�
 
 #### 已知未做（记入下一刀）
 
-- **`summarize.go`**（`src/artifact/summarize.ts`，407 行）：按文件扩展名提取
-  `sections`。**当前保存时 `sections` 恒为空**（对账 TS 的实际调用
-  `tool-pipeline.ts:607` 也传 `[]`）——只影响 read_section 的「片段名」提示质量，
-  不影响取回功能。
+- ~~**`summarize.go`**（`src/artifact/summarize.ts`，407 行）：按文件扩展名提取
+  `sections`。~~ **已完成**（见「第十一刀」）。`summary` 已逐字对账（55 用例差分
+  oracle）；`sections` 同样锁定，但**当前仍无消费者**——TS 侧的
+  `read_section` 也只认位置格式（`read-section.ts:58-77`），sections 在
+  两侧都是「存得下、无人读」。接 sections 消费端需**先**给 Go 侧补 L0 包装。
 - **read_section 的 `file_path` 分支**：依赖 `getFileReadMtime`（陈旧性告警）与
   `computeModelReadCap`（按窗口/提供商算读上限），两者未移植。
   **当前 `readSectionMaxChars` 用 `ToolArtifactThreshold("read_file", ...)` 近似**
@@ -1008,6 +1009,74 @@ read-ref 引用恢复本会话早前读过的文件内容。同时消掉一处**
 
 - `CheckpointDeps.TaskAnchor`（需 `getActiveContract` + `renderTaskAnchor`）
 - `promptEngine.resetAppendixBaseline`、`recordCompactEvent`
+
+### summarize.go —— artifact 内容的结构化摘要（2026-09-21，回主线第十一刀）
+
+**做了什么**：新建 `internal/artifact/summarize.go`（733 行），逐字移植 TS
+`src/artifact/summarize.ts`（407 行）的全部导出：
+`SummarizeFileContent`（按扩展名分派 7 类）、`SummarizeGrepResult`、
+`SummarizeBashOutput`，以及内部摘要器（JsTs / Python / Rust / Go / Markdown /
+Json / Generic）与三个块结束探测器（花括号 / Python 缩进 / Markdown 标题层级）。
+
+**验证方式：差分 oracle**（本项目最强对账手段）
+
+- `testdata/summarize/gen_oracle.ts` 用 `tsx` 跑 **TS 原实现**，产出 55 条
+  黄金用例到 `oracle.json`（含 summary 与 sections 全字段）
+- `summarize_test.go` 读它**逐字比对**——不是「我理解的语义」，是 TS 的实际输出
+- 生成命令：`node_modules/.bin/tsx go/testdata/summarize/gen_oracle.ts`
+
+**这一刀抓到的真实分歧**（差分 oracle 的价值所在，全部已修）
+
+1. **Go 的 `^` 只匹配文本开头，JS 的 `^` 逐行**——首版所有正则零命中
+   （Python/Rust/Markdown/JSON 全空）。修正：模式加 `(?m)`。
+   **注意**：JS 里 `^` 天然逐行（无 `m` 标志时也只匹配串首）——但 TS 代码
+   对**每一行**单独调用 `line.match(...)`，故 Go 侧必须 `(?m)` 或逐行。
+2. **JS 的 `\s` ≠ Go 的 `\s`**——JS 含 `\v`、`\p{Zs}`、U+FEFF。用 Go 的 `\s`
+   会在这些字符上产生字节差异。引入 `jsWS` 常量（完整字符类）。
+3. **JS 的 `.trim()` ≠ Go 的 `strings.TrimSpace`**——前者去 U+FEFF。
+   引入 `jsTrimSpace`。**测试先漏掉了这条**（首轮 M21 变异未红），
+   补 FEFF 边界用例后才抓住——**变异反证暴露了用例集密度不足**。
+4. **JSON 重复键**：JS 的 `JSON.parse` 保留**最后一个值**但键序在**首次**位置。
+   `{"a":1,"a":{"b":2}}` 的 nested 含 `a`。首版 Go 取首值判断 → 错。
+5. **JSON 键序保序**：Go 的 `map` 遍历随机 → summary 字节不稳定。
+   改用 `json.Decoder` 流式读键（`jsonTopKeys`）。
+6. **`sections` 必须非 nil**：Go 的 nil 序列化成 `null`，TS 是 `[]`——
+   会让 `_index.jsonl` 的 artifact 索引两侧不互通。
+
+**变异反证**：M21（jsTrimSpace 换 strings.TrimSpace）→ 3 例红；
+M22（重复键取首值）→ 2 例红；M23（jsSlice 字节切）→ 1 例红。
+M17（去掉 `(?m)`）→ **0 例红，是等价变异**（逐行调用时 `^` 本就匹配行首）。
+
+**全量验证**：`gofmt -l` 干净、`go build`/`go vet` exit=0、
+`go test ./... -count=1` 22 包 ok / 0 FAIL。
+
+#### 仍未做（下一刀的起点）
+
+- **`summarize.go` 当前无生产调用方**。TS 侧唯一调用方是**工具自己的 L0
+  包装**（`read-file.ts:1016`、`grep.ts:155,488`、`bash.ts:770`），而 Go 侧
+  `internal/tools/read_file.go` **完全没有 L0 包装**——它既无 L0、又被 L1
+  的 `l0WrappedTools` 跳过。**后果**：Go 的 read_file 读大文件时不入
+  artifact store、也没有 structural outline，只能靠 `MaxBytes`（100K）截断；
+  TS 侧则给模型 outline + `[artifact:id]`。**这是比 sections 更值得先补的缺口。**
+- L0 包装是**更大的刀**：dedup 机制（`recordDedup` / `recordFileDedup`）+
+  neighbor hint（`maybeAppendNeighborHint`）+ summaryBlock 拼接 + `[artifact:id]`
+  尾部约定（`prune.ts` / `stale-round.ts` 的正则依赖它**在末尾**）。
+- `sections` 的消费端：**TS 侧也不消费**（`read-section.ts:58-77` 只认
+  `L100-L200` / `c0-c5000`）。接消费端是**新增功能**而非移植——
+  需先与用户确认（偏离 TS 语义的优化按项目规约属缺陷）。
+
+#### 本刀的方法论教训（值得记）
+
+**「消费端先行」这个建议在本项目是错的**。我最初建议先做 read_section 的
+命名片段（理由：让 sections 从死数据变活），并据此实现了 `eea69cd`。
+随后四个独立角度的穷尽核实推翻了它：**TS 侧 read_section 同样不读 sections**，
+命名片段是发明而非移植、无 oracle 可对账、还改变了 `section` 参数的可接受范围。
+已 revert（`4bf2ab1`）。
+
+**教训**：移植项目里「补上缺失的消费端」听起来合理，但**只有当 TS 侧存在
+该消费端时才是移植**。先核实 TS 侧有没有，再决定做不做。核实手段：
+grep 该字段在 TS 侧的全部读取点（含 `.sections` 解构、`sections` 实参传递、
+类型使用点——三个角度交叉）。
 
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
