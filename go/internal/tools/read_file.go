@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/kalandramo/tianshu/go/internal/artifact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
 	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 )
@@ -157,6 +158,39 @@ func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 	if limit > 0 || offset > 1 {
 		content = fmt.Sprintf("[%s 第 %d-%d 行，共 %d 行]\n%s",
 			path, start+1, end, len(lines), body)
+	}
+
+	// ── L0 artifact 包装（对账 TS `read-file.ts:992-1042`）──
+	//
+	// **为什么在这一层**：read_file 在 `l0WrappedTools` 里，L1 会跳过它
+	// （防无限嵌套 + double-save）。故大结果必须由**工具自己**落盘。
+	//
+	// **两处偏差（此前 Go 侧完全无 L0）**：读大文件时既不入 store、也没有
+	// structural outline，只能靠截断——模型看到的是截断原文；TS 侧给的是
+	// outline + `[artifact:id]`。
+	if p.ArtifactStore != nil {
+		threshold := artifact.ToolArtifactThreshold("read_file", p.ContextWindow)
+		if UTF16Len(text) >= threshold {
+			res := artifact.SummarizeFileContent(text, path)
+			id, err := p.ArtifactStore.Save(artifact.SaveInput{
+				Tool: "read_file", Target: path,
+				RawContent: text, // **原文**（不是截断后的 content）
+				Summary:    res.Summary,
+				Sections:   res.Sections,
+			})
+			if err == nil {
+				// 标记**必须在末尾**——`ArtifactMarkerRegex` 依赖此位置。
+				summaryBlock := ""
+				if s := strings.TrimSpace(res.Summary); s != "" {
+					summaryBlock = "\n\n── Structural outline ──\n" + s
+				}
+				return contract.Result{
+					Content:   content + summaryBlock + "\n[artifact:" + id + "]",
+					Lossiness: lossiness,
+				}, nil
+			}
+			// Save 失败 → 优雅降级（返回未包装内容，对账 TS 的 try/catch）。
+		}
 	}
 
 	return contract.Result{

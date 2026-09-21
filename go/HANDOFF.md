@@ -1294,6 +1294,68 @@ win=128K 截到 9341、win=1M 不截断——**随窗口缩放**。
    read-ref。跨 6 个模块有消费者，**最大的一块**。
 
 
+### read_file 的 L0 包装（2026-09-21，回主线第十五刀）
+
+**做了什么**：给 `read_file` 补上 **L0 artifact 包装**（对账 TS
+`read-file.ts:992-1042`）。这是「read_file 读大文件不入 store」这个缺口的终点。
+
+**为什么必须由工具自己做**：`read_file` 在 `l0WrappedTools` 里，L1 会**跳过**它
+（防无限嵌套 + double-save 事故）。故大结果只能由工具自己落盘。
+
+**实现**（`read_file.go` 末尾，截断之后）：
+
+1. `artifact.ToolArtifactThreshold("read_file", p.ContextWindow)` 判阈值
+2. 超阈值 → `artifact.SummarizeFileContent(text, path)` 产出 summary + sections
+3. `store.Save({RawContent: text, ...})` ——**存原文**（不是截断后的 content）
+4. 拼接 `content + summaryBlock + "\n[artifact:id]"` ——**标记必须在末尾**
+
+**为什么标记必须在末尾**：`compact.ArtifactMarkerRegex` 的 `\s*$` 锚定行尾；
+prune / stale-round / recovery-ref 都依赖此位置。放在开头或中间会让下游
+无法识别（TS 的 `artifact-format.test.ts` 专门测了「标记不在末尾 → 不匹配」）。
+
+**为什么不包小内容**（对账 TS 注释）：低于 prune 阈值的内容不会被 prune 替换，
+artifact 备份无意义；而 `[artifact:X]` 标记本身会让模型误以为内容被隐藏——
+TS 复盘记录过这个模式（「任何 artifact 标记都触发『换个方法试试』的绕行」）。
+
+**发现：`ArtifactMarkerRegex` 匹配不到自家 id（既有不一致，两侧都有）**
+
+- id 格式：`<tool>:<suffix>`（`store.ts:229` / `store.go:398`），**含冒号**
+- 标记正则：`\[artifact:([A-Za-z0-9_-]+)\]\s*$`（`recovery-ref.ts:18` /
+  `context_collapse.go:36`），字符类**不含冒号**
+- 故 `[artifact:read_file:rf1]` **不匹配**该正则
+
+TS 侧有测试（`artifact-format.test.ts`）覆盖此正则，但用的样例 id 是 `def456`
+/ `ghi789`（**无冒号**）——测试用假 id 掩盖了生产路径的不匹配。
+
+**Go 侧当前无影响**：`ArtifactMarkerRegex` 与 `artifactAnyRegex` 在 Go 侧
+**都还没有生产消费者**（只有定义）。但这是**潜伏缺陷**——等 L1 的 collapse
+路径接上时，会匹配不到自家标记。**移植原则：照抄 TS 行为不擅自"修"**，
+故本刀未动正则，仅记录。
+
+**验证**
+
+- **5 条 L0 测试**（`readfile_l0_test.go`）：大内容包装 / 小内容跳过 /
+  存原文而非截断版 / **端到端 read_section 取回** / Save 失败优雅降级
+- **变异反证**：M34（存截断版而非原文）→ 1 红；M35（标记放开头）→ 3 红；
+  M36（总是包装）→ 1 红
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+#### 仍未做（L0 之后）
+
+1. **`readFilePayload` 的 raw/model 分野**：**优先级下调**——核实发现分野的
+   唯一消费者就是 L0 包装（本刀已直接用 `text`/`content` 达成同样效果），
+   单独做它会造出无消费者的结构。等需要 office/partial/preview 分支时再做。
+2. **`readFilePayload` 的其余分支**：office 转换、`applyFoldThenPartial`
+   （fold 骨架）、`buildLogPreviewContent`（log 预览）、`buildFileUiOutput`、
+   focus 读取、`reject-with-range` 的行为。
+3. **gitignore 过滤**（`getGitignoreFilter` + `isRivetStatePath` 豁免）。
+4. **dedup 子系统**（`read-file.ts:190-255`）：两张表 + `repeatWarning` +
+   read-ref。跨 6 个模块有消费者，**最大的一块**。
+5. **`grep` / `bash` 的 L0 包装**：与 read_file 同构（`grep.ts:155,488` /
+   `bash.ts:770`），可复用本刀的形态。
+6. **L1 collapse 路径接上时**，需处理上面的 id/正则不一致。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`
