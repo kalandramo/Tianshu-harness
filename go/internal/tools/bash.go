@@ -259,39 +259,44 @@ func (t *bashTool) Execute(ctx context.Context, p *CallParams) (contract.Result,
 
 	_ = duration
 
+	// ── 模型可见内容整形（对账 TS `bash.ts:751,786` → `buildModelOutput`）──
+	//
+	// TS 的 bash 把原始输出交给 `buildModelOutput` 做有损但信息密度高的整形：
+	// 成功折叠留**末尾 20 行**、失败走 error-aware 精选、超长走 head+tail。
+	//
+	// **本刀修的真实偏差**：第二十一刀我实现 successFold 时折叠成**单行提示**，
+	// 而 TS 保留末尾 20 行——单行提示让模型失去"最后发生了什么"的观测。
+	//
+	// **未接的部分（明示）**：`applyCommandFilter`（`command-filters.ts`，
+	// ~300 行的独立子系统：tsc/test/git 五族过滤器）未移植，故传 nil 不过滤；
+	// `persistRawOutput`（→ `meta.rawPath` 的恢复提示）亦未移植，故 RawPath 留空。
+	rawOutput := result.Content
+	result.Content = BuildModelOutput(rawOutput, ToolOutputMeta{
+		Command:    command,
+		ExitCode:   exitCode,
+		DurationMs: duration.Milliseconds(),
+	}, nil)
+
 	// ── L0 artifact 包装（对账 TS `bash.ts:744-800`）──
 	//
 	// **为什么在这一层**：bash 在 `l0WrappedTools` 里，L1 跳过它（防无限嵌套 +
 	// double-save）。故大结果必须由工具自己落盘。
 	//
-	// **scope 说明（明示）**：TS 此段还调 `buildModelOutput`（`output-store.ts`
-	// 的独立格式化层：error-aware 提取 + head/tail + MODEL_MAX_LINES）——Go 侧
-	// 无该层，故本刀只接 **artifact 包装 + successFold**，模型可见内容仍是
-	// `sb.String()`。这是**有意的最小实现**：L0 的价值（大结果落盘可召回）
-	// 不依赖 `buildModelOutput` 的细节。
+	// **落盘的是 `rawOutput`（整形前）而非 `result.Content`（整形后）**——
+	// 对账 TS：artifact 存 `filtered`（过滤后的原文），模型看 `buildModelOutput`
+	// 的整形结果。若存整形版，模型经 read_section 召回时会拿到已经截断的内容。
 	if p.ArtifactStore != nil {
-		filtered := result.Content
 		threshold := artifact.ToolArtifactThreshold("bash", p.ContextWindow)
-		if UTF16Len(filtered) >= threshold {
-			res := artifact.SummarizeBashOutput(filtered, command, exitCode)
+		if UTF16Len(rawOutput) >= threshold {
+			res := artifact.SummarizeBashOutput(rawOutput, command, exitCode)
 			id, err := p.ArtifactStore.Save(artifact.SaveInput{
 				Tool: "bash", Target: command,
-				RawContent: filtered, // **原文**（模型可见版尚未经 buildModelOutput）
+				RawContent: rawOutput, // **原文**（整形前）
 				Summary:    res.Summary,
 				Sections:   res.Sections,
 			})
 			if err == nil {
-				// successFold（对账 TS）：成功且行数超 SUCCESS_INLINE_LINES 时，
-				// 模型可见输出折叠为一行提示——原文可从 artifact 召回。
-				lineCount := strings.Count(filtered, "\n") + 1
-				var modelOutput string
-				if exitCode == 0 && lineCount > successInlineLines {
-					modelOutput = fmt.Sprintf("[%s] exit=0 (%d lines) — success output folded, full output recoverable below",
-						command, lineCount)
-				} else {
-					modelOutput = filtered
-				}
-				result.Content = modelOutput + "\n\nUse read_section(artifactId=\"" + id +
+				result.Content = result.Content + "\n\nUse read_section(artifactId=\"" + id +
 					"\", section=\"L1-L500\") to load full output if the head/tail above is not enough.\n[artifact:" + id + "]"
 			}
 			// Save 失败 → 优雅降级（保持原 content）。
@@ -300,9 +305,6 @@ func (t *bashTool) Execute(ctx context.Context, p *CallParams) (contract.Result,
 
 	return result, nil
 }
-
-// successInlineLines 对账 TS 的 `SUCCESS_INLINE_LINES`（成功输出折叠阈值）。
-const successInlineLines = 20
 
 // limitedWriter 是带上限的缓冲写入器，超限后丢弃并标记。
 //

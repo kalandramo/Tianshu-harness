@@ -51,7 +51,12 @@ func TestBashL0WrapsLargeOutput(t *testing.T) {
 	}
 }
 
-// TestBashL0SuccessFold —— 成功且行数 > 20 时折叠为一行提示（对账 TS）。
+// TestBashL0SuccessFold —— 成功且行数 > 20 时**保留末尾 20 行** + 截断 footer。
+//
+// **断言在第二十四刀修正**：第二十一刀我实现 successFold 时折叠成**单行提示**，
+// 但 TS 的 `buildModelOutput`（`output-store.ts`）是 `SUCCESS_TAIL_LINES`=20
+// → 保留末尾 20 行 + `[output truncated: last N of M lines shown]`。
+// 单行提示让模型失去"最后发生了什么"的观测——TS 注释强调的正是要保留它。
 func TestBashL0SuccessFold(t *testing.T) {
 	store := newBashStore(t)
 	tool := Bash(t.TempDir())
@@ -63,12 +68,20 @@ func TestBashL0SuccessFold(t *testing.T) {
 	if r.IsError {
 		t.Skipf("命令不可用：%.200s", r.Content)
 	}
-	// 成功 + 行数 > SUCCESS_INLINE_LINES(20) → 折叠提示。
-	if !strings.Contains(r.Content, "success output folded, full output recoverable below") {
-		t.Errorf("应含 successFold 提示：%.300s", r.Content)
+	// header 对账 TS：`[cmd] exit=N time=Xs lines=M`。
+	if !strings.Contains(r.Content, "exit=0") || !strings.Contains(r.Content, "lines=") {
+		t.Errorf("应含 TS 形态的 header：%.300s", r.Content)
 	}
-	if !strings.Contains(r.Content, "exit=0") {
-		t.Errorf("折叠提示应含 exit=0：%.300s", r.Content)
+	// 折叠 footer（对账 TS 文案）。
+	if !strings.Contains(r.Content, "lines omitted") {
+		t.Errorf("应含省略标记：%.300s", r.Content)
+	}
+	if !strings.Contains(r.Content, "last 20 of") {
+		t.Errorf("应保留末尾 20 行并说明：%.300s", r.Content)
+	}
+	// **关键**：末尾内容确实在（不是单行提示）。
+	if !strings.Contains(r.Content, "3000") {
+		t.Errorf("折叠后应保留末行 3000（末尾 20 行）：%.300s", tailSnippet(r.Content, 200))
 	}
 }
 

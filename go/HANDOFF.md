@@ -1897,6 +1897,79 @@ payload 层与工具层合在 `Execute` 里，L0 与 dedup 都在尾部；分支
 7. **bash 的超时/错误路径 L0**。
 
 
+### buildModelOutput —— bash 结果的模型可见形态（2026-09-21，回主线第二十四刀）
+
+**做了什么**：移植 TS `output-store.ts` 的 `buildModelOutput` +
+`extractErrorAwareLines`（`modeloutput.go`），接线 `bash.go`。
+
+**为什么**：TS 的 bash 把原始输出交给 `buildModelOutput` 做**有损但信息密度高**
+的整形——成功折叠留**末尾 20 行**、失败走 error-aware 精选、超长走 head+tail。
+Go 侧此前直接返回原始拼接，**所有** bash 结果的形态都与 TS 不同。
+
+**本刀修的真实偏差**（第二十一刀遗留）：我实现 `successFold` 时折叠成**单行提示**
+（`[cmd] exit=0 (N lines) — success output folded...`），而 TS 的
+`SUCCESS_TAIL_LINES`=20 → **保留末尾 20 行** + 截断 footer。单行提示让模型失去
+"最后发生了什么"的观测——TS 注释强调的正是要保留它。**已修正并同步改了
+`TestBashL0SuccessFold` 的断言**（原断言测的是错误实现）。
+
+**实现的六个分支**（顺序逐条对账，顺序敏感）
+1. 命令过滤（**仅失败时**——成功输出不过滤，避免藏掉有用信息）
+2. 空输出且 exit=0 → 显式确认 + 写文件提示（防"命令没执行"误判）
+3. 成功且 >20 行 → 留末尾 20 行 + `[output truncated: last 20 of N lines shown]`
+4. 失败且 >40 行 → error-aware 精选（前 3 行 + 末 2 行 + 各错误点 ±2 行）
+5. <=200 行 → 完整
+6. >200 行 → head 100 + tail 80
+
+**两个 JS 语义点**
+- `countLines`：**末尾空行不计**（`"a\n"` 是 1 行，不是 2）。与
+  `len(strings.Split(s,"\n"))` 不同——独立函数 + 6 例测试。
+- `extractErrorAwareLines` 的 markerRegex 用 `/i`（大小写不敏感）且**无 `m`
+  标志**——`^`/`$` 作用于**整串**（Go 的 `^`/`$` 默认同义，逐行调用时一致）。
+  回退阈值是 `maxLines + 5`（不是 maxLines）。
+
+**接线的一处关键决定**：**artifact 落盘用整形前的原文**（`rawOutput`），模型看
+整形后的 `result.Content`。对账 TS（artifact 存 `filtered`，模型看
+`buildModelOutput` 结果）。若存整形版，模型经 `read_section` 召回时会拿到
+已截断的内容。
+
+**scope（明示未接）**
+- `applyCommandFilter`（`command-filters.ts`，~300 行的独立子系统：tsc / node:test /
+  git status / git log / git diff / test-runner 五族过滤器）。`buildModelOutput`
+  里保留了调用点（传 `nil` 即不过滤），接线时替换即可。
+- `persistRawOutput`（→ `meta.rawPath` 的恢复提示）未移植，故 `RawPath` 留空，
+  recovery hint 缺席。
+
+**验证**
+- **差分 oracle 19 例**（13 例 buildModelOutput + 6 例 extractErrorAwareLines），
+  **真跑 TS 原实现**（两函数皆纯函数，无外部依赖）——`gen_oracle.ts` 逐字节比对
+- **8 条补充测试**：成功留尾（断言末行在、首行不在）/ 空输出确认（成功专属提示
+  不泄漏到失败）/ 命令过滤仅失败时调用 / rawPath 提示与缺席 / countLines 六例
+- **变异反证**：M66（尾部行数 20→0）→2 红；M67（成功也过滤）→1 红；
+  M68（error-aware 阈值失效）→1 红；M69（末尾空行也计数）→2 红
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+**一次称量修正（本刀开始前）**：原计划做「单读分支的 `UIContent` 接线」，侦察后
+**放弃**——`UIContent` 的读取方**只有测试**（11 处全在 `_test.go`），Go 侧
+**没有 `internal/server/`、`internal/tui/`** 目录（agent 层未移植到能消费它的
+程度）。TS 的消费者是 `tool-pipeline.ts:1578`（TUI 工具卡）。接线会产出
+**无人读取的字段**——收益端为零，不是修复。**已记入下一刀的前置条件**。
+
+#### 仍未做（更新）
+
+1. **`applyCommandFilter`**（`command-filters.ts`）：五族命令感知过滤器。
+   `buildModelOutput` 的调用点已就绪。
+2. **`persistRawOutput`**（→ `meta.rawPath`）：TS 的 doom-loop 防护（提示模型
+   `read_file` 原文而非重跑命令）。
+3. **`UIContent` 的单读分支接线**：**前置条件**是 Go 移植 TUI/server 工具卡管线
+   （TS `tool-pipeline.ts:1578`）。当前接 = 接一个没人读的字段。
+4. **artifact re-serve**（`read-file.ts:794-828`）：依赖 `sliceFromArtifact`（未移植）。
+5. **邻居提示**（`maybeAppendNeighborHint`，`RIVET_NEIGHBOR_HINT=1`，默认关）。
+6. **`preferFoldOnOverflow`**（TS `:695-704`）：Go 无 `readCapOverride` 概念。
+7. **`trimLastKnownLocked` 的裁剪语义分歧**（`filestate.go`）：Go 裁 `size - max`
+   （501→500），TS 裁 `ceil(size*0.2)`（501→400）。**不等价**（小刀）。
+8. **bash 的超时/错误路径 L0**。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`
