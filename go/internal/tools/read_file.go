@@ -61,6 +61,19 @@ func ReadFile(cwd string, grants pathsafe.GrantChecker) Tool {
 func (t *readFileTool) Timeout(*CallParams) time.Duration { return 30 * time.Second }
 
 func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Result, error) {
+	// ── 多读分支（对账 TS `read-file.ts:756-762` + `handleMultiRead:1063`）──
+	//
+	// **修复的缺陷**：`file_paths` 此前只出现在 InputSchema 里（**声明但未实现**
+	// ——与 `focus` 同类的静默失效）：传 file_paths 时 `file_path` 为空 → 报
+	// 「read_file 需要 path 参数」，而模型以为自己请求了多文件读取。
+	//
+	// **上限 5**（对账 TS 的 `filePaths.slice(0, 5)`）。
+	if raw, ok := p.Input["file_paths"]; ok {
+		if paths := toStringSlice(raw); len(paths) > 0 {
+			return t.executeMultiRead(ctx, p, paths)
+		}
+	}
+
 	path, _ := p.Input["file_path"].(string)
 	if path == "" {
 		return contract.Result{
@@ -131,6 +144,10 @@ func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 			ContextWindow:   p.ContextWindow,
 			ProviderProfile: p.ProviderProfile,
 		}).MaxChars
+		// 多读分支：用均分后的 per-file cap（对账 TS 的 `perFileCap`）。
+		if p.perFileCapMax > 0 {
+			maxChars = p.perFileCapMax
+		}
 		res := BuildFocusedReadView(FocusedReadOptions{
 			FilePath:     path,
 			Content:      text,
@@ -175,6 +192,12 @@ func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 			ContextWindow:   p.ContextWindow,
 			ProviderProfile: p.ProviderProfile,
 		})
+		// 多读分支的 per-file cap 覆盖（对账 TS 的 `perFileCap`）。
+		if p.perFileCapMax > 0 {
+			cap.MaxChars = p.perFileCapMax
+			cap.HeadChars = p.perFileCapHead
+			cap.TailChars = p.perFileCapTail
+		}
 		if UTF16Len(body) > cap.MaxChars {
 			// 对账 TS 的 `truncateContent`：head + 提示 + tail（UTF-16 语义）。
 			body = TruncateContent(body, cap.MaxChars, cap.HeadChars, cap.TailChars)
@@ -316,4 +339,133 @@ func relLabel(cwd, path string) string {
 		return rel
 	}
 	return path
+}
+
+// toStringSlice 把 JSON 数组（解码为 []any）转为 []string。
+//
+// 非字符串元素跳过（对账 TS 的 `as string[]` 宽松断言——非法元素在 TS 里
+// 会在后续 trim() 时抛错，Go 侧跳过更稳）。
+func toStringSlice(v any) []string {
+	arr, ok := v.([]any)
+	if !ok {
+		// 已显式构造为 []string 时（测试/内部调用）。
+		if ss, ok2 := v.([]string); ok2 {
+			return ss
+		}
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, e := range arr {
+		if s, ok := e.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// executeMultiRead 逐文件读取并拼接（对账 TS `handleMultiRead`）。
+//
+// **首版不接 dedup**（`fileReadHistory` 属未移植的 dedup 子系统）——它对账的是
+// 「记录」而非模型可见输出，缺它不影响本函数的可见行为。`NoteFileObserved`
+// 已移植（`filestate.go:54`），照 TS 调用。
+func (t *readFileTool) executeMultiRead(ctx context.Context, p *CallParams, paths []string) (contract.Result, error) {
+	// cap 按文件数**均分**（对账 TS 的 `Math.floor(computedCap.maxChars / paths.length)`）。
+	n := len(paths)
+	capFull := ComputeModelReadCap(ModelReadCapInput{
+		ContextWindow:   p.ContextWindow,
+		ProviderProfile: p.ProviderProfile,
+	})
+	perFileMax := capFull.MaxChars / n
+	perFileHead := capFull.HeadChars / n
+	perFileTail := capFull.TailChars / n
+
+	// 上限 5（对账 TS 的 `slice(0, 5)`）。
+	if len(paths) > 5 {
+		paths = paths[:5]
+	}
+
+	sections := []string{}
+	totalBytes := 0
+	errors := 0
+
+	for _, rawPath := range paths {
+		trimmed := strings.TrimSpace(rawPath)
+		if trimmed == "" {
+			continue
+		}
+		// 复用单读逻辑：构造子 CallParams（设 file_path、清 file_paths）。
+		sub := *p
+		sub.Input = map[string]any{}
+		for k, v := range p.Input {
+			if k == "file_paths" {
+				continue
+			}
+			sub.Input[k] = v
+		}
+		sub.Input["file_path"] = trimmed
+		// cap 均分：用 ContextWindow 无法精确表达 per-file cap，
+		// 故走一个显式的覆盖通道。
+		sub.perFileCapMax = perFileMax
+		sub.perFileCapHead = perFileHead
+		sub.perFileCapTail = perFileTail
+
+		res, err := t.Execute(ctx, &sub)
+		canonical := ""
+		if vr := pathsafe.Validate(t.Cwd, trimmed, pathsafe.ModeRead, &pathsafe.Options{Grants: t.Grants}); vr.OK {
+			canonical = vr.Path
+		}
+
+		if err != nil || res.IsError {
+			// 错误节（对账 TS 的 catch 分支）。
+			msg := ""
+			if err != nil {
+				msg = err.Error()
+			} else {
+				msg = res.Content
+			}
+			display := trimmed
+			// 只有以 cwd 开头时才转相对（对账 TS 注释：避免 relative() 把无关
+			// 路径变成一串 `../..`）。
+			if strings.HasPrefix(trimmed, t.Cwd) {
+				display = tsRelative(t.Cwd, trimmed)
+			}
+			sections = append(sections, "── "+display+" ──\nError: "+msg)
+			errors++
+			continue
+		}
+
+		relPath := tsRelative(t.Cwd, canonical)
+		sections = append(sections, "── "+relPath+" ──\n"+res.Content)
+		totalBytes += len(res.Content)
+
+		// 记录文件观察（对账 TS 的 noteFileObserved）。
+		if canonical != "" {
+			if fi, serr := os.Stat(canonical); serr == nil {
+				NoteFileObserved(canonical, fi.ModTime().UnixMilli(), fi.Size(), p.SessionID)
+			}
+		}
+	}
+
+	return contract.Result{
+		Content:   strings.Join(sections, "\n\n"),
+		UIContent: multiReadUI(len(paths), errors, totalBytes),
+	}, nil
+}
+
+// tsRelative 对账 TS 的 `relative(cwd, p).replaceAll('\', '/')`。
+//
+// **与 relLabel 的区别**：relLabel 在 rel 以 `..` 开头时回退原路径；TS 的
+// `relative` 不做此判断，且**总是**把反斜杠转正斜杠。
+func tsRelative(cwd, p string) string {
+	rel, err := filepath.Rel(cwd, p)
+	if err != nil {
+		rel = p
+	}
+	return strings.ReplaceAll(rel, "\\", "/")
+}
+
+// multiReadUI 对账 TS 的 `Read N/M files (X.X KB total)`。
+func multiReadUI(total, errors, bytes int) string {
+	kb := float64(bytes) / 1024.0
+	return fmt.Sprintf("Read %d/%d files (%.1f KB total)", total-errors, total, kb)
 }

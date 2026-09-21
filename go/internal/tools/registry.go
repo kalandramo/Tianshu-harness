@@ -80,6 +80,14 @@ type CallParams struct {
 	// 对账 TS 的 `params.providerProfile`（`tool-pipeline.ts:465,840` 注入）。
 	// nil = 无 profile，走 balanced（系数 1.0）——与 TS 的默认一致。
 	ProviderProfile *compact.CompactRatioProfile
+	// perFileCap* 是多读分支的**按文件均分 cap**（对账 TS `handleMultiRead` 的
+	// `Math.floor(computedCap.maxChars / paths.length)`）。
+	//
+	// **为什么需要**：cap 由 `ComputeModelReadCap(ContextWindow)` 算出，无法用
+	// ContextWindow 精确表达「除以 N」的结果。0 = 不覆盖（用窗口算出的值）。
+	perFileCapMax  int
+	perFileCapHead int
+	perFileCapTail int
 }
 
 // Registry 是工具注册表。

@@ -1549,6 +1549,72 @@ L0；`content` 在 L0 之前被 `focusedContent` 替换（模型可见 = 聚焦�
    `successFold`/`persistRawSafe`），建议单开一刀。
 
 
+### file_paths 多读分支（2026-09-21，回主线第十九刀）
+
+**做了什么**：实现 `read_file` 的 `file_paths` 多读分支（对账 TS
+`read-file.ts:756-762` + `handleMultiRead:1063`，62 行）。
+
+**修的又是一个静默失效**：`file_paths` 此前只出现在 InputSchema 里（**声明但
+未实现**）——传 file_paths 时 `file_path` 为空 → 报「read_file 需要 path 参数」，
+而模型以为自己请求了多文件读取。**与 `focus` 同类**（第十八刀修的）。
+
+**实现要点**
+
+- **上限 5**（对账 TS 的 `filePaths.slice(0, 5)`）
+- **cap 按文件数均分**（对账 `Math.floor(computedCap.maxChars / paths.length)`
+  ——三个字段都除）。为此在 `CallParams` 加了 `perFileCap{Max,Head,Tail}`
+  （**小写**私有字段：cap 由 `ComputeModelReadCap(ContextWindow)` 算出，无法用
+  ContextWindow 精确表达「除以 N」）
+- **节头** `── <相对路径> ──`，路径经 `tsRelative`（反斜杠转正斜杠）
+- **错误节** `── <display> ──\nError: <msg>`，且**继续读后续文件**（`continue`）
+- **UI 文案** `Read N/M files (X.X KB total)`
+
+**`tsRelative` 与 `relLabel` 的区别**（勿混用）：`relLabel` 在 rel 以 `..` 开头时
+回退原路径；TS 的 `relative` **不做此判断**，且**总是**把反斜杠转正斜杠。
+多读分支用 `tsRelative`（对账 TS）；`relLabel` 保留给既有调用点。
+
+**实现手法：复用单读逻辑**。多读分支不复制 175 行的单读代码，而是**构造子
+`CallParams`**（设 `file_path`、剔除 `file_paths`、注入 per-file cap）后
+递归调用 `t.Execute`。这避免了提取大函数的风险，且自动继承单读的所有行为
+（路径校验/二进制检测/focus/L0 包装）。
+
+**首版不接 dedup**（明示）：TS 的 `handleMultiRead` 调 `fileReadHistory.set(...)`
+——那是**未移植的 dedup 子系统**（HANDOFF 记为「最大的一块」）。它对账的是
+「记录」而非模型可见输出，缺它不影响本函数的可见行为。`NoteFileObserved`
+已移植（`filestate.go:54`），照 TS 调用。
+
+**验证**
+
+- **格式契约 oracle 8 例**（`testdata/multiread/gen_oracle.ts`）：覆盖两个正常文件 /
+  中间一个错误 / 全错 / 单文件 / 含空路径 / 超 5 个 / 相对路径错误 / 子目录。
+  **局限（明示）**：该 oracle 是 TS 逻辑的**人工转录**（`handleMultiRead` 调
+  `readFilePayload`，含未移植的 gitignore/office/partial 分支，无法直接跑），
+  故锁定的是**格式契约**而非端到端行为
+- **6 条测试**：格式契约 / 端到端多读 / 部分失败（失败在中间）/ 上限 5 /
+  per-file cap 均分 / 空数组回落
+- **变异反证**：M45（不接线）→ 4 红；M46（不设上限）→ 1 红；
+  M47（错误即返回）→ 1 红；M48（节头不转正斜杠）→ 1 红
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+**测试构造坑（第三次踩同类）**：M47 首版 **0 红**——`TestMultiReadPartialFailure`
+的 fixture 是「成功文件在前、失败在后」，故「错误即提前返回」与「跳过并继续」
+**产出相同结果**（提前返回仍包含前面的成功文件）。改为「成功 → **失败** → 成功」
+（失败在中间）后，M47 变红。**与第十六刀（grep L0）、第十七刀（focused-read）
+的坑同源**：验证「A 而非 B」的测试必须构造使 A 与 B 可区分的输入。
+
+#### 仍未做（更新）
+
+1. **`foldCode`**（`src/compact/code-fold.ts`，428 行）：被 focused-read 的无匹配
+   分支 + `applyFoldThenPartial` 共同依赖，一刀可解两处。
+2. **`readFilePayload` 的其余分支**：office 转换、`buildLogPreviewContent`、
+   `buildFileUiOutput`、`reject-with-range`、gitignore 过滤。
+3. **dedup 子系统**（`read-file.ts:190-255`）：两张表 + `repeatWarning` +
+   read-ref。跨 6 个模块有消费者，**最大的一块**。本刀与第十八刀都因它留了
+   未接的调用点。
+4. **`bash` 的 L0 包装**：依赖面宽（`buildModelOutput`/`meta`/`errorClass`/
+   `successFold`/`persistRawSafe`），建议单开一刀。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`

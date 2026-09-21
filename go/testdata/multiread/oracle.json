@@ -1,0 +1,176 @@
+[
+ {
+  "label": "两个正常文件",
+  "cwd": "/repo",
+  "paths": [
+   "/repo/a.ts",
+   "/repo/b.ts"
+  ],
+  "modelContents": [
+   "const a = 1",
+   "const b = 2"
+  ],
+  "errorIndexes": [],
+  "perFileCap": {
+   "maxChars": 60000,
+   "headChars": 36000,
+   "tailChars": 18000
+  },
+  "content": "── a.ts ──\nconst a = 1\n\n── b.ts ──\nconst b = 2",
+  "uiContent": "Read 2/2 files (0.0 KB total)"
+ },
+ {
+  "label": "一个错误",
+  "cwd": "/repo",
+  "paths": [
+   "/repo/a.ts",
+   "/repo/missing.ts",
+   "/repo/c.ts"
+  ],
+  "modelContents": [
+   "const a = 1",
+   "",
+   "const c = 3"
+  ],
+  "errorIndexes": [
+   1
+  ],
+  "perFileCap": {
+   "maxChars": 40000,
+   "headChars": 24000,
+   "tailChars": 12000
+  },
+  "content": "── a.ts ──\nconst a = 1\n\n── missing.ts ──\nError: simulated error\n\n── c.ts ──\nconst c = 3",
+  "uiContent": "Read 2/3 files (0.0 KB total)"
+ },
+ {
+  "label": "全部错误",
+  "cwd": "/repo",
+  "paths": [
+   "/repo/x.ts",
+   "/repo/y.ts"
+  ],
+  "modelContents": [
+   "",
+   ""
+  ],
+  "errorIndexes": [
+   0,
+   1
+  ],
+  "perFileCap": {
+   "maxChars": 60000,
+   "headChars": 36000,
+   "tailChars": 18000
+  },
+  "content": "── x.ts ──\nError: simulated error\n\n── y.ts ──\nError: simulated error",
+  "uiContent": "Read 0/2 files (0.0 KB total)"
+ },
+ {
+  "label": "单文件",
+  "cwd": "/repo",
+  "paths": [
+   "/repo/only.ts"
+  ],
+  "modelContents": [
+   "const only = 1"
+  ],
+  "errorIndexes": [],
+  "perFileCap": {
+   "maxChars": 120000,
+   "headChars": 72000,
+   "tailChars": 36000
+  },
+  "content": "── only.ts ──\nconst only = 1",
+  "uiContent": "Read 1/1 files (0.0 KB total)"
+ },
+ {
+  "label": "含空路径",
+  "cwd": "/repo",
+  "paths": [
+   "/repo/a.ts",
+   "   ",
+   "/repo/b.ts"
+  ],
+  "modelContents": [
+   "const a = 1",
+   "const b = 2"
+  ],
+  "errorIndexes": [],
+  "perFileCap": {
+   "maxChars": 40000,
+   "headChars": 24000,
+   "tailChars": 12000
+  },
+  "content": "── a.ts ──\nconst a = 1\n\n── b.ts ──\nconst b = 2",
+  "uiContent": "Read 3/3 files (0.0 KB total)"
+ },
+ {
+  "label": "七个文件",
+  "cwd": "/repo",
+  "paths": [
+   "/repo/1.ts",
+   "/repo/2.ts",
+   "/repo/3.ts",
+   "/repo/4.ts",
+   "/repo/5.ts",
+   "/repo/6.ts",
+   "/repo/7.ts"
+  ],
+  "modelContents": [
+   "c1",
+   "c2",
+   "c3",
+   "c4",
+   "c5",
+   "c6",
+   "c7"
+  ],
+  "errorIndexes": [],
+  "perFileCap": {
+   "maxChars": 24000,
+   "headChars": 14400,
+   "tailChars": 7200
+  },
+  "content": "── 1.ts ──\nc1\n\n── 2.ts ──\nc2\n\n── 3.ts ──\nc3\n\n── 4.ts ──\nc4\n\n── 5.ts ──\nc5",
+  "uiContent": "Read 5/5 files (0.0 KB total)"
+ },
+ {
+  "label": "相对路径错误",
+  "cwd": "/repo",
+  "paths": [
+   "relative/path.ts"
+  ],
+  "modelContents": [
+   ""
+  ],
+  "errorIndexes": [
+   0
+  ],
+  "perFileCap": {
+   "maxChars": 120000,
+   "headChars": 72000,
+   "tailChars": 36000
+  },
+  "content": "── relative/path.ts ──\nError: simulated error",
+  "uiContent": "Read 0/1 files (0.0 KB total)"
+ },
+ {
+  "label": "子目录文件",
+  "cwd": "/repo",
+  "paths": [
+   "/repo/src/deep/nested/a.ts"
+  ],
+  "modelContents": [
+   "const deep = 1"
+  ],
+  "errorIndexes": [],
+  "perFileCap": {
+   "maxChars": 120000,
+   "headChars": 72000,
+   "tailChars": 36000
+  },
+  "content": "── src/deep/nested/a.ts ──\nconst deep = 1",
+  "uiContent": "Read 1/1 files (0.0 KB total)"
+ }
+]
