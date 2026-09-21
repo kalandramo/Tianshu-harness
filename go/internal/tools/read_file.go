@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -220,6 +221,103 @@ func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 		content = focusedContent
 	}
 
+	// ── 读去重（对账 TS `read-file.ts:838-908`）──
+	//
+	// **三条路径**（TS 里相邻实现，本刀一并接）：
+	//   1. 重复读检测 → 在内容前注入 `── read-dedup ──` 提醒
+	//   2. read-ref 引用化（**默认开**）→ 返回紧凑引用而非全文
+	//   3. degrade gate → 引用已发过却仍被要来，降级为真实读取（防死循环）
+	//
+	// **未接的部分（明示）**：TS 还有 artifact re-serve（`:794-828`，从原读取的
+	// artifact 切片重发）——依赖 `sliceFromArtifact`，Go 侧未移植，故延后。
+	//
+	// **canonical 与 stat**：此时 `vr.Path` 已校验、`info` 已 stat（上方）。
+	var dedupKey string
+	if !p.skipReadDedup && !(focus != "" && !hasExplicitRange) { // 对账 TS 的 `!focusedRead`
+		dedupKey = readHistoryKey(t.Cwd, vr.Path, offset, limitKeyOf(p.Input), p.SessionID)
+	}
+	repeatWarning := ""
+	unchangedRepeat := false
+	if dedupKey != "" {
+		unchangedRepeat = IsUnchangedRepeatRead(vr.Path, info.ModTime().UnixMilli(),
+			info.Size(), dedupKey, offset, limitIsFalsy(p.Input), p.SessionID)
+	}
+	if unchangedRepeat {
+		if priorSame, ok := lookupReadHistory(dedupKey); ok &&
+			priorSame.mtimeMs == info.ModTime().UnixMilli() {
+			truncLabel := "完整"
+			if priorSame.truncated {
+				truncLabel = "已截断"
+			}
+			repeatWarning = fmt.Sprintf(
+				"\n── read-dedup ──\n⚠ 此文件本轮已读取过且未变更 (%d bytes, %s)。内容附在下方；后续请勿重复读取未变更的文件。\n── read-dedup ──",
+				priorSame.modelBytes, truncLabel)
+		} else if fullPrior, ok := lookupFileReadHistory(p.SessionID, vr.Path); ok &&
+			fullPrior.mtimeMs == info.ModTime().UnixMilli() {
+			repeatWarning = fmt.Sprintf(
+				"\n── read-dedup ──\n⚠ 此文件本轮已完整读取过且未变更 (%d lines, %d bytes)。内容附在下方；后续请勿重复读取未变更的文件。\n── read-dedup ──",
+				fullPrior.totalLines, fullPrior.modelBytes)
+		}
+	}
+
+	// read-ref 引用化（对账 TS `:862-908`）。**默认开**——Go 此前总是重发全文，
+	// 已是可观测的行为分歧，不只是"少个优化"。
+	if unchangedRepeat && IsReadRefEnabled() {
+		priorSame, hasSame := lookupReadHistory(dedupKey)
+		fullPrior, hasFull := lookupFileReadHistory(p.SessionID, vr.Path)
+		entryBytes, totalLines := 0, 0
+		if hasSame && priorSame.mtimeMs == info.ModTime().UnixMilli() {
+			entryBytes = priorSame.modelBytes
+		} else if hasFull {
+			entryBytes = fullPrior.modelBytes
+		}
+		if hasFull {
+			totalLines = fullPrior.totalLines
+		}
+
+		// degrade gate：引用已发过却仍被要同一未变切片 → 引用没起作用
+		// （其"回看上文"目标可能已被裁剪出请求视图），**返回真实内容**而非继续发引用。
+		if entryBytes > readRefThreshold && readRefServedAtLeastOnce(dedupKey, p.SessionID, vr.Path) {
+			repeatWarning = "" // 降级：不发引用，也不发提醒
+		} else if entryBytes > readRefThreshold {
+			relPath := tsRelative(t.Cwd, vr.Path)
+			sizeHint := strconv.Itoa(entryBytes) + " bytes"
+			if totalLines > 0 {
+				sizeHint = strconv.Itoa(totalLines) + " 行，" + sizeHint
+			}
+			ref := "[read-ref] " + relPath + " 本会话已读且未变（" + sizeHint + "）。\n" +
+				"需要具体区段：read_section(file_path=\"" + relPath + "\", section=\"L{N}-L{M}\")——直接读磁盘，不依赖上文。\n" +
+				"若上文的 tool_result 仍完整可见，回看即可；若已被压缩为占位符，用 read_section。"
+			bumpRefServed(dedupKey, p.SessionID, vr.Path)
+			accumulateReadRef(p.ReadRefStats, entryBytes)
+			// 表2 重登记——两表独立裁剪，表2 可能已淘汰该条目而表1 仍在。
+			// 不重登记会让编辑工具的"先读再改"指引死循环。
+			NoteFileObserved(vr.Path, info.ModTime().UnixMilli(), info.Size(), p.SessionID)
+			return contract.Result{Content: ref, Lossiness: lossiness}, nil
+		}
+		// 小片段（<= 阈值）→ 落到常规读取，避免为极小内容浪费一次往返。
+	}
+
+	// 记录本次读（表1a 按切片 + 表1b 仅整文件读）。对账 TS 的 recordDedup。
+	// **在 L0 之前**：modelBytes 需知道是否截断（rawBytes != modelBytes）。
+	// `skipReadDedup`：多读的子调用不记录（TS 的 handleMultiRead 直接调
+	// readFilePayload，不经工具——故不写表1a；多读自己在末尾写表1b）。
+	if !p.skipReadDedup {
+		recordReadDedup(dedupKey, vr.Path, info.ModTime().UnixMilli(), info.Size(),
+			UTF16Len(text), UTF16Len(content), len(lines), "", p.SessionID, offset, limitIsFalsy(p.Input))
+
+		// 表2：记下刚观察到的文件状态，让编辑工具的陈旧检查可用。
+		//
+		// 对账 TS `read-file.ts:955-957`（**无条件**，不只 read-ref 分支）。
+		// 此前 Go 侧只在 read-ref 与多读分支登记——单读的正常路径缺失，
+		// 导致编辑工具的"先读再改"陈旧检查拿不到本会话的读记录。
+		NoteFileObserved(vr.Path, info.ModTime().UnixMilli(), info.Size(), p.SessionID)
+	}
+
+	if repeatWarning != "" {
+		content = repeatWarning + "\n" + content
+	}
+
 	// ── L0 artifact 包装（对账 TS `read-file.ts:992-1042`）──
 	//
 	// **为什么在这一层**：read_file 在 `l0WrappedTools` 里，L1 会跳过它
@@ -257,6 +355,69 @@ func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 		Content:   content,
 		Lossiness: lossiness,
 	}, nil
+}
+
+// limitKeyOf 复刻 TS `readHistoryKey` 里的 `limit ?? 'all'` 键语义。
+//
+// **显式 `limit: 0` 的键是 `"0"`**（`0 ?? 'all'` 得 0），缺失/null 才是 `"all"`。
+// 不能用「limit <= 0 → all」近似——那会把 `{limit: 0}` 与 `{}` 并成同一条。
+func limitKeyOf(input map[string]any) string {
+	v, ok := input["limit"]
+	if !ok || v == nil {
+		return "all"
+	}
+	switch x := v.(type) {
+	case int:
+		return strconv.Itoa(x)
+	case int64:
+		return strconv.FormatInt(x, 10)
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	default:
+		return "all"
+	}
+}
+
+// limitIsFalsy 复刻 TS 的 `!limit`（**JS falsy 语义**，非 Go 的零值语义）。
+//
+// JS：`!undefined`/`!null`/`!0`/`!NaN` 为 true；**`!(-5)` 为 false**（负数 truthy）。
+// 故不能写成 `limit <= 0`（会把负数误判为 falsy）。
+func limitIsFalsy(input map[string]any) bool {
+	v, ok := input["limit"]
+	if !ok || v == nil {
+		return true
+	}
+	switch x := v.(type) {
+	case int:
+		return x == 0
+	case int64:
+		return x == 0
+	case float64:
+		return x == 0 // NaN 不可能来自 JSON 解码
+	default:
+		return true
+	}
+}
+
+// recordReadDedup 写表1a（按切片）与表1b（仅整文件读）。
+//
+// 对账 TS 的 `recordDedup` + `recordFileDedup` 两个闭包。
+//
+// **量纲**：TS 的 `rawContent.length` / `modelContent.length` 是 **UTF-16 code
+// unit** 计数（JS 字符串语义），不是字节——Go 的 `len()` 会给出字节数。
+// 中文场景下两者差 3 倍（本会话已踩过此坑）。
+func recordReadDedup(dedupKey, canonical string, mtimeMs, sizeBytes int64,
+	rawBytes, modelBytes, totalLines int, artifactID, sessionID string, offset int, limitFalsy bool) {
+
+	if dedupKey == "" || mtimeMs == 0 {
+		return
+	}
+	RecordRead(dedupKey, mtimeMs, sizeBytes, rawBytes, modelBytes, artifactID, sessionID)
+	// 表1b 只记整文件读（对账 TS `if (offset !== 1 || limit !== undefined) return`）。
+	if canonical == "" || offset != 1 || !limitFalsy {
+		return
+	}
+	RecordFileRead(canonical, mtimeMs, sizeBytes, totalLines, rawBytes, modelBytes, artifactID, sessionID)
 }
 
 // isBinary 判定内容是否为二进制。
@@ -408,6 +569,9 @@ func (t *readFileTool) executeMultiRead(ctx context.Context, p *CallParams, path
 		sub.perFileCapMax = perFileMax
 		sub.perFileCapHead = perFileHead
 		sub.perFileCapTail = perFileTail
+		// 抑制子调用的去重记录——对账 TS 的 handleMultiRead（直接调
+		// readFilePayload，不经工具，故不写表1a）。多读在末尾自己写表1b + 表2。
+		sub.skipReadDedup = true
 
 		res, err := t.Execute(ctx, &sub)
 		canonical := ""
@@ -438,10 +602,18 @@ func (t *readFileTool) executeMultiRead(ctx context.Context, p *CallParams, path
 		sections = append(sections, "── "+relPath+" ──\n"+res.Content)
 		totalBytes += len(res.Content)
 
-		// 记录文件观察（对账 TS 的 noteFileObserved）。
+		// 记录文件观察（对账 TS 的 noteFileObserved + `read-file.ts:1099-1107`
+		// 的 fileReadHistory.set）。
+		//
+		// **表1b（fileReadHistory）必须写**：多读是**整文件读**（无 offset/limit），
+		// 故它构成「已读全文件」的事实——后续的分片读/整读据此短路。此前只写了
+		// 表2，导致表1b 的「全文件包含」判定路径**永不可达**。
 		if canonical != "" {
 			if fi, serr := os.Stat(canonical); serr == nil {
-				NoteFileObserved(canonical, fi.ModTime().UnixMilli(), fi.Size(), p.SessionID)
+				mt := fi.ModTime().UnixMilli()
+				NoteFileObserved(canonical, mt, fi.Size(), p.SessionID)
+				RecordFileRead(canonical, mt, fi.Size(), len(strings.Split(res.Content, "\n")),
+					UTF16Len(res.Content), UTF16Len(res.Content), "", p.SessionID)
 			}
 		}
 	}

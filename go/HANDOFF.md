@@ -1737,6 +1737,87 @@ MODEL_MAX_LINES head/tail + 各阈值常量）。Go 侧**完全没有这一层**
    read-ref。跨 6 个模块有消费者，**最大的一块**。
 
 
+### 读去重 + read-ref（2026-09-21，回主线第二十二刀）
+
+**做了什么**：移植 TS `read-file.ts:190-255` 的读去重子系统（**表1 双表** +
+重复读判定 + read-ref 引用化 + 失效 API），并接线 `read_file`。
+
+**为什么这不是"少个优化"**：TS 的 `RIVET_READ_REF` **默认开启**
+（`!== '0'`）——同一文件未变更时重复读，TS 返回**紧凑引用**而非全文。
+Go 侧此前既无表也无引用，**总是重发全文**——这是可观测的行为分歧。
+
+**四个子机制（侦察称量后的切法）**
+
+本刀做 **①表1双表 ②IsUnchangedRepeatRead ③read-ref + degrade gate ④失效 API**。
+**延后**：
+- **artifact re-serve**（`:794-828`，从原读取的 artifact 切片重发）——依赖
+  `sliceFromArtifact`，Go 侧未移植。
+- **邻居提示**（`maybeAppendNeighborHint`，`RIVET_NEIGHBOR_HINT=1`，**默认关**）。
+
+**两张表的分工**（对账 TS 注释，这是本刀的核心不变量）
+- **表1a `readHistory`**：按切片（sessionId+cwd+path+offset+limit）。「模型实际
+  读过的内容」。**编辑删其条目**（`InvalidateReadHistory`），使 read-ref 永不能
+  对着编辑前内容声称"未变"。
+- **表1b `fileReadHistory`**：按文件（无 offset/limit）。整文件读的记录，让
+  **分片读**不必读盘即可判定"已读全文件"。
+- 两表**独立裁剪**（500 / 200，各裁 `ceil(size*0.2)`）——故 read-ref 命中后
+  必须**重登记表2**，否则编辑工具的"先读再改"指引会死循环。
+
+**本刀抓到的四个真实缺陷**（都不是"新功能"，是既有偏差）
+
+1. **单读路径不写表2**（`read_file.go`）。TS 在 `:955-957` **无条件**
+   `noteFileObserved`；Go 侧只在 read-ref 与多读分支写。后果：编辑工具的
+   陈旧检查拿不到本会话的读记录。**由新测试红暴露**。
+2. **多读分支不写表1b**（`read_file.go:596`）。TS 的 `handleMultiRead:1099-1107`
+   写了。后果：表1b 的「全文件包含」判定路径**永不可达**。
+3. **多读的子调用会顺带写表1a**——Go 复用 `t.Execute` 做子读，而 **TS 的
+   `handleMultiRead` 直接调 `readFilePayload`**（不经工具，故不写表1a）。
+   这是**跨语言实现手法差异导致的状态分歧**。修法：加 `CallParams.skipReadDedup`
+   抑制子调用记录（多读自己在末尾写表1b + 表2）。
+4. **表1b 的 `totalLines` 硬编码 0**（我首版写的）——TS 用
+   `rawContent.split('\n').length`。后果：重复读的全文件提醒会打印 "0 lines"。
+
+**两个 JS 语义坑（都靠差分对账意识抓出）**
+- **`!limit` 是 JS falsy 语义**：缺失/null/0 为真，**负数也为真**
+  （`!(-5) === false`）。用 `limit <= 0` 近似会把负数误判 → 新增
+  `limitIsFalsy` 按 JS 语义算布尔。
+- **`limit ?? 'all'` 的键语义**：显式 `limit: 0` 的键是 **`"0"`**（`0 ?? 'all'`
+  得 0），只有缺失/null 才是 `"all"`。用「limit<=0 → all」近似会把
+  `{limit:0}` 与 `{}` 并成同一条 → 新增 `limitKeyOf`。
+
+**量纲**：TS 的 `rawContent.length`/`modelContent.length` 是 **UTF-16 code
+unit**（JS 字符串语义），不是字节——Go 用 `UTF16Len`（本会话已多次踩此坑）。
+
+**验证**
+- **16 条测试**（`readdedup_test.go`）：引用命中 / degrade gate / env 关闭 /
+  小文件跳过 / 变更后不判定 / 编辑失效 / 会话隔离 / 会话级清空（**并断言表2
+  存活**）/ 表1b 写与不写两条 / **表1b 全文件包含路径** / `!limit` 语义 /
+  `limit ?? 'all'` 键语义 / telemetry per-session 优先 / 裁剪 20%
+- **变异反证**：M55（不接线 read-ref）→2 红；M56（degrade gate 失效）→1 红；
+  M57（表1b 不写）→**首轮 0 红 → 补测后 1 红**；M58（全文件包含路径失效）→
+  **首轮 0 红 → 补测 + 修 skipReadDedup 后 1 红**
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+**M57/M58 首轮 0 红是本次最有价值的发现**——它们暴露的不只是测试缺口，
+还有**三处实现分歧**（缺陷 1/2/3）。教训：变异反证 0 红时，先问"是测试没覆盖，
+还是**被测行为本身不可达**"——后者往往指向真实缺陷。
+
+#### 仍未做（更新）
+
+1. **artifact re-serve**（`:794-828`）：从原读取的 artifact 切片重发。
+   依赖 `sliceFromArtifact`（未移植）。**注意**：`readHistoryEntry.artifactID`
+   字段已留，接线时需在 L0 落盘后回填（当前传空串）。
+2. **邻居提示**（`maybeAppendNeighborHint`）：`RIVET_NEIGHBOR_HINT=1`，默认关。
+3. **`buildModelOutput` 层**（`output-store.ts`）：bash 的模型可见输出格式化。
+4. **`readFilePayload` 其余分支**：office 转换 / `buildLogPreviewContent` /
+   `buildFileUiOutput` / `reject-with-range` / gitignore 过滤 /
+   `applyFoldThenPartial`（foldCode 已就绪）。
+5. **bash 的超时/错误路径 L0**（第二十一刀有意未接）。
+6. **`trimLastKnownLocked` 的裁剪语义分歧**（`filestate.go`）：Go 裁
+   `size - max`（501→500），TS 裁 `ceil(size*0.2)`（501→400）。**不等价**，
+   本刀未动（属既有偏差，与读去重无关）——**记此备忘**。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`

@@ -58,6 +58,22 @@ type CallParams struct {
 	// SessionID 用于隔离按会话的状态（读历史、去重跟踪），
 	// 防同 cwd 的并发会话交叉污染。
 	SessionID string
+	// ReadRefStats 是 per-session 的 read-ref telemetry 累加器（read_file 用）。
+	//
+	// 对账 TS 的 `params.readRefStats`（`tool-pipeline.ts` 注入）。
+	// nil = 退回进程级兜底（对账 TS 的模块级 `readRefSavedBytes`）。
+	//
+	// **依赖方向**：`tools` 包内定义（ReadRefStats 在 readdedup.go），无跨包环。
+	ReadRefStats *ReadRefStats
+	// skipReadDedup 抑制 read_file 的**读去重记录**（表1a/表1b/表2）。
+	//
+	// **为什么需要**：多读分支复用 `t.Execute` 做子读，而 TS 的 `handleMultiRead`
+	// 是**直接调 `readFilePayload`**（不走工具）——故 TS 的多读**只写表1b**，
+	// 不写表1a。若子调用照常记录，表1a 会多出 TS 没有的条目，且使表1b 的
+	// 「全文件包含」判定路径**永不可达**（后续单读总先命中同键的表1a）。
+	//
+	// 多读分支自己在末尾写表1b + 表2（对账 TS `:1099-1107`）。
+	skipReadDedup bool
 	// SessionTurnCount 是当前会话轮次（启用渐进式超时策略）。
 	SessionTurnCount int
 	// OwnedFiles 是当前任务拥有的文件（用于作用域写入）。
