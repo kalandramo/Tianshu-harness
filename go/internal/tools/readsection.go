@@ -96,16 +96,7 @@ func parseCharRange(s string) (start, end int, ok bool) {
 //     越界提示（**不是空串**）。
 //   - 字符范围：`content.slice(min(start,len), min(end,len))`。
 //   - 都不匹配：无效格式提示。
-func extractSection(rawContent, sectionID string, sections []artifact.ArtifactSection) string {
-	// **位置格式优先**（顺序有语义！）。
-	//
-	// 首版把命名分支放在最前，并注释「顺序无歧义（`L1-L2` 不会是合法片段名）」
-	// ——**该假设是错的**：artifact 的 sections 来自 summarize 产出，异常数据
-	// 下完全可能出现名为 `L1-L2` 的片段，那时它会**劫持**位置格式的请求
-	// （测试 `TestReadSectionNamedVsPositionPrecedence` 抓到）。
-	//
-	// 位置格式是**无歧义的语法**（`L数字-L数字` / `c数字-c数字`），
-	// 命名是**任意字符串**——故语法优先，命名只作兜底。
+func extractSection(rawContent, sectionID string) string {
 	if st, en, ok := parseLineRange(sectionID); ok {
 		lines := strings.Split(rawContent, "\n")
 		startIdx := st - 1
@@ -133,130 +124,7 @@ func extractSection(rawContent, sectionID string, sections []artifact.ArtifactSe
 		}
 		return rawContent[start:end]
 	}
-	// 命名片段兜底（位置格式优先——见函数头的顺序说明）。
-	if named := extractNamedSection(rawContent, sections, sectionID); named != nil {
-		return *named
-	}
-	return fmt.Sprintf("[无效的区段格式：%s。行范围用 \"L100-L200\"，字符范围用 \"c0-c5000\"%s]",
-		sectionID, namedHint(sections))
-}
-
-// availableSectionNames 列出可用的命名片段（供错误文案的可发现性）。
-func availableSectionNames(sections []artifact.ArtifactSection) string {
-	if len(sections) == 0 {
-		return "（该 artifact 无命名片段——请用行范围 L100-L200 或字符范围 c0-c5000）"
-	}
-	names := make([]string, 0, len(sections))
-	for _, s := range sections {
-		names = append(names, s.Name)
-		if len(names) >= 12 {
-			break
-		}
-	}
-	out := strings.Join(names, ", ")
-	if len(sections) > 12 {
-		out += fmt.Sprintf(" (+%d)", len(sections)-12)
-	}
-	return out
-}
-
-// isPlausibleSectionName 粗筛「形似命名片段」的区段串。
-//
-// 对账 summarize 产出的名字形态：`imports` / `export:foo` /
-// `function:bar` / `heading:Some Title` / `key:name` / `msg0 turn1 user`。
-//
-// **为什么粗筛而非精确**：精确判定需要 artifact 的 `Sections`，而前置校验
-// 发生在 `store.Get` 之前。此处只排除明显是位置格式残骸的输入
-// （如 `L100-` 这种半截），避免把拼错的位置格式当成命名片段静默放过。
-func isPlausibleSectionName(s string) bool {
-	if s == "" {
-		return false
-	}
-	// 纯 ASCII 可见字符 + 空格/冒号/下划线/连字符/点（片段名的字符集）。
-	for _, r := range s {
-		ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == ':' || r == '_' || r == '-' ||
-			r == '.' || r == ' ' || r == '/' || r == '#'
-		if !ok {
-			return false
-		}
-	}
-	// 排除「以 L 或 c 开头且含数字-数字」的位置格式残骸（如 `L100-`）。
-	if len(s) > 0 && (s[0] == 'L' || s[0] == 'l' || s[0] == 'c' || s[0] == 'C') {
-		hasDigit := false
-		hasDash := false
-		for _, r := range s {
-			if r >= '0' && r <= '9' {
-				hasDigit = true
-			}
-			if r == '-' {
-				hasDash = true
-			}
-		}
-		if hasDigit && hasDash {
-			return false // 形如 L100- 的残骸，不是命名片段
-		}
-	}
-	return true
-}
-
-// namedHint 在有命名片段可用时补一句提示（提升可发现性）。
-//
-// **为什么需要**：命名片段是 artifact 的可寻址结构，但模型看不到它——
-// 除非我们在错误文案里列出来。没有这个提示，模型只会反复试位置格式。
-func namedHint(sections []artifact.ArtifactSection) string {
-	if len(sections) == 0 {
-		return ""
-	}
-	names := make([]string, 0, len(sections))
-	for _, s := range sections {
-		names = append(names, s.Name)
-		if len(names) >= 8 {
-			break
-		}
-	}
-	hint := "，或命名片段：" + strings.Join(names, ", ")
-	if len(sections) > 8 {
-		hint += fmt.Sprintf(" (+%d)", len(sections)-8)
-	}
-	return hint
-}
-
-// extractNamedSection 按**命名片段**取内容（消费 artifact 的 `Sections`）。
-//
-// 这是让 `Sections` 从「写进 JSON 的死数据」变成「活功能」的那一环——
-// 在此之前 Go 侧没有任何读取方（见 HANDOFF 的称量记录）。
-//
-// 语义：
-//   - 按 `Name` **精确匹配**（对账 summarize 产出的名字：`imports` /
-//     `export:foo` / `function:bar` / `heading:Title` / `key:name`）
-//   - 命中 → 用其 `LineStart`/`LineEnd` 切原文（1-based 闭区间）
-//   - 未命中 → 返回 nil（调用方回退到位置解析）
-func extractNamedSection(rawContent string, sections []artifact.ArtifactSection, name string) *string {
-	for _, s := range sections {
-		if s.Name != name {
-			continue
-		}
-		lines := strings.Split(rawContent, "\n")
-		start := s.LineStart
-		if start < 1 {
-			start = 1
-		}
-		end := s.LineEnd
-		if end > len(lines) {
-			end = len(lines)
-		}
-		if start > len(lines) {
-			empty := ""
-			return &empty
-		}
-		if end < start {
-			end = start
-		}
-		out := strings.Join(lines[start-1:end], "\n")
-		return &out
-	}
-	return nil
+	return fmt.Sprintf("[无效的区段格式：%s。行范围用 \"L100-L200\"，字符范围用 \"c0-c5000\"]", sectionID)
 }
 
 // readSectionTool 实现 read_section。
@@ -319,18 +187,9 @@ func (t *readSectionTool) Execute(_ context.Context, p *CallParams) (contract.Re
 		return contract.Result{Content: "错误：需要提供 section", IsError: true}, nil
 	}
 
-	// 区段格式前置校验。
-	//
-	// **两类格式**：位置（`L100-L200` / `c0-c5000`）与**命名片段**
-	// （`imports` / `export:foo`，取自 artifact 的 `Sections`）。
-	//
-	// 命名的**存在性**无法在此判定——它需要 artifact 就位（见下方
-	// artifactId 分支）。故此处只做「位置格式合法 或 形似标识符」的粗筛，
-	// 精确判定留给拿到 `Sections` 之后。
 	_, _, isLine := parseLineRange(section)
 	_, _, isChar := parseCharRange(section)
-	looksNamed := !isLine && !isChar && isPlausibleSectionName(section)
-	if !isLine && !isChar && !looksNamed {
+	if !isLine && !isChar {
 		return contract.Result{
 			Content: fmt.Sprintf("错误：无效的区段格式：%s。行范围用 \"L100-L200\"，字符范围用 \"c0-c5000\"。", section),
 			IsError: true,
@@ -442,24 +301,7 @@ func (t *readSectionTool) Execute(_ context.Context, p *CallParams) (contract.Re
 		}, nil
 	}
 
-	// 命名片段的**精确判定**：到这里 artifact 已就位，可以查 `Sections`。
-	//
-	// 位置格式（L/c）不走这里——它们由 extractSection 的解析链处理。
-	// 命名片段未命中时**报错并列出可用片段**（可发现性：模型看不到
-	// `Sections`，不列出来就只能反复试位置格式）。
-	if _, _, isLine := parseLineRange(section); !isLine {
-		if _, _, isChar := parseCharRange(section); !isChar {
-			if extractNamedSection(raw, a.Sections, section) == nil {
-				return contract.Result{
-					Content: fmt.Sprintf("错误：artifact %s 没有命名片段 %q。可用片段：%s",
-						artifactId, section, availableSectionNames(a.Sections)),
-					IsError: true,
-				}, nil
-			}
-		}
-	}
-
-	sectionContent := extractSection(raw, section, a.Sections)
+	sectionContent := extractSection(raw, section)
 	maxChars := readSectionMaxChars(p.ContextWindow)
 	truncated := sectionContent
 	if len(sectionContent) > maxChars {
@@ -517,7 +359,7 @@ func (t *readSectionTool) readFromDisk(filePath, section string) (contract.Resul
 			IsError: true,
 		}, nil
 	}
-	sectionContent := extractSection(string(raw), section, nil)
+	sectionContent := extractSection(string(raw), section)
 
 	// 5) 按模型读上限截断（对账 TS 的 `Math.max(cap.maxChars, LEGACY...)`）。
 	maxChars := readSectionMaxChars(t.ContextWindow)
