@@ -2126,6 +2126,81 @@ through to normal foreground execution」）。Go 侧**无该设施**（`JobRegi
    实际均已存在且有测试；「下一步」停在第 28 刀而 HANDOFF 已到第 26 刀回主线）。
 
 
+### persistRawOutput + runtime read grant（2026-09-21，回主线第二十七刀）
+
+**做了什么**：移植 TS `output-store.ts` 的 `persistRawOutput` /
+`cleanStaleRawOutputs` / `rawOutputDir` / `safeRawFileName`（`rawstore.go`），
+**并配套实现 runtime read grant**——接线 `bash.go`。
+
+**为什么需要**：bash 输出被截断后，模型会尝试用 `sed`/`head`/`tee` 变体重跑同一
+命令去"看剩下的"——这是 **doom-loop 的根因**（TS 注释引 incident 会话 43443098）。
+落盘 + 在截断 footer 里给恢复路径，让模型**读文件**而非重跑命令。
+
+**本刀的核心称量：不能单独移植 `persistRawOutput`**
+
+`rawOutputDir()` 在**项目目录之外**（`os.TempDir()/rivet-raw`），而 `read_file`
+经 `pathsafe.Validate` 拦越界路径——**除非该目录被显式 grant**。
+
+- 只落盘不 grant → 模型拿到 `read full output: read_file <path>` 提示却**读不到**
+  → **提示变成误导**（比不提示更糟，会诱发重跑命令 = 正反馈 doom-loop）。
+- TS 侧同一约束写在 `rawOutputDir()` 的注释里（`applyRivetRuntimeReadGrants`
+  必须授予恰好这个目录，共享 getter 防两侧漂移）。
+
+**实测证据**（本刀的两条端到端测试）：
+- `TestBashRawPathReadableViaGrant`——注入 grant 后 `read_file` **能**读回 raw 文件
+- `TestBashRawPathNotReadableWithoutGrant`——**不注入则被越界拦截**（报
+  `outside project directory`）。这条是**反证**：若读得到，说明 grant 检查失效。
+
+**移植的内容**
+
+| 函数 | 对账 TS | 要点 |
+|------|--------|------|
+| `RawOutputDir()` | `rawOutputDir` | `os.TempDir()/rivet-raw` |
+| `PersistRawOutput(id, raw)` | `persistRawOutput` | 落盘失败返回**空串**（对账 `persistRawSafe` 的 try/catch → undefined） |
+| `CleanStaleRawOutputs(now)` | `cleanStaleRawOutputs` | 删超 1 小时的；目录不存在静默返回；**每 10 次落盘触发一次**（异步） |
+| `safeRawFileName(id)` | `safeRawFileName` | sha256 前 **24 hex** + `.raw`；空 id 用时间戳+计数器替代 `randomUUID` |
+| `GrantRuntimeReadPaths` | `applyRivetRuntimeReadGrants` | **只授一个目录**，幂等 |
+| `StaticGrantChecker` | （Go 侧新增） | 实现 `pathsafe.GrantChecker`，**按段边界**匹配 |
+
+**接线的条件对账 TS**：**只在「不包装 artifact」时落盘**——artifact 模式由
+`ArtifactStore` 负责持久化（TS 注释："Skip persistRawOutput in artifact mode"）。
+故先算 `willWrapArtifact` 决定，**L0 段复用同一变量**（避免两处阈值判断漂移）。
+
+**一个 fail-open 安全洞的防护**：`StaticGrantChecker` 的路径匹配**不能**用朴素
+`strings.HasPrefix`——`/tmp/rivet-raw-evil` 会匹配 `/tmp/rivet-raw`。改用
+`filepath.Rel` + `..` 判定（按段边界）。变异 M76（换成朴素前缀）→ 1 红。
+
+**验证**
+- **14 条测试**：目录位置 / 文件名形态（hex + 长度 + 幂等 + 空 id）/
+  落盘内容逐字节 / 落盘失败降级 / 陈旧清理（含目录不存在）/ grant 幂等 /
+  **段边界（4 反例）** / **端到端落盘+提示** / **端到端 grant 可读** /
+  **端到端无 grant 不可读（反证）**
+- **变异反证**：M76（段边界失效）→1 红；M77（不落盘）→1 红；
+  M78（不清理陈旧）→1 红
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+**两个测试自身的坑（记录）**
+1. **`os.TempDir()` 在进程启动时缓存**——测试内 `t.Setenv("TMPDIR", ...)` **改不动**
+   它（实测：改了仍写入原目录）。故「落盘失败」与「目录不存在」两个测试都不能靠
+   改 `TMPDIR` 注入，改用「目标路径被目录占据」（EISDIR）与「先删目录」。
+2. **`Grants` 不是 `CallParams` 字段**——它是 `ReadFile(cwd, grants)` 的**构造
+   参数**。首版测试写了 `rp.Grants = checker`（编译失败），改为传给构造器。
+
+#### 仍未做（更新）
+
+1. **`job` 子系统**（`sessionJobRegistry` + `job` 工具）：`run_in_background`
+   的恢复条件（见第二十五刀）。
+2. **`UIContent` 单读分支接线**：**前置条件**是 Go 移植 TUI/server 工具卡管线。
+3. **artifact re-serve**（`read-file.ts:794-828`）：依赖 `sliceFromArtifact`。
+4. **邻居提示**（`RIVET_NEIGHBOR_HINT=1`，默认关）。
+5. **`preferFoldOnOverflow`**（TS `:695-704`）：Go 无 `readCapOverride` 概念。
+6. **`trimLastKnownLocked` 的裁剪语义分歧**（`filestate.go`）：Go 裁 `size - max`
+   （501→500），TS 裁 `ceil(size*0.2)`（501→400）。**不等价**（小刀）。
+7. **bash 的超时/错误路径 L0**。
+8. **`read_file` / `run_tests` / `diff` 的 `persistRawOutput` 接线**：TS 侧这四个
+   工具都调它（bash 已接）。`read_file.go` 已有 `rawPath` 概念但未落盘。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`

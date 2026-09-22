@@ -275,14 +275,27 @@ func (t *bashTool) Execute(ctx context.Context, p *CallParams) (contract.Result,
 	// **本刀修的真实偏差**：第二十一刀我实现 successFold 时折叠成**单行提示**，
 	// 而 TS 保留末尾 20 行——单行提示让模型失去"最后发生了什么"的观测。
 	//
-	// **未接的部分（明示）**：`persistRawOutput`（→ `meta.rawPath` 的恢复提示）
-	// 未移植，故 RawPath 留空。
+	// **恢复提示的落盘**（对账 TS `bash.ts:748-751`）。
+	//
+	// **条件对账 TS**：只在**不包装 artifact** 时落盘——artifact 模式由
+	// `ArtifactStore` 负责持久化，再落一份是重复（TS 注释：
+	// "Skip persistRawOutput in artifact mode — ArtifactStore owns raw persistence"）。
+	// 故此处先算阈值，包装与否决定落盘。
 	rawOutput := result.Content
-	result.Content = BuildModelOutput(rawOutput, ToolOutputMeta{
+	artifactThreshold := artifact.ToolArtifactThreshold("bash", p.ContextWindow)
+	willWrapArtifact := p.ArtifactStore != nil && UTF16Len(rawOutput) >= artifactThreshold
+
+	meta := ToolOutputMeta{
 		Command:    command,
 		ExitCode:   exitCode,
 		DurationMs: duration.Milliseconds(),
-	}, ApplyCommandFilter)
+	}
+	if !willWrapArtifact {
+		// 落盘失败返回空串 → recovery 提示缺席（不误导）。
+		meta.RawPath = PersistRawOutput(p.ToolUseID, rawOutput)
+	}
+	result.Content = BuildModelOutput(rawOutput, meta, ApplyCommandFilter)
+	result.RawPath = meta.RawPath
 
 	// ── L0 artifact 包装（对账 TS `bash.ts:744-800`）──
 	//
@@ -292,22 +305,21 @@ func (t *bashTool) Execute(ctx context.Context, p *CallParams) (contract.Result,
 	// **落盘的是 `rawOutput`（整形前）而非 `result.Content`（整形后）**——
 	// 对账 TS：artifact 存 `filtered`（过滤后的原文），模型看 `buildModelOutput`
 	// 的整形结果。若存整形版，模型经 read_section 召回时会拿到已经截断的内容。
-	if p.ArtifactStore != nil {
-		threshold := artifact.ToolArtifactThreshold("bash", p.ContextWindow)
-		if UTF16Len(rawOutput) >= threshold {
-			res := artifact.SummarizeBashOutput(rawOutput, command, exitCode)
-			id, err := p.ArtifactStore.Save(artifact.SaveInput{
-				Tool: "bash", Target: command,
-				RawContent: rawOutput, // **原文**（整形前）
-				Summary:    res.Summary,
-				Sections:   res.Sections,
-			})
-			if err == nil {
-				result.Content = result.Content + "\n\nUse read_section(artifactId=\"" + id +
-					"\", section=\"L1-L500\") to load full output if the head/tail above is not enough.\n[artifact:" + id + "]"
-			}
-			// Save 失败 → 优雅降级（保持原 content）。
+	//
+	// **阈值复用 `willWrapArtifact`**（上方已算）——避免两处独立判断漂移。
+	if willWrapArtifact {
+		res := artifact.SummarizeBashOutput(rawOutput, command, exitCode)
+		id, err := p.ArtifactStore.Save(artifact.SaveInput{
+			Tool: "bash", Target: command,
+			RawContent: rawOutput, // **原文**（整形前）
+			Summary:    res.Summary,
+			Sections:   res.Sections,
+		})
+		if err == nil {
+			result.Content = result.Content + "\n\nUse read_section(artifactId=\"" + id +
+				"\", section=\"L1-L500\") to load full output if the head/tail above is not enough.\n[artifact:" + id + "]"
 		}
+		// Save 失败 → 优雅降级（保持原 content）。
 	}
 
 	return result, nil
