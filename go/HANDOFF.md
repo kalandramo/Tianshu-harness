@@ -3863,6 +3863,9 @@ Go 侧工具数 17（TS 侧 38）。剩余候选：
 
 ## 建议的第一刀
 
+**（2026-09-22 修正：本节原建议「接 `internal/session`」——该断言已过期，
+session 早已落地并接线。保留原文以示修正轨迹，新建议见本节末尾。）**
+
 **接 `internal/session`（最小会话状态容器）**。
 
 理由：它同时解锁两处——
@@ -3873,6 +3876,38 @@ Go 侧工具数 17（TS 侧 38）。剩余候选：
 且它的产出可独立验证（JSONL 落盘格式与 TS 版兼容）。
 
 **若优先补工具**：`hash_edit` 工具本体（地基已就绪，直接接）。
+
+### 修正：session 已落地（2026-09-22 核实）
+
+上述建议**已过期**。实测：
+
+- `go/internal/session/` 有 **10 个生产文件、2,641 行**（state / persist /
+  transcript / metadata / tasklist / serialize / oaimessage / listener /
+  batchwriter / legacy）
+- **28 个包外消费者**，`internal/agent/loop.go` 直接使用
+  （`session.New` / `NewPersist` / `NewPersistListener` / `OnAppend` /
+  `replaceHistory`）
+
+即「最小会话状态容器」不仅已建，还已接线进主循环。**不要再按本节原建议
+开工**。
+
+### 修正后的推荐（2026-09-22）
+
+Go 侧 17 个工具（TS 侧 full preset 48 个）。缺口按**依赖面从浅到深**排序：
+
+| 候选 | 依赖面 | 备注 |
+|---|---|---|
+| `related_tests` | **浅** | 纯文件名 glob 推导，无新子系统 |
+| `leave_mark` | **浅** | 写标记文件，`filediff`/`pathsafe` 已具备 |
+| `ask_user_question` | **浅** | 只需交互回调接口 |
+| `skill` | 中 | 需 `.rivet/skills/*.md` 加载 + 清单解析 |
+| `undo` | 中 | 需检查点子系统（Go 侧 `checkpoint.go` 已有部分） |
+| `job` / `monitor` | **深** | 后台进程管理子系统（`proctree.go` 已有部分地基） |
+| `ast_grep` / `ast_edit` | **深** | 需 tree-sitter 绑定（Go 侧无） |
+| `web_*` / `browser_debug` / `computer_use` | **超出内核** | 网络 + 桌面自动化 |
+
+**推荐下一刀**：`related_tests` + `leave_mark`（两个都是浅依赖、可一轮做完、
+产出可独立验证）。
 
 （以下为历史记录）
 static 层（BASE_PROMPT + calibration）已完成并逐字节对账通过——
