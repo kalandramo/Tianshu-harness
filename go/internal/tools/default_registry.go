@@ -46,6 +46,11 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// ── 任务 ──
 	r.Register(Todo())
 
+	// ── 计划 ──
+	// plan：统一计划生命周期（submit / close）。enter_mode/exit_mode 依赖
+	// plan mode 状态机（Go 侧未移植）——工具内**诚实报错**而非假装成功。
+	r.Register(Plan())
+
 	// ── 装配注入 ──
 	for _, t := range opts.Extra {
 		r.Register(t)

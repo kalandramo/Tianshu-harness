@@ -3441,6 +3441,126 @@ Go agent 现在跑的是真正的认知资产（31,355 字节），不是占位�
 > 加 `grep -v '_test\.go:'`（锚定行内路径结尾）。**零命中 ≠ 不存在**——
 > 下负向结论前换一种检索方式交叉验证（本次用单文件 grep 立刻证伪）。
 
+## 第三十一至三十二刀：移植 `plan` 工具（2026-09-22）
+
+**目标**：把 TS 的统一计划生命周期工具（`src/tools/plan.ts`，771 行）移植到
+Go，分三波推进。
+
+### 落地
+
+| 波次 | 内容 | 提交 |
+|---|---|---|
+| Wave 1 | 纯函数地基：`slug.go`（UTF-16 截断）、`markers.go`、`close.go`（勾选 + 闭环 upsert）、`tier.go`、`tools/pointerguard.go` | `203bfc5` |
+| Wave 2 | 文件系统层：`store.go`、`anchors.go`（**lookbehind 手工替代**）、`clock.go`、`filetime_{windows,other}.go` | `9a4a9da` |
+| Wave 3 | 工具接线：`tools/plan.go`（四 action）+ 注册进 `default_registry.go` | 见本轮 |
+
+新建包 `internal/plan`（9 个源文件 + 3 个测试文件）；新增
+`testdata/plan/gen-oracle.ts`（tsx 真跑 TS 产黄金数据）+ `oracle.json`。
+
+### 三个必须记住的技术事实（全部实测确认）
+
+**1. RE2 既不支持 lookahead 也不支持 lookbehind。**
+
+计划里我曾写「`(?!...)` RE2 支持」——**错的**。实测：
+
+```
+a(?!b)   → invalid or unsupported Perl syntax: `(?!`
+(?<!x)a  → invalid named capture: `(?<!x)a`
+```
+
+`plan-fact-anchors.ts:77` 的正则前后各有一个断言，故**两者都改为手工字节
+边界检查**（`findAnchorTokens` 用 `FindAllStringSubmatchIndex` 拿偏移后判定
+前后字节落在哪个字符类）。**这是本刀最大的风险点**，用 38 例 oracle 对账
+（URL 内嵌 / 粘连 token / 枚举粘连 / 后边界 `\w` / 最长扩展名优先）。
+
+**2. JS 的 `String.length` / `slice` 是 UTF-16 code unit。**
+
+`slugify` 的 `.slice(0, 80)` 按 UTF-16 切——emoji（代理对）计 2。Go 的
+`len()` 是字节、`[]rune` 是码点，**两者都不对**。已实现 `sliceByUTF16`
+（切在代理对中间产 U+FFFD，与 JS 一致）。oracle 含 `'🎉'.repeat(50)`、
+`'A'.repeat(79)+'🎉'` 等边界用例。
+
+**3. `parsePlanStatus` 是「固定优先级」不是「取第一个匹配」。**
+
+TS `plan-store.ts:422-427` 的语义是 EXECUTED > APPROVED > REJECTED，
+返回**小写**状态名，无标记返回 **`submitted`**（不是空串）。
+
+**我首版实现三处全错**（取第一个匹配 / 大写 / 空串兜底），由
+`TestApproveRejectPlan` 失败暴露——`insertPlanStatusMarker` 不幂等（照抄 TS），
+approve 后 reject 会在文件头叠加两个标记，两种实现给出不同答案。
+已用 tsx 探针实测 TS 行为（返回 `'approved'`）确认，并加 8 例 oracle 永久锁定。
+
+### 已核实的行为差异（明示，非等价）
+
+| 项 | TS | Go | 处置 |
+|---|---|---|---|
+| `memoryLimitBytes`（属前刀） | V8 堆上限 | `RIVET_MEMORY_LIMIT_BYTES` + 1GiB 回退 | 保留语义 |
+| `PlanDocument.createdAt` | `stat().birthtime` | Windows 用 `CreationTime`（实测可用），非 Windows 回退 `ModTime` | 记明偏差 |
+| `enter_mode` / `exit_mode` | 切 plan mode 写锁 | **诚实报错**（Go 无写工具禁用机制） | 见下 |
+| `onPlanSubmitted` / `assessDelivery` | TUI 审批卡 + 证据门禁 | **不移植**（Go 无渲染层 / 无门禁接口） | 记明降低 |
+| 产出模型留痕 | `params.sessionModel` | `CallParams` **无此字段** | 不写留痕，待字段透传 |
+
+**`enter_mode`/`exit_mode` 的决策依据**（计划期待验证假设 1，已实测解决）：
+`grep -r 'EnterPlanMode|WriteDisabled|PlanModeActive' internal/ cmd/` **零命中**
+——Go 侧无任何写工具禁用机制。只搬 action 外壳会产出「声称进入计划模式、
+实际没禁用写工具」的**静默失效**，故明确报错并给替代路径（对齐
+`run_in_background` 的诚实声明先例）。
+
+### 一处实测发现的「TS 侧不可达路径」
+
+`plan.ts` 的指针幂等化解在 plan 场景下**不可达**——tsx 探针实测：
+
+```
+plan.ts 调用形态（绝对 filePath + 相对指针路径）→ null（不可达）
+两者都绝对                                  → resolved
+```
+
+原因：plan 折叠指针记**项目相对路径**，而 `resolveIdempotentPointer` 拿
+`join(cwd, relPath)` 的**绝对路径**比——永不相等。Go 侧保持同行为
+（硬错误文案已含「先 read_file 再重提」的恢复路径）。
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./... -count=1` **23 包 ok / 0 FAIL**（连跑 2 次）
+- 差分 oracle **162 例**逐字节一致（slugify 21 / stripStatus 10 /
+  insertStatus 14 / insertModel 8 / parseModel 4 / isDraft 7 /
+  parseSelection 24 / close 16 / tier 15 / pointer 14 / parseStatus 8 /
+  extractAnchors 38 / extractAnchorsMulti 3 / formatDrifts 3）
+- 变异反证 **M89-M99**（11 个）全部有判别力
+
+### 变异反证总表（本刀）
+
+| 变异 | 内容 | 结果 |
+|---|---|---|
+| M89 | slugify 截断改字节 | 1 红 |
+| M90 | checkbox 正则漏大写 `X` | 首轮 0 红 → 补 oracle 后 1 红 |
+| M91 | 任务块标题漏 `Wave`/`任务` | 1 红 |
+| M92 | Model 标记幂等失效 | 1 红 |
+| M93 | 指针标记短语检查移除 | 2 红 |
+| M94 | 移除锚点前边界 | 3 红 |
+| M95 | 移除锚点后边界 | 首轮 0 红 → 补 oracle 后 1 红 |
+| M96 | frontmatter 不剥旧 | 2 红 |
+| M97 | `ParsePlanStatus` 改回取首个匹配 | 1 红 |
+| M98 | close 路径白名单放宽 | 1 红 |
+| M99 | enter/exit_mode 假装成功 | 1 红 |
+
+**M90/M95 首轮 0 红是同一个教训**：0 红先探针确认「变异是否真的改变了可观测
+行为」，而不是直接判定「测试无判别力」。M95 探针实测确认后边界**确实可观测**
+（`src/a.tsx5` 长度降序挡不住，只有 `(?!\w)` 能挡），补用例后转红。
+
+### 下一步
+
+`plan` 工具已可用（submit / close 完整；enter/exit_mode 诚实报错）。
+剩余可选：
+
+1. **补 `enter_mode`/`exit_mode`**——需先移植 plan mode 写锁状态机
+   （`CallParams` 加字段 + 工具执行前的拦截）。这是一个独立子系统。
+2. **产出模型留痕**——需把会话模型信息透传到 `CallParams.SessionModel`。
+3. **`close` 的证据门禁**（`assessDelivery`）——需先有交付门禁接口；
+   当前 close 走 legacy 信任声明路径，是**安全性的降低**。
+4. 按原优先级继续补其他工具（`git` / `repo_map` / `job` / `diff` 等）。
+
 ## 建议的第一刀
 
 **接 `internal/session`（最小会话状态容器）**。
