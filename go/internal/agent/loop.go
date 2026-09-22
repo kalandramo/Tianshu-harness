@@ -85,6 +85,24 @@ type Loop struct {
 	// nil 时跳过状态更新（最小可跑路径）。
 	State *session.Manager
 
+	// turnBudget 是单轮工具结果的 token 预算（跨轮复用，每轮 reset）。
+	//
+	// 对账 TS `loop.ts:543` 的 `turnBudget: TurnBudget = createTurnBudget(0)`
+	// 与 `turn-orchestrator.ts:593` 的**每轮重建**：
+	// `turnBudget = createTurnBudget(rssRatio)`。
+	//
+	// **为什么每轮重建而非 reset**：档位随内存压力变化——压力升高时预算应
+	// 收紧（50k → 25k → 0）。重建才能换档；reset 只清用量。
+	//
+	// nil 时跳过预算（最小可跑路径，对账 TS 的"无快照"分支）。
+	turnBudget *TurnBudget
+
+	// RSSRatioFn 覆盖内存压力比来源（测试注入用）。
+	//
+	// nil = 用 `CurrentRSSRatio()`（真实探针）。对账 TS 的
+	// `options.memoryUsage` 注入点（resource-sensor.ts:31）。
+	RSSRatioFn func() float64
+
 	// EfficacyStore 是跨会话效能信息素（JSONL 持久化）。
 	//
 	// nil 时不做先验播种与写回——增强而非必需。
@@ -227,6 +245,20 @@ func New(cfg Config, cl *client.Client, reg *tools.Registry) *Loop {
 			Set("content", cfg.SystemPrompt))
 	}
 	return l
+}
+
+// rssRatio 返回当前内存压力比（供 `CreateTurnBudget` 选档）。
+//
+// 对账 TS `turn-orchestrator.ts:590` 的 `snap.memory.rssBytes /
+// snap.memory.memoryLimitBytes`。**Go 侧无 V8 堆上限**——见
+// `resourcesensor.go` 的差异说明。
+//
+// `RSSRatioFn` 非 nil 时用它（测试注入，对账 TS 的 `options.memoryUsage`）。
+func (l *Loop) rssRatio() float64 {
+	if l.RSSRatioFn != nil {
+		return l.RSSRatioFn()
+	}
+	return CurrentRSSRatio()
 }
 
 // appendAndPersist 追加消息到历史并镜像到持久化存储。
@@ -424,6 +456,15 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 			return err
 		}
 
+		// ── 每轮重建预算（对账 TS `turn-orchestrator.ts:593`）──
+		//
+		// **重建而非 reset**：档位随内存压力变化（50k → 25k → 0），
+		// reset 只清用量、换不了档。
+		//
+		// `rssRatio` 无快照时为 0（对账 TS 的 `snap ? ... : 0`）——此处总是
+		// 有值（真实探针或注入），故直接取。
+		l.turnBudget = CreateTurnBudget(l.rssRatio())
+
 		// ── preTurn hook ──
 		//
 		// 在调模型**之前**——hook 可注入消息 / 调整感知。
@@ -473,6 +514,21 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 			})
 
 			result := l.executeTool(ctx, tc)
+
+			// ── 单轮预算消费 + 耗尽包装（对账 TS `tool-pipeline.ts:1609-1630`）──
+			//
+			// **必须在 emit 与回灌之前**——包装后的内容要同时进入事件流与
+			// 消息历史（TS 在 tool-pipeline 里替换 `finalContent` 后统一使用）。
+			//
+			// `result.RawPath` 由工具自己落盘（bash 的 `persistRawOutput`）；
+			// 无 rawPath 时 `WrapStoredIfExhausted` 回退字面量 `"unknown"`。
+			if l.turnBudget != nil {
+				if wrapped, ok := WrapStoredIfExhausted(
+					l.turnBudget, tc.name, result.Content, result.RawPath); ok {
+					result.Content = wrapped
+				}
+			}
+
 			l.emit(Event{
 				Kind: "tool_result", ToolName: tc.name, ToolID: tc.id,
 				Text: result.Content, IsError: result.IsError, Turn: turn,

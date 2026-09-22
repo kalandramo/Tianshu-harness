@@ -3299,6 +3299,109 @@ Loop.Run turn 边界 (loop.go:504)
 - `internal/context` 剩余：CognitiveLedger / Stigmergy / task-contract
 - session 剩余：会话恢复、会话注册表
 
+## 第三十刀：TurnBudget 接线进 loop + rssRatio 探针（2026-09-20）
+
+**目标**：把第二十九刀产出的 `TurnBudget` / `WrapStoredIfExhausted` 从
+「已实现但零消费者」接到主循环上。
+
+### 落地
+
+- 新建 `internal/agent/resourcesensor.go`（77 行）——`MemoryLimitBytes` /
+  `CurrentRSSBytes` / `CurrentRSSRatio`。
+- `loop.go` 三处改动：
+  1. `Loop` 新增 `turnBudget *TurnBudget` 字段 + `RSSRatioFn func() float64`
+     测试注入点（对账 TS 的 `options.memoryUsage`）。
+  2. `Run` 的 `for turn` 循环体开头**每轮重建**：
+     `l.turnBudget = CreateTurnBudget(l.rssRatio())`
+     （对账 `turn-orchestrator.ts:593`）。
+  3. 工具结果组装点消费：
+     `WrapStoredIfExhausted(l.turnBudget, tc.name, result.Content, result.RawPath)`
+     ——**在 emit 与回灌之前**，故包装同时进入事件流与消息历史。
+- `rssRatio()` 辅助方法（`RSSRatioFn` 非 nil 优先）。
+
+### 设计偏差（明示，非等价）
+
+**TS 的 `memoryLimitBytes` 读 V8 堆上限**（`getHeapStatistics().heap_size_limit`），
+因为 Node 的崩溃点是 V8 堆。**Go 没有 V8**，故：
+
+1. 优先 `RIVET_MEMORY_LIMIT_BYTES`——**这是两侧共有的显式配置通道**
+   （TS `resource-sensor.ts:48` 也优先读它）。
+2. 无该变量时回退默认 1 GiB（对账 TS 的 `defaultMemoryLimitBytes`）。
+3. 分子用 `runtime.MemStats.Sys`（向 OS 申请总量）——语义上最接近 Node 的
+   `process.memoryUsage().rss`。不用 `HeapAlloc`（那是 `heapUsed`，另一路信号）。
+
+**保留了语义**（比值越高越接近上限，驱动同一组 0.7 / 0.85 阈值），
+**但不是逐字节等价**——V8 堆 ≠ Go Sys。
+
+### 变异反证（M84-M88）
+
+| 变异 | 内容 | 结果 |
+|------|------|------|
+| M84 | 环境变量不校验 `> 0` | **1 红** ✓ |
+| M85 | `RSSRatioFn` 注入被忽略 | **2 红** ✓ |
+| M86 | 工具结果不消费预算 | 首轮 **0 红** → 补测试后 **1 红** ✓ |
+| M87 | 移除 artifact 阈值缩放 | **3 红** ✓ |
+| M88 | 接线传 nil（断开 `l.turnBudget`） | **1 红** ✓ |
+
+**M86 是本刀最有价值的发现**：`l.turnBudget != nil` 改成 `!= nil && false`，
+**全量 22 包 0 红**——此前没有任何测试跨越「budget 字段 → 工具结果内容」
+这条边。单元测试只验证 `WrapStoredIfExhausted` 本身正确，没验证 loop 调了它。
+
+补两条端到端测试（`resourcesensor_test.go`）：
+- `TestE2EBudgetConsumedInLoop`——注入 `RSSRatioFn=0.9`（危急档，预算 0），
+  真实 loop 跑一轮 `read_file` 大文件，断言 `tool_result` 事件含 `<stored `。
+- `TestE2EBudgetNotConsumedWhenBaseline`——**反证**：注入 `RSSRatioFn=0`，
+  同一文件**不应**包装。没有这条无法排除「实现无条件包装」。
+
+补后 M86 → 1 红。
+
+### 顺带修掉一处「实现了但未接线」（`BudgetFraction`）
+
+核查 TS 侧 `turnBudget` 的**全部**读取点时发现 Go 侧漏了一处：
+
+- TS `tool-pipeline.ts:575-581`：`artifactIntercept` 收 `remainingBudgetFraction`，
+  **按剩余预算缩放 artifact 阈值**——`>0.5` → ×3、`>0.3` → ×1.5、否则基础值。
+- Go 侧 `BudgetFraction()`（第二十九刀已实现）**零消费者**——
+  `shouldInterceptForArtifact` 不接预算。
+
+已修：`shouldInterceptForArtifact` 新增 `budget *TurnBudget` 参数，
+在**窗口 floor 之后**施加缩放（顺序对账 TS）；`interceptResultForArtifact`
+传 `l.turnBudget`。5 条新测试（`artifact_budget_scale_test.go`）覆盖三档 +
+`max=0` 的 fraction=1 边界 + 接线验证（M87/M88 反证）。
+
+**注意一个反直觉点（已实测确认）**：危急档 `max=0` 时 `BudgetFraction()`
+返回 **1**（对账 TS `maxTokensPerTurn > 0 ? ... : 1`）——故危急档下
+artifact 阈值反而 **×3**。这不是 bug：`turnBudget` 的**两条消费路径独立**
+（阈值缩放 vs `consume`+`isExhausted` 的 `<stored>` 包装）。
+
+### 顺带核实
+
+`contract.Result.RawPath` 此前「有 JSON tag 无生产读取方」。本刀接入后
+`executeTool` 的返回值直接喂给 `WrapStoredIfExhausted`——**该字段首次有
+生产消费者**。核实写入方存在：`readsection.go:267,311,373`、`artifact/store.go:181,287`。
+无 rawPath 时包装回退字面量 `"unknown"`（对账 TS）。
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./... -count=1` **22 包 ok / 0 FAIL**（连跑 2 次）
+- 本刀新增 16 项测试全绿（含 2 条端到端）
+
+### 下一步
+
+`turnBudget` 在 TS 侧共 **4 处**读取点，本刀覆盖 3 处：
+`turn-orchestrator.ts:593`（每轮重建）✓、`tool-pipeline.ts:1609-1628`
+（consume + `<stored>`）✓、`tool-pipeline.ts:575/1636`（阈值缩放）✓。
+
+**第 4 处 `tool-pipeline.ts:2143` 属「依赖未移植」而非「漏接线」**（已核实）：
+它在 `tu.name === 'run_tests'` 的失败诊断分支里，依赖
+`classifyTestRun` / `repairHintTracker` / `classifyToolFailure` 三个子系统。
+**Go 侧 `run_tests` 工具本身尚未移植**（`grep '"run_tests"' internal/tools/`
+零命中），故该分支在 Go 侧不可达——不是漏接，是上游缺失。
+
+建议下一刀仍按原优先级（session 容器 / 工具移植），**等 `run_tests` 移植时
+一并接**这处 `diagBudgetFrac`。
+
 ## 建议的第一刀
 
 **接 `internal/session`（最小会话状态容器）**。

@@ -77,7 +77,11 @@ func artifactMarkerPresent(content string) bool {
 //
 // 阈值：成功结果取「窗口感知按工具阈值」与「兜底阈值」的较大值；
 // 错误结果**不用窗口 floor**（只与兜底阈值比）。
-func shouldInterceptForArtifact(toolName, content string, isError bool, contextWindow int) bool {
+//
+// `budget` 非 nil 时按剩余预算**缩放阈值**（对账 TS `tool-pipeline.ts:575-581`）：
+// 预算充裕时更倾向行内保留（少包 artifact），紧张时回到基础阈值。
+// nil 表示无预算信息（对账 TS 的 `remainingBudgetFraction != null` 判空）。
+func shouldInterceptForArtifact(toolName, content string, isError bool, contextWindow int, budget *TurnBudget) bool {
 	if l0WrappedTools[toolName] {
 		return false
 	}
@@ -88,6 +92,18 @@ func shouldInterceptForArtifact(toolName, content string, isError bool, contextW
 	if !isError && contextWindow > 0 {
 		if floor := artifact.ToolArtifactThreshold(toolName, contextWindow); floor > threshold {
 			threshold = floor
+		}
+	}
+	// ── 预算感知缩放（对账 TS `tool-pipeline.ts:575-581`）──
+	//
+	// 顺序**必须在窗口 floor 之后**——TS 同样是先 floor 再缩放。
+	// `< 0.3` 不加分支：用基础阈值（TS 注释：context is getting tight）。
+	if budget != nil {
+		switch frac := budget.BudgetFraction(); {
+		case frac > 0.5:
+			threshold = max(threshold, threshold*3) // 余量充裕 → 3 倍
+		case frac > 0.3:
+			threshold = max(threshold, threshold*3/2) // 中等 → 1.5 倍
 		}
 	}
 	// 对账 TS：`content.length > threshold`（严格大于）。
@@ -120,7 +136,7 @@ func (l *Loop) interceptResultForArtifact(tc toolCall, res contract.Result) cont
 	if l.Artifacts == nil {
 		return res
 	}
-	if !shouldInterceptForArtifact(tc.name, res.Content, res.IsError, l.artifactContextWindow()) {
+	if !shouldInterceptForArtifact(tc.name, res.Content, res.IsError, l.artifactContextWindow(), l.turnBudget) {
 		return res
 	}
 
