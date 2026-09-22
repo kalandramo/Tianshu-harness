@@ -45,6 +45,10 @@ func NewDefaultRegistry(opts Options) *Registry {
 	r.Register(InspectProject())
 	r.Register(FileInfo())
 
+	// ── Git ──
+	// diff：工作树改动。经 `SpawnGit`（环境消毒 + 可执行路径发现）。
+	r.Register(Diff())
+
 	// ── 执行 ──
 	r.Register(Bash(cwd))
 	r.Register(RunTests(cwd))

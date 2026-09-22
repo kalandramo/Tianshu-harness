@@ -1,0 +1,234 @@
+{
+  "sanitizeGitEnv": [
+    {
+      "input": {
+        "GIT_DIR": "/evil",
+        "GIT_WORK_TREE": "/evil",
+        "GIT_INDEX_FILE": "/evil",
+        "GIT_OBJECT_DIRECTORY": "/evil",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES": "/evil",
+        "GIT_COMMON_DIR": "/evil",
+        "GIT_REPLACE_REF_BASE": "/evil"
+      },
+      "output": {},
+      "removed": [
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_COMMON_DIR",
+        "GIT_DIR",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_REPLACE_REF_BASE",
+        "GIT_WORK_TREE"
+      ]
+    },
+    {
+      "input": {
+        "GIT_SSH": "keep",
+        "GIT_EDITOR": "keep",
+        "GIT_AUTHOR_NAME": "keep",
+        "PATH": "keep",
+        "HOME": "keep",
+        "GIT_PAGER": "keep"
+      },
+      "output": {
+        "GIT_AUTHOR_NAME": "keep",
+        "GIT_EDITOR": "keep",
+        "GIT_PAGER": "keep",
+        "GIT_SSH": "keep",
+        "HOME": "keep",
+        "PATH": "keep"
+      },
+      "removed": []
+    },
+    {
+      "input": {
+        "GIT_DIR": "/evil",
+        "GIT_SSH": "keep",
+        "PATH": "/bin",
+        "GIT_WORK_TREE": "/evil2"
+      },
+      "output": {
+        "GIT_SSH": "keep",
+        "PATH": "/bin"
+      },
+      "removed": [
+        "GIT_DIR",
+        "GIT_WORK_TREE"
+      ]
+    },
+    {
+      "input": {
+        "git_dir": "/evil",
+        "Git_Work_Tree": "/evil2",
+        "GIT_ssh": "keep"
+      },
+      "output": {
+        "GIT_ssh": "keep"
+      },
+      "removed": [
+        "Git_Work_Tree",
+        "git_dir"
+      ]
+    },
+    {
+      "input": {},
+      "output": {},
+      "removed": []
+    },
+    {
+      "input": {
+        "GIT_DIRECTORY": "keep",
+        "GIT_DIR_X": "keep",
+        "XGIT_DIR": "keep"
+      },
+      "output": {
+        "GIT_DIRECTORY": "keep",
+        "GIT_DIR_X": "keep",
+        "XGIT_DIR": "keep"
+      },
+      "removed": []
+    }
+  ],
+  "resolveGitCommand": [
+    {
+      "env": {
+        "RIVET_GIT_PATH": "/custom/git"
+      },
+      "platform": "linux",
+      "out": "/custom/git"
+    },
+    {
+      "env": {
+        "RIVET_GIT_PATH": "/nope"
+      },
+      "platform": "linux",
+      "out": "git"
+    },
+    {
+      "env": {},
+      "platform": "win32",
+      "out": "C:\\Program Files\\Git\\cmd\\git.exe"
+    },
+    {
+      "env": {},
+      "platform": "win32",
+      "out": "git"
+    },
+    {
+      "env": {},
+      "platform": "linux",
+      "out": "git"
+    }
+  ],
+  "diff": [
+    {
+      "name": "default",
+      "input": {},
+      "content": "[git diff] exit=0 time=<T>s lines=116\n... 96 lines omitted ...\n+line 389\n+line 390\n+line 391\n+line 392\n+line 393\n+line 394\n+line 395\n+line 396\n+line 397\n+line 398\n+line 399\ndiff --git a/src/a.ts b/src/a.ts\nindex 4171549..f385dba 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1,2 @@\n-export const a = 1\n+export const a = 2\n+export const b = 3\n\n[output truncated: last 20 of 116 lines shown — 96 lines omitted · full output: read_file <ABS> — 不要重跑命令]",
+      "uiContent": "✓ git diff (0.3s)\n... 97 lines omitted ...\n+line 389\n+line 390\n+line 391\n+line 392\n+line 393\n+line 394\n+line 395\n+line 396\n+line 397\n+line 398\n+line 399\ndiff --git a/src/a.ts b/src/a.ts\nindex 4171549..f385dba 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1,2 @@\n-export const a = 1\n+export const a = 2\n+export const b = 3\n\n[truncated: 117 lines → 20 shown]",
+      "isError": false
+    },
+    {
+      "name": "context1",
+      "input": {
+        "context_lines": 1
+      },
+      "content": "[git diff] exit=0 time=<T>s lines=114\n... 94 lines omitted ...\n+line 389\n+line 390\n+line 391\n+line 392\n+line 393\n+line 394\n+line 395\n+line 396\n+line 397\n+line 398\n+line 399\ndiff --git a/src/a.ts b/src/a.ts\nindex 4171549..f385dba 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1,2 @@\n-export const a = 1\n+export const a = 2\n+export const b = 3\n\n[output truncated: last 20 of 114 lines shown — 94 lines omitted · full output: read_file <ABS> — 不要重跑命令]",
+      "uiContent": "✓ git diff (0.1s)\n... 95 lines omitted ...\n+line 389\n+line 390\n+line 391\n+line 392\n+line 393\n+line 394\n+line 395\n+line 396\n+line 397\n+line 398\n+line 399\ndiff --git a/src/a.ts b/src/a.ts\nindex 4171549..f385dba 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1,2 @@\n-export const a = 1\n+export const a = 2\n+export const b = 3\n\n[truncated: 115 lines → 20 shown]",
+      "isError": false
+    },
+    {
+      "name": "context0",
+      "input": {
+        "context_lines": 0
+      },
+      "content": "[git diff] exit=0 time=<T>s lines=113\n... 93 lines omitted ...\n+line 389\n+line 390\n+line 391\n+line 392\n+line 393\n+line 394\n+line 395\n+line 396\n+line 397\n+line 398\n+line 399\ndiff --git a/src/a.ts b/src/a.ts\nindex 4171549..f385dba 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1,2 @@\n-export const a = 1\n+export const a = 2\n+export const b = 3\n\n[output truncated: last 20 of 113 lines shown — 93 lines omitted · full output: read_file <ABS> — 不要重跑命令]",
+      "uiContent": "✓ git diff (0.1s)\n... 94 lines omitted ...\n+line 389\n+line 390\n+line 391\n+line 392\n+line 393\n+line 394\n+line 395\n+line 396\n+line 397\n+line 398\n+line 399\ndiff --git a/src/a.ts b/src/a.ts\nindex 4171549..f385dba 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1,2 @@\n-export const a = 1\n+export const a = 2\n+export const b = 3\n\n[truncated: 114 lines → 20 shown]",
+      "isError": false
+    },
+    {
+      "name": "path-a",
+      "input": {
+        "path": "src/a.ts"
+      },
+      "content": "[git diff] exit=0 time=<T>s lines=8 — output complete\ndiff --git a/src/a.ts b/src/a.ts\nindex 4171549..f385dba 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1,2 @@\n-export const a = 1\n+export const a = 2\n+export const b = 3\n",
+      "uiContent": "✓ git diff (0.1s)\ndiff --git a/src/a.ts b/src/a.ts\nindex 4171549..f385dba 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1,2 @@\n-export const a = 1\n+export const a = 2\n+export const b = 3\n",
+      "isError": false
+    },
+    {
+      "name": "path-src",
+      "input": {
+        "path": "src"
+      },
+      "content": "[git diff] exit=0 time=<T>s lines=8 — output complete\ndiff --git a/src/a.ts b/src/a.ts\nindex 4171549..f385dba 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1,2 @@\n-export const a = 1\n+export const a = 2\n+export const b = 3\n",
+      "uiContent": "✓ git diff (0.1s)\ndiff --git a/src/a.ts b/src/a.ts\nindex 4171549..f385dba 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1,2 @@\n-export const a = 1\n+export const a = 2\n+export const b = 3\n",
+      "isError": false
+    },
+    {
+      "name": "staged",
+      "input": {
+        "staged": true
+      },
+      "content": "无改动。",
+      "uiContent": null,
+      "isError": false
+    },
+    {
+      "name": "path-nonexistent",
+      "input": {
+        "path": "nope.ts"
+      },
+      "content": "无改动。",
+      "uiContent": null,
+      "isError": false
+    },
+    {
+      "name": "path-escape",
+      "input": {
+        "path": "../outside"
+      },
+      "content": "错误：Path outside project directory: ../outside (workspace root: <ROOT>). If this path is wrong, re-check the workspace root above and use a path under it. If the user authorized working there, call request_path_access (or approve the prompt) to grant read access; standing grants can also be configured via permissions.additionalReadDirs / additionalWriteDirs.",
+      "uiContent": null,
+      "isError": true
+    }
+  ],
+  "diffOwned": {
+    "content": "[git diff] exit=0 time=<T>s lines=8 — output complete\ndiff --git a/src/a.ts b/src/a.ts\nindex 4171549..f385dba 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1,2 @@\n-export const a = 1\n+export const a = 2\n+export const b = 3\n",
+    "isError": false
+  },
+  "diffOwnedEmpty": {
+    "content": "[git diff] exit=0 time=<T>s lines=116\n... 96 lines omitted ...\n+line 389\n+line 390\n+line 391\n+line 392\n+line 393\n+line 394\n+line 395\n+line 396\n+line 397\n+line 398\n+line 399\ndiff --git a/src/a.ts b/src/a.ts\nindex 4171549..f385dba 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1,2 @@\n-export const a = 1\n+export const a = 2\n+export const b = 3\n\n[output truncated: last 20 of 116 lines shown — 96 lines omitted · full output: read_file <ABS> — 不要重跑命令]",
+    "isError": false
+  },
+  "diffOwnedOutside": {
+    "content": "没有可 diff 的归属文件。",
+    "isError": false
+  },
+  "diffStaged": {
+    "content": "[git diff] exit=0 time=<T>s lines=8 — output complete\ndiff --git a/src/a.ts b/src/a.ts\nindex 4171549..f385dba 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1,2 @@\n-export const a = 1\n+export const a = 2\n+export const b = 3\n",
+    "isError": false
+  },
+  "diffClean": {
+    "content": "无改动。",
+    "isError": false
+  },
+  "diffNotGit": {
+    "content": "错误：warning: Not a git repository. Use --no-index to compare two paths outside a working tree\nusage: git diff --no-index [<options>] <path> <path> [<pathspec>...]\n\nDiff output format options\n    -p, --patch           generate patch\n    -s, --no-patch        suppress diff output\n    -u                    generate patch\n    -U, --unified[=<n>]   generate diffs with <n> lines context\n    -W, --[no-]function-context\n                          generate diffs with <n> lines context\n    --raw                 generate the diff in raw format\n    --patch-with-raw      synonym for '-p --raw'\n    --patch-with-stat     synonym for '-p --stat'\n    --numstat             machine friendly --stat\n    --shortstat           output only the last line of --stat\n    -X, --dirstat[=<param1>,<param2>...]\n                          output the distribution of relative amount of changes for each sub-directory\n    --cumulative          synonym for --dirstat=cumulative\n    --dirstat-by-file[=<param1>,<param2>...]\n                          synonym for --dirstat=files,<param1>,<param2>...\n    --check               warn if changes introduce conflict markers or whitespace errors\n    --summary             condensed summary such as creations, renames and mode changes\n    --name-only           show only names of changed files\n    --name-status         show only names and status of changed files\n    --stat[=<width>[,<name-width>[,<count>]]]\n                          generate diffstat\n    --stat-width <width>  generate diffstat with a given width\n    --stat-name-width <width>\n                          generate diffstat with a given name width\n    --stat-graph-width <width>\n                          generate diffstat with a given graph width\n    --stat-count <count>  generate diffstat with limited lines\n    --[no-]compact-summary\n                          generate compact summary in diffstat\n    --binary              output a binary diff that can be applied\n    --[no-]full-index     show full pre- and post-image object names on the \"index\" lines\n    --[no-]color[=<when>] show colored diff\n    --ws-error-highlight <kind>\n                          highlight whitespace errors in the 'context', 'old' or 'new' lines in the diff\n    -z                    do not munge pathnames and use NULs as output field terminators in --raw or --numstat\n    --[no-]abbrev[=<n>]   use <n> digits to display object names\n    --src-prefix <prefix> show the given source prefix instead of \"a/\"\n    --dst-prefix <prefix> show the given destination prefix instead of \"b/\"\n    --line-prefix <prefix>\n                          prepend an additional prefix to every line of output\n    --no-prefix           do not show any source or destination prefix\n    --default-prefix      use default prefixes a/ and b/\n    --inter-hunk-context <n>\n                          show context between diff hunks up to the specified number of lines\n    --output-indicator-new <char>\n                          specify the character to indicate a new line instead of '+'\n    --output-indicator-old <char>\n                          specify the character to indicate an old line instead of '-'\n    --output-indicator-context <char>\n                          specify the character to indicate a context instead of ' '\n\nDiff rename options\n    -B, --break-rewrites[=<n>[/<m>]]\n                          break complete rewrite changes into pairs of delete and create\n    -M, --find-renames[=<n>]\n                          detect renames\n    -D, --irreversible-delete\n                          omit the preimage for deletes\n    -C, --find-copies[=<n>]\n                          detect copies\n    --[no-]find-copies-harder\n                          use unmodified files as source to find copies\n    --no-renames          disable rename detection\n    --[no-]rename-empty   use empty blobs as rename source\n    --[no-]follow         continue listing the history of a file beyond renames\n    -l <n>                prevent rename/copy detection if the number of rename/copy targets exceeds given limit\n\nDiff algorithm options\n    --minimal             produce the smallest possible diff\n    -w, --ignore-all-space\n                          ignore whitespace when comparing lines\n    -b, --ignore-space-change\n                          ignore changes in amount of whitespace\n    --ignore-space-at-eol ignore changes in whitespace at EOL\n    --ignore-cr-at-eol    ignore carrier-return at the end of line\n    --ignore-blank-lines  ignore changes whose lines are all blank\n    -I, --[no-]ignore-matching-lines <regex>\n                          ignore changes whose all lines match <regex>\n    --[no-]indent-heuristic\n                          heuristic to shift diff hunk boundaries for easy reading\n    --patience            generate diff using the \"patience diff\" algorithm\n    --histogram           generate diff using the \"histogram diff\" algorithm\n    --diff-algorithm <algorithm>\n                          choose a diff algorithm\n    --anchored <text>     generate diff using the \"anchored diff\" algorithm\n    --word-diff[=<mode>]  show word diff, using <mode> to delimit changed words\n    --word-diff-regex <regex>\n                          use <regex> to decide what a word is\n    --color-words[=<regex>]\n                          equivalent to --word-diff=color --word-diff-regex=<regex>\n    --[no-]color-moved[=<mode>]\n                          moved lines of code are colored differently\n    --[no-]color-moved-ws <mode>\n                          how white spaces are ignored in --color-moved\n\nOther diff options\n    --[no-]relative[=<prefix>]\n                          when run from subdir, exclude changes outside and show relative paths\n    -a, --[no-]text       treat all files as text\n    -R                    swap two inputs, reverse the diff\n    --[no-]exit-code      exit with 1 if there were differences, 0 otherwise\n    --[no-]quiet          disable all output of the program\n    --[no-]ext-diff       allow an external diff helper to be executed\n    --[no-]textconv       run external text conversion filters when comparing binary files\n    --ignore-submodules[=<when>]\n                          ignore changes to submodules in the diff generation\n    --submodule[=<format>]\n                          specify how differences in submodules are shown\n    --ita-invisible-in-index\n                          hide 'git add -N' entries from the index\n    --ita-visible-in-index\n                          treat 'git add -N' entries as real in the index\n    -S <string>           look for differences that change the number of occurrences of the specified string\n    -G <regex>            look for differences that change the number of occurrences of the specified regex\n    --pickaxe-all         show all changes in the changeset with -S or -G\n    --pickaxe-regex       treat <string> in -S as extended POSIX regular expression\n    -O <file>             control the order in which files appear in the output\n    --rotate-to <path>    show the change in the specified path first\n    --skip-to <path>      skip the output to the specified path\n    --find-object <object-id>\n                          look for differences that change the number of occurrences of the specified object\n    --diff-filter [(A|C|D|M|R|T|U|X|B)...[*]]\n                          select files by diff type\n    --max-depth <depth>   maximum tree depth to recurse\n    --output <file>       output to a specific file",
+    "isError": true
+  },
+  "diff_boundary196": {
+    "n": 196,
+    "content": "[git diff] exit=0 time=<T>s lines=201\n... 181 lines omitted ...\n+row 176\n+row 177\n+row 178\n+row 179\n+row 180\n+row 181\n+row 182\n+row 183\n+row 184\n+row 185\n+row 186\n+row 187\n+row 188\n+row 189\n+row 190\n+row 191\n+row 192\n+row 193\n+row 194\n...（已截断，另有 2 行）\n[output truncated: last 20 of 201 lines shown — 181 lines omitted · full output: read_file <ABS> — 不要重跑命令]",
+    "isError": false
+  },
+  "diff_boundary195": {
+    "n": 195,
+    "content": "[git diff] exit=0 time=<T>s lines=9 — output complete\ndiff --git a/f.ts b/f.ts\nindex d784179..da1ea5c 100644\n--- a/f.ts\n+++ b/f.ts\n@@ -193,4 +193,3 @@ row 191\n row 192\n row 193\n row 194\n-row 195\n",
+    "isError": false
+  },
+  "diff_boundary197": {
+    "n": 197,
+    "content": "[git diff] exit=0 time=<T>s lines=10 — output complete\ndiff --git a/f.ts b/f.ts\nindex da1ea5c..ff72805 100644\n--- a/f.ts\n+++ b/f.ts\n@@ -193,3 +193,5 @@ row 191\n row 192\n row 193\n row 194\n+row 195\n+row 196\n",
+    "isError": false
+  }
+}

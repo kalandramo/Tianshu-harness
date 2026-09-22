@@ -3669,6 +3669,97 @@ Go 输出 `Path: .`）。
 3. **`job` / `monitor`**——属后台进程管理子系统，与 tool 层耦合深。
 4. `web_fetch` / `web_search` / `ask_image`——网络 + 多模态，超出内核范围。
 
+## 第三十五刀：移植 `diff` + `spawn-git`（2026-09-22）
+
+**目标**：补 `diff` 工具——它依赖的 `persistRawOutput` / `buildModelOutput` /
+进程树管理在 Go 侧**都已就位**（`rawstore.go` / `modeloutput.go` /
+`proctree.go`），只需补 git 启动层。本刀正好验证那三者的接线是否真的对。
+
+### 落地
+
+| 文件 | 内容 |
+|---|---|
+| `internal/tools/spawngit.go` | `SanitizeGitEnv`（危险 `GIT_*` 剥离）+ `ResolveGitCommand`（可执行路径发现）+ `GitEnv` + `SpawnGit` |
+| `internal/tools/diff.go` | `diff` 工具本体 + `SplitByFile` / `TruncateDiff` 纯函数 |
+
+注册进 `default_registry.go`（Go 侧工具数 15 → 16）。
+
+### 一处安全防护的补上
+
+**Go 侧此前完全没有 `GIT_*` 环境消毒**——`grep -r 'GIT_DIR\|GIT_WORK_TREE'`
+零命中，且 `bash.go` **不设置 `cmd.Env`**（即继承 `os.Environ()`）。
+TS 的 `sanitizeGitEnv` 剥离 7 个可改变 git 行为**指向攻击者控制位置**的
+变量（来源：codex-security `UNSUPPORTED_GIT_ENVIRONMENT` 调研，2026-08）：
+
+```
+GIT_DIR · GIT_WORK_TREE · GIT_INDEX_FILE · GIT_OBJECT_DIRECTORY
+GIT_ALTERNATE_OBJECT_DIRECTORIES · GIT_COMMON_DIR · GIT_REPLACE_REF_BASE
+```
+
+**只剥危险子集**——`GIT_SSH`/`GIT_EDITOR`/`GIT_PAGER` 等良性变量必须保留
+（天枢是开发工具，用户合法的 git 配置不能被破坏）。大小写不敏感比较
+（Windows 环境变量语义）。已用 6 组 oracle 用例 + 3 条反证测试锁定
+（含「不得过度剥离」——`GIT_DIRECTORY`/`GIT_DIR_X`/`XGIT_DIR` 都不该被剥）。
+
+### 明示的 scope 收窄
+
+**不移植 `getResolvedEnv`**（`resolved-env.ts`，437+ 行）——那是独立子系统
+（Windows 注册表 PATH 恢复、登录 shell 探测、配置化 env 应用、抗交互注入）。
+`GitEnv()` 的基线是 `os.Environ()`。
+
+**与 TS 的差异**：TS 会先经 `getResolvedEnv` 恢复被 GUI 截断的 PATH。对 CLI
+场景（PATH 完整）两者等价；对 GUI 启动场景 Go 侧可能找不到 git（回退字面量
+`"git"` 经 PATH 解析）。**这是已知缺口**，需要时再移植该子系统。
+
+### 三处由对账抓到的测试自身缺陷
+
+1. **`TruncateDiffPerFile` 的行数假设错**：`MAX_LINES_PER_FILE` 作用在
+   **文件块的全部行**（含 `diff --git` 头行），故 251 行的块截断后留 200 行
+   = 头行 + 199 内容行，提示「另有 **51** 行」。我原先假设「200 是纯内容行」。
+2. **oracle 的 `git add` 状态污染**：`diffOwned` 用例跑在 `git add src/a.ts`
+   **之后**，此时改动已移出工作树 → `git diff -- src/a.ts` 返回「无改动。」
+   ——测的根本不是归属过滤。已把归属用例全部**移到 `git add` 之前**。
+3. **`resolveGitCommand[3]` 的 deps 未复刻**：oracle 该用例有自己的
+   `existsSync: () => false`（验「Windows 但都不存在 → 回退 `git`」），而
+   JSON 只存了 `env`/`platform`/`out`。测试里按索引特判。
+
+### 变异反证 M105-M108
+
+| 变异 | 内容 | 结果 |
+|---|---|---|
+| M105 | `sanitizeGitEnv` 大小写敏感 | 2 红 |
+| M106 | `RIVET_GIT_PATH` 不校验存在性 | 1 红 |
+| M107 | `TruncateDiff` 阈值 +2 | **首轮 0 红** → 补边界用例后 1 红 |
+| M108 | 无输出不短路 | 1 红 |
+
+**M107 首轮 0 红是本刀最有价值的发现**：`big.txt` 的大 diff 会被
+`buildModelOutput` **先截到 116 行**，永远到不了 `TruncateDiff` 的 200 行
+阈值——阈值改动**不可观测**。探针确认后造了一个「块恰好 202 行」的仓库
+（初始空文件 + 写 196 行），边界用例才有效。
+
+**顺带修正的第一次尝试**：我先把阈值改成 `+1`（201），仍 0 红——因为块是
+**202 行**（200 保留 + 2 截掉），`202 <= 201` 仍为假。改成 `+2` 才红。
+**0 红时要先量准被测量的真实取值**，不能凭猜试。
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./... -count=1` **23 包 ok / 0 FAIL**（连跑 2 次）
+- 差分 oracle：sanitizeGitEnv 6 例 / resolveGitCommand 5 例 / diff 8 例 /
+  diffOwned / diffStaged / diffClean / diffNotGit / 边界 1 例
+- **非确定性字段已归一化**（`time=<T>s`、绝对路径 `<ABS>`/`<ROOT>`），
+  oracle 零绝对路径、零时间残留 → 跨机器可复现
+
+### 下一步
+
+`diff` 已可用。剩余候选：
+
+1. **`git`**（684 行）——`spawn-git` 已就位，但还缺 `workspace-guard` /
+   `commit-audit` / `sensitive-file-detector` 三个子系统（Go 侧全缺）。
+   现在做比之前省力（启动层已通）。
+2. **`job` / `monitor`**——后台进程管理子系统。
+3. **`resolved-env`**——若要支持 GUI 启动场景的 PATH 恢复。
+
 ## 建议的第一刀
 
 **接 `internal/session`（最小会话状态容器）**。
