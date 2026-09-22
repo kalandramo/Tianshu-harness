@@ -2256,6 +2256,73 @@ through to normal foreground execution」）。Go 侧**无该设施**（`JobRegi
 7. **bash 的超时/错误路径 L0**。
 
 
+### TurnBudget + `<stored>` 包装 —— 解锁 rawPath / uiContent 的消费者（2026-09-21，回主线第二十九刀）
+
+**做了什么**：移植 TS `turn-budget.ts`（25 行纯逻辑）与 `tool-pipeline.ts:1609-1630`
+的预算消费 / `<stored>` 包装段（`turnbudget.go`），并实现 `uiContent ?? result`
+的展示优先级。
+
+**这是第二十四/二十七/二十八刀两次搁置的「前置条件」**
+
+前两刀都因「`rawPath` / `UIContent` 无生产消费者」而搁置接线，理由记为「需先移植
+TUI 工具卡管线」。**本刀的称量修正了那个判断**：
+
+- TS `src/tui/engine/` 是 **13,684 行**（ANSI 渲染、终端帧、事件循环）——
+  全量移植不现实，也**不是**解锁所需的那个面。
+- `rawPath` 的**真实消费者**其实在 **`tool-pipeline.ts:1628`**——turn budget 耗尽时
+  把结果换成 `<stored ref="<rawPath>" chars=N tool="...">` 短引用。这是**纯逻辑**。
+- `uiContent` 的消费者是 **`displayContent = uiContent ?? result`**——也是纯取值逻辑。
+
+**故本刀只做逻辑层，不做渲染层**（scope 明示）。
+
+**移植的内容**
+
+| 项 | 对账 TS | 要点 |
+|---|---|---|
+| `CreateTurnBudget(rssRatio)` | `createTurnBudget` | 三档：`>=0.85`→**0**；`>=0.7`→25k；否则 50k |
+| `Consume` / `IsExhausted` / `Reset` | 同名方法 | **`max=0` 时立即耗尽**（`used(0) >= 0`）——这是**有意设计**（内存危急不再放内容），非边界 bug |
+| `BudgetFraction` | `1 - used/max`（`max<=0` 时 1） | 传给 artifactIntercept 的 budgetFraction |
+| `WrapStoredIfExhausted` | `tool-pipeline.ts:1622-1628` | consume(`ceil(len/4)`) → 耗尽则包装 |
+| `DisplayContent` | `uiContent ?? result` | **这就是 `uiContent` 的消费者** |
+
+**三个对账细节**（都写进注释与测试）
+1. `chars` 是**包装前**的长度（TS 先算 `contentChars` 再替换）。变异 M83 → 2 红。
+2. `refPath` 为空时用字面量 **`"unknown"`**——不是省略该属性。变异 M82 → 2 红。
+3. preview 用 `slice(0, 500)`——**包装后不一定更长**（长内容被压成 500 preview）。
+   我首版测试断言「包装后应更长」是**错的**，已修正为「长内容更短 / 短内容更长」双向断言。
+
+**实现取舍**：`jsSliceHead` 在 `tools` 包**未导出**。为一个小需求把它提升为导出
+API 会扩大 `tools` 公开面——故本包内 5 行等价实现（语义与
+`tools/truncation.go:150` 逐字一致，该处已有差分对账）。`UTF16Len` 则复用
+`tools` 的导出实现（`agent` 已依赖 `tools`，方向一致）。
+
+**验证**
+- **差分 oracle 23 例**（9 预算 + 6 stored + 8 consume），**真跑 TS 原实现**
+  （纯函数）——逐字段/逐字节比对
+- **10 条测试**：常量 / oracle / 阈值边界（含 0.7 与 0.85 两个边界）/
+  `max=0` 立即耗尽 / `ceil(len/4)` / 包装 oracle / 预算充足不包装（但**仍消费**）/
+  `unknown` 回退 / `chars` 是 pre-wrap / 展示优先级三态
+- **变异反证**：M81（阈值 `>=`→`>`）→2 红；M82（不回退 `unknown`）→2 红；
+  M83（`chars` 用包装后长度）→2 红
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+#### 仍未做（更新）
+
+1. **`turnbudget` 接进 `loop.go`**：`TurnBudget` 已就绪，但**尚未在工具结果组装点
+   调用**（`loop.go:485` 的 `RuntimeToolEvent` 构造处）。接线时还需决定
+   `rssRatio` 的来源（Go 侧尚无内存压力探针）。
+2. **`persistRawOutput` 的其余消费者**（`read_file` / `run_tests` / `diff`）：
+   现在 `<stored ref>` 已是 `rawPath` 的**真实消费者**——但那条路径要先接 ①。
+3. **`UIContent` 的单读分支接线**：`DisplayContent` 已实现消费者语义；渲染层
+   （`src/tui/engine/`，13,684 行）仍**未移植**——那是独立的大模块。
+4. **`job` 子系统**（`sessionJobRegistry` + `job` 工具）。
+5. **artifact re-serve**（`read-file.ts:794-828`）：依赖 `sliceFromArtifact`。
+6. **邻居提示**（`RIVET_NEIGHBOR_HINT=1`，默认关）。
+7. **`preferFoldOnOverflow`**（TS `:695-704`）：Go 无 `readCapOverride` 概念。
+8. **bash 的超时/错误路径 L0**。
+9. **`FIDELITY_EXEMPT_TOOLS`**：`tool-pipeline` 里「保真工具不过滤只记账」的白名单。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`

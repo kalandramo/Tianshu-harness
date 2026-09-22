@@ -1,0 +1,236 @@
+{
+ "constants": {
+  "BASE_BUDGET_TOKENS": 50000,
+  "PRESSURE_BUDGET_TOKENS": 25000
+ },
+ "budgets": [
+  {
+   "name": "rss-0",
+   "rssRatio": 0,
+   "maxTokensPerTurn": 50000,
+   "usedTokens0": 0,
+   "exhausted0": false,
+   "afterConsume100": {
+    "used": 100,
+    "exhausted": false
+   },
+   "budgetFractionAfter100": 0.998,
+   "afterReset": {
+    "used": 0,
+    "exhausted": false
+   }
+  },
+  {
+   "name": "rss-0.5",
+   "rssRatio": 0.5,
+   "maxTokensPerTurn": 50000,
+   "usedTokens0": 0,
+   "exhausted0": false,
+   "afterConsume100": {
+    "used": 100,
+    "exhausted": false
+   },
+   "budgetFractionAfter100": 0.998,
+   "afterReset": {
+    "used": 0,
+    "exhausted": false
+   }
+  },
+  {
+   "name": "rss-0.699",
+   "rssRatio": 0.699,
+   "maxTokensPerTurn": 50000,
+   "usedTokens0": 0,
+   "exhausted0": false,
+   "afterConsume100": {
+    "used": 100,
+    "exhausted": false
+   },
+   "budgetFractionAfter100": 0.998,
+   "afterReset": {
+    "used": 0,
+    "exhausted": false
+   }
+  },
+  {
+   "name": "rss-0.7-boundary",
+   "rssRatio": 0.7,
+   "maxTokensPerTurn": 25000,
+   "usedTokens0": 0,
+   "exhausted0": false,
+   "afterConsume100": {
+    "used": 100,
+    "exhausted": false
+   },
+   "budgetFractionAfter100": 0.996,
+   "afterReset": {
+    "used": 0,
+    "exhausted": false
+   }
+  },
+  {
+   "name": "rss-0.75",
+   "rssRatio": 0.75,
+   "maxTokensPerTurn": 25000,
+   "usedTokens0": 0,
+   "exhausted0": false,
+   "afterConsume100": {
+    "used": 100,
+    "exhausted": false
+   },
+   "budgetFractionAfter100": 0.996,
+   "afterReset": {
+    "used": 0,
+    "exhausted": false
+   }
+  },
+  {
+   "name": "rss-0.849",
+   "rssRatio": 0.849,
+   "maxTokensPerTurn": 25000,
+   "usedTokens0": 0,
+   "exhausted0": false,
+   "afterConsume100": {
+    "used": 100,
+    "exhausted": false
+   },
+   "budgetFractionAfter100": 0.996,
+   "afterReset": {
+    "used": 0,
+    "exhausted": false
+   }
+  },
+  {
+   "name": "rss-0.85-boundary",
+   "rssRatio": 0.85,
+   "maxTokensPerTurn": 0,
+   "usedTokens0": 0,
+   "exhausted0": true,
+   "afterConsume100": {
+    "used": 100,
+    "exhausted": true
+   },
+   "budgetFractionAfter100": 1,
+   "afterReset": {
+    "used": 0,
+    "exhausted": true
+   }
+  },
+  {
+   "name": "rss-0.9",
+   "rssRatio": 0.9,
+   "maxTokensPerTurn": 0,
+   "usedTokens0": 0,
+   "exhausted0": true,
+   "afterConsume100": {
+    "used": 100,
+    "exhausted": true
+   },
+   "budgetFractionAfter100": 1,
+   "afterReset": {
+    "used": 0,
+    "exhausted": true
+   }
+  },
+  {
+   "name": "rss-1.0",
+   "rssRatio": 1,
+   "maxTokensPerTurn": 0,
+   "usedTokens0": 0,
+   "exhausted0": true,
+   "afterConsume100": {
+    "used": 100,
+    "exhausted": true
+   },
+   "budgetFractionAfter100": 1,
+   "afterReset": {
+    "used": 0,
+    "exhausted": true
+   }
+  }
+ ],
+ "stored": [
+  {
+   "name": "has-rawpath",
+   "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "rawPath": "/tmp/a.raw",
+   "tool": "bash",
+   "contentChars": 1000,
+   "wrapped": "<stored ref=\"/tmp/a.raw\" chars=1000 tool=\"bash\">\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n...(turn budget exceeded — use read_file with offset/limit for full content)</stored>"
+  },
+  {
+   "name": "no-rawpath",
+   "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "rawPath": null,
+   "tool": "grep",
+   "contentChars": 1000,
+   "wrapped": "<stored ref=\"unknown\" chars=1000 tool=\"grep\">\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n...(turn budget exceeded — use read_file with offset/limit for full content)</stored>"
+  },
+  {
+   "name": "short-content",
+   "content": "abc",
+   "rawPath": "/p.raw",
+   "tool": "read_file",
+   "contentChars": 3,
+   "wrapped": "<stored ref=\"/p.raw\" chars=3 tool=\"read_file\">\nabc\n...(turn budget exceeded — use read_file with offset/limit for full content)</stored>"
+  },
+  {
+   "name": "empty-content",
+   "content": "",
+   "rawPath": "/p.raw",
+   "tool": "bash",
+   "contentChars": 0,
+   "wrapped": "<stored ref=\"/p.raw\" chars=0 tool=\"bash\">\n\n...(turn budget exceeded — use read_file with offset/limit for full content)</stored>"
+  },
+  {
+   "name": "exactly-500",
+   "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+   "rawPath": "/p.raw",
+   "tool": "bash",
+   "contentChars": 500,
+   "wrapped": "<stored ref=\"/p.raw\" chars=500 tool=\"bash\">\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n...(turn budget exceeded — use read_file with offset/limit for full content)</stored>"
+  },
+  {
+   "name": "multibyte-600",
+   "content": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中",
+   "rawPath": "/p.raw",
+   "tool": "bash",
+   "contentChars": 600,
+   "wrapped": "<stored ref=\"/p.raw\" chars=600 tool=\"bash\">\n中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中\n...(turn budget exceeded — use read_file with offset/limit for full content)</stored>"
+  }
+ ],
+ "consume": [
+  {
+   "len": 0,
+   "tokens": 0
+  },
+  {
+   "len": 1,
+   "tokens": 1
+  },
+  {
+   "len": 4,
+   "tokens": 1
+  },
+  {
+   "len": 5,
+   "tokens": 2
+  },
+  {
+   "len": 8,
+   "tokens": 2
+  },
+  {
+   "len": 9,
+   "tokens": 3
+  },
+  {
+   "len": 100,
+   "tokens": 25
+  },
+  {
+   "len": 1000,
+   "tokens": 250
+  }
+ ]
+}
