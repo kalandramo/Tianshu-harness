@@ -3561,6 +3561,114 @@ plan.ts 调用形态（绝对 filePath + 相对指针路径）→ null（不可�
    当前 close 走 legacy 信任声明路径，是**安全性的降低**。
 4. 按原优先级继续补其他工具（`git` / `repo_map` / `job` / `diff` 等）。
 
+## 第三十四刀：移植 repo_map / inspect_project / file_info（2026-09-22）
+
+**目标**：补上「能读文件但不知道文件在哪」的缺口——三个**纯文件系统**工具，
+零新子系统。
+
+### 落地
+
+新建 5 个源文件（`internal/tools/`）：
+
+| 文件 | 内容 |
+|---|---|
+| `attention.go` | `ClassifyPath`（注意力分级 L0_build/L1_fragment/L2_foreign/L3_content）+ 全部常量表 |
+| `scanexcludes.go` | `ScanExcludeDirs`（共享剪枝基线）+ `IsScanExcludedDir` |
+| `repomap.go` | `repo_map` 工具（树构建 + 标注 + 截断 + 路径安全） |
+| `inspectproject.go` | `inspect_project` 工具（语言/包管理器/框架/入口/测试/配置） |
+| `fileinfo.go` | `file_info` 工具（file/dir/symlink 元数据 + 目录统计） |
+
+三者共用 `ClassifyPath` 与 `ScanExcludeDirs`——这也是把它们放同一刀的理由。
+全部注册进 `default_registry.go`（Go 侧工具数 12 → 15）。
+
+oracle：`testdata/projmap/gen-oracle.ts` 真跑 TS 产黄金数据，**零绝对路径**
+（完全可移植）。夹具目录 `testdata/projmap/fixtures/` 是运行时产物，已加
+`.gitignore`。
+
+### 本刀修正的一处 TS 真实缺陷（Windows）
+
+**`repo_map({path: ...})` 在 Windows 上完全不可用。**
+
+TS `repo-map.ts:190-193`：
+
+```ts
+const safeCwd = resolve(params.cwd) + '/'
+if (!root.startsWith(safeCwd) && root !== resolve(params.cwd)) { /* 报错 */ }
+```
+
+Windows 上 `resolve` 返回**反斜杠**路径，拼上 `'/'` 得到**混合分隔符**
+（`...\repomap/`），而 `root` 是纯反斜杠 → `startsWith` **恒为 false** →
+任何 `path` 参数都被判「必须位于项目目录内」。实测确认（tsx 探针）：
+
+```
+root      = "D:\\...\\repomap\\src"
+safeCwd   = "D:\\...\\repomap/"
+startsWith= false
+```
+
+作者在 macOS/Linux 开发（那里 `resolve` 返回 `/`，`+ '/'` 恰好正确），
+故该缺陷从未暴露。**Go 侧修正**：用 `filepath.Separator` 平台无关地表达
+「路径必须在 cwd 子树内」这一**意图**。已在 oracle 用
+`knownRepoMapDeviations` 登记 5 个偏离用例，并**逐项断言 Go 侧的真实行为**
+（3 项成功 / 2 项仍报错），不静默跳过也不假装一致。
+
+### 另外三处必须复刻/修正的语义差异（全部由对账抓到）
+
+| 项 | TS | Go 原实现 | 处置 |
+|---|---|---|---|
+| **排序** | `localeCompare`（大小写不敏感，`_` 权重低于 `.`） | 字节序 | **修正**——实现 `localeCompareLess`（主键小写 + `_`→`\x01` + 次键原串） |
+| **`relPosix(x, x)`** | `''`（空串） | `'.'` | **修正**——归一化 `.`→`''` |
+| **`max_files` 的 0** | `\|\| DEFAULT`（falsy → 回退） | 键存在即返回 0 | **修正**——新增 `intArgFalsy` |
+
+排序差异实测（同一组名）：
+
+```
+localeCompare: __tests__ .env.example .gitignore .hidden .rivet a.ts
+               agent docs m.ts package.json README.md src ...
+字节序:        .env.example .gitignore .hidden .rivet README.md
+               __tests__ a.ts agent docs m.ts package.json src ...
+```
+
+两处关键：`__tests__` 在 localeCompare 下排**最前**；`README.md` 排在
+`package.json` **之后**（大小写不敏感）。
+
+`relPosix` 的差异在 `file_info` 的根目录用例上暴露（TS 输出 `Path: `，
+Go 输出 `Path: .`）。
+
+### 明示的已知偏差
+
+- **`localeCompareLess` 不是完整实现**——`localeCompare` 依赖 ICU 排序规则。
+  此处只覆盖实测差异点。**非 ASCII 名（中文/重音字母）的排序权重与 ICU
+  不同**；若将来有需求应引入 `golang.org/x/text/collate`。
+- **`file_info` 的 `Modified:` 行不可逐字节比对**（两侧建树时刻不同），
+  测试比对时剔除该行。
+- **`FormatPermissions` 的 `goos` 参数同时接受 `"windows"` 与 `"win32"`**
+  ——前者是 Go 的 `runtime.GOOS` 拼写，后者是 JS 的 `process.platform`
+  拼写（TS 默认参数用它）。
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./... -count=1` **23 包 ok / 0 FAIL**（连跑 2 次）
+- 差分 oracle：classifyPath 53 例 / scanExcludes 19 例 / repoMap 11 例 /
+  inspectProject 2 例 / fileInfo 7 例 / formatPermissions 6 例
+- 变异反证 **M100-M104**：silent 语义反转(1红)、目录优先排序反转(1红)、
+  `max_files` 改 nullish 语义(1红)、剪枝基线漏 `target`(1红)、
+  `relPosix` 不归一化 `.`(1红)
+
+### 下一步
+
+三个工具已可用。剩余候选（按依赖面排序）：
+
+1. **`diff`**——依赖 `spawnGit`（Go 侧缺）+ `persistRawOutput` /
+   `buildModelOutput` / `process-tracker`（Go 侧**已有**）。补一个
+   `spawn-git` 抽象即可，顺带验证后三者的接线。
+2. **`git`**（684 行）——额外依赖 `workspace-guard` / `commit-audit` /
+   `sensitive-file-detector`（三项 Go 侧**全缺**）。建议等 `diff` 的
+   `spawn-git` 成型后再做。
+3. **`job` / `monitor`**——属后台进程管理子系统，与 tool 层耦合深。
+4. `web_fetch` / `web_search` / `ask_image`——网络 + 多模态，超出内核范围。
+
 ## 建议的第一刀
 
 **接 `internal/session`（最小会话状态容器）**。

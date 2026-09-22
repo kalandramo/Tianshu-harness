@@ -169,3 +169,7 @@ src/**/__tests__/.undo-test-backup/
 
 # 公开仓：禁止 knowledge 回灌（私有仓策略不同；仅保留 .rivet/SELF）
 .rivet/knowledge/
+
+# repo_map/inspect_project/file_info 差分对账的运行时夹具
+# （由 gen-oracle.ts 与 projmap_oracle_test.go 各自重建，不提交）
+go/testdata/projmap/fixtures/

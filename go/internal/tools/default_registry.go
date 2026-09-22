@@ -39,6 +39,12 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// 对账 TS 的 read-section.ts——属 read 类，minimal preset 也含。
 	r.Register(ReadSection(cwd, opts.Grants))
 
+	// ── 项目勘察 ──
+	// 三者共用 `classifyPath`（注意力分级）与 `ScanExcludeDirs`（剪枝基线）。
+	r.Register(RepoMap())
+	r.Register(InspectProject())
+	r.Register(FileInfo())
+
 	// ── 执行 ──
 	r.Register(Bash(cwd))
 	r.Register(RunTests(cwd))

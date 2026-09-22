@@ -1,0 +1,585 @@
+{
+  "classifyPath": [
+    {
+      "input": "",
+      "tier": "L3_content",
+      "silent": false,
+      "reason": "empty-path"
+    },
+    {
+      "input": ".",
+      "tier": "L3_content",
+      "silent": false,
+      "reason": "empty-path"
+    },
+    {
+      "input": "./",
+      "tier": "L3_content",
+      "silent": false,
+      "reason": "empty-path"
+    },
+    {
+      "input": "src/a.ts",
+      "tier": "L3_content",
+      "silent": false,
+      "reason": "content-default"
+    },
+    {
+      "input": "src/agent/loop.ts",
+      "tier": "L3_content",
+      "silent": false,
+      "reason": "content-default"
+    },
+    {
+      "input": "node_modules/pkg/index.js",
+      "tier": "L0_build",
+      "silent": true,
+      "reason": "build-dir"
+    },
+    {
+      "input": "dist/bundle.js",
+      "tier": "L0_build",
+      "silent": true,
+      "reason": "build-dir"
+    },
+    {
+      "input": "build/out.js",
+      "tier": "L0_build",
+      "silent": true,
+      "reason": "build-dir"
+    },
+    {
+      "input": ".next/x.js",
+      "tier": "L0_build",
+      "silent": true,
+      "reason": "build-dir"
+    },
+    {
+      "input": "target/debug/app",
+      "tier": "L0_build",
+      "silent": true,
+      "reason": "build-dir"
+    },
+    {
+      "input": "__pycache__/x.pyc",
+      "tier": "L0_build",
+      "silent": true,
+      "reason": "build-dir"
+    },
+    {
+      "input": "coverage/lcov.info",
+      "tier": "L0_build",
+      "silent": true,
+      "reason": "build-dir"
+    },
+    {
+      "input": ".agents/x.md",
+      "tier": "L2_foreign",
+      "silent": true,
+      "reason": "foreign-agent-dir"
+    },
+    {
+      "input": ".codex/y.json",
+      "tier": "L2_foreign",
+      "silent": true,
+      "reason": "foreign-agent-dir"
+    },
+    {
+      "input": ".obsidian/z.md",
+      "tier": "L2_foreign",
+      "silent": true,
+      "reason": "foreign-agent-dir"
+    },
+    {
+      "input": ".claude/a.md",
+      "tier": "L2_foreign",
+      "silent": true,
+      "reason": "foreign-agent-dir"
+    },
+    {
+      "input": ".cursor/b.md",
+      "tier": "L2_foreign",
+      "silent": true,
+      "reason": "foreign-agent-dir"
+    },
+    {
+      "input": ".od-skills/c.md",
+      "tier": "L2_foreign",
+      "silent": true,
+      "reason": "foreign-agent-dir"
+    },
+    {
+      "input": ".rivet/sessions/a.jsonl",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "rivet-runtime"
+    },
+    {
+      "input": ".rivet/plans/x.md",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "rivet-runtime"
+    },
+    {
+      "input": ".rivet/cache-log/y.log",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "rivet-runtime"
+    },
+    {
+      "input": ".rivet/sensorium/z.json",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "rivet-runtime"
+    },
+    {
+      "input": ".rivet/prefix-diag/p.txt",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "rivet-runtime"
+    },
+    {
+      "input": ".rivet/playbook/pb.md",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "rivet-runtime"
+    },
+    {
+      "input": ".rivet/runtime/r.json",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "rivet-runtime"
+    },
+    {
+      "input": ".rivet/tmp/t.txt",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "rivet-runtime"
+    },
+    {
+      "input": ".rivet/external/e.md",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "rivet-runtime"
+    },
+    {
+      "input": ".rivet/foo.jsonl",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "rivet-jsonl"
+    },
+    {
+      "input": ".rivet/a/b.jsonl",
+      "tier": "L3_content",
+      "silent": false,
+      "reason": "content-default"
+    },
+    {
+      "input": ".rivet/meridian.db",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "rivet-db"
+    },
+    {
+      "input": ".rivet/meridian.db-shm",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "rivet-db"
+    },
+    {
+      "input": ".rivet/meridian.db.wal",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "rivet-db"
+    },
+    {
+      "input": ".rivet/meridian.db.extra",
+      "tier": "L3_content",
+      "silent": false,
+      "reason": "content-default"
+    },
+    {
+      "input": ".rivet/other.db",
+      "tier": "L3_content",
+      "silent": false,
+      "reason": "content-default"
+    },
+    {
+      "input": ".DS_Store",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "os-noise"
+    },
+    {
+      "input": "sub/Thumbs.db",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "os-noise"
+    },
+    {
+      "input": "a.log",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "fragment-ext"
+    },
+    {
+      "input": "b.lock",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "fragment-ext"
+    },
+    {
+      "input": "c.pid",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "fragment-ext"
+    },
+    {
+      "input": "d.swp",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "fragment-ext"
+    },
+    {
+      "input": "e.tmp",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "fragment-ext"
+    },
+    {
+      "input": "f.map",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "fragment-ext"
+    },
+    {
+      "input": "g.tsbuildinfo",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "fragment-ext"
+    },
+    {
+      "input": ".test-tmp/x.jsonl",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "runtime-jsonl"
+    },
+    {
+      "input": ".test-tmp/y.txt",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "test-runtime"
+    },
+    {
+      "input": "arch.zip",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "archive-artifact"
+    },
+    {
+      "input": "arch.tgz",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "archive-artifact"
+    },
+    {
+      "input": "arch.tar.gz",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "archive-artifact"
+    },
+    {
+      "input": "ARCH.ZIP",
+      "tier": "L1_fragment",
+      "silent": true,
+      "reason": "archive-artifact"
+    },
+    {
+      "input": "src/main.ts",
+      "tier": "L3_content",
+      "silent": false,
+      "reason": "content-default"
+    },
+    {
+      "input": "README.md",
+      "tier": "L3_content",
+      "silent": false,
+      "reason": "content-default"
+    },
+    {
+      "input": "src/foo/bar/baz.go",
+      "tier": "L3_content",
+      "silent": false,
+      "reason": "content-default"
+    },
+    {
+      "input": "DEEP/nested/path/file.ts",
+      "tier": "L3_content",
+      "silent": false,
+      "reason": "content-default"
+    }
+  ],
+  "scanExcludes": [
+    {
+      "name": ".git",
+      "excluded": true
+    },
+    {
+      "name": ".next",
+      "excluded": true
+    },
+    {
+      "name": "TianshuData",
+      "excluded": true
+    },
+    {
+      "name": "__pycache__",
+      "excluded": true
+    },
+    {
+      "name": "build",
+      "excluded": true
+    },
+    {
+      "name": "dist",
+      "excluded": true
+    },
+    {
+      "name": "node_modules",
+      "excluded": true
+    },
+    {
+      "name": "target",
+      "excluded": true
+    }
+  ],
+  "scanExcludesProbe": [
+    {
+      "name": "node_modules",
+      "excluded": true
+    },
+    {
+      "name": ".git",
+      "excluded": true
+    },
+    {
+      "name": "dist",
+      "excluded": true
+    },
+    {
+      "name": ".next",
+      "excluded": true
+    },
+    {
+      "name": "build",
+      "excluded": true
+    },
+    {
+      "name": "target",
+      "excluded": true
+    },
+    {
+      "name": "__pycache__",
+      "excluded": true
+    },
+    {
+      "name": "TianshuData",
+      "excluded": true
+    },
+    {
+      "name": ".rivet",
+      "excluded": false
+    },
+    {
+      "name": "src",
+      "excluded": false
+    },
+    {
+      "name": "coverage",
+      "excluded": false
+    }
+  ],
+  "repoMap": [
+    {
+      "name": "default",
+      "input": {},
+      "content": "repomap/\n├── docs\n│   └── guide.md [文档] 1B\n├── src\n│   ├── agent\n│   │   ├── __tests__ [测试]\n│   │   │   └── loop.test.ts [测试] 1B\n│   │   ├── helper.spec.ts [测试] 1B\n│   │   └── loop.ts 1B\n│   ├── app.tsx [入口] 1B\n│   ├── index.tsx [入口] 1B\n│   └── main.ts [入口] 1B\n├── .env.example 1B\n├── .gitignore 1B\n├── a.ts 1B\n├── m.ts 1B\n├── package.json [配置] 1B\n├── README.md [文档] 1B\n├── tsconfig.json [配置] 1B\n├── vite.config.ts [配置] 1B\n└── z.ts 1B\n树中 16 个文件，4 个目录",
+      "isError": false
+    },
+    {
+      "name": "depth1",
+      "input": {
+        "depth": 1
+      },
+      "content": "repomap/\n├── docs\n│   └── guide.md [文档] 1B\n├── src\n│   ├── app.tsx [入口] 1B\n│   ├── index.tsx [入口] 1B\n│   └── main.ts [入口] 1B\n├── .env.example 1B\n├── .gitignore 1B\n├── a.ts 1B\n├── m.ts 1B\n├── package.json [配置] 1B\n├── README.md [文档] 1B\n├── tsconfig.json [配置] 1B\n├── vite.config.ts [配置] 1B\n└── z.ts 1B\n树中 13 个文件，2 个目录",
+      "isError": false
+    },
+    {
+      "name": "depth2",
+      "input": {
+        "depth": 2
+      },
+      "content": "repomap/\n├── docs\n│   └── guide.md [文档] 1B\n├── src\n│   ├── agent\n│   │   ├── helper.spec.ts [测试] 1B\n│   │   └── loop.ts 1B\n│   ├── app.tsx [入口] 1B\n│   ├── index.tsx [入口] 1B\n│   └── main.ts [入口] 1B\n├── .env.example 1B\n├── .gitignore 1B\n├── a.ts 1B\n├── m.ts 1B\n├── package.json [配置] 1B\n├── README.md [文档] 1B\n├── tsconfig.json [配置] 1B\n├── vite.config.ts [配置] 1B\n└── z.ts 1B\n树中 15 个文件，3 个目录",
+      "isError": false
+    },
+    {
+      "name": "depth0",
+      "input": {
+        "depth": 0
+      },
+      "content": "repomap/\n├── .env.example 1B\n├── .gitignore 1B\n├── a.ts 1B\n├── m.ts 1B\n├── package.json [配置] 1B\n├── README.md [文档] 1B\n├── tsconfig.json [配置] 1B\n├── vite.config.ts [配置] 1B\n└── z.ts 1B\n树中 9 个文件，0 个目录",
+      "isError": false
+    },
+    {
+      "name": "maxFiles3",
+      "input": {
+        "max_files": 3
+      },
+      "content": "repomap/\n├── docs\n│   └── guide.md [文档] 1B\n└── src\n    └── agent\n        ├── __tests__ [测试]\n        │   └── loop.test.ts [测试] 1B\n        └── helper.spec.ts [测试] 1B\n...（已截断：省略 13 个文件；可用 repo_map({path: \"...\"}) 或 glob/grep 做定向查看）\n树中 3 个文件，4 个目录",
+      "isError": false
+    },
+    {
+      "name": "maxFiles0",
+      "input": {
+        "max_files": 0
+      },
+      "content": "repomap/\n├── docs\n│   └── guide.md [文档] 1B\n├── src\n│   ├── agent\n│   │   ├── __tests__ [测试]\n│   │   │   └── loop.test.ts [测试] 1B\n│   │   ├── helper.spec.ts [测试] 1B\n│   │   └── loop.ts 1B\n│   ├── app.tsx [入口] 1B\n│   ├── index.tsx [入口] 1B\n│   └── main.ts [入口] 1B\n├── .env.example 1B\n├── .gitignore 1B\n├── a.ts 1B\n├── m.ts 1B\n├── package.json [配置] 1B\n├── README.md [文档] 1B\n├── tsconfig.json [配置] 1B\n├── vite.config.ts [配置] 1B\n└── z.ts 1B\n树中 16 个文件，4 个目录",
+      "isError": false
+    },
+    {
+      "name": "path-src",
+      "input": {
+        "path": "src"
+      },
+      "content": "错误：path 必须位于项目目录内",
+      "isError": true
+    },
+    {
+      "name": "path-agent",
+      "input": {
+        "path": "src/agent"
+      },
+      "content": "错误：path 必须位于项目目录内",
+      "isError": true
+    },
+    {
+      "name": "path-nonexistent",
+      "input": {
+        "path": "nope"
+      },
+      "content": "错误：path 必须位于项目目录内",
+      "isError": true
+    },
+    {
+      "name": "path-escape",
+      "input": {
+        "path": "../outside"
+      },
+      "content": "错误：path 必须位于项目目录内",
+      "isError": true
+    },
+    {
+      "name": "path-hidden",
+      "input": {
+        "path": ".hidden"
+      },
+      "content": "错误：path 必须位于项目目录内",
+      "isError": true
+    }
+  ],
+  "inspectProject": {
+    "content": "## 项目摘要\n\n语言：JavaScript\n包管理器：pnpm\n框架：React（从依赖检测）\n测试框架：vitest\nLinter：ESLint\n\n### 脚本\n- build: tsc\n- test: node --test\n- lint: eslint .\n- dev: tsx watch\n- start: node .\n- typecheck: tsc --noEmit\n\n### 入口文件\n- src/index.ts",
+    "isError": false
+  },
+  "inspectProjectNonNode": {
+    "content": "当前目录未找到 package.json。不是 Node.js 项目。",
+    "isError": true
+  },
+  "fileInfo": [
+    {
+      "name": "file-ts",
+      "path": "a.ts",
+      "content": "Path: a.ts\nExists: true\nType: file\nSize: 12 B\nExtension: .ts\nModified: 2026-09-22T07:04:56.589Z\nPermissions: read-write\nEncoding: text",
+      "uiContent": null,
+      "isError": false
+    },
+    {
+      "name": "file-binary",
+      "path": "b.png",
+      "content": "Path: b.png\nExists: true\nType: file\nSize: 4 B\nExtension: .png\nModified: 2026-09-22T07:04:56.589Z\nPermissions: read-write\nEncoding: binary",
+      "uiContent": null,
+      "isError": false
+    },
+    {
+      "name": "file-empty",
+      "path": "empty.txt",
+      "content": "Path: empty.txt\nExists: true\nType: file\nSize: 0 B\nExtension: .txt\nModified: 2026-09-22T07:04:56.589Z\nPermissions: read-write\nEncoding: text",
+      "uiContent": null,
+      "isError": false
+    },
+    {
+      "name": "file-2kb",
+      "path": "big.bin",
+      "content": "Path: big.bin\nExists: true\nType: file\nSize: 2.0 KB\nExtension: .bin\nModified: 2026-09-22T07:04:56.589Z\nPermissions: read-write\nEncoding: binary",
+      "uiContent": null,
+      "isError": false
+    },
+    {
+      "name": "dir-root",
+      "path": ".",
+      "content": "Path: \nExists: true\nType: directory\nFiles: ≥6\nTotal size: ≥2.0 KB\nNote: partial tally — build/dependency subtrees skipped, or the file/depth cap was reached.\nModified: 2026-09-22T07:04:56.589Z",
+      "uiContent": null,
+      "isError": false
+    },
+    {
+      "name": "dir-sub",
+      "path": "sub",
+      "content": "Path: sub\nExists: true\nType: directory\nFiles: ≥2\nTotal size: ≥2 B\nNote: partial tally — build/dependency subtrees skipped, or the file/depth cap was reached.\nModified: 2026-09-22T07:04:56.589Z",
+      "uiContent": null,
+      "isError": false
+    },
+    {
+      "name": "missing",
+      "path": "nope.ts",
+      "content": "Path: nope.ts\nExists: false（路径不存在）",
+      "uiContent": "nope.ts — 不存在",
+      "isError": false
+    }
+  ],
+  "fileInfoNoPath": {
+    "content": "错误：path 参数必填",
+    "isError": true
+  },
+  "formatPermissions": [
+    {
+      "mode": 493,
+      "platform": "linux",
+      "out": "0755"
+    },
+    {
+      "mode": 420,
+      "platform": "linux",
+      "out": "0644"
+    },
+    {
+      "mode": 384,
+      "platform": "linux",
+      "out": "0600"
+    },
+    {
+      "mode": 493,
+      "platform": "win32",
+      "out": "read-write"
+    },
+    {
+      "mode": 292,
+      "platform": "win32",
+      "out": "read-only"
+    },
+    {
+      "mode": 128,
+      "platform": "win32",
+      "out": "read-write"
+    }
+  ]
+}
