@@ -48,6 +48,8 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// ── Git ──
 	// diff：工作树改动。经 `SpawnGit`（环境消毒 + 可执行路径发现）。
 	r.Register(Diff())
+	// git：结构化操作（status/diff_summary/commit/log/log_graph/stash/stash_pop）。
+	r.Register(Git())
 
 	// ── 执行 ──
 	r.Register(Bash(cwd))

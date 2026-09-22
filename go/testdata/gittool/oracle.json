@@ -484,5 +484,186 @@
       ]
     }
   ],
-  "aggregateMarker": "__aggregate_add__"
+  "aggregateMarker": "__aggregate_add__",
+  "git": [
+    {
+      "name": "status-clean",
+      "input": {
+        "action": "status"
+      },
+      "content": "分支：main\n状态：干净",
+      "isError": false
+    },
+    {
+      "name": "diff_summary-clean",
+      "input": {
+        "action": "diff_summary"
+      },
+      "content": "无变更。",
+      "isError": false
+    },
+    {
+      "name": "log",
+      "input": {
+        "action": "log"
+      },
+      "content": "<HASH> (HEAD -> main) init S1",
+      "isError": false
+    },
+    {
+      "name": "log-maxCount1",
+      "input": {
+        "action": "log",
+        "maxCount": 1
+      },
+      "content": "<HASH> (HEAD -> main) init S1",
+      "isError": false
+    },
+    {
+      "name": "log-maxCount0",
+      "input": {
+        "action": "log",
+        "maxCount": 0
+      },
+      "content": "<HASH> (HEAD -> main) init S1",
+      "isError": false
+    },
+    {
+      "name": "log-maxCount999",
+      "input": {
+        "action": "log",
+        "maxCount": 999
+      },
+      "content": "<HASH> (HEAD -> main) init S1",
+      "isError": false
+    },
+    {
+      "name": "log_graph",
+      "input": {
+        "action": "log_graph"
+      },
+      "content": "* <HASH> (HEAD -> main) init S1",
+      "isError": false
+    },
+    {
+      "name": "unknown-action",
+      "input": {
+        "action": "bogus"
+      },
+      "content": "未知 action：bogus。支持：status, diff_summary, commit, log, log_graph, stash, stash_pop",
+      "isError": true
+    },
+    {
+      "name": "commit-no-message",
+      "input": {
+        "action": "commit"
+      },
+      "content": "commit 需要 \"message\" 参数。",
+      "isError": true
+    },
+    {
+      "name": "stash-nothing",
+      "input": {
+        "action": "stash"
+      },
+      "content": "没有可 stash 的变更。",
+      "isError": false
+    },
+    {
+      "name": "stash_pop-no-stash",
+      "input": {
+        "action": "stash_pop"
+      },
+      "content": "BLOCKED: stash ref stash@{N} does not exist or git error.",
+      "isError": true
+    },
+    {
+      "name": "status-dirty",
+      "input": {
+        "action": "status"
+      },
+      "content": "分支：main\n变更：\nM src/a.ts\n?? src/new.ts\n?? src/中文文件.ts\n?? 说明文档.md\n未跟踪：\nsrc/new.ts\nsrc/中文文件.ts\n说明文档.md",
+      "isError": false
+    },
+    {
+      "name": "diff_summary-dirty",
+      "input": {
+        "action": "diff_summary"
+      },
+      "content": "未暂存：\nsrc/a.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+      "isError": false
+    }
+  ],
+  "gitStagedSummary": {
+    "content": "已暂存：\nsrc/a.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+    "isError": false
+  },
+  "gitCommitStaged": {
+    "content": "[main <HASH>] feat: staged only S1\n 1 file changed, 1 insertion(+), 1 deletion(-)\n\n--- 实际变更（git show --stat）---\n<HASH> (HEAD -> main)\n\n src/a.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+    "isError": false
+  },
+  "gitCommitNothing": {
+    "content": "未提供会话归属文件给 git commit，且不存在已暂存变更。请使用 deliver_task 并设 commit=true 做归属范围内交付，或在你有意手动管理 git 时显式暂存文件。",
+    "isError": true
+  },
+  "gitCommitSensitive": {
+    "content": "敏感文件拦截：commit 范围含凭据/密钥文件（.env），已中止。阅读或提交凭据/密钥文件不被允许；如确为模板/样例，请改用 .example 后缀或移入 fixtures/ 白名单目录。",
+    "isError": true
+  },
+  "gitCommitScoped": {
+    "content": "[main <HASH>] feat: scoped S1\n 1 file changed, 1 insertion(+)\n create mode 100644 src/b.ts\n\n--- 实际变更（git show --stat）---\n<HASH> (HEAD -> main)\n\n src/b.ts | 1 +\n 1 file changed, 1 insertion(+)",
+    "isError": false
+  },
+  "gitCommitTagWarning": {
+    "content": "[main <HASH>] feat: S1 M1 C1\n 1 file changed, 1 insertion(+)\n create mode 100644 src/c.ts\n\n--- 实际变更（git show --stat）---\n<HASH> (HEAD -> main)\n\n src/c.ts | 1 +\n 1 file changed, 1 insertion(+)\n\n⚠️ Commit claims 3 task tags (S1,M1,C1) but changed only 1 file(s) — possible multiple unrelated tasks in one commit.",
+    "isError": false
+  },
+  "stashSafetyDifferent": {
+    "blocked": true,
+    "conflicts": [
+      {
+        "stashRef": "stash@{0}",
+        "path": "f.txt",
+        "status": "different"
+      }
+    ],
+    "reasons": [
+      "BLOCKED: 1 file(s) in working tree have different content from stash stash@{N}: f.txt. Applying stash would overwrite current content. Compare manually before proceeding."
+    ]
+  },
+  "stashSafetySame": {
+    "blocked": false,
+    "conflicts": [
+      {
+        "stashRef": "stash@{0}",
+        "path": "f.txt",
+        "status": "same"
+      }
+    ],
+    "reasons": []
+  },
+  "stashSafetyMissingRef": {
+    "blocked": true,
+    "conflicts": [],
+    "reasons": [
+      "BLOCKED: stash ref stash@{N} does not exist or git error."
+    ]
+  },
+  "stashSafetyMissingCurrent": {
+    "blocked": false,
+    "conflicts": [
+      {
+        "stashRef": "stash@{0}",
+        "path": "f.txt",
+        "status": "missing_current"
+      }
+    ],
+    "reasons": [
+      "WARNING: 1 file(s) exist in stash but missing from working tree: f.txt."
+    ]
+  },
+  "gitStashPopBlocked": {
+    "content": "BLOCKED: 1 file(s) in working tree have different content from stash stash@{N}: f.txt. Applying stash would overwrite current content. Compare manually before proceeding.",
+    "isError": true
+  }
 }

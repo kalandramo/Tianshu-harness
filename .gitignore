@@ -175,3 +175,5 @@ src/**/__tests__/.undo-test-backup/
 go/testdata/projmap/fixtures/
 # diff 差分对账的运行时夹具（由 gen-oracle.ts 与 diff_oracle_test.go 各自重建）
 go/testdata/diff/fixtures/
+# git 工具差分对账的运行时夹具（由 gen-oracle.ts 与 git_oracle_test.go 各自重建）
+go/testdata/gittool/fixtures/

@@ -114,4 +114,156 @@ out.detectSensitiveGitAdd = gitAddCommands.map(command => ({
 
 out.aggregateMarker = AGGREGATE_ADD_MARKER
 
+// ── git 工具（受控仓库）──
+//
+// **非确定性字段归一化**：commit hash、日期、耗时都随运行变化。
+// `git log --oneline --decorate` 含 hash → 归一化 `<HASH>`；
+// `git show --stat --format=%h%d` 含 hash → 同样处理。
+const normalizeGit = (s: string): string =>
+  normalize(s)
+    .replace(/\b[0-9a-f]{7,40}\b/g, '<HASH>')
+    .replace(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\s]*/g, '<DATE>')
+    .replace(/stash@\{\d+\}/g, 'stash@{N}')
+
+const repo = join(FIXTURES, 'gitrepo')
+rmSync(repo, { recursive: true, force: true })
+mkdirSync(join(repo, 'src'), { recursive: true })
+const git = (args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] })
+git(['init', '-q'])
+git(['config', 'user.email', 'o@t'])
+git(['config', 'user.name', 'o'])
+git(['config', 'core.autocrlf', 'false'])
+git(['config', 'commit.gpgsign', 'false'])
+writeFileSync(join(repo, 'src', 'a.ts'), 'export const a = 1\n')
+writeFileSync(join(repo, 'README.md'), '# T\n')
+git(['add', '.'])
+git(['commit', '-qm', 'init S1'])
+
+const gitCases: Array<[string, any]> = [
+  ['status-clean', { action: 'status' }],
+  ['diff_summary-clean', { action: 'diff_summary' }],
+  ['log', { action: 'log' }],
+  ['log-maxCount1', { action: 'log', maxCount: 1 }],
+  ['log-maxCount0', { action: 'log', maxCount: 0 }],
+  ['log-maxCount999', { action: 'log', maxCount: 999 }],
+  ['log_graph', { action: 'log_graph' }],
+  ['unknown-action', { action: 'bogus' }],
+  ['commit-no-message', { action: 'commit' }],
+  ['stash-nothing', { action: 'stash' }],
+  ['stash_pop-no-stash', { action: 'stash_pop' }],
+]
+out.git = []
+for (const [name, input] of gitCases) {
+  try {
+    const r = await GIT_TOOL.execute({ cwd: repo, input, toolUseId: 't' } as any)
+    out.git.push({ name, input, content: normalizeGit(r.content), isError: r.isError ?? false })
+  } catch (e) {
+    out.git.push({ name, input, content: 'THREW: ' + (e as Error).message, isError: true })
+  }
+}
+
+// 制造改动后的 status / diff_summary
+writeFileSync(join(repo, 'src', 'a.ts'), 'export const a = 2\n')
+writeFileSync(join(repo, 'src', 'new.ts'), 'export const n = 1\n')
+// **非 ASCII 文件名**——锁定 `-c core.quotePath=false` 的效果：
+// 不加该前缀时 git 会把中文名八进制转义为 "\346\226\207..."。
+writeFileSync(join(repo, 'src', '中文文件.ts'), 'export const zh = 1\n')
+writeFileSync(join(repo, '说明文档.md'), '# 中文\n')
+for (const [name, input] of [['status-dirty', { action: 'status' }], ['diff_summary-dirty', { action: 'diff_summary' }]] as Array<[string, any]>) {
+  const r = await GIT_TOOL.execute({ cwd: repo, input, toolUseId: 't' } as any)
+  out.git.push({ name, input, content: normalizeGit(r.content), isError: r.isError ?? false })
+}
+
+// 暂存后的 diff_summary
+git(['add', 'src/a.ts'])
+out.gitStagedSummary = await (async () => {
+  const r = await GIT_TOOL.execute({ cwd: repo, input: { action: 'diff_summary' }, toolUseId: 't' } as any)
+  return { content: normalizeGit(r.content), isError: r.isError ?? false }
+})()
+
+// commit（无归属文件但已暂存 → 提交已暂存内容）
+out.gitCommitStaged = await (async () => {
+  const r = await GIT_TOOL.execute({ cwd: repo, input: { action: 'commit', message: 'feat: staged only S1' }, toolUseId: 't' } as any)
+  return { content: normalizeGit(r.content), isError: r.isError ?? false }
+})()
+
+// commit（无归属 + 无暂存 → 报错）
+out.gitCommitNothing = await (async () => {
+  const r = await GIT_TOOL.execute({ cwd: repo, input: { action: 'commit', message: 'x' }, toolUseId: 't' } as any)
+  return { content: normalizeGit(r.content), isError: r.isError ?? false }
+})()
+
+// commit（归属含敏感文件 → 拦截）
+writeFileSync(join(repo, '.env'), 'SECRET=1\n')
+out.gitCommitSensitive = await (async () => {
+  const r = await GIT_TOOL.execute({ cwd: repo, input: { action: 'commit', message: 'x' }, ownedFiles: ['.env'], toolUseId: 't' } as any)
+  return { content: normalizeGit(r.content), isError: r.isError ?? false }
+})()
+
+// commit（归属正常文件 → 成功，含 tag 审计）
+writeFileSync(join(repo, 'src', 'b.ts'), 'export const b = 1\n')
+out.gitCommitScoped = await (async () => {
+  const r = await GIT_TOOL.execute({ cwd: repo, input: { action: 'commit', message: 'feat: scoped S1' }, ownedFiles: ['src/b.ts'], toolUseId: 't' } as any)
+  return { content: normalizeGit(r.content), isError: r.isError ?? false }
+})()
+
+// commit（多标签但文件少 → 审计警告）
+writeFileSync(join(repo, 'src', 'c.ts'), 'export const c = 1\n')
+out.gitCommitTagWarning = await (async () => {
+  const r = await GIT_TOOL.execute({ cwd: repo, input: { action: 'commit', message: 'feat: S1 M1 C1' }, ownedFiles: ['src/c.ts'], toolUseId: 't' } as any)
+  return { content: normalizeGit(r.content), isError: r.isError ?? false }
+})()
+
+// ── stash 安全（workspace-guard）──
+const stashRepo = join(FIXTURES, 'stashrepo')
+rmSync(stashRepo, { recursive: true, force: true })
+mkdirSync(stashRepo, { recursive: true })
+const sgit = (args: string[]) => execFileSync('git', args, { cwd: stashRepo, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] })
+sgit(['init', '-q'])
+sgit(['config', 'user.email', 'o@t'])
+sgit(['config', 'user.name', 'o'])
+sgit(['config', 'core.autocrlf', 'false'])
+writeFileSync(join(stashRepo, 'f.txt'), 'base\n')
+sgit(['add', '.'])
+sgit(['commit', '-qm', 'init'])
+
+// 造 stash：改文件 → stash
+writeFileSync(join(stashRepo, 'f.txt'), 'stashed version\n')
+sgit(['stash', 'push', '-q', '-m', 's1'])
+
+// 场景 A：工作树与 stash **不同** → blocked
+writeFileSync(join(stashRepo, 'f.txt'), 'current different\n')
+const guardA = createWorkspaceGuard(stashRepo)
+out.stashSafetyDifferent = await (async () => {
+  const r = await guardA.checkStashSafety('stash@{0}')
+  return { blocked: r.blocked, conflicts: r.conflicts, reasons: r.reasons.map(normalizeGit) }
+})()
+
+// 场景 B：工作树与 stash **相同** → 不 blocked
+writeFileSync(join(stashRepo, 'f.txt'), 'stashed version\n')
+out.stashSafetySame = await (async () => {
+  const r = await guardA.checkStashSafety('stash@{0}')
+  return { blocked: r.blocked, conflicts: r.conflicts, reasons: r.reasons.map(normalizeGit) }
+})()
+
+// 场景 C：不存在的 ref → blocked
+out.stashSafetyMissingRef = await (async () => {
+  const r = await guardA.checkStashSafety('stash@{99}')
+  return { blocked: r.blocked, conflicts: r.conflicts, reasons: r.reasons.map(normalizeGit) }
+})()
+
+// 场景 D：工作树文件缺失 → missing_current
+rmSync(join(stashRepo, 'f.txt'), { force: true })
+out.stashSafetyMissingCurrent = await (async () => {
+  const r = await guardA.checkStashSafety('stash@{0}')
+  return { blocked: r.blocked, conflicts: r.conflicts, reasons: r.reasons.map(normalizeGit) }
+})()
+
+// stash_pop（有冲突 → 拒绝）
+writeFileSync(join(stashRepo, 'f.txt'), 'conflicting\n')
+out.gitStashPopBlocked = await (async () => {
+  const r = await GIT_TOOL.execute({ cwd: stashRepo, input: { action: 'stash_pop' }, toolUseId: 't' } as any)
+  return { content: normalizeGit(r.content), isError: r.isError ?? false }
+})()
+
 process.stdout.write(JSON.stringify(out, null, 2))
