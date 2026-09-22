@@ -3396,11 +3396,50 @@ artifact 阈值反而 **×3**。这不是 bug：`turnBudget` 的**两条消费�
 **第 4 处 `tool-pipeline.ts:2143` 属「依赖未移植」而非「漏接线」**（已核实）：
 它在 `tu.name === 'run_tests'` 的失败诊断分支里，依赖
 `classifyTestRun` / `repairHintTracker` / `classifyToolFailure` 三个子系统。
-**Go 侧 `run_tests` 工具本身尚未移植**（`grep '"run_tests"' internal/tools/`
-零命中），故该分支在 Go 侧不可达——不是漏接，是上游缺失。
+`run_tests` **工具本体已移植**（`internal/tools/run_tests.go`，587 行，
+提交于 `b4b9c69`），但这三个**诊断子系统**尚未移植
+（`grep -rl 'ClassifyTestRun\|RepairHintTracker' internal/` 零命中），
+故该分支在 Go 侧不可达——不是漏接，是上游缺失。
 
-建议下一刀仍按原优先级（session 容器 / 工具移植），**等 `run_tests` 移植时
+建议下一刀仍按原优先级（session 容器 / 工具移植），**等诊断子系统移植时
 一并接**这处 `diagBudgetFrac`。
+
+> **⚠️ 一条方法论修正（第三十刀的自纠）**：第三十刀初版 HANDOFF 曾写
+> 「Go 侧 `run_tests` 工具本身尚未移植」——**这是错的**，根因是排查命令
+> `grep -rn '"run_tests"' internal/tools/*.go | grep -v _test` 里的
+> `grep -v _test` 按**文件路径**过滤，而 `run_tests.go` 的路径**本身含
+> `_test` 子串**，被整文件误杀 → 零命中 → 我据此下了「不存在」的结论。
+>
+> **教训**：`grep -v _test` 这种「排除测试文件」的惯用法在文件名本身含
+> `test` 时会静默丢结果（`run_tests.go` / `testspawn.go` / `testdata/`）。
+> 排除测试应用 `-v '_test\.go
+
+理由：它同时解锁两处——
+- Wave 3 剩余的 `buildDynamicAppendixParts`（动态 appendix，依赖工具历史与
+  turn 计数）
+- Wave 4 的 hook 管线（多数 hook 需读会话状态）
+
+且它的产出可独立验证（JSONL 落盘格式与 TS 版兼容）。
+
+**若优先补工具**：`hash_edit` 工具本体（地基已就绪，直接接）。
+
+（以下为历史记录）
+static 层（BASE_PROMPT + calibration）已完成并逐字节对账通过——
+Go agent 现在跑的是真正的认知资产（31,355 字节），不是占位符。
+
+下一个主战场是 **volatile 块与动态 appendix**（`src/prompt/volatile.ts`，
+1,263 行）：每轮的 git 状态快照、工具历史、待办、星域提示等。
+这一层是缓存命中率的**真正杠杆**——它决定哪些内容进冻结前缀、哪些
+进尾部增量。判据仍是逐字节等价，但 oracle 需构造带 volatileCtx 的用例。
+
+注意 volatile 层依赖会话状态（工具历史、turn 计数），需要先有
+会话状态容器（Wave 4 的 session 部分），两层有耦合——建议先做
+最小 session 状态，再上 volatile 渲染。
+
+其余待办见下方 Wave 2/3/4/5 清单。
+`（锚定后缀），或直接按 `--include='*.go'`
+> 加 `grep -v '_test\.go:'`（锚定行内路径结尾）。**零命中 ≠ 不存在**——
+> 下负向结论前换一种检索方式交叉验证（本次用单文件 grep 立刻证伪）。
 
 ## 建议的第一刀
 
