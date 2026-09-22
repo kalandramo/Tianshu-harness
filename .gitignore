@@ -177,3 +177,5 @@ go/testdata/projmap/fixtures/
 go/testdata/diff/fixtures/
 # git 工具差分对账的运行时夹具（由 gen-oracle.ts 与 git_oracle_test.go 各自重建）
 go/testdata/gittool/fixtures/
+# related_tests 差分对账的运行时夹具（由 gen-oracle.ts 与 relatedtests_oracle_test.go 各自重建）
+go/testdata/relatedtests/fixtures/

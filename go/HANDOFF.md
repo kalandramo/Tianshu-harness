@@ -3861,6 +3861,144 @@ Go 侧工具数 17（TS 侧 38）。剩余候选：
    小的独立工具，依赖面可能很浅（值得先侦察）。
 5. **`internal/session`**——核心链路，仍是 HANDOFF 的「建议的第一刀」。
 
+## 第三十七刀：移植 `related_tests` + `leave_mark`（2026-09-22）
+
+**目标**：补两个「浅依赖」工具（上轮推荐）。实测发现二者重量差异很大——
+`related_tests` 确实浅，`leave_mark` 的**落盘链路**深。
+
+### 落地
+
+| 文件 | 内容 |
+|---|---|
+| `internal/tools/relatedtests.go` | `related_tests` 本体（Node path 语义手工复刻） |
+| `internal/tools/leavemark.go` | `leave_mark` 本体 + `LeaveMarkInput` |
+| `internal/tools/registry.go` | `CallParams` 新增 `OnLeaveMark` 注入点 |
+| `internal/tools/default_registry.go` | 两者注册（Go 侧工具数 17 → 19） |
+| `testdata/relatedtests/gen-oracle.ts` + `oracle.json` | 25 例差分 oracle |
+
+### `related_tests`：三处必须手工复刻的 Node 语义
+
+**（1）`path.dirname` 保留输入分隔符，`path.join` 归一化——二者不对称**
+
+探针实测（`testdata/relatedtests/probe*.ts`）：
+
+```
+dirname('src/tools/bash.ts')  = 'src/tools'      ← 正斜杠保留
+dirname('src\\tools\\bash.ts') = 'src\\tools'     ← 反斜杠保留
+join('src/tools', '__tests__') = 'src\\tools\\__tests__'  ← 归一化
+```
+
+而 Go 的 `filepath.Dir` **会 Clean 归一化**。若直接照搬，TS 的
+`dir.startsWith('src/')` 分支行为改变 → 对账失败。故 `jsDirname` 是**手工
+实现**（逐字符扫描 + 保留原分隔符），不用 `filepath.Dir`。
+
+oracle 的 `win-backslash-bash` 用例锁定此差异：正斜杠输入返回 3 个结果，
+反斜杠只有 2 个（`startsWith('src/')` 失效）。**这是 TS 的平台缺陷**，
+但逐字节等价要求我们复刻它，不「修正」。
+
+**（2）不去重**
+
+`flat.py` 的 dir/parentDir/relDir 都是 `.`，4 个候选撞同一路径，TS 原样
+返回 **4 次重复**（oracle `py-flat-top` 锁定）。不「优化」成去重。
+
+**（3）`includes('..')` 是子串判定**
+
+`a..b.ts` 也被拒绝（oracle `err-dotdot-mid` 锁定），不是路径语义判定。
+
+**scope 收窄（明示）**：TS 的 `createRelatedTestsTool(getIndexer)` 优先用
+Meridian SQL 的真实 import 图，启发式只是兜底。**Go 侧无 Meridian**
+（全仓 grep 零命中），故 Go 版对应的是 `createRelatedTestsTool(() => null)`
+静态变体——这不是收窄，而是 Go 侧唯一存在的语义。
+
+### `leave_mark`：scope 收窄（重要）
+
+TS 侧印记的**真正落盘者**是 constellation post-session hook
+（`appendMilestone`），依赖四个子系统：
+
+| TS 依赖 | 行数 | Go 侧状态 |
+|---|---|---|
+| `src/constellation/`（schema/milestone/store/format） | 726 | **不存在** |
+| `src/agent/chronicle.ts`（ChronicleEntry） | — | **不存在** |
+| `src/agent/task-ledger.ts`（TaskLedgerSummary） | — | **不存在** |
+| `src/agent/void-identity.ts`（buildAgentMark） | — | **不存在** |
+
+**故 Go 版只移植工具本体**（校验 + 回调派发 + 降级路径）。
+
+**这不是缺陷，而是 TS 明确设计的契约**——TS 自己的测试断言
+「leave_mark is inert (no throw) without a runtime callback」
+（`__tests__/leave-mark.test.ts:33`），源码注释写明「No runtime to record
+(e.g. worker context) — acknowledge without persisting」。
+
+Go 侧已把接口就位（`CallParams.OnLeaveMark`，与 `OnFileWrite` 同一注入
+模式）；未来移植 constellation 时接上消费者即可。
+
+### 顺带修掉一处**既有**的 schema 对账覆盖缺口
+
+`testdata/toolschema/gen-oracle.ts` 的 `PORTED` 清单有两个问题：
+
+1. **`apply_patch` 是过期条目**——它已移到 TS 的 EXTENDED 层
+   （`default-registry.ts:88`），不在 `createDefaultToolRegistry` 里，
+   生成器每次都报「注册表里找不到」。已移除并注明 Go 侧对账在
+   `applypatch*_test.go`。
+2. **preset 门控工具从未纳入对账**——`related_tests` / `leave_mark` /
+   `inspect_project` / `file_info` 受 `presetIncludes` 门控，只在 `full`
+   档注册。生成器用默认 preset → 这些工具在 oracle 里**静默缺席**。
+   已改为显式传 `preset: 'full'`。
+
+**影响**：oracle 从 9 个工具增至 11 个（新增 `related_tests`、`leave_mark`），
+schema 键序对账覆盖面扩大。**这是本刀最有价值的副产品**——它意味着
+`inspect_project` / `file_info`（第三十四刀移植）此前**从未被 schema
+对账覆盖**，现在补上了。
+
+### 由对账抓到的自身缺陷
+
+1. **`leave_mark` 的 `tags` 键序错**：我首版用 `arrayProp`（产
+   `type → description → items`），而 TS 字面量序是
+   `type → items → description`。改用 `arrayPropOrdered`。
+   **嵌套键序同样进请求体、同样影响前缀缓存**。
+2. **`InputSchema` 漏 `required`**：`objSchemaOrdered` 的第三参是 required
+   变参，我首版没传。TS 声明 `required: ['file']` / `['symbol','summary']`。
+3. **M116 首轮 0 红是我变异写错**：`false && (A) || (B)` 因 Go 运算符优先级
+   变成 `(false&&A) || B`，大写字母分支仍生效。改为整体 `return false` 后
+   转红。
+
+### 变异反证 M114-M120
+
+| 变异 | 内容 | 结果 |
+|---|---|---|
+| M114 | `jsDirname` 归一化分隔符（模拟 `filepath.Dir`） | 3 红 |
+| M115 | `filterExistingSorted` 去重 | 2 红（含 `py-flat-top`） |
+| M116 | `isAbsPath` 盘符分支失效 | 1 红（2 子用例） |
+| M117 | `type` 白名单失效 | 1 红 |
+| M118 | 校验用 `== ""` 而非 `TrimSpace` | 1 红 |
+| M119 | `tags` 不过滤非字符串 | 1 红 |
+| M120 | 降级路径改为报错 | 1 红 |
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./... -count=1` **23 包 ok / 0 FAIL**（连跑 2 次）
+- `related_tests` 差分 oracle **25 例**（source 11 / test 10 / error 4）
+- `leave_mark` 行为测试 **10 例**（含 TS 原版 5 用例的逐条对账）
+- toolschema 对账 **11 个工具**（含嵌套键序）
+
+### 下一步
+
+Go 侧工具数 19（TS 侧 full preset 48）。剩余缺口按依赖面：
+
+| 候选 | 依赖面 | 备注 |
+|---|---|---|
+| `ask_user_question` | **浅** | 只需交互回调接口 |
+| `skill` | 中 | 需 `.rivet/skills/*.md` 加载 + 清单解析 |
+| `undo` | 中 | 需检查点子系统（Go 侧 `checkpoint.go` 已有部分） |
+| `job` / `monitor` | **深** | 后台进程管理（`proctree.go` 已有部分地基） |
+| `ast_grep` / `ast_edit` | **深** | 需 tree-sitter 绑定（Go 侧无） |
+| `web_*` / `browser_debug` / `computer_use` | **超出内核** | 网络 + 桌面自动化 |
+| `inspect_project` / `file_info` schema 对账 | **已完成** | 本刀顺带补上 |
+
+**推荐下一刀**：`ask_user_question`（浅依赖，可一轮做完）。若想啃硬骨头，
+`job`/`monitor` 的 `proctree.go` 地基已就绪，但需新子系统。
+
 ## 建议的第一刀
 
 **（2026-09-22 修正：本节原建议「接 `internal/session`」——该断言已过期，

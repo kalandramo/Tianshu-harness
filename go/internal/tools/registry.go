@@ -55,6 +55,14 @@ type CallParams struct {
 	OnOutput func(chunk string)
 	// OnFileWrite 登记工具内部写入的文件（让证据追踪感知）。
 	OnFileWrite func(path string)
+	// OnLeaveMark 接收 leave_mark 工具落下的离别印记。
+	//
+	// 对账 TS 的 `params.onLeaveMark`（`tool-pipeline.ts:363`）。
+	// nil = 无运行时挂接（如 worker 上下文）——工具走降级路径
+	// 「确认但不持久化」，与 TS 一致。
+	//
+	// **依赖方向**：`tools` 包内定义（LeaveMarkInput 在 leavemark.go），无跨包环。
+	OnLeaveMark func(mark LeaveMarkInput)
 	// SessionID 用于隔离按会话的状态（读历史、去重跟踪），
 	// 防同 cwd 的并发会话交叉污染。
 	SessionID string

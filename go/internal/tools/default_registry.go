@@ -44,6 +44,14 @@ func NewDefaultRegistry(opts Options) *Registry {
 	r.Register(RepoMap())
 	r.Register(InspectProject())
 	r.Register(FileInfo())
+	// related_tests：源文件 ↔ 测试文件的路径推导（纯启发式）。
+	// 对账 TS 的 RELATED_TESTS_TOOL——其 Meridian 分支在 Go 侧不存在，
+	// 故对应的是 `createRelatedTestsTool(() => null)` 静态变体。
+	r.Register(RelatedTests(cwd))
+	// leave_mark：会话离别印记（工具本体 + 回调派发）。
+	// scope 收窄：印记的真正落盘者（constellation post-session hook）在 Go 侧
+	// 不存在——详见 leavemark.go 文件头。
+	r.Register(LeaveMark())
 
 	// ── Git ──
 	// diff：工作树改动。经 `SpawnGit`（环境消毒 + 可执行路径发现）。

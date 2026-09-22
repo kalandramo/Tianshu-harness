@@ -27,13 +27,25 @@ import { createDefaultToolRegistry } from '../../../src/tools/default-registry.j
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-/** 本波次已移植到 Go 的工具（其余不在对账范围）。 */
+/** 本波次已移植到 Go 的工具（其余不在对账范围）。
+ *
+ * 注 1：`apply_patch` 已移到 TS 的 EXTENDED 层（default-registry.ts:88），
+ * 不在 `createDefaultToolRegistry` 里——故它**无法**纳入本 oracle（会报
+ * "注册表里找不到"）。Go 侧的 apply_patch 对账另见
+ * `internal/tools/applypatch*_test.go`。
+ *
+ * 注 2：`related_tests` / `inspect_project` / `file_info` 等受 **preset 门控**
+ * （default-registry.ts:159 的 `presetIncludes`）——只在 `full` 档注册。
+ * 故此处显式传 `preset: 'full'`，否则这些工具在 oracle 里缺席（静默覆盖
+ * 缺口：schema 对账会漏掉它们）。 */
 const PORTED = [
-  'read_file', 'write_file', 'edit_file', 'hash_edit', 'apply_patch',
+  'read_file', 'write_file', 'edit_file', 'hash_edit',
   'glob', 'grep', 'bash', 'run_tests', 'todo',
+  'related_tests',
+  'leave_mark',
 ]
 
-const registry = createDefaultToolRegistry()
+const registry = createDefaultToolRegistry([], { preset: 'full' })
 // 注意：工具定义在 `tool.definition`（不是 `tool.input_schema`）；
 // `getAll()` 返回的数组**未排序**，但 `getEnabledDefinitions()` 按 name 排序
 // ——对账要的是**每个工具内部**的 properties 键序，不是工具间顺序。

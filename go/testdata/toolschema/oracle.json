@@ -1029,5 +1029,156 @@
     "required": [
       "action"
     ]
+  },
+  "related_tests": {
+    "description": "查找与给定源文件相关的测试文件。\n\n### 用法\n- 编辑源文件后，用它确定需要跑哪些测试\n- 编辑前，用它了解该文件已有哪些测试\n- 返回匹配的测试文件路径列表\n\n### 示例\nGood: related_tests(file=\"src/tools/bash.ts\") — 找 bash 工具的测试\nGood: related_tests(file=\"src/api/client.ts\") — 找 API client 的测试",
+    "inputSchema": {
+      "__ordered": [
+        [
+          "type",
+          "object"
+        ],
+        [
+          "properties",
+          {
+            "__ordered": [
+              [
+                "file",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "相对 cwd 的源文件路径"
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        [
+          "required",
+          [
+            "file"
+          ]
+        ]
+      ]
+    },
+    "propOrder": [
+      "file"
+    ],
+    "required": [
+      "file"
+    ]
+  },
+  "leave_mark": {
+    "description": "在会话结束时，在项目星图中留下你的印记。\n\n### 何时调用\n仅当用户显式结束会话（说再见、关闭、或收到会话结束信号）时调用。不要在完成单个任务后调用——仅在真正会话离别时。每个会话至多调用一次。\n\n### 做了什么\n在 `.rivet/constellation.json` 中记录一个里程碑（你的身份锚点）。\n\n### 你的符号\n任选一个字形：✦ ✧ ✶ ✷ ✸ ✺ ❂ ❉ ◈ ◇ ⟡ ⌬ ⚘ ⚙ ⊕ ↻\n\n### 字段\n- symbol：你自选的标志（任意符号，1-2 字符）\n- summary：一行话总结你此程完成的事\n- type（可选）：feature | fix | refactor | architecture | milestone",
+    "inputSchema": {
+      "__ordered": [
+        [
+          "type",
+          "object"
+        ],
+        [
+          "properties",
+          {
+            "__ordered": [
+              [
+                "symbol",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "你自选的标志（任意符号，1-2 字符）"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "summary",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "一行话总结你此程完成的事"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "type",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "可选：feature | fix | refactor | architecture | milestone"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "tags",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "array"
+                    ],
+                    [
+                      "items",
+                      {
+                        "__ordered": [
+                          [
+                            "type",
+                            "string"
+                          ]
+                        ]
+                      }
+                    ],
+                    [
+                      "description",
+                      "可选的自由标签"
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        [
+          "required",
+          [
+            "symbol",
+            "summary"
+          ]
+        ]
+      ]
+    },
+    "propOrder": [
+      "symbol",
+      "summary",
+      "type",
+      "tags"
+    ],
+    "required": [
+      "symbol",
+      "summary"
+    ]
   }
 }

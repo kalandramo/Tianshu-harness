@@ -1,0 +1,180 @@
+{
+  "files": [
+    "src/tools/bash.ts",
+    "src/tools/__tests__/bash.test.ts",
+    "src/tools/__tests__/bash.spec.ts",
+    "src/api/client.ts",
+    "src/api/__tests__/client.test.ts",
+    "src/lone.ts",
+    "lib/util.ts",
+    "lib/util.test.ts",
+    "__tests__/tools/bash.test.ts",
+    "tests/api/client.spec.ts",
+    "pkg/mod.py",
+    "pkg/tests/test_mod.py",
+    "testdir/other.py",
+    "testdir/other_test.py",
+    "flat.py",
+    "tests/test_flat.py",
+    "src/deep.py",
+    "tests/deep/test_deep.py",
+    "src/pypkg/inner.py",
+    "src/pypkg/tests/test_inner.py"
+  ],
+  "source": [
+    {
+      "name": "src-tools-bash",
+      "file": "src/tools/bash.ts",
+      "content": "__tests__\\tools\\bash.test.ts\nsrc\\tools\\__tests__\\bash.spec.ts\nsrc\\tools\\__tests__\\bash.test.ts",
+      "isError": false
+    },
+    {
+      "name": "src-api-client",
+      "file": "src/api/client.ts",
+      "content": "src\\api\\__tests__\\client.test.ts\ntests\\api\\client.spec.ts",
+      "isError": false
+    },
+    {
+      "name": "src-lone-notfound",
+      "file": "src/lone.ts",
+      "content": "未找到相关测试。",
+      "isError": false
+    },
+    {
+      "name": "lib-util-colocated",
+      "file": "lib/util.ts",
+      "content": "lib\\util.test.ts",
+      "isError": false
+    },
+    {
+      "name": "py-pkg-mod",
+      "file": "pkg/mod.py",
+      "content": "pkg\\tests\\test_mod.py",
+      "isError": false
+    },
+    {
+      "name": "py-testdir-other",
+      "file": "testdir/other.py",
+      "content": "testdir\\other_test.py",
+      "isError": false
+    },
+    {
+      "name": "py-flat-top",
+      "file": "flat.py",
+      "content": "tests\\test_flat.py\ntests\\test_flat.py\ntests\\test_flat.py\ntests\\test_flat.py",
+      "isError": false
+    },
+    {
+      "name": "py-src-deep",
+      "file": "src/deep.py",
+      "content": "未找到相关测试。",
+      "isError": false
+    },
+    {
+      "name": "py-src-pypkg-inner",
+      "file": "src/pypkg/inner.py",
+      "content": "src\\pypkg\\tests\\test_inner.py",
+      "isError": false
+    },
+    {
+      "name": "win-backslash-bash",
+      "file": "src\\tools\\bash.ts",
+      "content": "src\\tools\\__tests__\\bash.spec.ts\nsrc\\tools\\__tests__\\bash.test.ts",
+      "isError": false
+    },
+    {
+      "name": "win-backslash-client",
+      "file": "src\\api\\client.ts",
+      "content": "src\\api\\__tests__\\client.test.ts",
+      "isError": false
+    }
+  ],
+  "test": [
+    {
+      "name": "rev-colocated-test",
+      "file": "src/tools/__tests__/bash.test.ts",
+      "content": "src\\tools\\bash.ts",
+      "isError": false
+    },
+    {
+      "name": "rev-colocated-spec",
+      "file": "src/tools/__tests__/bash.spec.ts",
+      "content": "src\\tools\\bash.ts",
+      "isError": false
+    },
+    {
+      "name": "rev-lib-colocated",
+      "file": "lib/util.test.ts",
+      "content": "lib\\util.ts",
+      "isError": false
+    },
+    {
+      "name": "rev-top-tests-mirror",
+      "file": "__tests__/tools/bash.test.ts",
+      "content": "src\\tools\\bash.ts",
+      "isError": false
+    },
+    {
+      "name": "rev-tests-dir-mirror",
+      "file": "tests/api/client.spec.ts",
+      "content": "src\\api\\client.ts",
+      "isError": false
+    },
+    {
+      "name": "rev-py-sibling-tests",
+      "file": "pkg/tests/test_mod.py",
+      "content": "pkg\\mod.py",
+      "isError": false
+    },
+    {
+      "name": "rev-py-underscore",
+      "file": "testdir/other_test.py",
+      "content": "testdir\\other.py",
+      "isError": false
+    },
+    {
+      "name": "rev-py-top-flat",
+      "file": "tests/test_flat.py",
+      "content": "flat.py",
+      "isError": false
+    },
+    {
+      "name": "rev-py-top-mirror",
+      "file": "tests/deep/test_deep.py",
+      "content": "未找到相关源文件。",
+      "isError": false
+    },
+    {
+      "name": "rev-nosource",
+      "file": "src/orphan/__tests__/nope.test.ts",
+      "content": "未找到相关源文件。",
+      "isError": false
+    }
+  ],
+  "error": [
+    {
+      "name": "err-absolute-win",
+      "file": "C:\\x\\y.ts",
+      "content": "错误：file 路径必须相对于项目目录。",
+      "isError": true
+    },
+    {
+      "name": "err-absolute-fwd",
+      "file": "C:/x/y.ts",
+      "content": "错误：file 路径必须相对于项目目录。",
+      "isError": true
+    },
+    {
+      "name": "err-dotdot",
+      "file": "../x.ts",
+      "content": "错误：file 路径必须相对于项目目录。",
+      "isError": true
+    },
+    {
+      "name": "err-dotdot-mid",
+      "file": "a..b.ts",
+      "content": "错误：file 路径必须相对于项目目录。",
+      "isError": true
+    }
+  ]
+}
