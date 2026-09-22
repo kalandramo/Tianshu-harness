@@ -1,0 +1,488 @@
+{
+  "extractTaskTags": [
+    {
+      "message": "feat: add S14 support",
+      "tags": [
+        "S14"
+      ]
+    },
+    {
+      "message": "fix M1 and C2a together",
+      "tags": [
+        "M1",
+        "C2a"
+      ]
+    },
+    {
+      "message": "chore: no tags here",
+      "tags": []
+    },
+    {
+      "message": "S14",
+      "tags": [
+        "S14"
+      ]
+    },
+    {
+      "message": "S14 M1",
+      "tags": [
+        "S14",
+        "M1"
+      ]
+    },
+    {
+      "message": "B12x L3",
+      "tags": [
+        "B12x",
+        "L3"
+      ]
+    },
+    {
+      "message": "lowercase s14 should not match",
+      "tags": []
+    },
+    {
+      "message": "S14, M1, C2a",
+      "tags": [
+        "S14",
+        "M1",
+        "C2a"
+      ]
+    },
+    {
+      "message": "S14S15",
+      "tags": []
+    },
+    {
+      "message": "xS14",
+      "tags": []
+    },
+    {
+      "message": "S14-",
+      "tags": [
+        "S14"
+      ]
+    },
+    {
+      "message": "",
+      "tags": []
+    }
+  ],
+  "auditCommitTagScope": [
+    {
+      "message": "feat: add S14 support",
+      "fileCount": 3,
+      "result": {
+        "ok": true,
+        "tags": [
+          "S14"
+        ],
+        "message": ""
+      }
+    },
+    {
+      "message": "feat: add S14 support",
+      "fileCount": 0,
+      "result": {
+        "ok": false,
+        "tags": [
+          "S14"
+        ],
+        "message": "⚠️ Commit tagged S14 but changed 0 files — possible mislabel or empty commit."
+      }
+    },
+    {
+      "message": "S14 M1",
+      "fileCount": 1,
+      "result": {
+        "ok": false,
+        "tags": [
+          "S14",
+          "M1"
+        ],
+        "message": "⚠️ Commit claims 2 task tags (S14,M1) but changed only 1 file(s) — possible multiple unrelated tasks in one commit."
+      }
+    },
+    {
+      "message": "S14 M1",
+      "fileCount": 2,
+      "result": {
+        "ok": true,
+        "tags": [
+          "S14",
+          "M1"
+        ],
+        "message": ""
+      }
+    },
+    {
+      "message": "S14 M1 C2a",
+      "fileCount": 2,
+      "result": {
+        "ok": false,
+        "tags": [
+          "S14",
+          "M1",
+          "C2a"
+        ],
+        "message": "⚠️ Commit claims 3 task tags (S14,M1,C2a) but changed only 2 file(s) — possible multiple unrelated tasks in one commit."
+      }
+    },
+    {
+      "message": "S14 M1 C2a",
+      "fileCount": 3,
+      "result": {
+        "ok": true,
+        "tags": [
+          "S14",
+          "M1",
+          "C2a"
+        ],
+        "message": ""
+      }
+    },
+    {
+      "message": "chore: no tags",
+      "fileCount": 0,
+      "result": {
+        "ok": true,
+        "tags": [],
+        "message": ""
+      }
+    },
+    {
+      "message": "chore: no tags",
+      "fileCount": 5,
+      "result": {
+        "ok": true,
+        "tags": [],
+        "message": ""
+      }
+    },
+    {
+      "message": "S14",
+      "fileCount": 1,
+      "result": {
+        "ok": true,
+        "tags": [
+          "S14"
+        ],
+        "message": ""
+      }
+    }
+  ],
+  "detectSensitiveFile": [
+    {
+      "path": ".env",
+      "sensitive": true,
+      "patternName": ".env (real)"
+    },
+    {
+      "path": ".env.local",
+      "sensitive": true,
+      "patternName": ".env (real)"
+    },
+    {
+      "path": ".env.production",
+      "sensitive": true,
+      "patternName": ".env (real)"
+    },
+    {
+      "path": "src/.env",
+      "sensitive": true,
+      "patternName": ".env (real)"
+    },
+    {
+      "path": ".env.staging",
+      "sensitive": true,
+      "patternName": ".env (real)"
+    },
+    {
+      "path": "credentials.json",
+      "sensitive": true,
+      "patternName": "credentials file"
+    },
+    {
+      "path": "a/credentials.yaml",
+      "sensitive": true,
+      "patternName": "credentials file"
+    },
+    {
+      "path": "credentials",
+      "sensitive": true,
+      "patternName": "credentials (extensionless)"
+    },
+    {
+      "path": "a/credentials",
+      "sensitive": true,
+      "patternName": "credentials (extensionless)"
+    },
+    {
+      "path": "id_rsa",
+      "sensitive": true,
+      "patternName": "SSH private key"
+    },
+    {
+      "path": "id_ed25519",
+      "sensitive": true,
+      "patternName": "SSH private key"
+    },
+    {
+      "path": ".ssh/id_ecdsa",
+      "sensitive": true,
+      "patternName": "SSH private key"
+    },
+    {
+      "path": "cert.pem",
+      "sensitive": true,
+      "patternName": "PKI private key (.pem/.key)"
+    },
+    {
+      "path": "server.key",
+      "sensitive": true,
+      "patternName": "PKI private key (.pem/.key)"
+    },
+    {
+      "path": "a/b/key.pem",
+      "sensitive": true,
+      "patternName": "PKI private key (.pem/.key)"
+    },
+    {
+      "path": ".npmrc",
+      "sensitive": true,
+      "patternName": "package manager credentials"
+    },
+    {
+      "path": "a/.pypirc",
+      "sensitive": true,
+      "patternName": "package manager credentials"
+    },
+    {
+      "path": "secrets.json",
+      "sensitive": true,
+      "patternName": "secrets/token file"
+    },
+    {
+      "path": "token.yaml",
+      "sensitive": true,
+      "patternName": "secrets/token file"
+    },
+    {
+      "path": "auth-token.json",
+      "sensitive": true,
+      "patternName": "secrets/token file"
+    },
+    {
+      "path": "auth_token.yml",
+      "sensitive": true,
+      "patternName": "secrets/token file"
+    },
+    {
+      "path": "tokens.ini",
+      "sensitive": true,
+      "patternName": "secrets/token file"
+    },
+    {
+      "path": ".netrc",
+      "sensitive": true,
+      "patternName": ".netrc / .git-credentials"
+    },
+    {
+      "path": ".git-credentials",
+      "sensitive": true,
+      "patternName": ".netrc / .git-credentials"
+    },
+    {
+      "path": "debug.keystore",
+      "sensitive": true,
+      "patternName": "Android debug keystore"
+    },
+    {
+      "path": ".env/",
+      "sensitive": true,
+      "patternName": ".env (real)"
+    },
+    {
+      "path": ".env.",
+      "sensitive": true,
+      "patternName": ".env (real)"
+    },
+    {
+      "path": ".env ",
+      "sensitive": true,
+      "patternName": ".env (real)"
+    },
+    {
+      "path": ".env.example",
+      "sensitive": false,
+      "patternName": null
+    },
+    {
+      "path": ".env.template",
+      "sensitive": false,
+      "patternName": null
+    },
+    {
+      "path": ".env.sample",
+      "sensitive": false,
+      "patternName": null
+    },
+    {
+      "path": "a/foo.test.ts",
+      "sensitive": false,
+      "patternName": null
+    },
+    {
+      "path": "b/bar.spec.tsx",
+      "sensitive": false,
+      "patternName": null
+    },
+    {
+      "path": "README.md",
+      "sensitive": false,
+      "patternName": null
+    },
+    {
+      "path": "docs/guide.md",
+      "sensitive": false,
+      "patternName": null
+    },
+    {
+      "path": "secret.ts",
+      "sensitive": false,
+      "patternName": null
+    },
+    {
+      "path": "token.js",
+      "sensitive": false,
+      "patternName": null
+    },
+    {
+      "path": "credentials.ts",
+      "sensitive": false,
+      "patternName": null
+    },
+    {
+      "path": "auth/token-manager.ts",
+      "sensitive": false,
+      "patternName": null
+    },
+    {
+      "path": "src/index.ts",
+      "sensitive": false,
+      "patternName": null
+    },
+    {
+      "path": "package.json",
+      "sensitive": false,
+      "patternName": null
+    },
+    {
+      "path": "normal.txt",
+      "sensitive": false,
+      "patternName": null
+    },
+    {
+      "path": "secrets.md",
+      "sensitive": false,
+      "patternName": null
+    },
+    {
+      "path": "",
+      "sensitive": false,
+      "patternName": null
+    }
+  ],
+  "detectSensitiveGitAdd": [
+    {
+      "command": "git add .env",
+      "files": [
+        ".env"
+      ]
+    },
+    {
+      "command": "git add credentials.json",
+      "files": [
+        "credentials.json"
+      ]
+    },
+    {
+      "command": "git add .",
+      "files": [
+        "__aggregate_add__"
+      ]
+    },
+    {
+      "command": "git add -A",
+      "files": [
+        "__aggregate_add__"
+      ]
+    },
+    {
+      "command": "git add --all",
+      "files": [
+        "__aggregate_add__"
+      ]
+    },
+    {
+      "command": "git add .env.example",
+      "files": []
+    },
+    {
+      "command": "git add src/index.ts",
+      "files": []
+    },
+    {
+      "command": "git add .env src/index.ts",
+      "files": [
+        ".env"
+      ]
+    },
+    {
+      "command": "git add -A src/",
+      "files": [
+        "__aggregate_add__"
+      ]
+    },
+    {
+      "command": "GIT ADD .env",
+      "files": [
+        ".env"
+      ]
+    },
+    {
+      "command": "git  add  .env",
+      "files": [
+        ".env"
+      ]
+    },
+    {
+      "command": "git status && git add .env",
+      "files": [
+        ".env"
+      ]
+    },
+    {
+      "command": "git add",
+      "files": []
+    },
+    {
+      "command": "echo \"git add .env\"",
+      "files": []
+    },
+    {
+      "command": "git add secret.json token.yaml",
+      "files": [
+        "secret.json",
+        "token.yaml"
+      ]
+    },
+    {
+      "command": "git add -p .env",
+      "files": [
+        ".env"
+      ]
+    }
+  ],
+  "aggregateMarker": "__aggregate_add__"
+}
