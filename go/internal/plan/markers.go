@@ -26,11 +26,8 @@ var planStatusLineRe = regexp.MustCompile(`(?m)^>\s*\*\*Status:\s*(?:APPROVED|RE
 //	/^>\s*\*\*Model:\s*(.+?)(?:\s*\((cheap|balanced|strong)\))?\*\*.*(?:\r?\n)+/m
 var planModelLineRe = regexp.MustCompile(`(?m)^>\s*\*\*Model:\s*(.+?)(?:\s*\((cheap|balanced|strong)\))?\*\*.*(?:\r?\n)+`)
 
-// planStatusParseRe 是 parsePlanStatus 用的宽松匹配（大小写不敏感）。
-//
-// 对账 TS `plan-store.ts:422-427` 的三个 `/i` 测试。
-var planStatusParseRe = regexp.MustCompile(`(?i)Status:\s*(EXECUTED|APPROVED|REJECTED)`)
-
+// planStatusParseRe 已由 ParsePlanStatus 的三条优先级正则取代（见该函数）。
+// 保留注释说明，避免后人误加回来——**取第一个匹配是错的**（见 ParsePlanStatus）。
 // h1Re 匹配第一个 H1 标题行（标记行的插入锚点）。
 var h1Re = regexp.MustCompile(`(?m)^#\s+.*$`)
 
@@ -40,12 +37,17 @@ var h1Re = regexp.MustCompile(`(?m)^#\s+.*$`)
 var draftSlugRe = regexp.MustCompile(`^draft-\d+$`)
 
 // PlanStatus 是计划的审批状态。
+//
+// **取值对账 TS `PlanDocument['status']`**（plan-store.ts:14-35 的字段类型）
+// ——注意是**小写**，且有一个 `submitted` 兜底态（不是空串）。
 type PlanStatus string
 
 const (
-	StatusApproved PlanStatus = "APPROVED"
-	StatusRejected PlanStatus = "REJECTED"
-	StatusExecuted PlanStatus = "EXECUTED"
+	// StatusSubmitted 是「已提交待批」——无任何状态标记时的默认值。
+	StatusSubmitted PlanStatus = "submitted"
+	StatusApproved  PlanStatus = "approved"
+	StatusRejected  PlanStatus = "rejected"
+	StatusExecuted  PlanStatus = "executed"
 )
 
 // StripPlanStatusMarkers 剥离 approve/reject 留下的状态标记行。
@@ -57,16 +59,40 @@ func StripPlanStatusMarkers(content string) string {
 	return planStatusLineRe.ReplaceAllString(content, "")
 }
 
-// ParsePlanStatus 解析计划的状态（大小写不敏感）。
+// ParsePlanStatus 解析计划的状态。
 //
-// 对账 TS `plan-store.ts:422-427`。无标记返回空串。
+// 对账 TS `parsePlanStatus`（plan-store.ts:422-427）：
+//
+//	if (/Status:\s*EXECUTED/i.test(content)) return 'executed'
+//	if (/Status:\s*APPROVED/i.test(content)) return 'approved'
+//	if (/Status:\s*REJECTED/i.test(content)) return 'rejected'
+//	return 'submitted'
+//
+// **三个必须复刻的细节**（首版实现曾全部搞错，由 `TestApproveRejectPlan`
+// 抓出——approve 后再 reject，内容里两个标记并存）：
+//
+//  1. **优先级固定** EXECUTED > APPROVED > REJECTED——**不是**「取第一个匹配」。
+//     `insertPlanStatusMarker` 不幂等（照抄 TS），approve 后 reject 会在文件头
+//     叠加两个标记，此时优先级决定结果。
+//  2. 返回**小写**状态名。
+//  3. 无标记返回 **`submitted`**（不是空串）——调用方据此判定「待批」。
 func ParsePlanStatus(content string) PlanStatus {
-	m := planStatusParseRe.FindStringSubmatch(content)
-	if m == nil {
-		return ""
+	switch {
+	case executedProbeRe.MatchString(content):
+		return StatusExecuted
+	case approvedProbeRe.MatchString(content):
+		return StatusApproved
+	case rejectedProbeRe.MatchString(content):
+		return StatusRejected
 	}
-	return PlanStatus(strings.ToUpper(m[1]))
+	return StatusSubmitted
 }
+
+var (
+	executedProbeRe = regexp.MustCompile(`(?i)Status:\s*EXECUTED`)
+	approvedProbeRe = regexp.MustCompile(`(?i)Status:\s*APPROVED`)
+	rejectedProbeRe = regexp.MustCompile(`(?i)Status:\s*REJECTED`)
+)
 
 // IsDraftSlug 报告 slug 是否为 plan-mode 活动草稿。
 //
@@ -105,8 +131,11 @@ func InsertPlanModelMarker(content, model, tier string) string {
 // `insertPlanModelMarker` 幂等而本函数不幂等——这个不对称是既有行为，照抄。
 //
 // `timestamp` 是 ISO-8601 字符串（由调用方提供，便于测试确定性）。
+//
+// **状态名转大写写入**——对账 TS 写的是 `> **Status: APPROVED**` 大写形态
+// （`stripPlanStatusMarkers` 的正则只认大写）。
 func InsertPlanStatusMarker(content string, status PlanStatus, timestamp string) string {
-	statusLine := "> **Status: " + string(status) + "** — " + timestamp + "\n\n"
+	statusLine := "> **Status: " + strings.ToUpper(string(status)) + "** — " + timestamp + "\n\n"
 	if loc := h1Re.FindStringIndex(content); loc != nil {
 		return content[:loc[0]] + statusLine + content[loc[0]:]
 	}

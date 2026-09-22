@@ -231,4 +231,121 @@ const ptrInputs = [
 ]
 out.pointer = ptrInputs.map(input => ({ input, output: detectPointerPlaceholder(input) }))
 
+// ── extractPlanAnchors（**lookbehind 替代的边界用例**）──
+import { extractPlanAnchors } from '../../../src/plan/plan-fact-anchors.js'
+
+const anchorInputs = [
+  // 基础形态
+  '见 `src/agent/loop.ts:643` 的实现。',
+  '见 src/agent/loop.ts:643 的实现。',
+  '引用 src/agent/loop.ts 但不带行号',
+  '范围 src/plan/plan-close.ts:12-34 两端',
+  // **URL 内嵌**（lookbehind 的核心用途）
+  '见 https://github.com/foo/bar/blob/main/src/a.ts 这个链接',
+  '见 http://x.com/a/b/c.ts:5 链接',
+  // **粘连 token**
+  '路径 a/b.ts 前面是字母x/b.ts',
+  '路径 a/b.ts 前面是斜杠/x/b.ts',
+  '路径 a/b.ts 前面是点./b.ts',
+  '路径 a/b.ts 前面是反斜杠\\x/b.ts',
+  '路径 a/b.ts 前面是横杠-x/b.ts',
+  // **枚举粘连**（README.md/README.zh.md）
+  '同步 `README.md/README.zh.md/README.i18n.yaml` 三处描述。',
+  // 扩展名最长优先
+  '见 src/ui/selector.tsx 组件',
+  '见 src/ui/selector.ts 模块',
+  // 模块相对 / 越界
+  '见 ./local/file.ts 相对路径',
+  '见 ../parent/file.ts 越界路径',
+  '见 node_modules/pkg/index.js 依赖',
+  // 围栏
+  '```mermaid\nflowchart TD\n  A[src/a.ts] --> B\n```',
+  '```bash\ngo test ./internal/plan/\n```',
+  '```\nplain fence src/x.ts\n```',
+  '```md\n### Task 1\n- [ ] see src/y.ts\n```',
+  // 新增标记
+  '新增 src/new/module.ts 文件',
+  '新建 src/fresh/api.ts',
+  'create src/created/file.ts',
+  '普通引用 src/plain/file.ts',
+  // 占位形态
+  '见 src/foo.ts 示例',
+  '见 src/a.py 单字母',
+  // 多锚点同行
+  '同时改 src/a/b.ts 与 src/c/d.ts:9',
+  // 无目录段的裸文件名（应不匹配）
+  '见 loop.ts 裸文件',
+  '见 file.go 裸文件',
+  // **后边界 `(?!\w)`**：扩展名后紧跟 \w 字符 → 不是完整 token，应排除。
+  // 长度降序**挡不住这个**（a.tsx5 不是已知扩展名），只有后边界能挡。
+  '见 src/a.tsx5 后缀',
+  '见 src/a.ts_foo 后缀',
+  '见 src/a.go1 后缀',
+  '见 src/b.json2 后缀',
+].join('\n')
+
+out.extractAnchors = anchorInputs.split('\n').flatMap(line => {
+  const got = extractPlanAnchors(line)
+  return [{ line, anchors: got.map(a => ({ raw: a.raw, path: a.path, line: a.line ?? null, declaredNew: a.declaredNew, placeholderShaped: a.placeholderShaped })) }]
+})
+
+// ── 多行输入的锚点提取（围栏状态跨行）──
+const multiLineAnchorDoc = [
+  '# Plan',
+  '',
+  '见 src/agent/loop.ts:643。',
+  '',
+  '```mermaid',
+  'flowchart TD',
+  '  A[src/should/skip.ts] --> B',
+  '```',
+  '',
+  '```bash',
+  'go test ./internal/plan/  # 见 src/checked/in-bash.ts',
+  '```',
+  '',
+  '新增 src/newly/created.ts 文件',
+  '再引用 src/newly/created.ts 一次（应豁免）',
+  '',
+].join('\n')
+out.extractAnchorsMulti = (() => {
+  const got = extractPlanAnchors(multiLineAnchorDoc)
+  return { input: multiLineAnchorDoc, anchors: got.map(a => ({ raw: a.raw, path: a.path, line: a.line ?? null, declaredNew: a.declaredNew, placeholderShaped: a.placeholderShaped })) }
+})()
+
+// ── formatAnchorDrifts ──
+import { formatAnchorDrifts } from '../../../src/plan/plan-fact-anchors.js'
+out.formatDrifts = [
+  [],
+  [{ anchor: 'src/a.ts:1', path: 'src/a.ts', line: 1, kind: 'missing-file' as const, detail: '详情一' }],
+  [
+    { anchor: 'a', path: 'a', kind: 'missing-file' as const, detail: 'D1' },
+    { anchor: 'b', path: 'b', kind: 'root-mismatch' as const, detail: 'D2' },
+  ],
+].map(drifts => ({ input: drifts.length, output: formatAnchorDrifts(drifts) }))
+
+// ── isPlaceholderShaped 与 hasFileShapedIntermediateSegment（经 extractAnchors 间接覆盖）──
+
+// ── parsePlanStatus（TS 侧未导出，内联复刻其逻辑产黄金数据）──
+// **为什么内联**：`parsePlanStatus` 在 plan-store.ts:422 是**未导出**的
+// （scout 报告称其为内部函数，已核实）。复刻其 5 行逻辑产期望值——
+// 关键锁定「优先级固定」而非「取第一个匹配」。
+const parseStatus = (s: string): string =>
+  /Status:\s*EXECUTED/i.test(s) ? 'executed'
+  : /Status:\s*APPROVED/i.test(s) ? 'approved'
+  : /Status:\s*REJECTED/i.test(s) ? 'rejected'
+  : 'submitted'
+
+out.parseStatus = [
+  '# Plan\n\nbody\n',
+  '> **Status: APPROVED** — x\n\n# P\n',
+  '> **Status: REJECTED** — x\n\n# P\n',
+  '> **Status: EXECUTED** — x\n\n# P\n',
+  // **叠加**：优先级测试——这是首版实现搞错的地方。
+  '> **Status: REJECTED** — x\n\n> **Status: APPROVED** — y\n\n# P\n',
+  '> **Status: APPROVED** — x\n\n> **Status: REJECTED** — y\n\n# P\n',
+  '> **Status: APPROVED** — x\n\n> **Status: EXECUTED** — y\n\n# P\n',
+  '> **status: approved** — 小写\n\n# P\n',
+].map(input => ({ input, output: parseStatus(input) }))
+
 process.stdout.write(JSON.stringify(out, null, 2))

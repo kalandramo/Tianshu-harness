@@ -131,67 +131,67 @@
     {
       "input": "# Plan\n\nbody",
       "status": "EXECUTED",
-      "output": "> **Status: EXECUTED** — 2026-09-22T05:21:48.835Z\n\n# Plan\n\nbody"
+      "output": "> **Status: EXECUTED** — 2026-09-22T05:41:40.385Z\n\n# Plan\n\nbody"
     },
     {
       "input": "# Plan",
       "status": "EXECUTED",
-      "output": "> **Status: EXECUTED** — 2026-09-22T05:21:48.837Z\n\n# Plan"
+      "output": "> **Status: EXECUTED** — 2026-09-22T05:41:40.386Z\n\n# Plan"
     },
     {
       "input": "no h1 here\n\nbody",
       "status": "EXECUTED",
-      "output": "> **Status: EXECUTED** — 2026-09-22T05:21:48.837Z\n\nno h1 here\n\nbody"
+      "output": "> **Status: EXECUTED** — 2026-09-22T05:41:40.386Z\n\nno h1 here\n\nbody"
     },
     {
       "input": "",
       "status": "EXECUTED",
-      "output": "> **Status: EXECUTED** — 2026-09-22T05:21:48.837Z\n\n"
+      "output": "> **Status: EXECUTED** — 2026-09-22T05:41:40.386Z\n\n"
     },
     {
       "input": "# Plan\n\n## Section\n\nbody",
       "status": "EXECUTED",
-      "output": "> **Status: EXECUTED** — 2026-09-22T05:21:48.837Z\n\n# Plan\n\n## Section\n\nbody"
+      "output": "> **Status: EXECUTED** — 2026-09-22T05:41:40.386Z\n\n# Plan\n\n## Section\n\nbody"
     },
     {
       "input": "#Plan no space",
       "status": "EXECUTED",
-      "output": "> **Status: EXECUTED** — 2026-09-22T05:21:48.837Z\n\n#Plan no space"
+      "output": "> **Status: EXECUTED** — 2026-09-22T05:41:40.386Z\n\n#Plan no space"
     },
     {
       "input": "#  Plan with extra space\n\nbody",
       "status": "EXECUTED",
-      "output": "> **Status: EXECUTED** — 2026-09-22T05:21:48.837Z\n\n#  Plan with extra space\n\nbody"
+      "output": "> **Status: EXECUTED** — 2026-09-22T05:41:40.386Z\n\n#  Plan with extra space\n\nbody"
     }
   ],
   "insertStatusApproved": [
     {
       "input": "# Plan\n\nbody",
-      "output": "> **Status: APPROVED** — 2026-09-22T05:21:48.837Z\n\n# Plan\n\nbody"
+      "output": "> **Status: APPROVED** — 2026-09-22T05:41:40.386Z\n\n# Plan\n\nbody"
     },
     {
       "input": "# Plan",
-      "output": "> **Status: APPROVED** — 2026-09-22T05:21:48.837Z\n\n# Plan"
+      "output": "> **Status: APPROVED** — 2026-09-22T05:41:40.386Z\n\n# Plan"
     },
     {
       "input": "no h1 here\n\nbody",
-      "output": "> **Status: APPROVED** — 2026-09-22T05:21:48.837Z\n\nno h1 here\n\nbody"
+      "output": "> **Status: APPROVED** — 2026-09-22T05:41:40.386Z\n\nno h1 here\n\nbody"
     },
     {
       "input": "",
-      "output": "> **Status: APPROVED** — 2026-09-22T05:21:48.837Z\n\n"
+      "output": "> **Status: APPROVED** — 2026-09-22T05:41:40.386Z\n\n"
     },
     {
       "input": "# Plan\n\n## Section\n\nbody",
-      "output": "> **Status: APPROVED** — 2026-09-22T05:21:48.837Z\n\n# Plan\n\n## Section\n\nbody"
+      "output": "> **Status: APPROVED** — 2026-09-22T05:41:40.386Z\n\n# Plan\n\n## Section\n\nbody"
     },
     {
       "input": "#Plan no space",
-      "output": "> **Status: APPROVED** — 2026-09-22T05:21:48.837Z\n\n#Plan no space"
+      "output": "> **Status: APPROVED** — 2026-09-22T05:41:40.386Z\n\n#Plan no space"
     },
     {
       "input": "#  Plan with extra space\n\nbody",
-      "output": "> **Status: APPROVED** — 2026-09-22T05:21:48.837Z\n\n#  Plan with extra space\n\nbody"
+      "output": "> **Status: APPROVED** — 2026-09-22T05:41:40.386Z\n\n#  Plan with extra space\n\nbody"
     }
   ],
   "insertModel": [
@@ -953,6 +953,447 @@
     {
       "input": "[unknown prefix] #RIVET-POINTER-DISPLAY-ONLY#",
       "output": null
+    }
+  ],
+  "extractAnchors": [
+    {
+      "line": "见 `src/agent/loop.ts:643` 的实现。",
+      "anchors": [
+        {
+          "raw": "src/agent/loop.ts:643",
+          "path": "src/agent/loop.ts",
+          "line": 643,
+          "declaredNew": false,
+          "placeholderShaped": false
+        }
+      ]
+    },
+    {
+      "line": "见 src/agent/loop.ts:643 的实现。",
+      "anchors": [
+        {
+          "raw": "src/agent/loop.ts:643",
+          "path": "src/agent/loop.ts",
+          "line": 643,
+          "declaredNew": false,
+          "placeholderShaped": false
+        }
+      ]
+    },
+    {
+      "line": "引用 src/agent/loop.ts 但不带行号",
+      "anchors": [
+        {
+          "raw": "src/agent/loop.ts",
+          "path": "src/agent/loop.ts",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": false
+        }
+      ]
+    },
+    {
+      "line": "范围 src/plan/plan-close.ts:12-34 两端",
+      "anchors": [
+        {
+          "raw": "src/plan/plan-close.ts:12-34",
+          "path": "src/plan/plan-close.ts",
+          "line": 12,
+          "declaredNew": false,
+          "placeholderShaped": false
+        }
+      ]
+    },
+    {
+      "line": "见 https://github.com/foo/bar/blob/main/src/a.ts 这个链接",
+      "anchors": []
+    },
+    {
+      "line": "见 http://x.com/a/b/c.ts:5 链接",
+      "anchors": []
+    },
+    {
+      "line": "路径 a/b.ts 前面是字母x/b.ts",
+      "anchors": [
+        {
+          "raw": "a/b.ts",
+          "path": "a/b.ts",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": true
+        },
+        {
+          "raw": "x/b.ts",
+          "path": "x/b.ts",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": true
+        }
+      ]
+    },
+    {
+      "line": "路径 a/b.ts 前面是斜杠/x/b.ts",
+      "anchors": [
+        {
+          "raw": "a/b.ts",
+          "path": "a/b.ts",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": true
+        }
+      ]
+    },
+    {
+      "line": "路径 a/b.ts 前面是点./b.ts",
+      "anchors": [
+        {
+          "raw": "a/b.ts",
+          "path": "a/b.ts",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": true
+        }
+      ]
+    },
+    {
+      "line": "路径 a/b.ts 前面是反斜杠\\x/b.ts",
+      "anchors": [
+        {
+          "raw": "a/b.ts",
+          "path": "a/b.ts",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": true
+        }
+      ]
+    },
+    {
+      "line": "路径 a/b.ts 前面是横杠-x/b.ts",
+      "anchors": [
+        {
+          "raw": "a/b.ts",
+          "path": "a/b.ts",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": true
+        },
+        {
+          "raw": "-x/b.ts",
+          "path": "-x/b.ts",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": true
+        }
+      ]
+    },
+    {
+      "line": "同步 `README.md/README.zh.md/README.i18n.yaml` 三处描述。",
+      "anchors": []
+    },
+    {
+      "line": "见 src/ui/selector.tsx 组件",
+      "anchors": [
+        {
+          "raw": "src/ui/selector.tsx",
+          "path": "src/ui/selector.tsx",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": false
+        }
+      ]
+    },
+    {
+      "line": "见 src/ui/selector.ts 模块",
+      "anchors": [
+        {
+          "raw": "src/ui/selector.ts",
+          "path": "src/ui/selector.ts",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": false
+        }
+      ]
+    },
+    {
+      "line": "见 ./local/file.ts 相对路径",
+      "anchors": []
+    },
+    {
+      "line": "见 ../parent/file.ts 越界路径",
+      "anchors": []
+    },
+    {
+      "line": "见 node_modules/pkg/index.js 依赖",
+      "anchors": []
+    },
+    {
+      "line": "```mermaid",
+      "anchors": []
+    },
+    {
+      "line": "flowchart TD",
+      "anchors": []
+    },
+    {
+      "line": "  A[src/a.ts] --> B",
+      "anchors": [
+        {
+          "raw": "src/a.ts",
+          "path": "src/a.ts",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": true
+        }
+      ]
+    },
+    {
+      "line": "```",
+      "anchors": []
+    },
+    {
+      "line": "```bash",
+      "anchors": []
+    },
+    {
+      "line": "go test ./internal/plan/",
+      "anchors": []
+    },
+    {
+      "line": "```",
+      "anchors": []
+    },
+    {
+      "line": "```",
+      "anchors": []
+    },
+    {
+      "line": "plain fence src/x.ts",
+      "anchors": [
+        {
+          "raw": "src/x.ts",
+          "path": "src/x.ts",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": true
+        }
+      ]
+    },
+    {
+      "line": "```",
+      "anchors": []
+    },
+    {
+      "line": "```md",
+      "anchors": []
+    },
+    {
+      "line": "### Task 1",
+      "anchors": []
+    },
+    {
+      "line": "- [ ] see src/y.ts",
+      "anchors": [
+        {
+          "raw": "src/y.ts",
+          "path": "src/y.ts",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": true
+        }
+      ]
+    },
+    {
+      "line": "```",
+      "anchors": []
+    },
+    {
+      "line": "新增 src/new/module.ts 文件",
+      "anchors": [
+        {
+          "raw": "src/new/module.ts",
+          "path": "src/new/module.ts",
+          "line": null,
+          "declaredNew": true,
+          "placeholderShaped": false
+        }
+      ]
+    },
+    {
+      "line": "新建 src/fresh/api.ts",
+      "anchors": [
+        {
+          "raw": "src/fresh/api.ts",
+          "path": "src/fresh/api.ts",
+          "line": null,
+          "declaredNew": true,
+          "placeholderShaped": false
+        }
+      ]
+    },
+    {
+      "line": "create src/created/file.ts",
+      "anchors": [
+        {
+          "raw": "src/created/file.ts",
+          "path": "src/created/file.ts",
+          "line": null,
+          "declaredNew": true,
+          "placeholderShaped": false
+        }
+      ]
+    },
+    {
+      "line": "普通引用 src/plain/file.ts",
+      "anchors": [
+        {
+          "raw": "src/plain/file.ts",
+          "path": "src/plain/file.ts",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": false
+        }
+      ]
+    },
+    {
+      "line": "见 src/foo.ts 示例",
+      "anchors": [
+        {
+          "raw": "src/foo.ts",
+          "path": "src/foo.ts",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": true
+        }
+      ]
+    },
+    {
+      "line": "见 src/a.py 单字母",
+      "anchors": [
+        {
+          "raw": "src/a.py",
+          "path": "src/a.py",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": true
+        }
+      ]
+    },
+    {
+      "line": "同时改 src/a/b.ts 与 src/c/d.ts:9",
+      "anchors": [
+        {
+          "raw": "src/a/b.ts",
+          "path": "src/a/b.ts",
+          "line": null,
+          "declaredNew": false,
+          "placeholderShaped": true
+        },
+        {
+          "raw": "src/c/d.ts:9",
+          "path": "src/c/d.ts",
+          "line": 9,
+          "declaredNew": false,
+          "placeholderShaped": true
+        }
+      ]
+    },
+    {
+      "line": "见 loop.ts 裸文件",
+      "anchors": []
+    },
+    {
+      "line": "见 file.go 裸文件",
+      "anchors": []
+    },
+    {
+      "line": "见 src/a.tsx5 后缀",
+      "anchors": []
+    },
+    {
+      "line": "见 src/a.ts_foo 后缀",
+      "anchors": []
+    },
+    {
+      "line": "见 src/a.go1 后缀",
+      "anchors": []
+    },
+    {
+      "line": "见 src/b.json2 后缀",
+      "anchors": []
+    }
+  ],
+  "extractAnchorsMulti": {
+    "input": "# Plan\n\n见 src/agent/loop.ts:643。\n\n```mermaid\nflowchart TD\n  A[src/should/skip.ts] --> B\n```\n\n```bash\ngo test ./internal/plan/  # 见 src/checked/in-bash.ts\n```\n\n新增 src/newly/created.ts 文件\n再引用 src/newly/created.ts 一次（应豁免）\n",
+    "anchors": [
+      {
+        "raw": "src/agent/loop.ts:643",
+        "path": "src/agent/loop.ts",
+        "line": 643,
+        "declaredNew": false,
+        "placeholderShaped": false
+      },
+      {
+        "raw": "src/checked/in-bash.ts",
+        "path": "src/checked/in-bash.ts",
+        "line": null,
+        "declaredNew": false,
+        "placeholderShaped": false
+      },
+      {
+        "raw": "src/newly/created.ts",
+        "path": "src/newly/created.ts",
+        "line": null,
+        "declaredNew": true,
+        "placeholderShaped": false
+      }
+    ]
+  },
+  "formatDrifts": [
+    {
+      "input": 0,
+      "output": ""
+    },
+    {
+      "input": 1,
+      "output": "- 详情一"
+    },
+    {
+      "input": 2,
+      "output": "- D1\n- D2"
+    }
+  ],
+  "parseStatus": [
+    {
+      "input": "# Plan\n\nbody\n",
+      "output": "submitted"
+    },
+    {
+      "input": "> **Status: APPROVED** — x\n\n# P\n",
+      "output": "approved"
+    },
+    {
+      "input": "> **Status: REJECTED** — x\n\n# P\n",
+      "output": "rejected"
+    },
+    {
+      "input": "> **Status: EXECUTED** — x\n\n# P\n",
+      "output": "executed"
+    },
+    {
+      "input": "> **Status: REJECTED** — x\n\n> **Status: APPROVED** — y\n\n# P\n",
+      "output": "approved"
+    },
+    {
+      "input": "> **Status: APPROVED** — x\n\n> **Status: REJECTED** — y\n\n# P\n",
+      "output": "approved"
+    },
+    {
+      "input": "> **Status: APPROVED** — x\n\n> **Status: EXECUTED** — y\n\n# P\n",
+      "output": "executed"
+    },
+    {
+      "input": "> **status: approved** — 小写\n\n# P\n",
+      "output": "approved"
     }
   ]
 }

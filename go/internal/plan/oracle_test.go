@@ -24,6 +24,7 @@ type oracleFile struct {
 	ParseSelection []oracleSelection  `json:"parseSelection"`
 	Close          []oracleClose      `json:"close"`
 	Tier           []oracleTier       `json:"tier"`
+	ParseStatus    []oracleInOut      `json:"parseStatus"`
 }
 
 type oracleInOut struct {
@@ -318,6 +319,23 @@ func decodeCloseOptions(t *testing.T, raw json.RawMessage) PlanCloseOptions {
 		Note:             wire.Note,
 		UpdateClosure:    wire.UpdateClosure,
 	}
+}
+
+// TestOracleParseStatus —— ParsePlanStatus 逐例对账（含**优先级叠加**用例）。
+//
+// oracle 侧是内联复刻（TS 的 `parsePlanStatus` 未导出，已核实）。
+func TestOracleParseStatus(t *testing.T) {
+	o := loadOracle(t)
+	if len(o.ParseStatus) == 0 {
+		t.Fatal("oracle 无 parseStatus 用例")
+	}
+	for _, c := range o.ParseStatus {
+		got := string(ParsePlanStatus(c.Input))
+		if got != c.Output {
+			t.Errorf("ParsePlanStatus(%q) TS=%q Go=%q", c.Input, c.Output, got)
+		}
+	}
+	t.Logf("parseStatus 对账 %d 例", len(o.ParseStatus))
 }
 
 // TestOracleTier —— InferModelTierFromName 逐例对账。
