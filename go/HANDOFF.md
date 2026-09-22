@@ -2059,6 +2059,73 @@ through to normal foreground execution」）。Go 侧**无该设施**（`JobRegi
     实际均已存在且有测试；「下一步」停在第 28 刀而 HANDOFF 已到第 25 刀回主线）。
 
 
+### applyCommandFilter —— 命令感知输出过滤（2026-09-21，回主线第二十六刀）
+
+**做了什么**：移植 TS `command-filters.ts`（~300 行）的六族命令感知过滤器
+（`commandfilter.go`），接线 `bash.go`（第二十四刀预留的 `CommandFilterFunc`
+调用点，此前传 `nil`）。
+
+**为什么需要**：tsc / test / git 的输出噪声大但语义简单——`tsc --noEmit` 的
+200 行里可能只有 3 行是 `error TS`。过滤让模型看到**信号**而非**墙**。
+
+**六族**（对账 TS 的分派顺序，**顺序敏感**）
+1. `tsc --noEmit` → 失败时只留 `error TS` 完整诊断行 + `Found N error` 汇总
+2. `node/tsx --test` → 成功留 `N passed` 行；失败留 `not ok` / `AssertionError` / 计数
+3. `git status` → 剔**行首** hint 行（`^\\(use\s+"git` / `^\\(git`）
+4. `git log` → ≤30 行不过滤；默认格式压 15 个 commit（保 commit/Date + ≤3 行
+   message，剥 Author/空行/trailer）；`--oneline` 等自定义格式截 40 行 + 行宽 120
+5. `git diff` / `show` → ≤40 行不过滤；否则保文件头 + `@@` hunk + 变更行 +
+   hunk 内上下文，剥 index/mode/`\ No newline`，每 hunk 上限 60 行，附 `+A -R` 计数
+6. test runners（npm/pnpm/yarn/bun test、vitest/jest）→ ≤15 行不过滤；成功留统计
+   行 + 合成 `✓ N passed`；失败留失败块 + 5 行详情窗口 + 统计行，丢通过项/coverage
+
+**四条纪律**（对账 TS 文件头注释）
+- 小输出返回 nil（无收益零风险）
+- 只删不编，丢内容必留 `[+N omitted]`
+- **内容优先于 exit code**：exit 0 但含失败签名 → 按失败处理
+- **含管道一律不过滤**：exit code 不可信
+
+**两个 JS 语义点**
+- `FAILURE_SIGNATURE_RE` 用 **`[1-9]\d*`**（非 `\d+`）——`"0 failed"` / `"fail 0"`
+  **不**误判。这是 incident 2026-07-19 的直接产物。
+- TS 的该正则有 **`m` 标志**（`^`/`$` 逐行）；Go 默认只匹配文本首尾，故显式加 `(?m)`。
+
+**验证**
+- **差分 oracle 21 例**（六族 + 边界），**真跑 TS 原实现**（纯函数）逐字节比对——
+  其中 14 例有过滤结果、7 例应返回 null
+- **9 条补充测试**：管道不过滤 / 内容优先于 exit code / `0 failed` 不误判 /
+  小输出返回 nil / 未匹配族返回 nil / tsc 保留完整位置前缀 / git status 只剔行首
+  hint / git diff 附 `+A -R` 计数
+- **变异反证**：M72（管道检查失效）→2 红；M73（内容优先失效）→2 红；
+  M74（`0 failed` 误判）→1 红；M75（小输出阈值失效）→2 红
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+**一个 fixture 陷阱（记录）**：首版 oracle 里 test runner 用例只有 13 行
+（≤15 阈值）→ 全部返回 null，**看起来像「族 6 没生效」**。用探针实测
+（`npm test` 等确实过滤出 15 行）才确认是 **fixture 缺陷**，把用例加到 17 行即修复。
+**教训**：oracle 用例返回 null 时，先查是否撞上了被测函数自己的**阈值门**。
+
+**另一处（补充测试）**：`git status` 的 hint 正则**以 `^` 锚定**——只剔**行首**。
+`no changes added to commit (use "git add" ...)` 的 `(use` 在行中，属**正文**应保留。
+首版补充测试用行中 `(use` 却期望剔除，**测试期望错了**（实现对账 TS 正确）。
+
+#### 仍未做（更新）
+
+1. **`persistRawOutput`**（→ `meta.rawPath`）：TS 的 doom-loop 防护（提示模型
+   `read_file` 原文而非重跑命令）。`BuildModelOutput` 的 `RawPath` 字段已就绪。
+2. **job 子系统**（`sessionJobRegistry` + `job` 工具）：`run_in_background`
+   的恢复条件（见第二十五刀）。
+3. **`UIContent` 单读分支接线**：**前置条件**是 Go 移植 TUI/server 工具卡管线。
+4. **artifact re-serve**（`read-file.ts:794-828`）：依赖 `sliceFromArtifact`。
+5. **邻居提示**（`RIVET_NEIGHBOR_HINT=1`，默认关）。
+6. **`preferFoldOnOverflow`**（TS `:695-704`）：Go 无 `readCapOverride` 概念。
+7. **`trimLastKnownLocked` 的裁剪语义分歧**（`filestate.go`）：Go 裁 `size - max`
+   （501→500），TS 裁 `ceil(size*0.2)`（501→400）。**不等价**（小刀）。
+8. **bash 的超时/错误路径 L0**。
+9. **`go/PLAN.md` 已过期**（称 `internal/compact/`、`internal/cache/` 不存在，
+   实际均已存在且有测试；「下一步」停在第 28 刀而 HANDOFF 已到第 26 刀回主线）。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`

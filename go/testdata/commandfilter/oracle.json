@@ -1,0 +1,191 @@
+[
+ {
+  "name": "tsc-fail",
+  "input": {
+   "command": "npx tsc --noEmit",
+   "stdout": "src/a.ts(3,5): error TS2322: Type 'string' is not assignable to type 'number'.\n  some context line\nsrc/b.ts(10,1): error TS2554: Expected 2 arguments, but got 1.\n\nFound 2 errors in 2 files.",
+   "exitCode": 2
+  },
+  "result": "src/a.ts(3,5): error TS2322: Type 'string' is not assignable to type 'number'.\nsrc/b.ts(10,1): error TS2554: Expected 2 arguments, but got 1.\nFound 2 errors in 2 files."
+ },
+ {
+  "name": "tsc-pass-with-summary",
+  "input": {
+   "command": "tsc --noEmit",
+   "stdout": "Found 0 errors.",
+   "exitCode": 0
+  },
+  "result": "Found 0 errors."
+ },
+ {
+  "name": "tsc-pass-no-summary",
+  "input": {
+   "command": "tsc --noEmit",
+   "stdout": "some noise\n",
+   "exitCode": 0
+  },
+  "result": "✓ typecheck passed"
+ },
+ {
+  "name": "tsc-exit0-with-error-signature",
+  "input": {
+   "command": "tsc --noEmit",
+   "stdout": "src/a.ts(3,5): error TS2322: Type 'string' is not assignable to type 'number'.\n  some context line\nsrc/b.ts(10,1): error TS2554: Expected 2 arguments, but got 1.\n\nFound 2 errors in 2 files.",
+   "exitCode": 0
+  },
+  "result": "src/a.ts(3,5): error TS2322: Type 'string' is not assignable to type 'number'.\nsrc/b.ts(10,1): error TS2554: Expected 2 arguments, but got 1.\nFound 2 errors in 2 files."
+ },
+ {
+  "name": "node-test-fail",
+  "input": {
+   "command": "node --test",
+   "stdout": "TAP version 13\nok 1 - passes\nnot ok 2 - fails\n  AssertionError [ERR_ASSERTION]: expected 1 to equal 2\n      at Test.<anonymous> (/x.test.ts:5:3)\nok 3 - another pass\n# tests 3\n# pass 2\n# fail 1",
+   "exitCode": 1
+  },
+  "result": "not ok 2 - fails\nAssertionError [ERR_ASSERTION]: expected 1 to equal 2"
+ },
+ {
+  "name": "node-test-pass",
+  "input": {
+   "command": "tsx --test",
+   "stdout": "# tests 3\n# pass 3\n# fail 0\nℹ tests 3\nℹ pass 3\n",
+   "exitCode": 0
+  },
+  "result": "# tests 3\n# pass 3\n# fail 0\nℹ tests 3\nℹ pass 3"
+ },
+ {
+  "name": "git-status-hints",
+  "input": {
+   "command": "git status",
+   "stdout": "On branch main\nChanges not staged for commit:\n  modified:   a.ts\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n(use \"git restore <file>...\" to discard changes in working directory)\n(git add <file>... to include in what will be committed)",
+   "exitCode": 0
+  },
+  "result": "On branch main\nChanges not staged for commit:\n  modified:   a.ts\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")"
+ },
+ {
+  "name": "git-log-short",
+  "input": {
+   "command": "git log",
+   "stdout": "commit abc0\ncommit abc1\ncommit abc2\ncommit abc3\ncommit abc4\ncommit abc5\ncommit abc6\ncommit abc7\ncommit abc8\ncommit abc9",
+   "exitCode": 0
+  },
+  "result": null
+ },
+ {
+  "name": "git-log-default-compress",
+  "input": {
+   "command": "git log",
+   "stdout": "commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 0\n    message line 2 of 0\n    message line 3 of 0\n    message line 4 (should be dropped) of 0\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 1\n    message line 2 of 1\n    message line 3 of 1\n    message line 4 (should be dropped) of 1\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 2\n    message line 2 of 2\n    message line 3 of 2\n    message line 4 (should be dropped) of 2\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 3\n    message line 2 of 3\n    message line 3 of 3\n    message line 4 (should be dropped) of 3\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa4\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 4\n    message line 2 of 4\n    message line 3 of 4\n    message line 4 (should be dropped) of 4\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa5\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 5\n    message line 2 of 5\n    message line 3 of 5\n    message line 4 (should be dropped) of 5\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa6\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 6\n    message line 2 of 6\n    message line 3 of 6\n    message line 4 (should be dropped) of 6\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa7\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 7\n    message line 2 of 7\n    message line 3 of 7\n    message line 4 (should be dropped) of 7\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa8\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 8\n    message line 2 of 8\n    message line 3 of 8\n    message line 4 (should be dropped) of 8\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 9\n    message line 2 of 9\n    message line 3 of 9\n    message line 4 (should be dropped) of 9\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa10\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 10\n    message line 2 of 10\n    message line 3 of 10\n    message line 4 (should be dropped) of 10\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa11\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 11\n    message line 2 of 11\n    message line 3 of 11\n    message line 4 (should be dropped) of 11\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa12\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 12\n    message line 2 of 12\n    message line 3 of 12\n    message line 4 (should be dropped) of 12\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa13\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 13\n    message line 2 of 13\n    message line 3 of 13\n    message line 4 (should be dropped) of 13\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa14\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 14\n    message line 2 of 14\n    message line 3 of 14\n    message line 4 (should be dropped) of 14\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa15\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 15\n    message line 2 of 15\n    message line 3 of 15\n    message line 4 (should be dropped) of 15\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa16\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 16\n    message line 2 of 16\n    message line 3 of 16\n    message line 4 (should be dropped) of 16\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa17\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 17\n    message line 2 of 17\n    message line 3 of 17\n    message line 4 (should be dropped) of 17\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa18\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 18\n    message line 2 of 18\n    message line 3 of 18\n    message line 4 (should be dropped) of 18\n\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa19\nAuthor: Someone <s@x.com>\nDate:   Mon Sep 21 12:00:00 2026 +0800\n\n    message line 1 of 19\n    message line 2 of 19\n    message line 3 of 19\n    message line 4 (should be dropped) of 19\n",
+   "exitCode": 0
+  },
+  "result": "commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0\nDate:   Mon Sep 21 12:00:00 2026 +0800\n    message line 1 of 0\n    message line 2 of 0\n    message line 3 of 0\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1\nDate:   Mon Sep 21 12:00:00 2026 +0800\n    message line 1 of 1\n    message line 2 of 1\n    message line 3 of 1\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2\nDate:   Mon Sep 21 12:00:00 2026 +0800\n    message line 1 of 2\n    message line 2 of 2\n    message line 3 of 2\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3\nDate:   Mon Sep 21 12:00:00 2026 +0800\n    message line 1 of 3\n    message line 2 of 3\n    message line 3 of 3\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa4\nDate:   Mon Sep 21 12:00:00 2026 +0800\n    message line 1 of 4\n    message line 2 of 4\n    message line 3 of 4\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa5\nDate:   Mon Sep 21 12:00:00 2026 +0800\n    message line 1 of 5\n    message line 2 of 5\n    message line 3 of 5\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa6\nDate:   Mon Sep 21 12:00:00 2026 +0800\n    message line 1 of 6\n    message line 2 of 6\n    message line 3 of 6\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa7\nDate:   Mon Sep 21 12:00:00 2026 +0800\n    message line 1 of 7\n    message line 2 of 7\n    message line 3 of 7\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa8\nDate:   Mon Sep 21 12:00:00 2026 +0800\n    message line 1 of 8\n    message line 2 of 8\n    message line 3 of 8\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9\nDate:   Mon Sep 21 12:00:00 2026 +0800\n    message line 1 of 9\n    message line 2 of 9\n    message line 3 of 9\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa10\nDate:   Mon Sep 21 12:00:00 2026 +0800\n    message line 1 of 10\n    message line 2 of 10\n    message line 3 of 10\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa11\nDate:   Mon Sep 21 12:00:00 2026 +0800\n    message line 1 of 11\n    message line 2 of 11\n    message line 3 of 11\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa12\nDate:   Mon Sep 21 12:00:00 2026 +0800\n    message line 1 of 12\n    message line 2 of 12\n    message line 3 of 12\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa13\nDate:   Mon Sep 21 12:00:00 2026 +0800\n    message line 1 of 13\n    message line 2 of 13\n    message line 3 of 13\ncommit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa14\nDate:   Mon Sep 21 12:00:00 2026 +0800\n    message line 1 of 14\n    message line 2 of 14\n    message line 3 of 14\n[+5 commits omitted]"
+ },
+ {
+  "name": "git-log-oneline",
+  "input": {
+   "command": "git log --oneline",
+   "stdout": "fffffff0 feat: thing 0\nfffffff1 feat: thing 1\nfffffff2 feat: thing 2\nfffffff3 feat: thing 3\nfffffff4 feat: thing 4\nfffffff5 feat: thing 5\nfffffff6 feat: thing 6\nfffffff7 feat: thing 7\nfffffff8 feat: thing 8\nfffffff9 feat: thing 9\nfffffff10 feat: thing 10\nfffffff11 feat: thing 11\nfffffff12 feat: thing 12\nfffffff13 feat: thing 13\nfffffff14 feat: thing 14\nfffffff15 feat: thing 15\nfffffff16 feat: thing 16\nfffffff17 feat: thing 17\nfffffff18 feat: thing 18\nfffffff19 feat: thing 19\nfffffff20 feat: thing 20\nfffffff21 feat: thing 21\nfffffff22 feat: thing 22\nfffffff23 feat: thing 23\nfffffff24 feat: thing 24\nfffffff25 feat: thing 25\nfffffff26 feat: thing 26\nfffffff27 feat: thing 27\nfffffff28 feat: thing 28\nfffffff29 feat: thing 29\nfffffff30 feat: thing 30\nfffffff31 feat: thing 31\nfffffff32 feat: thing 32\nfffffff33 feat: thing 33\nfffffff34 feat: thing 34\nfffffff35 feat: thing 35\nfffffff36 feat: thing 36\nfffffff37 feat: thing 37\nfffffff38 feat: thing 38\nfffffff39 feat: thing 39\nfffffff40 feat: thing 40\nfffffff41 feat: thing 41\nfffffff42 feat: thing 42\nfffffff43 feat: thing 43\nfffffff44 feat: thing 44\nfffffff45 feat: thing 45\nfffffff46 feat: thing 46\nfffffff47 feat: thing 47\nfffffff48 feat: thing 48\nfffffff49 feat: thing 49\nfffffff50 feat: thing 50\nfffffff51 feat: thing 51\nfffffff52 feat: thing 52\nfffffff53 feat: thing 53\nfffffff54 feat: thing 54\nfffffff55 feat: thing 55\nfffffff56 feat: thing 56\nfffffff57 feat: thing 57\nfffffff58 feat: thing 58\nfffffff59 feat: thing 59",
+   "exitCode": 0
+  },
+  "result": "fffffff0 feat: thing 0\nfffffff1 feat: thing 1\nfffffff2 feat: thing 2\nfffffff3 feat: thing 3\nfffffff4 feat: thing 4\nfffffff5 feat: thing 5\nfffffff6 feat: thing 6\nfffffff7 feat: thing 7\nfffffff8 feat: thing 8\nfffffff9 feat: thing 9\nfffffff10 feat: thing 10\nfffffff11 feat: thing 11\nfffffff12 feat: thing 12\nfffffff13 feat: thing 13\nfffffff14 feat: thing 14\nfffffff15 feat: thing 15\nfffffff16 feat: thing 16\nfffffff17 feat: thing 17\nfffffff18 feat: thing 18\nfffffff19 feat: thing 19\nfffffff20 feat: thing 20\nfffffff21 feat: thing 21\nfffffff22 feat: thing 22\nfffffff23 feat: thing 23\nfffffff24 feat: thing 24\nfffffff25 feat: thing 25\nfffffff26 feat: thing 26\nfffffff27 feat: thing 27\nfffffff28 feat: thing 28\nfffffff29 feat: thing 29\nfffffff30 feat: thing 30\nfffffff31 feat: thing 31\nfffffff32 feat: thing 32\nfffffff33 feat: thing 33\nfffffff34 feat: thing 34\nfffffff35 feat: thing 35\nfffffff36 feat: thing 36\nfffffff37 feat: thing 37\nfffffff38 feat: thing 38\nfffffff39 feat: thing 39\n[+20 commits omitted]"
+ },
+ {
+  "name": "git-log-wide-line",
+  "input": {
+   "command": "git log --format=\"%H %s\"",
+   "stdout": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee5 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee6 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee7 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee8 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee9 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee10 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee12 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee13 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee14 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee15 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee16 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee17 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee18 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee19 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee20 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee21 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee22 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee23 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee24 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee25 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee26 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee27 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee28 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee29 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee30 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee31 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee32 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee33 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee34 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee35 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee36 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee37 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee38 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee39 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee40 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee41 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee42 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee43 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee44 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "exitCode": 0
+  },
+  "result": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee5 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee6 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee7 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee8 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee9 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee10 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee12 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee13 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee14 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee15 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee16 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee17 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee18 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee19 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee20 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee21 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee22 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee23 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee24 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee25 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee26 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee27 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee28 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee29 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee30 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee31 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee32 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee33 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee34 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee35 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee36 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee37 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee38 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee39 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\n[+5 commits omitted]"
+ },
+ {
+  "name": "git-diff-short",
+  "input": {
+   "command": "git diff",
+   "stdout": "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1,1 +1,1 @@\n-old\n+new",
+   "exitCode": 0
+  },
+  "result": null
+ },
+ {
+  "name": "git-diff-compress",
+  "input": {
+   "command": "git diff",
+   "stdout": "diff --git a/big.ts b/big.ts\nindex abc..def 100644\n--- a/big.ts\n+++ b/big.ts\n@@ -1,50 +1,50 @@\n-old line 0\n-old line 1\n-old line 2\n-old line 3\n-old line 4\n-old line 5\n-old line 6\n-old line 7\n-old line 8\n-old line 9\n-old line 10\n-old line 11\n-old line 12\n-old line 13\n-old line 14\n-old line 15\n-old line 16\n-old line 17\n-old line 18\n-old line 19\n-old line 20\n-old line 21\n-old line 22\n-old line 23\n-old line 24\n-old line 25\n-old line 26\n-old line 27\n-old line 28\n-old line 29\n-old line 30\n-old line 31\n-old line 32\n-old line 33\n-old line 34\n-old line 35\n-old line 36\n-old line 37\n-old line 38\n-old line 39\n-old line 40\n-old line 41\n-old line 42\n-old line 43\n-old line 44\n-old line 45\n-old line 46\n-old line 47\n-old line 48\n-old line 49\n+new line 0\n+new line 1\n+new line 2\n+new line 3\n+new line 4\n+new line 5\n+new line 6\n+new line 7\n+new line 8\n+new line 9\n+new line 10\n+new line 11\n+new line 12\n+new line 13\n+new line 14\n+new line 15\n+new line 16\n+new line 17\n+new line 18\n+new line 19\n+new line 20\n+new line 21\n+new line 22\n+new line 23\n+new line 24\n+new line 25\n+new line 26\n+new line 27\n+new line 28\n+new line 29\n+new line 30\n+new line 31\n+new line 32\n+new line 33\n+new line 34\n+new line 35\n+new line 36\n+new line 37\n+new line 38\n+new line 39\n+new line 40\n+new line 41\n+new line 42\n+new line 43\n+new line 44\n+new line 45\n+new line 46\n+new line 47\n+new line 48\n+new line 49\n\\ No newline at end of file",
+   "exitCode": 0
+  },
+  "result": "\nbig.ts\n  @@ -1,50 +1,50 @@\n  -old line 0\n  -old line 1\n  -old line 2\n  -old line 3\n  -old line 4\n  -old line 5\n  -old line 6\n  -old line 7\n  -old line 8\n  -old line 9\n  -old line 10\n  -old line 11\n  -old line 12\n  -old line 13\n  -old line 14\n  -old line 15\n  -old line 16\n  -old line 17\n  -old line 18\n  -old line 19\n  -old line 20\n  -old line 21\n  -old line 22\n  -old line 23\n  -old line 24\n  -old line 25\n  -old line 26\n  -old line 27\n  -old line 28\n  -old line 29\n  -old line 30\n  -old line 31\n  -old line 32\n  -old line 33\n  -old line 34\n  -old line 35\n  -old line 36\n  -old line 37\n  -old line 38\n  -old line 39\n  -old line 40\n  -old line 41\n  -old line 42\n  -old line 43\n  -old line 44\n  -old line 45\n  -old line 46\n  -old line 47\n  -old line 48\n  -old line 49\n  +new line 0\n  +new line 1\n  +new line 2\n  +new line 3\n  +new line 4\n  +new line 5\n  +new line 6\n  +new line 7\n  +new line 8\n  +new line 9\n  ... (40 lines truncated)\n  +50 -50"
+ },
+ {
+  "name": "git-show-preamble",
+  "input": {
+   "command": "git show HEAD",
+   "stdout": "commit abcdef1234567890\nAuthor: A <a@x.com>\nDate:   Mon Sep 21 2026\n\n    commit message\n\ndiff --git a/x.ts b/x.ts\nindex 111..222 100644\n--- a/x.ts\n+++ b/x.ts\n@@ -1,3 +1,3 @@\n-a\n+b\n context 0\n context 1\n context 2\n context 3\n context 4\n context 5\n context 6\n context 7\n context 8\n context 9\n context 10\n context 11\n context 12\n context 13\n context 14\n context 15\n context 16\n context 17\n context 18\n context 19\n context 20\n context 21\n context 22\n context 23\n context 24\n context 25\n context 26\n context 27\n context 28\n context 29\n context 30\n context 31\n context 32\n context 33\n context 34\n context 35\n context 36\n context 37\n context 38\n context 39\n context 40\n context 41\n context 42\n context 43\n context 44",
+   "exitCode": 0
+  },
+  "result": "commit abcdef1234567890\nAuthor: A <a@x.com>\nDate:   Mon Sep 21 2026\n    commit message\n\nx.ts\n  @@ -1,3 +1,3 @@\n  -a\n  +b\n   context 0\n   context 1\n   context 2\n   context 3\n   context 4\n   context 5\n   context 6\n   context 7\n   context 8\n   context 9\n   context 10\n   context 11\n   context 12\n   context 13\n   context 14\n   context 15\n   context 16\n   context 17\n   context 18\n   context 19\n   context 20\n   context 21\n   context 22\n   context 23\n   context 24\n   context 25\n   context 26\n   context 27\n   context 28\n   context 29\n   context 30\n   context 31\n   context 32\n   context 33\n   context 34\n   context 35\n   context 36\n   context 37\n   context 38\n   context 39\n   context 40\n   context 41\n   context 42\n   context 43\n   context 44\n  +1 -1"
+ },
+ {
+  "name": "test-run-fail",
+  "input": {
+   "command": "npm test",
+   "stdout": "> pkg@1.0.0 test\n> vitest run\n\n ✓ src/pass1.test.ts (2)\n ✓ src/pass2.test.ts (1)\n ✓ src/pass3.test.ts (1)\n FAIL  src/a.test.ts > does thing\nAssertionError: expected 1 to be 2\nExpected: 2\nActual: 1\n  at /x/a.test.ts:10:5\n\n Test Files  1 failed | 3 passed (4)\n      Tests  1 failed | 4 passed (5)\n   Duration  1.2s\n  coverage  line 90%\n  coverage  branch 80%",
+   "exitCode": 1
+  },
+  "result": " FAIL  src/a.test.ts > does thing\nAssertionError: expected 1 to be 2\nExpected: 2\nActual: 1\n  at /x/a.test.ts:10:5\n\n Test Files  1 failed | 3 passed (4)\n      Tests  1 failed | 4 passed (5)\n   Duration  1.2s\n  coverage  line 90%\n  coverage  branch 80%"
+ },
+ {
+  "name": "test-run-pass",
+  "input": {
+   "command": "npx vitest",
+   "stdout": "> pkg@1.0.0 test\nnpm WARN something\n ✓ src/a.test.ts (3)\n ✓ src/b.test.ts (2)\n ✓ src/c.test.ts (1)\n ✓ src/d.test.ts (1)\n ✓ src/e.test.ts (1)\n ✓ src/f.test.ts (1)\n Test Files  6 passed (6)\n      Tests  10 passed (10)\n   Duration  0.9s\n  coverage  line 95%\n  coverage  branch 88%\n  coverage  func 100%\n  coverage  stmt 95%\n  coverage  extra 1\n  coverage  extra 2",
+   "exitCode": 0
+  },
+  "result": "✓ 6 passed\n Test Files  6 passed (6)\n      Tests  10 passed (10)\n   Duration  0.9s"
+ },
+ {
+  "name": "test-run-tiny",
+  "input": {
+   "command": "jest",
+   "stdout": "PASS a\nTests: 1 passed",
+   "exitCode": 0
+  },
+  "result": null
+ },
+ {
+  "name": "pipe-not-filtered",
+  "input": {
+   "command": "git status | head -5",
+   "stdout": "src/a.ts(3,5): error TS2322: Type 'string' is not assignable to type 'number'.\n  some context line\nsrc/b.ts(10,1): error TS2554: Expected 2 arguments, but got 1.\n\nFound 2 errors in 2 files.",
+   "exitCode": 0
+  },
+  "result": null
+ },
+ {
+  "name": "pipe-tsc-not-filtered",
+  "input": {
+   "command": "tsc --noEmit | head",
+   "stdout": "src/a.ts(3,5): error TS2322: Type 'string' is not assignable to type 'number'.\n  some context line\nsrc/b.ts(10,1): error TS2554: Expected 2 arguments, but got 1.\n\nFound 2 errors in 2 files.",
+   "exitCode": 0
+  },
+  "result": null
+ },
+ {
+  "name": "unmatched-command",
+  "input": {
+   "command": "echo hi",
+   "stdout": "hi",
+   "exitCode": 0
+  },
+  "result": null
+ },
+ {
+  "name": "unmatched-fail",
+  "input": {
+   "command": "ls nonexistent",
+   "stdout": "ls: cannot access",
+   "exitCode": 2
+  },
+  "result": null
+ }
+]

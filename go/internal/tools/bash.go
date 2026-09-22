@@ -275,15 +275,14 @@ func (t *bashTool) Execute(ctx context.Context, p *CallParams) (contract.Result,
 	// **本刀修的真实偏差**：第二十一刀我实现 successFold 时折叠成**单行提示**，
 	// 而 TS 保留末尾 20 行——单行提示让模型失去"最后发生了什么"的观测。
 	//
-	// **未接的部分（明示）**：`applyCommandFilter`（`command-filters.ts`，
-	// ~300 行的独立子系统：tsc/test/git 五族过滤器）未移植，故传 nil 不过滤；
-	// `persistRawOutput`（→ `meta.rawPath` 的恢复提示）亦未移植，故 RawPath 留空。
+	// **未接的部分（明示）**：`persistRawOutput`（→ `meta.rawPath` 的恢复提示）
+	// 未移植，故 RawPath 留空。
 	rawOutput := result.Content
 	result.Content = BuildModelOutput(rawOutput, ToolOutputMeta{
 		Command:    command,
 		ExitCode:   exitCode,
 		DurationMs: duration.Milliseconds(),
-	}, nil)
+	}, ApplyCommandFilter)
 
 	// ── L0 artifact 包装（对账 TS `bash.ts:744-800`）──
 	//
