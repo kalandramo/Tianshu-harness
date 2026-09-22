@@ -12,20 +12,52 @@
 
 **目标**：用 Go 重写天枢运行时，**字节等价**——Go 渲染的 prompt / 请求体 / 会话行与 TS 逐字节相同。不等价则前缀缓存失效，这是硬约束不是优化项。
 
-**进度（2026-09-19 核实）**：
+**进度（2026-09-21 实测）**：
 
 | 维度 | 数值 |
 |------|------|
-| Go 生产代码 | 14,114 行 |
-| Go 测试代码 | 15,303 行 |
-| TS 源码（对照） | 270,600 行 |
-| **完成度（按行数粗估）** | **约 5%** |
-| Go 包 | 18 个（其中 16 个有测试） |
-| oracle 数据集 | 31 个（30 个用 `oracle.json`，`zstd` 用 `frames.json`） |
-| 测试函数 | 516 个 |
-| 工具 | **10 / 21** |
+| Go 生产代码 | 32,759 行 |
+| Go 测试代码 | 33,759 行 |
+| Go 包 | 19 个（18 个有测试） |
+| oracle 数据集 | 53 个 |
+| 测试函数 | 1,041 个 |
+| **已注册工具** | **13 / 44** |
 
-**必须建立的认知**：这不是"快完成了"，而是**地基已夯实、主体未动**。已完成的深度（字节对账、变异反证、oracle 纪律）很扎实，但广度上 Wave 3/4/5 的核心目录**一个都不存在**。
+**复现命令**（可直接粘贴到 shell）：
+
+```bash
+cd go   # 以下命令都在 go/ 下跑
+
+# Go 生产代码 / 测试代码行数
+find . -name '*.go' -not -name '*_test.go' -not -path './testdata/*' | xargs wc -l | tail -1
+find . -name '*_test.go' | xargs wc -l | tail -1
+
+# 包数 / 有测试的包数
+ls -d internal/*/ | wc -l
+for d in internal/*/; do ls "$d"*_test.go >/dev/null 2>&1 && echo "$d"; done | wc -l
+
+# oracle 数据集 / 测试函数数
+ls testdata/ | wc -l
+grep -rh '^func Test' --include='*_test.go' . | wc -l
+
+# 已注册工具数（对照 default_registry.go 的 44 目标）
+grep -cE 'Register\(|^\s+[A-Z][a-zA-Z]*\(' internal/tools/default_registry.go
+```
+
+**关于 TS 行数对照**：`src/` 下非测试 `.ts` 实测 **50,121 行**
+（`find src -name '*.ts' -not -name '*.test.ts' -not -path '*/__tests__/*' | xargs wc -l | tail -1`，
+在**父仓库根**跑）。旧版本文档记的 270,600 行**口径不明、无法复现**——
+故**不再引用单一数字**，需要时用上面的命令自测。
+
+**工具基数是 44**（不是 21）：`default_registry.go` 注释明说
+「完整 44 个工具是分波目标，此处只收『读写检索执行』四类的基础工具」。
+旧版本文档的「10 / 21」是当时的快照，基数已过时。
+
+**必须建立的认知**：这不是"快完成了"，而是**地基已夯实、主体未动**。已完成的深度
+（字节对账、变异反证、oracle 纪律）很扎实，但广度上 TS 的多个核心目录
+（`auth`/`model`/`plan`/`mcp`/`lsp`/`repo`/`search`/`tui`/`server` 等）
+在 `internal/` 下**尚无对应目录**。
+
 
 ---
 
@@ -133,6 +165,14 @@ node_modules/.bin/tsx go/testdata/<name>/gen-oracle.ts
 ---
 
 ## 4. 下一步做什么（**按依赖排序，不按难度**）
+
+> **⚠️ 编号消歧（重要）**：本节用的「第 N 刀」是**旧编号**（2026-09-19 的
+> Wave 3/4 线，止于第二十八刀）。`HANDOFF.md` 另有**回主线编号**（从第一刀
+> 重新计数，截至 2026-09-21 为第二十六刀，覆盖 read_file/bash 工具链）。
+> **两套编号互不连续**——引用时务必说明是哪一套。
+>
+> **进度以 `HANDOFF.md` 为准**（它是单一事实来源）。本节保留旧编号是因为
+> 各刀的**设计意图与依赖关系**仍有参考价值。
 
 ### 第一刀（进行中）：Wave 4 的 hook 管线 + 认知层
 
@@ -1376,15 +1416,31 @@ token），差 4 倍；且 assistant 只算 content+reasoning+tool_calls。连�
 
 ### 备选：补工具（收益较低但独立）
 
-缺 11 个：`plan`、`job`、`ast_grep`、`diff`、`git`、`web_fetch`、`web_search`、`repo_map`、`read_section`、`request_path_access`、`ask_image`、`skill`。
+**现状（2026-09-21 实测）**：`internal/tools/` 下已注册 **13 / 44**。
+**未实现的工具**（`ls internal/tools/<name>.go` 可逐一核实）：
 
-其中 `git`（684 行）、`diff`（163 行）较独立；`plan` 依赖 Plan Mode 审批门禁（属 Wave 4）。
+`job`、`git`、`diff`、`ast_grep`、`web_fetch`、`web_search`、`repo_map`、
+`inspect_project`、`request_path_access`、`ask_image`、`skill`、`monitor`、
+`delegate_task`、`browser`、`computer_use` 等。
+
+其中 `git`（684 行）、`diff`（163 行）较独立；`plan` 依赖 Plan Mode 审批门禁。
+
+> **旧版本文档此处有错**：曾列 `read_section` 为「缺」——**它早已实现**
+> （`internal/tools/readsection.go`，且 `read_file` 的 L0 包装依赖它做召回）。
+> 接手时**以 `ls internal/tools/*.go` 为准**，不要信任何清单。
 
 ### 第三刀：Wave 3 的压缩与缓存
 
-`internal/compact/`（边界压缩，仅 `turn==0` 重写历史）、`internal/cache/`（命中率统计 / advisor / 审计）——**目录均不存在**。
+`internal/compact/`（边界压缩）、`internal/cache/`（命中率统计 / advisor）——
+**均已于 2026-09-19 完成**（`ls -d internal/compact internal/cache` 可核实；
+两包合计 8 个测试文件）。
 
-**注意**：缓存命中率是**端到端判据**，不能只靠单测。已跑通过一次真实端点冒烟（前缀缓存 93.7–95.5%），后续改动应重跑。
+> **旧版本文档此处有错**：曾断言「目录均不存在」。实际 `internal/compact/` 与
+> `internal/cache/` 都已落地——包括 `policy.go`/`action.go`/`advisor.go`/
+> `warmth.go` 及各自的 oracle 测试。
+
+**注意**：缓存命中率是**端到端判据**，不能只靠单测。已跑通过一次真实端点冒烟
+（前缀缓存 93.7–95.5%），后续改动应重跑。
 
 ---
 
@@ -1392,13 +1448,19 @@ token），差 4 倍；且 assistant 只算 content+reasoning+tool_calls。连�
 
 | 文档 | 定位 | 使用方式 |
 |------|------|---------|
-| **本文** | 跨设备续跑入口 | 先读这个 |
-| `go/HANDOFF.md` | 详细欠账与踩坑记录（71KB） | 遇到具体问题时查 |
+| **本文** | 跨设备续跑入口（**进度快照可能滞后**） | 先读这个 |
+| `go/HANDOFF.md` | **单一事实来源**——每刀一个专章，含欠账/踩坑/验证记录 | 遇到具体问题时查；**进度以它为准** |
 | `.rivet/plans/go-重写天枢运行时-分波移植计划.md` | 原始分波设计 | **看设计意图，不看 checkbox** |
 
-**⚠️ 原计划的 checkbox 已脱节**：31 个 checkbox **全部未勾选**（0 已勾选），但 Wave 0/1 实际**已完成**（含 Go/No-Go 门通过）。照 checkbox 做会重复劳动。
+**⚠️ 两份旧文档的 checkbox / 清单都已脱节**：
 
-**建议**：接手后先花 10 分钟把原计划的 checkbox 按真实进度更新一次，或干脆在本文 §4 维护进度（单一事实来源）。
+- 原计划的 31 个 checkbox **全部未勾选**，但 Wave 0/1 实际**已完成**（含 Go/No-Go 门通过）。
+- **本文 §4 的「下一刀」编号也已滞后**——真实进度见 `HANDOFF.md` 的最新专章
+  （截至 2026-09-21 为**第二十六刀**：`applyCommandFilter`）。
+
+**建议**：把 `HANDOFF.md` 当作**单一事实来源**，本文只保留**环境重建**与
+**纪律约定**（§2/§3/§6/§7）这些不易过期的部分。接手后若发现本文与 HANDOFF
+冲突，**信 HANDOFF**。
 
 ---
 
