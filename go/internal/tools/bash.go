@@ -46,9 +46,17 @@ func Bash(cwd string) Tool {
 - 破坏性/不可逆命令（rm -rf、git reset --hard 等）需要用户明确批准
 - 超时默认 120 秒；超时会终止整个进程组（不留孤儿进程）`,
 		InputSchema: objSchemaOrdered([]string{"command", "timeout", "run_in_background"}, map[string]any{
-			"command":           strProp("要执行的 shell 命令"),
-			"timeout":           intPropMin("超时毫秒数（默认 120000；非正数按默认值处理）", 1),
-			"run_in_background": boolProp("设为 true 转入后台并返回 job id。自动检测已知长跑命令。"),
+			"command": strProp("要执行的 shell 命令"),
+			"timeout": intPropMin("超时毫秒数（默认 120000；非正数按默认值处理）", 1),
+			// **显式未实现声明**（第二十五刀）：Go 侧无 sessionJobRegistry 设施
+			// （`JobRegistry`/`JobStore` 全库零命中），故此参数**被忽略**，命令
+			// 仍走前台同步执行。用户级验收已实测证实（传 true/false/不传，输出
+			// 逐字一致、无 job id）。
+			//
+			// 保留参数（而非删除）是为了不丢接口语义——TS 侧该参数正确，待 job
+			// 子系统移植后恢复原文案。**与 TS 的偏离是有意的**，已在
+			// schema_parity_test.go 的已知偏离白名单里登记（含移除条件）。
+			"run_in_background": boolProp("（Go 侧暂未实现：传 true 仍走前台同步执行，不会转入后台、不返回 job id。job 子系统移植后恢复。）"),
 		}, "command"),
 	}
 	t.enabled = true

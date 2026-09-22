@@ -1970,6 +1970,95 @@ Go 侧此前直接返回原始拼接，**所有** bash 结果的形态都与 TS 
 8. **bash 的超时/错误路径 L0**。
 
 
+### 未接线普查 + run_in_background 显式声明（2026-09-21，回主线第二十五刀）
+
+**做了什么**：两件事——① 跑「未接线普查」盘点静默失效；② 把实测证实的
+`run_in_background` 静默失效**降级为显式声明**。
+
+#### 一、未接线普查（结论：矿脉已采空）
+
+两类普查，849 个导出符号 + 21 组 schema 参数：
+
+**第一类（导出符号零生产调用方）**：B 类 8 个（只有测试引用）+ C 类 15 个
+（零引用），**逐条核实后零真缺陷**——全是枚举常量（`Category*`/`Scope*`/
+`Lossiness*`），通过 `String()` 或**值比较**间接使用（grep 只找标识符引用，
+漏了隐式使用）。本会话 5 例静默失效里唯一属此类的 `DecideReadPolicy` 已修。
+
+**第二类（schema 声明但实现未读取）**：3 个候选，核实后——
+- `todo:id`、`todo:status` —— **误报**（`todo.go:137,139` 用 `m["id"]` 形式
+  读取遍历中的 todo map，正则只匹配 `Input["id"]`）
+- **`bash:run_in_background`** —— **真缺口**（见下）
+
+**普查结论**：「未接线」不是系统性蔓延，已收敛。**两条矿脉都采完了**——
+后续不必再花时间在这类普查上（除非新增模块）。
+
+#### 二、`run_in_background` 的显式声明
+
+**用户级验收（2/2 met）**：写一次性探针真实调用 bash 三次（不传 / `=true` /
+`=false`），比对输出——**三者剔除 `time=` 抖动后逐字一致**，无 job id、无后台
+标记，耗时 65ms（前台同步完成）。**声称证实**：参数被静默忽略。
+
+**为何不实现**：TS 侧该参数依赖 `sessionJobRegistry`（`bash.ts:466` 注释明说
+「Requires a session job registry (server / TUI with sessionId); otherwise falls
+through to normal foreground execution」）。Go 侧**无该设施**（`JobRegistry`/
+`jobRegistry`/`JobStore` 全库零命中）。实现它要先移植整个 job 子系统。
+
+**为何不删除**：保留参数以不丢接口语义（TS 侧参数正确），且此例的静默失效
+**风险低于** `focus`/`file_paths`——那两例是「传参后返回错误结果」，此例是
+「传参后走前台」，行为**可观测**（命令会跑，模型看输出即知没后台）。
+
+**做法**：改 schema 描述为诚实声明，并**登记为已知偏离**。
+
+#### 三、与 TS 的有意偏离（**重要**）
+
+`bash.go:50` 的 `run_in_background` 描述**有意偏离 TS**（不再承诺 job id）。
+这触及 PLAN.md `§7.2`「工具 schema 必须逐字节对账」的纪律，故：
+
+- **oracle 保持 TS 原样不动**（它是 TS 的忠实快照，改它 = 把偏差藏进基准）
+- 偏离登记在 `schema_parity_test.go` 的 `knownSchemaDeviations` 白名单，
+  **含移除条件**（job 子系统移植后恢复 TS 原文案并删除该条目）
+- 白名单**只放行已登记的属性**，且放行时 `t.Logf` **显式报告**（不静默）
+
+**白名单设计**（`deviatingProps` 逐属性单独序列化比对，而非整串比对后猜位置）：
+只有「**所有**差异属性都已登记」才放行——部分登记仍报错。这样白名单**不会
+掩盖新的偏离**（变异 M70 实证：改 `command` 的描述 → 1 红）。
+
+#### 验证
+
+- **TDD 流程**：先写 RED（`bash_run_in_background_decl_test.go` 三条断言全红）
+  → 改描述 → GREEN
+- **变异反证**：M70（未登记的描述偏离）→1 红（白名单精确）；
+  M71（描述回退到虚假承诺）→1 红（诚实声明测试抓到）
+- **schema parity**：属性名对账绿；逐字节对账绿（偏离经白名单显式放行并报告）
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+#### 两个测试自身的坑（记录）
+
+1. **断言「A 与 B 行为相同」必须先排除非确定性字段**：首版探针用精确字符串
+   比较，把 `time=0.1s` vs `time=0.0s` 的耗时抖动误判为「参数有生效」。剔除
+   `time=` 后比对才正确。
+2. **断言「不含 X」要防否定式命中**：描述改为「**不**返回 job id」后，朴素的
+   `Contains(desc, "返回 job id")` 被否定式误判。改为检查「出现时必须处于否定
+   语境」（前缀含「不」/「未」）。
+
+#### 仍未做（更新）
+
+1. **`applyCommandFilter`**（`command-filters.ts`）：五族命令感知过滤器。
+   `buildModelOutput` 的调用点已就绪。
+2. **`persistRawOutput`**（→ `meta.rawPath`）：TS 的 doom-loop 防护。
+3. **job 子系统**（`sessionJobRegistry` + `job` 工具）：`run_in_background`
+   的恢复条件（见上）。
+4. **`UIContent` 单读分支接线**：**前置条件**是 Go 移植 TUI/server 工具卡管线。
+5. **artifact re-serve**（`read-file.ts:794-828`）：依赖 `sliceFromArtifact`。
+6. **邻居提示**（`RIVET_NEIGHBOR_HINT=1`，默认关）。
+7. **`preferFoldOnOverflow`**（TS `:695-704`）：Go 无 `readCapOverride` 概念。
+8. **`trimLastKnownLocked` 的裁剪语义分歧**（`filestate.go`）：Go 裁 `size - max`
+   （501→500），TS 裁 `ceil(size*0.2)`（501→400）。**不等价**（小刀）。
+9. **bash 的超时/错误路径 L0**。
+10. **`go/PLAN.md` 已过期**（称 `internal/compact/`、`internal/cache/` 不存在，
+    实际均已存在且有测试；「下一步」停在第 28 刀而 HANDOFF 已到第 25 刀回主线）。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`

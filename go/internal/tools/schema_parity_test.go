@@ -158,6 +158,74 @@ func TestToolSchemaParity(t *testing.T) {
 	t.Logf("对账了 %d 个工具", checked)
 }
 
+// knownSchemaDeviations 登记**有意的**与 TS schema 的偏离。
+//
+// # 为什么要白名单而不是改 oracle
+//
+// oracle 是 **TS 侧的忠实快照**（`gen-oracle.ts` 从 TS 真实注册表导出）。改它
+// 会让「对账」失去意义——那等于把偏差藏进基准。故 oracle **保持 TS 原样**，
+// 偏离在此**显式登记**，每条附**移除条件**。
+//
+// # 判据
+//
+// 只登记「Go 侧能力确实缺失、且诚实描述优于虚假承诺」的偏离。任何**能力对等**
+// 却描述不同的条目，都是缺陷而非偏离——不该进这张表。
+var knownSchemaDeviations = map[string]map[string]string{
+	// tool → property → 偏离原因（含移除条件）
+	"bash": {
+		"run_in_background": "Go 侧无 sessionJobRegistry 设施（JobRegistry/JobStore 全库零命中），" +
+			"参数被忽略、命令走前台。用户级验收已实测证实（第二十五刀）。" +
+			"TS 描述承诺「转入后台并返回 job id」会误导模型——故改为诚实声明。" +
+			"**移除条件**：job 子系统移植后，恢复 TS 原文案并从本表删除。",
+	},
+}
+
+// deviationFor 返回该工具该属性的偏离原因；无偏离返回 ""。
+func deviationFor(tool, prop string) string {
+	if m, ok := knownSchemaDeviations[tool]; ok {
+		return m[prop]
+	}
+	return ""
+}
+
+// deviatingProps 找出 Go 与 TS 之间**序列化后不同**的属性名。
+//
+// 判据：逐个属性单独序列化并比对（而非整串比对后猜位置）——这样能精确指出
+// 是哪些属性偏离，白名单才可能「只放行已登记的」。
+func deviatingProps(goSchema *contract.InputSchema, tsRaw json.RawMessage) []string {
+	if len(tsRaw) == 0 {
+		return nil
+	}
+	tsObj, _ := ordered(tsRaw).(*wire.OrderedMap)
+	if tsObj == nil {
+		return nil
+	}
+	tsPropsAny, _ := tsObj.Get("properties")
+	tsProps, _ := tsPropsAny.(*wire.OrderedMap)
+	if tsProps == nil {
+		return nil
+	}
+
+	var out []string
+	for _, p := range goSchema.PropOrder {
+		goProp, ok := goSchema.Properties[p]
+		if !ok {
+			continue
+		}
+		tsProp, ok := tsProps.Get(p)
+		if !ok {
+			out = append(out, p)
+			continue
+		}
+		goStr := serializeOrderedForTest(goProp)
+		tsStr := serializeOrderedForTest(tsProp)
+		if goStr != tsStr {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // TestToolSchemaByteParity —— 对账**完整序列化字节**（含嵌套键序与描述文本）。
 //
 // 比属性名对账更严格：捕捉「名字对但描述不同」「嵌套键序不同」这类差异。
@@ -178,6 +246,9 @@ func TestToolSchemaByteParity(t *testing.T) {
 			got := serializeSchemaForTest(def.InputSchema)
 			wantStr := serializeOrderedForTest(ordered(want.InputSchema))
 
+			// **判定差异属性**：找出 Go 与 TS 之间**描述不同**的属性名集合。
+			// 只当这些属性**全部**已登记时才放行（部分登记 = 仍有未记录的偏离）。
+			deviating := deviatingProps(def.InputSchema, want.InputSchema)
 			if got != wantStr {
 				// 差异定位：逐段找第一个不同处
 				i := 0
@@ -195,8 +266,22 @@ func TestToolSchemaByteParity(t *testing.T) {
 				if wh > len(wantStr) {
 					wh = len(wantStr)
 				}
-				t.Errorf("序列化字节不符，首个差异在偏移 %d：\n  Go ...%s...\n  TS ...%s...\n  Go 全长=%d TS 全长=%d",
-					i, got[lo:gh], wantStr[lo:wh], len(got), len(wantStr))
+				// **已知偏离白名单**：仅当**所有**差异属性都已登记时放行。
+				// 报告而非静默——偏离必须是可见的（`t.Logf` 出现在 -v 输出里）。
+				unregistered := []string{}
+				for _, p := range deviating {
+					if deviationFor(name, p) == "" {
+						unregistered = append(unregistered, p)
+					}
+				}
+				if len(deviating) > 0 && len(unregistered) == 0 {
+					for _, p := range deviating {
+						t.Logf("已知偏离（已登记）：%s.%s —— %s", name, p, deviationFor(name, p))
+					}
+					return
+				}
+				t.Errorf("序列化字节不符，首个差异在偏移 %d：\n  Go ...%s...\n  TS ...%s...\n  Go 全长=%d TS 全长=%d\n  差异属性=%v 未登记=%v",
+					i, got[lo:gh], wantStr[lo:wh], len(got), len(wantStr), deviating, unregistered)
 			}
 		})
 	}
