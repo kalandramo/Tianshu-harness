@@ -91,18 +91,24 @@ func ForgetFileState(canonicalPath, sessionID string) {
 	}
 }
 
-// trimLastKnownLocked 超限时裁剪最旧的条目（须持锁）。
+// trimLastKnownLocked 超限时裁掉最旧的 **20%**（须持锁）。
 //
-// 对账 TS `trimLastKnown`——表是会话级缓存，无上限会在长会话里无界增长。
+// 对账 TS `trimLastKnown`：`drop = Math.ceil(size * 0.2)`——**裁 20% 而非裁到上限**。
+//
+// **此前的不等价（第二十八刀修正）**：Go 裁 `size - max` 条（501 → 500），
+// TS 裁 `ceil(size*0.2)` 条（501 → 400）。差异的后果：Go 每次只裁 1 条，
+// 表容量长期贴着上限反复触发裁剪；TS 裁完留出 20% 余量。
+//
+// 与 `trimReadHistoryLocked`（readdedup.go）用**同一算式**——两表语义一致。
 func trimLastKnownLocked() {
 	if len(lastKnownOrder) <= lastKnownMax {
 		return
 	}
-	excess := len(lastKnownOrder) - lastKnownMax
-	for _, k := range lastKnownOrder[:excess] {
+	drop := (len(lastKnownOrder) + 4) / 5 // ceil(size * 0.2)
+	for _, k := range lastKnownOrder[:drop] {
 		delete(lastKnownState, k)
 	}
-	lastKnownOrder = lastKnownOrder[excess:]
+	lastKnownOrder = lastKnownOrder[drop:]
 }
 
 // ResetFileStateForTests 清空表（测试用）。

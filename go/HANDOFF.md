@@ -2201,6 +2201,61 @@ through to normal foreground execution」）。Go 侧**无该设施**（`JobRegi
    工具都调它（bash 已接）。`read_file.go` 已有 `rawPath` 概念但未落盘。
 
 
+### trimLastKnown 裁剪语义对齐（2026-09-21，回主线第二十八刀）
+
+**做了什么**：修正 `trimLastKnownLocked`（`filestate.go`）的裁剪语义——
+从 `size - max`（裁到上限）改为 `ceil(size*0.2)`（裁 20%），对账 TS `trimLastKnown`。
+
+**不等价的证据**
+
+| | 501 条时裁掉 | 剩余 |
+|---|---|---|
+| TS `Math.ceil(size*0.2)` | 101 | 400 |
+| Go（修正前）`size - max` | **1** | **500** |
+
+后果：Go 每次只裁 1 条，表容量长期贴着上限反复触发裁剪；TS 裁完留 20% 余量。
+**与 `trimReadHistoryLocked`（readdedup.go，第二十二刀）现用同一算式**——两表语义一致。
+
+**为什么既有测试没抓到**：`TestFileStateTrim`（`readsection_filepath_test.go:236`）
+只断言「最旧被裁、最新保留」——**两种语义下都成立**，故不构成覆盖。
+**不是测试缺陷，是覆盖范围不同**：它测的是「裁对了谁」，没测「裁了多少」。
+本刀补上精确的裁剪量断言。
+
+**本刀的 scope 修正（重要）**
+
+原计划做「其余工具的 `persistRawOutput` 接线」（`read_file` / `run_tests` / `diff`），
+侦察后**放弃**——理由与第二十四刀的 `UIContent` 同型：
+
+- TS 侧 `rawPath` 的消费者是 **TUI 工具卡**（`tui/engine/app.ts:5476`）与
+  `tool-pipeline.ts:1628`（`[tool-input-error]` 提示），**两者在 Go 侧都未移植**。
+- Go 侧 `contract.Result.RawPath` **无生产消费者**（只有 JSON tag + 注释）。
+- `RuntimeToolEvent`（`hooks.go`）**不携带 `RawPath`**——`OnToolResult` 回调
+  也没有它。
+
+**结论**：接线会产出**无人读取的字段**（收益端为零）。已记入「仍未做」并标注
+**前置条件**。
+
+**验证**
+- **TDD 流程**：先写 4 条测试 → **实测旧语义下 2 红**（`实得 500`、`裁了 1 条`）
+  → 改实现 → 4 绿。RED 是真的（不是事后补的断言）。
+- **变异反证**：M79（回到 `size-max` 语义）→2 红；
+  M80（算式改成 `ceil(size/3)`，与 readdedup 不一致）→1 红
+- 全量：`gofmt -l` 干净、`go build`/`go vet ./...` exit=0、22 包 ok / 0 FAIL
+
+#### 仍未做（更新）
+
+1. **`persistRawOutput` 的其余消费者**（`read_file` / `run_tests` / `diff`）：
+   **前置条件**是 Go 移植 TUI 工具卡管线（TS `app.ts:5476`）或 `tool-pipeline`
+   的 `[tool-input-error]` 路径（TS `:1628`）。当前接 = 接一个没人读的字段。
+2. **`UIContent` 单读分支接线**：同一前置条件（TUI 工具卡管线）。
+3. **`job` 子系统**（`sessionJobRegistry` + `job` 工具）：`run_in_background`
+   的恢复条件（见第二十五刀）。
+4. **artifact re-serve**（`read-file.ts:794-828`）：依赖 `sliceFromArtifact`。
+5. **邻居提示**（`RIVET_NEIGHBOR_HINT=1`，默认关）。
+6. **`preferFoldOnOverflow`**（TS `:695-704`）：Go 无 `readCapOverride` 概念。
+7. **bash 的超时/错误路径 L0**。
+
+
 ### 真实端点验证怎么跑（2026-09-19 实测有效）
 
 凭据在 `~/.rivet/provider-keys.json`（`keyRef` 指向 `~/.rivet/secrets.json`
