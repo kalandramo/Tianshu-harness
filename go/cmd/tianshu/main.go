@@ -290,6 +290,10 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	pipeline.Register(agent.NewReasoningSpiralHook(agent.ReasoningSpiralDeps{Bus: bus}))
 	// lossy-observation（postTool）：工具输出被折叠/截断 → 提醒禁止负向结论。
 	pipeline.Register(agent.NewLossyObservationHook(bus))
+	// edit-tool-advisory（postTool）：同轮内对同一文件连续 hash_edit ≥2 次
+	// → 提醒改用 edit_file / write_file（锚点 stale 是 bracket-mismatch 的
+	// 头号成因，TS 侧事故 53e1e4a8）。
+	pipeline.Register(agent.NewEditToolAdvisoryHook(bus))
 
 	// claim store：落盘到 <cwd>/.rivet/claims/<sessionId>.claims.jsonl。
 	//

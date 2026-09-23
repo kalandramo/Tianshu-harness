@@ -4922,6 +4922,105 @@ TS 的 `LOSSY_CONTENT_MARKERS` 有 **15 条**；Go 侧**只移植 6 条**。
 不要采信任何表格（包括本表）。
 
 
+## 第四十四刀：edit-tool-advisory hook（2026-09-23）
+
+**目标**：继续补 hook。按上一刀的教训——**先 grep 核实地基**。
+
+### 地基核实（推翻了我上一轮表格的一半）
+
+| 候选 | 我上一轮写的 | 核实结果 |
+|---|---|---|
+| `edit-tool-advisory-hook` | 「只需 `RecentToolHistory`（已有）」 | **可做**——它实际用 **turn-scoped Map**（不用 `RecentToolHistory`），只需 `tool.input.file_path` + `tool.name` |
+| `probe-discipline-hook` | 「只需 `RecentToolHistory`（已有）」 | **地基不足**——它用 `channel: 'system-reminder'`，而 Go 侧 `AdvisoryEntry.Channel` **只声明、零消费者**（TS 有 SR 通道分派，Go 没有） |
+
+**故本刀只做 `edit-tool-advisory`。** `probe-discipline` 需先移植 SR 通道（独立工作）。
+
+### 落地
+
+| 文件 | 内容 |
+|---|---|
+| `internal/agent/edit_tool_advisory.go` | hook 本体（新增） |
+| `internal/agent/edit_tool_advisory_test.go` | 单元测试 9 例（新增） |
+| `internal/agent/edit_tool_advisory_wiring_test.go` | 接线测试 2 例（新增） |
+| `cmd/tianshu/main.go` | 注册（第 5 个 hook） |
+
+### 语义（逐条对账 TS）
+
+TS 文件头原文：
+
+	When the agent uses hash_edit ≥2 times on the same file_path in a single
+	turn, the second call's anchors are stale (the first edit shifted line
+	numbers). This is the #1 cause of bracket-mismatch debris (see 53e1e4a8).
+
+**为什么用 turn-scoped Map 而非 `recentToolHistory`**（TS 原文）：
+
+	Uses a turn-scoped Map instead of recentToolHistory (which only keeps 5
+	entries and would miss early hash_edit calls in heavy turns).
+
+Go 的 `recentToolHistory` 窗口也是 5 条（`toolHistoryWindow = 5`）——同样的
+盲区。故本 hook 自持 turn-scoped 状态。
+
+三条语义要点（都有测试锁定）：
+- **阈值 ≥2**（同轮同文件）
+- **按文件独立计数**（不同文件互不影响）
+- **轮次变化重置**（跨轮累积会让「上一轮编辑过」也触发）
+
+**与 TS 的差异（一处）**：TS 不设 `tier` 字段（走缺省），Go 同样不设
+（`AdvisoryTier` 零值为空串，与「缺省 bus」语义一致）。
+
+### 变异反证 M211-M217
+
+| 变异 | 内容 | 结果 |
+|---|---|---|
+| M211 | 阈值失效（第 1 次就触发） | 6 红 |
+| M212 | 轮次不重置 | 1 红 |
+| M213 | 工具名过滤失效 | 1 红 |
+| M214 | 不做 Target 回退 | 1 红 |
+| M215 | 优先级错 | 1 红 |
+| M216 | 按文件计数失效（全局单计数器） | 2 红 |
+| M217 | 生产未注册 | **0 红——已知盲区**（由验收覆盖） |
+
+**M217 的 0 红是预期**：单元测试都自建 pipeline，够不到 `main()`。这与上一刀
+M200/M201 同一成因——**生产装配必须靠用户级验收覆盖**。
+
+### 用户级验收（1/1 met）
+
+真实二进制 + mock 端点：同轮两次 `hash_edit` 同一文件 → 第 2 个请求体含
+edit-tool advisory（`"stale"`）。证明生产装配生效。
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./... -count=1` **24 包 ok / 0 FAIL**
+- 本刀新增测试 **11 例**（单元 9 + 接线 2）
+- 用户级验收 **1/1 met**
+- TS 侧 `npm run typecheck` **exit=0**
+
+### 遗留
+
+- **hook 缺口**：Go 5 个（本刀 +1）vs TS 74 个文件 / 64 个注册。
+- **`probe-discipline-hook` 受阻**：需先移植 `channel: 'system-reminder'` 的
+  分派逻辑（`AdvisoryEntry.Channel` 在 Go 侧是死字段）。
+- `negative-fact-detector`（lossy 的 corrective 那半）未移植。
+
+### 下一步
+
+**候选按地基核实后的真实状态**（本次逐条 grep 过）：
+
+| 候选 | 依赖 | 状态 |
+|---|---|---|
+| `probe-discipline-hook` | SR 通道（**死字段**） | 需先补通道分派 |
+| `context-pressure-hook` | `ContextPressure` 快照字段 | 需先扩快照 |
+| `dead-end-detector` | 信息素层 | 地基不足 |
+| `turn-budget-hook` | `TurnBudget` | **待核实**字段映射 |
+
+**建议下一刀做 SR 通道分派**——它同时解锁 `probe-discipline` 与将来更多用
+该通道的 hook（TS 侧 `channel: 'system-reminder'` 是通用机制）。
+
+**注意**：连续七刀的估价都被证伪或偏轻——**动手前必须 grep 核实依赖**，
+不要采信任何表格（包括本表）。
+
+
 ## 建议的第一刀
 
 **（2026-09-22 修正：本节原建议「接 `internal/session`」——该断言已过期，
