@@ -63,6 +63,14 @@ type CallParams struct {
 	//
 	// **依赖方向**：`tools` 包内定义（LeaveMarkInput 在 leavemark.go），无跨包环。
 	OnLeaveMark func(mark LeaveMarkInput)
+	// OnAskUserQuestion 接收 ask_user_question 派发的结构化提问（供 TUI 开
+	// 箭头选择器）。nil = 无 UI 挂接——工具仍返回占位符与 EndTurn，
+	// 只是不做结构化派发。
+	//
+	// 对账 TS 的 `params.onAskUserQuestion`（ask-user-question.ts:213）。
+	// **依赖方向**：`tools` 包内定义（AskUserQuestionInfo 在
+	// askuserquestion.go），无跨包环。
+	OnAskUserQuestion func(info AskUserQuestionInfo)
 	// SessionID 用于隔离按会话的状态（读历史、去重跟踪），
 	// 防同 cwd 的并发会话交叉污染。
 	SessionID string

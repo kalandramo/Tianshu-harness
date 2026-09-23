@@ -507,6 +507,11 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 		}
 
 		// ── 执行工具调用，把结果回灌 ──
+		//
+		// endTurnRequested 累积 batch 级信号（对账 TS tool-execution 的
+		// `endTurn: endTurn || undefined`）：**任一**工具返回 EndTurn 即置位。
+		// batch 内其余工具仍照常执行——TS 也是整个 batch 跑完才检查。
+		endTurnRequested := false
 		for _, tc := range collector.toolCalls {
 			l.emit(Event{
 				Kind: "tool_start", ToolName: tc.name, ToolInput: tc.input,
@@ -575,6 +580,36 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 				Set("role", "tool").
 				Set("tool_call_id", tc.id).
 				Set("content", result.Content))
+
+			// ── endTurn 信号累积 ──
+			//
+			// 工具（如 ask_user_question）请求终止回合时置位。**必须在回灌
+			// 之后**——历史须保持良构（tool_calls 与 tool_result 配对），
+			// 提前 break 会留下孤儿 tool_call。
+			if result.EndTurn {
+				endTurnRequested = true
+			}
+		}
+
+		// ── endTurn：把本回合收为 final 并退出 ──
+		//
+		// 对账 TS turn-orchestrator.ts:1033 / :1264 的
+		//   `if (r.endTurn) { emitStop({source:'end-turn', voluntary:true});
+		//    completeTurn({isFinal:true}); break }`
+		//
+		// **语义**：模型调了 ask_user_question 这类工具，此刻在等用户输入——
+		// 继续工具循环只会让模型自问自答。收为 final 后 Run 返回，宿主
+		// （REPL / headless）读下一条用户消息作为答案。
+		//
+		// **为什么在此处而非循环内 break**：与「无工具调用 → 终答」分支同形，
+		// 且必须让本批**全部**工具结果先落历史（TS 亦然）。
+		if endTurnRequested {
+			u := collector.usage
+			l.emit(Event{
+				Kind: "done", Text: collector.text(), Turn: turn,
+				Usage: &u, StopReason: collector.stopReason,
+			})
+			return nil
 		}
 
 		u := collector.usage
@@ -643,6 +678,8 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 		// 继承注入依赖（OnFileWrite 等）
 		p.OnFileWrite = l.ToolParams.OnFileWrite
 		p.OnOutput = l.ToolParams.OnOutput
+		p.OnLeaveMark = l.ToolParams.OnLeaveMark
+		p.OnAskUserQuestion = l.ToolParams.OnAskUserQuestion
 	}
 
 	started := time.Now()

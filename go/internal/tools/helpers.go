@@ -120,6 +120,19 @@ func arrPropOrdered(desc string, items *wire.OrderedMap) *wire.OrderedMap {
 		Set("items", items)
 }
 
+// arrPropItemsFirst 构造「元素为 object」的数组属性，**键序 type → items → description**。
+//
+// 为什么需要第三个数组构造器：TS 侧 `ask_user_question` 的 `questions` 字面量序
+// 是 `type, items, description`（items 在 description **前**），而 `arrPropOrdered`
+// 产的是 `type, description, items`。三者并存不是冗余——键序必须逐字对账 TS
+// （见 oracle 的 propOrder/嵌套键序断言）。
+func arrPropItemsFirst(desc string, items *wire.OrderedMap) *wire.OrderedMap {
+	return wire.NewOrderedMap().
+		Set("type", "array").
+		Set("items", items).
+		Set("description", desc)
+}
+
 // objPropMapOrdered 构造 object 型 items（供 arrPropOrdered 用），带声明序。
 func objPropMapOrdered(propOrder []string, props map[string]any, required ...string) *wire.OrderedMap {
 	m := wire.NewOrderedMap().Set("type", "object")

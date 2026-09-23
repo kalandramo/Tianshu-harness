@@ -24,6 +24,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 import { createDefaultToolRegistry } from '../../../src/tools/default-registry.js'
+import { ASK_USER_QUESTION_TOOL } from '../../../src/tools/ask-user-question.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -37,19 +38,27 @@ const here = dirname(fileURLToPath(import.meta.url))
  * 注 2：`related_tests` / `inspect_project` / `file_info` 等受 **preset 门控**
  * （default-registry.ts:159 的 `presetIncludes`）——只在 `full` 档注册。
  * 故此处显式传 `preset: 'full'`，否则这些工具在 oracle 里缺席（静默覆盖
- * 缺口：schema 对账会漏掉它们）。 */
+ * 缺口：schema 对账会漏掉它们）。
+ *
+ * 注 3：`ask_user_question` **不在** `createDefaultToolRegistry` 里——它在
+ * `src/bootstrap.ts:667` 注册（interactive 层）。故它单独从模块导入并追加，
+ * 见下方的 `extraTools`。 */
 const PORTED = [
   'read_file', 'write_file', 'edit_file', 'hash_edit',
   'glob', 'grep', 'bash', 'run_tests', 'todo',
   'related_tests',
   'leave_mark',
+  'ask_user_question',
 ]
+
+/** bootstrap 层注册的工具（不在 default registry 里，需单独并入）。 */
+const extraTools: unknown[] = [ASK_USER_QUESTION_TOOL]
 
 const registry = createDefaultToolRegistry([], { preset: 'full' })
 // 注意：工具定义在 `tool.definition`（不是 `tool.input_schema`）；
 // `getAll()` 返回的数组**未排序**，但 `getEnabledDefinitions()` 按 name 排序
 // ——对账要的是**每个工具内部**的 properties 键序，不是工具间顺序。
-const all = registry.getAll()
+const all = registry.getAll().concat(extraTools)
 
 /** 递归导出值，**保留对象键的插入序**（用数组表达，避免 JSON.parse 丢序）。 */
 type Ordered = { __ordered: Array<[string, Ordered | unknown]> } | unknown

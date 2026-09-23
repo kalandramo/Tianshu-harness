@@ -3999,6 +3999,159 @@ Go 侧工具数 19（TS 侧 full preset 48）。剩余缺口按依赖面：
 **推荐下一刀**：`ask_user_question`（浅依赖，可一轮做完）。若想啃硬骨头，
 `job`/`monitor` 的 `proctree.go` 地基已就绪，但需新子系统。
 
+## 第三十八刀：`EndTurn` 消费点 + `ask_user_question`（2026-09-22）
+
+**目标**：补 `ask_user_question`。开工前核实发现上一刀的「浅依赖」估价**不成立**
+——工具本体确实浅，但**主循环缺 `EndTurn` 消费点**，是硬前置。
+
+### 上一刀估价的两处修正（先说这个）
+
+**（1）`ask_user_question` 不是「浅」**
+
+HANDOFF 第三十七刀的表把它标为「浅——只需交互回调接口」。实测：除回调接口外，
+还需补主循环的回合终止逻辑：
+
+| 需要的东西 | 开工前状态 |
+|---|---|
+| `CallParams.OnAskUserQuestion` | **不存在**（registry.go 无此字段） |
+| 回合循环消费 `Result.EndTurn` | **不存在**——`EndTurn` 字段在 `contract/types.go:174` 有定义，**全仓零消费方**（含测试） |
+
+第二条是硬伤：工具即便返回 `EndTurn: true`，`loop.go` 的工具循环也会照常跑完
+→ `turn_end` → 下一轮，模型自问自答，用户回答永远等不到。
+
+**（2）第三十七刀遗留一处真实悬空接线**
+
+`CallParams.OnLeaveMark` 有读取方（`leavemark.go:125,132`），但生产路径的**写入方
+从未赋值**——`loop.go` 的依赖继承只搬了 `OnFileWrite` 和 `OnOutput`，全仓 grep
+确认 `OnLeaveMark` 只在测试里被赋值过。
+
+HANDOFF 第三十七刀写「接口已就位（与 `OnFileWrite` 同一注入模式）」——接口确实
+就位了，**接线没跟着做**。这正是 `buildToolCallParams` 提取时点名过的那类缺陷
+（`artifact_intercept.go:185-189`：「字段有读取方、无写入方」的缺陷不会被任何
+测试抓到）。本刀顺带修掉，并补 `TestLeaveMarkCallbackWired` 锁住。
+
+### 落地
+
+| 文件 | 内容 |
+|---|---|
+| `internal/tools/askuserquestion.go` | 工具本体 + parse/render（新增） |
+| `internal/tools/helpers.go` | 新增 `arrPropItemsFirst` 构造器 |
+| `internal/tools/registry.go` | `CallParams` 新增 `OnAskUserQuestion` |
+| `internal/tools/default_registry.go` | 注册（Go 侧工具数 19 → 20） |
+| `internal/agent/loop.go` | **`EndTurn` 消费点** + `OnLeaveMark`/`OnAskUserQuestion` 接线 |
+| `internal/tools/askuserquestion_test.go` | 行为测试 30 例（新增） |
+| `internal/agent/endturn_test.go` | 主循环级测试 6 例（新增） |
+| `testdata/toolschema/gen-oracle.ts` + `oracle.json` | 补入 `ask_user_question`（11 → 12 工具） |
+
+### 主循环的 `EndTurn` 消费点（本刀核心）
+
+对账 TS `turn-orchestrator.ts:1033` / `:1264`：
+
+```ts
+**与 TS 的差异（一处既有结构差异，本刀沿用未改）**：
+
+TS 的 endTurn 走 `completeTurn({isFinal:true})`，而 `completeTurn` 内部**会**调用
+`runPostTurn()`（`turn-completion.ts:71`）——即 **TS 的 endTurn 路径跑了 postTurn**。
+
+Go 侧不同：`postTurn` / `compaction` 放在 **turn 末尾**（`turn_end` 之后），而
+final turn 不进入下一轮故不跑。**这不止影响 endTurn**——既有的「无工具调用 →
+终答」分支（`loop.go:500-507`）同样 `return nil` 跳过它们。本刀让 endTurn 分支
+与终答分支**保持同形**（同为 final turn 语义，应走相同收尾），未改既有模式。
+
+**影响**：endTurn 后少一次 postTurn 跨轮判断（如 typecheck reminder）。下一轮
+（用户回答后）会补上，故是**延迟而非丢失**。
+
+**这是一处独立的既有偏差发现**（不是本刀引入）——Go 的 final turn 路径不跑
+postTurn，TS 跑。是否对齐需单独评估（改终答路径影响面大，超出本刀 scope）。
+
+`TestEndTurnTerminatesRun` 断言 `turn_end` 事件数为 0——这一条仍然成立（endTurn
+不走常规 turn_end 路径）。
+}
+```
+
+Go 侧对应实现（`loop.go` 工具循环）：
+
+1. 循环内累积 `endTurnRequested`（**任一**工具置位——对账 TS 的 batch 级
+   `endTurn || undefined`）
+2. **必须在 `appendAndPersist` 之后**累积——历史须良构（`tool_calls` 与
+   `tool_result` 配对），提前 break 会留孤儿 tool_call
+3. 整个 batch 跑完后再判断 → emit `done` → `return nil`（与「无工具调用 →
+   终答」分支同形）
+
+**为什么不走常规 `turn_end`**：TS 侧 endTurn 路径直接 `completeTurn({isFinal:true})`
+并 break，**不跑** turn_end 的后续（compaction / postTurn hook）。Go 侧同——
+`TestEndTurnTerminatesRun` 断言 `turn_end` 事件数为 0。
+
+### `ask_user_question` 的 scope 收窄（明示）
+
+TS 同文件还导出 `AskAnswerDraft` / `draftToAnswer` / `composeAnswers`——那是
+**桌面端 QuestionCard 的答案组装路径**（用户点选 → 组串 → 作为下一条 user
+消息）。Go 侧无 TUI / 桌面端（`go/internal/tui` 不存在），该路径**无消费方**，
+故不移植（与上一会话对 `summarize.go` sections 的处理同一纪律）。
+
+`uiContent` 的渲染已接线——消费者是 `DisplayContent`（`turnbudget.go:137`），
+但纯文本 TUI 未移植，故处于「已接线、展示层缺席」状态（非悬空）。
+
+### 由对账抓到的自身缺陷
+
+1. **oracle 生成器漏了 bootstrap 层**：`ask_user_question` 在 TS 的
+   `src/bootstrap.ts:667` 注册，**不在** `createDefaultToolRegistry` 里——
+   oracle 生成器用后者，直接加进 `PORTED` 会报「注册表里找不到」。改为单独
+   从模块导入并 `concat` 进 `all`。
+2. **`arrPropItemsFirst` 是第三个数组构造器**：TS 的 `questions` 字面量序是
+   `type → items → description`（items 在前），而既有 `arrPropOrdered` 产
+   `type → description → items`。三者并存不冗余——键序必须逐字对账。
+3. **M4 首轮逃逸暴露测试覆盖洞**：`TestParseAllowMultipleStrictBool` 初版只
+   覆盖单问题路径，而多问题路径有**独立的** `allowMultiple` 判定（TS 亦然）。
+   变异只打多问题路径时 0 红。已补多问题 + `multiSelect` 别名两条子用例。
+4. **M5 首轮探针写错**：我最初测 `jsTrimSpace` 函数本身，而变异打的是调用点。
+   改为测**工具行为**（带 U+FEFF 的输入），才暴露真实缺口——补
+   `TestParseUsesJsTrimSemantics` + `TestParseFeffOnlyIsEmpty`。
+
+### 变异反证 M121-M126
+
+| 变异 | 内容 | 结果 |
+|---|---|---|
+| M121 | `endTurn` 终止分支失效（`false &&`） | 3 红（含 batch 完整性） |
+| M122 | `OnLeaveMark` 接线移除 | 1 红（AskUserQuestion 接线测试仍绿——证明变异精准） |
+| M123 | 工具 `EndTurn` 恒 false | 2 红（两侧各一） |
+| M124 | `allow_multiple` 非严格判定（多问题路径） | 3 红（补测试后） |
+| M125 | `jsTrimSpace` → `strings.TrimSpace` | 2 红（补测试后） |
+| M126 | `arrPropItemsFirst` 键序错位 | 1 红（逐字节对账抓到） |
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./... -count=1` **23 包 ok / 0 FAIL**
+- 本刀新增测试 **50 例全 PASS**（tools 侧 30 + agent 侧 6，含子测试计数）
+- toolschema 对账 **12 个工具**（含 `questions` 的嵌套 object 键序）
+- TS 侧 `npm run typecheck` **exit=0**（实跑 266.5s，非管道退出码）
+
+### 遗留
+
+- `ask_user_question` 未纳入 TS 侧 `tool-preset.ts` 的 Go 对账（Go 侧无 preset
+  分层，20 个工具全注册）。
+- **Go 的 final turn 路径不跑 postTurn**（TS 跑）——见上文「与 TS 的差异」。
+  这是本刀发现的**既有偏差**（终答路径同样如此），未修（改终答路径影响面大）。
+
+### 下一步
+
+Go 侧工具数 20（TS 侧 full preset 48）。剩余缺口按依赖面：
+
+| 候选 | 依赖面 | 备注 |
+|---|---|---|
+| `skill` | 中 | 需 `.rivet/skills/*.md` 加载 + 清单解析 |
+| `undo` | 中 | 需检查点子系统（Go 侧 `checkpoint.go` 已有部分） |
+| `job` / `monitor` | **深** | 后台进程管理（`proctree.go` 已有部分地基） |
+| `ast_grep` / `ast_edit` | **深** | 需 tree-sitter 绑定（Go 侧无） |
+| `web_*` / `browser_debug` / `computer_use` | **超出内核** | 网络 + 桌面自动化 |
+
+**推荐下一刀**：`skill`（中依赖，需清单解析但无新子系统）。若想啃硬骨头，
+`job`/`monitor` 的 `proctree.go` 地基已就绪，但需新子系统（后台进程管理）。
+
+**注意**：上一刀对 `ask_user_question` 的「浅」估价已被证伪——**剩余候选的
+估价需重新核实**，不要直接采信本表。
+
 ## 建议的第一刀
 
 **（2026-09-22 修正：本节原建议「接 `internal/session`」——该断言已过期，

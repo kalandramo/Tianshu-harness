@@ -1180,5 +1180,196 @@
       "symbol",
       "summary"
     ]
+  },
+  "ask_user_question": {
+    "description": "向用户提出一个或多个问题，并等待其输入回答。当你需要澄清信息、了解偏好，或需要一个无法从上下文推断的决定时使用。\n\n单个问题：传 `question`（+ 可选 `options`）。多个相关问题（最多 4 个）：传 `questions`——桌面端会把它们渲染成一张结构化卡片，用户逐页作答。\n\n为一小组互斥选项提供 `options`（UI 渲染为编号列表，用户可直接按编号回答；桌面端卡片还提供自由输入的 \"Other\" 项）。开放式问题省略 `options`。\n\n当用户要的是你的分析、建议或观点时，禁止用这个工具把决定推回给用户——那种情况直接回答。优先只问一个问题；先处理你能确定的部分。",
+    "inputSchema": {
+      "__ordered": [
+        [
+          "type",
+          "object"
+        ],
+        [
+          "properties",
+          {
+            "__ordered": [
+              [
+                "question",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "要问用户的问题。清晰、具体。"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "options",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "array"
+                    ],
+                    [
+                      "items",
+                      {
+                        "__ordered": [
+                          [
+                            "type",
+                            "string"
+                          ]
+                        ]
+                      }
+                    ],
+                    [
+                      "description",
+                      "可选的 2-4 个简短互斥选项。开放式问题、或用户要的是你的分析而不是菜单时省略。"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "allow_multiple",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "boolean"
+                    ],
+                    [
+                      "description",
+                      "允许选择多个选项（默认：false）。"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "questions",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "array"
+                    ],
+                    [
+                      "items",
+                      {
+                        "__ordered": [
+                          [
+                            "type",
+                            "object"
+                          ],
+                          [
+                            "properties",
+                            {
+                              "__ordered": [
+                                [
+                                  "id",
+                                  {
+                                    "__ordered": [
+                                      [
+                                        "type",
+                                        "string"
+                                      ],
+                                      [
+                                        "description",
+                                        "该问题的可选稳定 id（省略时自动分配）。"
+                                      ]
+                                    ]
+                                  }
+                                ],
+                                [
+                                  "prompt",
+                                  {
+                                    "__ordered": [
+                                      [
+                                        "type",
+                                        "string"
+                                      ],
+                                      [
+                                        "description",
+                                        "问题文本。"
+                                      ]
+                                    ]
+                                  }
+                                ],
+                                [
+                                  "options",
+                                  {
+                                    "__ordered": [
+                                      [
+                                        "type",
+                                        "array"
+                                      ],
+                                      [
+                                        "items",
+                                        {
+                                          "__ordered": [
+                                            [
+                                              "type",
+                                              "string"
+                                            ]
+                                          ]
+                                        }
+                                      ],
+                                      [
+                                        "description",
+                                        "可选的 2-4 个简短互斥选项。"
+                                      ]
+                                    ]
+                                  }
+                                ],
+                                [
+                                  "allow_multiple",
+                                  {
+                                    "__ordered": [
+                                      [
+                                        "type",
+                                        "boolean"
+                                      ],
+                                      [
+                                        "description",
+                                        "允许选择多个选项（默认：false）。"
+                                      ]
+                                    ]
+                                  }
+                                ]
+                              ]
+                            }
+                          ],
+                          [
+                            "required",
+                            [
+                              "prompt"
+                            ]
+                          ]
+                        ]
+                      }
+                    ],
+                    [
+                      "description",
+                      "多问题形式（最多 4 个）。存在时优先于单问题字段。"
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      ]
+    },
+    "propOrder": [
+      "question",
+      "options",
+      "allow_multiple",
+      "questions"
+    ],
+    "required": []
   }
 }

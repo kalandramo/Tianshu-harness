@@ -66,6 +66,14 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// ── 任务 ──
 	r.Register(Todo())
 
+	// ── 交互 ──
+	// ask_user_question：向用户提问并结束回合（EndTurn）。
+	// **分层差异（明示）**：TS 侧它在 `src/bootstrap.ts:667` 注册（interactive
+	// 层），不在 `createDefaultToolRegistry` 里；Go 侧无对应 bootstrap 分层
+	// （工具全在此装配），故注册于此。行为等价——TS 的 bootstrap 也是无条件
+	// 注册（仅受 preset 门控）。
+	r.Register(AskUserQuestion())
+
 	// ── 计划 ──
 	// plan：统一计划生命周期（submit / close）。enter_mode/exit_mode 依赖
 	// plan mode 状态机（Go 侧未移植）——工具内**诚实报错**而非假装成功。
