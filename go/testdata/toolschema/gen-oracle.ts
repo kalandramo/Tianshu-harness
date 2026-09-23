@@ -49,6 +49,7 @@ const PORTED = [
   'related_tests',
   'leave_mark',
   'ask_user_question',
+  'skill',
 ]
 
 /** bootstrap 层注册的工具（不在 default registry 里，需单独并入）。 */

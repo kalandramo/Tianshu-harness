@@ -1371,5 +1371,66 @@
       "questions"
     ],
     "required": []
+  },
+  "skill": {
+    "description": "按名称加载某个 skill 的完整指令，然后照做。\n\nskill 是可复用的工作流 playbook。available-skills 区块列出了每个 skill 的名称和简述。当某个 skill 的简述与你正在做的事匹配时，用它的确切名称调用本工具，按需加载完整指令，然后执行。\n\n执行完已加载的 skill 后，调用 skill(name=\"<name>\", complete=true) 释放它。这样工作流结束后，该 skill 的指令不会再被重新注入上下文。\n\n示例：skill(name=\"brainstorming\")",
+    "inputSchema": {
+      "__ordered": [
+        [
+          "type",
+          "object"
+        ],
+        [
+          "properties",
+          {
+            "__ordered": [
+              [
+                "name",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "string"
+                    ],
+                    [
+                      "description",
+                      "要加载或标记完成的 skill 的确切名称（见 available-skills 区块）。"
+                    ]
+                  ]
+                }
+              ],
+              [
+                "complete",
+                {
+                  "__ordered": [
+                    [
+                      "type",
+                      "boolean"
+                    ],
+                    [
+                      "description",
+                      "为 true 时，将该 skill 标记为已完成而不是加载它。该 skill 的指令将不再被重新注入上下文。"
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ],
+        [
+          "required",
+          [
+            "name"
+          ]
+        ]
+      ]
+    },
+    "propOrder": [
+      "name",
+      "complete"
+    ],
+    "required": [
+      "name"
+    ]
   }
 }

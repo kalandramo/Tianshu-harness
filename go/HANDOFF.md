@@ -4152,6 +4152,147 @@ Go 侧工具数 20（TS 侧 full preset 48）。剩余缺口按依赖面：
 **注意**：上一刀对 `ask_user_question` 的「浅」估价已被证伪——**剩余候选的
 估价需重新核实**，不要直接采信本表。
 
+## 第三十九刀：`skill` 工具 + `internal/skills` 包（2026-09-23）
+
+**目标**：补 `skill` 工具。开工前核实发现上一刀的「中依赖」估价**偏轻**
+——工具本体浅（97 行），但**存在前提（Tier-1 发现层）缺失**。
+
+### 估价修正（先说这个）
+
+HANDOFF 第三十八刀的表把 `skill` 标为「中——需 `.rivet/skills/*.md` 加载 +
+清单解析」。实测：
+
+| 依赖面 | TS 规模 | 开工前 Go 侧 |
+|---|---|---|
+| frontmatter 解析（含 CRLF/BOM 归一化） | 13 + 60 行 | **不存在** |
+| `SkillRegistry` | ~80 行 | **不存在** |
+| `parseSkillMarkdown` | ~50 行 | **不存在** |
+| `listSkillFiles`（递归树 + 剪枝） | ~40 行 | **不存在** |
+| `loadProjectSkills`（5 层优先级） | ~50 行 | **不存在** |
+| `BUILTIN_SKILLS`（3 个内置技能全文） | 149 行 | **不存在** |
+| `RETIRED_BUNDLED_SKILLS` | 5 条 | **不存在** |
+| **Tier-1 发现层**（`renderDiscoveryBlock`） | ~50 行 | **不存在** |
+| 工具本体 + 回调注入点 | 97 行 | 待建 |
+
+**真正的重量在发现层**：`skill` 工具的存在理由是「模型从 `<available-skills>`
+看到有哪些技能 → 按名加载」。没有发现层，工具就是空转——模型不知道任何
+技能名，调用只会撞「未找到 skill」。这与上一刀 `ask_user_question` 缺
+`EndTurn` 消费点是**同一类问题**：工具本体浅，但缺它存在的语义前提。
+
+### scope 切分（用户确认的取舍）
+
+发现层接入 prompt 是**方向性改动**（TS 的 `renderDiscoveryBlock` 是 per-turn
+动态的，走 `appendixDelta`；Go 的 frozen 块是会话常量，`VolatileContext`
+无该字段）。故本刀**只做纯函数**，不接 prompt：
+
+- **本刀**：`internal/skills` 包 + 工具本体 + `RenderDiscoveryBlock` 纯函数
+- **下一刀**：把发现层接入 prompt 组装（需先决定 Go 的 per-turn 注入机制）
+
+### 落地
+
+| 文件 | 内容 |
+|---|---|
+| `internal/skills/skill.go` | 类型 + `ParseSkillMarkdown` + JS 语义辅助（新增） |
+| `internal/skills/frontmatter.go` | frontmatter 行式解析（块标量/数组/CRLF-BOM）（新增） |
+| `internal/skills/registry.go` | `Registry` + `RenderDiscoveryBlock` + `ListSkillFiles`（新增） |
+| `internal/skills/builtin.go` | 3 内置技能 + 退役表（**由 oracle 生成**，非手抄）（新增） |
+| `internal/skills/skills_oracle_test.go` | 差分测试（新增） |
+| `internal/tools/skill.go` | 工具本体（新增） |
+| `internal/tools/skill_test.go` | 行为测试 18 例（新增） |
+| `internal/tools/registry.go` | `CallParams` 新增 3 字段（SkillRegistry/OnSkillInvoked/OnSkillCompleted） |
+| `internal/tools/default_registry.go` | 注册（Go 侧工具数 20 → 21） |
+| `testdata/skills/gen-oracle.ts` + `oracle.json` | skill 差分 oracle（新增） |
+| `testdata/toolschema/gen-oracle.ts` + `oracle.json` | 补入 `skill`（12 → 13 工具） |
+
+### scope 收窄（明示）
+
+**（1）不移植安装/管理面**：TS 的 skill-loader 还含
+`importSkillsIntoRivet` / `listInstallableSkills` / `writeSkill` /
+`uninstallSkill` / `seedBundledSkills` / `retireRetiredBundledSkills` /
+`countInstalledSkills`——那是**桌面端扩展面板与 CLI 管理命令**的路径。
+Go 侧无对应 UI/命令，故不移植。
+
+**（2）`loadProjectSkills` 未移植**：它的 5 层优先级扫描
+（builtin / `~/.agents/skills` / `~/.rivet/skills` / 项目 `.agents/skills` /
+项目 `.rivet/skills`）依赖 bootstrap 期的 `seedBundledSkills` 与
+`retireRetiredBundledSkills`（写盘操作）。本刀只提供
+`Registry.LoadFromDirectory` 单目录加载——多目录优先级是**管理面**，
+随 UI/命令一起做。
+
+**（3）回调消费者未移植**：TS 的 `onSkillInvoked` 落点是
+`loop-factory.ts:456`（skill-gate + `promptEngine.markSkillCompleted`）。
+Go 侧这两个机制都不存在，故回调**只派发不消费**——接口就位，接线待
+（与 `OnLeaveMark` 同一模式，但**这次不重复第三十七刀的错误**：
+本刀在交付时**明示**未接线，不声称「已就位」）。
+
+### 由对账抓到的自身缺陷
+
+1. **M136 首轮 0 红——夹具设计缺陷**：oracle 的 `renderDiscoveryBlock` 夹具
+   里，相关的 skill 是 `alpha`（**字母序本来就在第一**），故「relevant 优先
+   排序」与「纯字母序」产出相同结果，排序变异完全逃逸。改为让相关的 skill
+   是 `zeta`（字母序最后）后，变异立刻转红 5 个。
+   **教训**：差分夹具必须让**被测分支的两种可能产出可区分**——否则测试
+   存在但无鉴别力。
+2. **变异脚本的 revert 未执行导致残留**：一轮 for 循环超时被杀，M136/M137
+   的变异残留在工作区。后续的 `cp` 恢复又误把 `tools/skill.go` 覆盖到
+   `skills/skill.go`（同名文件），需重写整个文件。
+   **教训**：变异注入必须**逐个**执行并在同一命令内 revert；批量 for 循环
+   一旦超时，残留会污染后续所有实验。
+
+### 变异反证 M131-M141
+
+| 变异 | 内容 | 结果 |
+|---|---|---|
+| M131 | `normalizeFrontmatterSource` 不剥 BOM | 2 红 |
+| M132 | 不折叠 CRLF | 2 红 |
+| M133 | `jsTrimSpace` → `strings.TrimSpace` | 2 红 |
+| M134 | 块标量不支持 | 4 红 |
+| M135 | triggers 不加大写不敏感 | 7 红 |
+| M136 | 发现层不排序（relevant 优先失效） | 5 红（**夹具修正后**） |
+| M137 | 发现层预算不扣减 | 5 红 |
+| M138 | `ListSkillFiles` 不归一化反斜杠 | 5 红 |
+| M139 | 工具 `complete` 判定放松为存在性 | 4 红 |
+| M140 | 工具不做大小写回退（`Get` 而非 `Find`） | 4 红 |
+| M141 | 退役映射用用户输入名而非表里名字 | 4 红 |
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./... -count=1` **24 包 ok / 0 FAIL**（新增 skills 包）
+- 本刀新增测试 **72 例全 PASS / 0 FAIL**
+- skill 差分 oracle：builtin=3 / parse=10 用例 / discovery=8 用例 / skillFiles
+- toolschema 对账 **13 个工具**（`skill` 逐字节通过）
+- TS 侧 `npm run typecheck` **exit=0**
+
+### 遗留
+
+- **Tier-1 发现层未接 prompt**（本刀有意为之，见「scope 切分」）。
+  `RenderDiscoveryBlock` 是纯函数，无生产消费方。**下一刀的主任务。**
+- `loadProjectSkills` 的 5 层目录优先级未移植（属管理面）。
+- `onSkillInvoked` / `onSkillCompleted` 回调**只派发不消费**（消费者
+  `loop-factory.ts:456` 的 skill-gate + `markSkillCompleted` 未移植）。
+
+### 下一步
+
+Go 侧工具数 21（TS 侧 full preset 48）。剩余缺口：
+
+| 候选 | 依赖面 | 备注 |
+|---|---|---|
+| **发现层接 prompt** | **中** | 需决定 Go 的 per-turn 注入机制（方向性） |
+| `undo` | 中 | 需检查点子系统（`checkpoint.go` 已有部分） |
+| `job` / `monitor` | **深** | 后台进程管理（`proctree.go` 已有地基） |
+| `ast_grep` / `ast_edit` | **深** | 需 tree-sitter 绑定（Go 侧无） |
+| `web_*` / `browser_debug` / `computer_use` | **超出内核** | 网络 + 桌面自动化 |
+
+**推荐下一刀**：**把 skill 发现层接入 prompt**。理由：本刀交付的工具
+**当前不可达**（模型不知道有哪些 skill），补齐发现层才算真正可用——
+半成品不收尾就是技术债。这也顺带解决 Go 的 per-turn 动态注入机制
+（后续 volatile 层移植的前置）。
+
+**注意**：连续两刀（`ask_user_question`、`skill`）的 HANDOFF 估价都被证伪
+——**剩余候选的估价需重新核实**，不要直接采信本表。
+
+
 ## 建议的第一刀
 
 **（2026-09-22 修正：本节原建议「接 `internal/session`」——该断言已过期，

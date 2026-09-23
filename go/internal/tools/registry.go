@@ -13,6 +13,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/artifact"
 	"github.com/kalandramo/tianshu/go/internal/compact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
+	"github.com/kalandramo/tianshu/go/internal/skills"
 )
 
 // Tool 是一个可被模型调用的工具。
@@ -71,6 +72,19 @@ type CallParams struct {
 	// **依赖方向**：`tools` 包内定义（AskUserQuestionInfo 在
 	// askuserquestion.go），无跨包环。
 	OnAskUserQuestion func(info AskUserQuestionInfo)
+	// SkillRegistry 是 skill 工具的注册表（nil = 空注册表）。
+	//
+	// 对账 TS 的模块级单例 `skillRegistry`。Go 侧参数化注入，使测试可隔离
+	// （TS 的测试靠共享单例 + beforeEach 重注册，有跨测试污染风险）。
+	SkillRegistry *skills.Registry
+	// OnSkillInvoked 在 skill 被加载时回调（供 UI / 遥测感知）。
+	//
+	// 对账 TS 的 `params.onSkillInvoked?.(skill.name)`。
+	OnSkillInvoked func(name string)
+	// OnSkillCompleted 在 skill 被标记完成时回调。
+	//
+	// 对账 TS 的 `params.onSkillCompleted?.(skill.name)`。
+	OnSkillCompleted func(name string)
 	// SessionID 用于隔离按会话的状态（读历史、去重跟踪），
 	// 防同 cwd 的并发会话交叉污染。
 	SessionID string

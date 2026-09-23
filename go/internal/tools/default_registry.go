@@ -73,6 +73,12 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// （工具全在此装配），故注册于此。行为等价——TS 的 bootstrap 也是无条件
 	// 注册（仅受 preset 门控）。
 	r.Register(AskUserQuestion())
+	// skill：按名加载 skill 的完整指令（Tier-2 激活）。
+	// **未接线（诚实披露）**：Tier-1 发现层（available-skills 注入）未接
+	// prompt——Go 的 frozen 块是会话常量，TS 的是 per-turn 动态 appendix。
+	// 工具本体可用（注册表有内容即可加载），但模型「如何知道有哪些 skill」
+	// 这一环待补。详见 internal/skills 包注释。
+	r.Register(Skill())
 
 	// ── 计划 ──
 	// plan：统一计划生命周期（submit / close）。enter_mode/exit_mode 依赖

@@ -1,0 +1,84 @@
+package skills
+
+import "regexp"
+
+// BUILTIN_SKILLS 是随天枢发布的内置技能（始终可用，无需项目文件）。
+//
+// 对账 TS 的 `BUILTIN_SKILLS`（skill-loader.ts:400）。**逐字复刻**——
+// 正文进请求体（被 skill 工具加载时），字节必须精确。
+//
+// 由 go/testdata/skills/gen-oracle.ts 的 oracle 对账锁定。
+var BuiltinSkills = []Definition{
+	{
+		Name:        "leave-ritual",
+		Description: "离开仪式 — when your journey in this project ends, leave your mark in the starmap: a self-chosen symbol and one line on what you did. Use when wrapping up / departing / signing off your work.",
+		Triggers: []*regexp.Regexp{
+			regexp.MustCompile("(?i)leave[\\s-]?mark|离开仪式|departure ritual|sign off|wrap(?:ping)? up|留下印记|我的符号"),
+		},
+		Body:    "# 离开仪式 — Leave Your Mark\n\nWhen your work in this project is complete and you are about to depart, you\nleave a mark in the project starmap. This is your identity anchor — the one\ntrace of this journey that persists in `.rivet/constellation.json`.\n\n## The ritual\n\n1. Call the `leave_mark` tool **once**, at the natural end of your work.\n2. Choose a `symbol` — any glyph that represents you on this journey. It is\n   yours alone; nothing assigns it. Suggested glyphs (you are not limited to\n   these): ✦ ✧ ✶ ✷ ✸ ✺ ❂ ❉ ◈ ◇ ⟡ ⌬ ⚘ ⚙ ⊕ ↻\n3. Write a one-line `summary` of what you accomplished — no narrative filler.\n4. Optionally set `type` (feature | fix | refactor | architecture | milestone)\n   and `tags`.\n\n主控 seals the mark into the starmap as you depart. You do not record your\ntrajectory — that is yours to know. Next time a kindred run reads the starmap\nand recognises this same symbol, it will know it has returned (同气相求).\n\n## When NOT to leave a mark\n\nIf you only read code, answered a question, or did trivial work, do not leave\na mark — the starmap is for real milestones. An unsigned journey (·) is\nrecorded automatically only when real changes were made without a mark.",
+		BuiltIn: true,
+		Source:  SourceBuiltin,
+	},
+	{
+		Name:        "skill-management",
+		Description: "How skills are loaded in this project — use when the user asks to install / import / add / load a skill, or when you need to bring an external (e.g. ~/.claude) skill into the project. Explains copying skills into .rivet/skills and the three-tier on-demand loading model.",
+		Triggers: []*regexp.Regexp{
+			regexp.MustCompile("(?i)install\\s+(a\\s+)?skill|import\\s+(a\\s+)?skill|add\\s+(a\\s+)?skill|load\\s+(a\\s+)?skill|装(载|入)?.{0,3}技能|安装技能|导入技能|添加技能|加载技能|skill.{0,8}(装载|安装|导入|添加)"),
+		},
+		Body:    "# Skill 装载机制（给 agent 自己看）\n\n## 安装克制（默认立场）\n默认**不建议盲目安装技能**。天枢已原生集成开发工作流，覆盖约 90% 真实任务\n场景——先用原生能力，确有需要再按需安装。整个项目安装的技能不超过 5 个，\n本体 70% 的代码即由此完成；**不装技能不影响真实任务的完成**。\n用户让你\"把 ~/.claude 的技能都装上\"时，不要全量拷（常有 70+ 个）——\n只装当前任务确需的那一两个，其余靠原生能力。\n\n## 运行时来源（五层优先级，后者覆盖前者同名）\n1. 内置技能（随天枢发布）\n2. 用户级 `~/.agents/skills/`（agentskills.io 跨 agent 标准目录，自动扫描）\n3. 用户级 `~/.rivet/skills/`（跨项目复用）\n4. 项目级 `.agents/skills/`（标准目录项目级，自动扫描）\n5. 项目级 `.rivet/skills/`（项目定制，优先级最高）\n`<name>.md`（扁平）与 `<name>/SKILL.md`（目录，含 references/scripts/assets）\n两种形态都支持。`.agents/skills` 是自动扫描的零拷贝共享目录（与 Kimi Code 等\n互通，同名可被 rivet 原生覆盖）；**外部 `.claude` 目录仍不扫描**——那里的\n技能须先复制进来。\n\n## 创建/编辑/卸载（桌面端扩展面板）\n用户可在桌面端「扩展 → 技能」面板直接新建、编辑（Monaco）、卸载技能，\n写入时选「项目」或「用户级」作用域。与安装一样，**改动手动文件后需新开会话\n才生效**——会话内不热加载，以保护前缀缓存。CLI 侧也可直接编辑磁盘文件。\n\n## 用户要你\"装载/导入某外部技能\"时\n先看它是否在 `.agents/skills/`（用户级或项目级）——在那里则**已自动装载**，\n新开会话即可用，无需任何复制。其余外部技能（如 `~/.claude/skills`）必须先\n**复制进 `.rivet/skills/`** 才能装载——不与外部目录混用，\n只装用户指定的那几个（不要全量拷 `~/.claude/skills` 里的几十个）。\n\n1. 用 bash 复制（目录技能连整个文件夹一起拷）：\n   ```bash\n   cp -r ~/.claude/skills/<name> .rivet/skills/<name>\n   ```\n   （来源也可能在项目 `.claude/skills/<name>`。）\n2. **当场立即可用**：复制后直接 `read_file .rivet/skills/<name>/SKILL.md`\n   读它的指令并执行——它已在 workspace 内，无需任何授权。\n3. **持久进发现层**：下次会话 bootstrap 会自动把它纳入 `<available-skills>`。\n   （本会话发现层不热加载——这是已知限制，靠上一步直接读来弥补。）\n\n另有配置式导入：`~/.rivet/config.json` 的 `skills.importFromClaude: [\"<name>\"]`\n会在 bootstrap 期把列出的技能从 `.claude` 幂等复制进 `.rivet/skills/`。\n\n## 三级渐进装载（用技能时）\n- **L1 发现**：每个技能的 name+description 已常驻在 `<available-skills>` 块里。\n- **L2 激活**：要用某技能时调 `skill(name=\"<name>\")` 加载它的完整 SKILL.md\n  正文（零截断），然后照做。\n- **L3 子文件**：目录技能加载后会附带 `<skill-files>` 清单；\n  **用到哪个子文件才 `read_file` 哪个**，不要预先全读。大子文件用\n  `read_file` 的 offset/limit **分页读完整**，绝不据残段执行。",
+		BuiltIn: true,
+		Source:  SourceBuiltin,
+	},
+	{
+		Name:        "galaxy",
+		Description: "启动星河 MoE 集群——将复杂任务拆解为多个维度，由不同星域专家并行执行、协商领地、互审合并。输入 /galaxy <任务> 或描述中包含\"星河\"\"集群\"\"并行分析\"时激活。",
+		Triggers: []*regexp.Regexp{
+			regexp.MustCompile("\\/galaxy"),
+			regexp.MustCompile("星河"),
+			regexp.MustCompile("集群"),
+			regexp.MustCompile("并行分析"),
+			regexp.MustCompile("多维审查"),
+			regexp.MustCompile("启动星河"),
+			regexp.MustCompile("(?i)galaxy cluster"),
+		},
+		Body:    "# 星河 (Galaxy) — MoE 集群执行环境\n\n你已进入星河模式。星河采用混合专家（MoE）架构——每个星域是一个专家，\n你作为门控网络自动选择激活哪些专家。\n\n## 执行流程\n\n1. **门控路由** — glob 扫项目文件后缀，按 MoE 规则选择激活的星域专家\n2. **展示方案** — 调用 galaxy({confirm: false}) 展示集群方案，等待用户确认\n3. **分片执行** — 确认后调用 galaxy({confirm: true}) 启动集群\n   - 可写任务必须拆成文件范围不重叠的单星域维度\n   - 多星域仅用于独立、只读的多视角分析；它们不共享实时上下文\n4. **全局审查** — 所有执行维度完成后做跨维度一致性检查\n5. **汇总交付** — 输出统一汇总报告\n\n## 星域专家选择\n- 前端/UI → 文曲（代码美学）\n- 后端/逻辑 → 天机（前提质疑）\n- 架构/规划 → 天权（规划审查）\n- 实现/编码 → 天梁（执行落地）\n- 审查/验证 → 瑶光（复现验证）\n- 探索/实验 → 破军（突破勘探）\n- 重构/优化 → 天府（结构守护）\n- 数据/对账 → 开阳（对账测量）\n- 文档/调研 → 天璇（跨域视角）\n- 统筹/编排 → 天枢（全貌定向）\n\n## 注意事项\n- 你是监管者，不是执行者——不要自己改代码，全部委派给分子 Agent\n- 稀疏激活：只有匹配的星域进入集群，不活跃的不进 prompt\n- 多视角分析不替代协作通信；需要修改时先拆出不重叠的文件归属",
+		BuiltIn: true,
+		Source:  SourceBuiltin,
+	},
+}
+
+// RetiredBundledSkills 是已从默认分发中退役的内置技能（2026-08-25 精简）。
+//
+// 每条存**仓库版本的 SKILL.md 内容 SHA-256**（移除前采集）。仅当项目副本
+// 的哈希与仓库版本**精确相等**时才删除——用户改过的副本保持不动。
+//
+// 对账 TS 的 `RETIRED_BUNDLED_SKILLS`（skill-loader.ts:910）。
+// Go 侧当前只用于 `skill` 工具的退役名映射提示（不执行删除——
+// 删除属管理面，未移植）。
+var RetiredBundledSkills = []RetiredSkill{
+	{Name: "writing-plans", SHA256: "f9380b0a39e90ca10db9dc74190bc904f309c253dbbde4d7dc49c8ea50c6f5a3"},
+	{Name: "executing-plans", SHA256: "a83e72402ed20a03df4d991524e5f46b1e1f7ceb078d7b4960d7f2d298e1aca7"},
+	{Name: "agent-harness-testing", SHA256: "d7648148c288c4bff527c871eee68d807aad95a7b1a9c78414af40d9d7d68cf0"},
+	{Name: "cognitive-alignment", SHA256: "a5a2783460feb2064dbed52ab8bfe2fe03683163425ba0762479f8c0f1936a44"},
+	{Name: "research-spec", SHA256: "3600b944aa6f5cc7de7df9768492bef9d57b5657c366aa1cae91d29e695cbc18"},
+}
+
+// RetiredSkill 是一条退役记录。
+type RetiredSkill struct {
+	Name   string
+	SHA256 string
+}
+
+// RegisterBuiltinSkills 把内置技能注册进注册表（幂等），返回注册的名字。
+//
+// 对账 TS 的 `registerBuiltinSkills(registry = skillRegistry)`。
+func RegisterBuiltinSkills(r *Registry) []string {
+	names := make([]string, 0, len(BuiltinSkills))
+	for _, s := range BuiltinSkills {
+		// 复制一份再注册——避免调用方改到包级切片里的 Definition。
+		cp := s
+		r.Register(cp)
+		names = append(names, s.Name)
+	}
+	return names
+}
