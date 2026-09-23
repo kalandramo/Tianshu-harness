@@ -560,6 +560,12 @@ func emitHuman(e agent.Event) {
 		fmt.Fprintf(os.Stderr, "[tool] %s → %s\n", e.ToolName, status)
 	case "turn_end":
 		fmt.Fprintln(os.Stderr)
+	case "error":
+		// **必须处理**——loop 发出的 error 事件（如 wedge-loop 守卫的死循环
+		// 提示）若不在此渲染，用户只看到 run 莫名提前结束，无从判断原因。
+		// 由第四十二刀的用户级验收抓到：守卫正确终止了 run（模型调用数从
+		// 8 降到 3），但 stderr 里没有任何提示。
+		fmt.Fprintf(os.Stderr, "\n[错误] %s\n", e.Text)
 	case "done":
 		fmt.Println()
 		if e.Usage != nil && e.Usage.InputTokens > 0 {

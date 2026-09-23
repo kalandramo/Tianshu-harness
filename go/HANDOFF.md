@@ -3839,6 +3839,24 @@ lift / readback 行为，与「读哪个文件」无关。
 （而非只跑新测试）是唯一能发现这类冲突的手段——本刀的 22 个新测试全绿，
 但全量跑才暴露问题。
 
+### 用户级验收抓到的缺陷：**`emitHuman` 缺 `error` 分支**
+
+前 22 个测试全绿、变异全红、全量 24 包 ok——但**用户级验收**（真实二进制 +
+mock 端点）发现：守卫正确终止了 run（模型调用数从 8 降到 3），**stderr 里却
+没有任何提示**，用户只看到 run 莫名提前结束。
+
+**根因**：`emitHuman`（`cmd/tianshu/main.go`）只处理 `text` / `tool_start` /
+`tool_result` / `turn_end` / `done` 五种事件——**没有 `error` 分支**。loop 发的
+`Kind: "error"` 事件在人类可读路径被**静默丢弃**。（JSON 路径不受影响——它
+不 switch kind，无差别放进 `text` 字段。）
+
+**修法**：补 `case "error"` 分支渲染提示。
+
+**教训（重要）**：单元测试 + 接线测试 + 变异反证**都不覆盖「用户看到什么」**。
+本刀的 22 个测试断言的是内部状态（`repeatCount` / 快照字段 / 事件序列），
+没有一个断言「CLI 的 stderr 里出现提示」。**用户级验收是独立的一层**，
+必须单独执行——这是本项目 `todo` 工具的 `acceptance` 字段存在的理由。
+
 ### 由对账抓到的三处自身缺陷
 
 1. **`changed` 漏 trim**：`TestOracleGitCommitFlows` 显示 Go 输出末尾多一个
@@ -4285,6 +4303,10 @@ Go 侧这两个机制都不存在，故回调**只派发不消费**——接口�
 - skill 差分 oracle：builtin=3 / parse=10 用例 / discovery=8 用例 / skillFiles
 - toolschema 对账 **13 个工具**（`skill` 逐字节通过）
 - TS 侧 `npm run typecheck` **exit=0**
+- **用户级验收（2/2 met）**——真实二进制 + mock 端点：
+  - 连续同批次失败：模型调用 **3 次**（脚本 8 条），stderr 出现
+    `[错误] 检测到死循环（同一工具批次连续 3 次全部失败：read_file ×3）——已终止本回合。`
+  - 不同批次：模型调用 **4 次**（全部走完），stdout 输出「完成」，守卫未误触发
 
 ### 遗留
 
