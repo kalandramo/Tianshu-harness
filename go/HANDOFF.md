@@ -3817,6 +3817,28 @@ Go 侧 `pathsafe.go` **已有**敏感检测，但与 TS 的 `sensitive-file-dete
 - **`git.ts:591` 的 `.trim()`**——`changed` 不 trim 会让输出末尾多一个换行
   （对账时抓到，见下）
 
+### 交付前的全量测试暴露：**守卫与既有测试夹具冲突**
+
+全量测试跑出 3 个失败（`TestHabituationInRealRequests` / `TestLiftMuteInRealRequests` /
+`TestReadbackEvaluateAcrossUserTurns`）。**用 git stash 跑基线确认是我引入的**
+（基线全绿）——不是既有失败。
+
+**根因**：三个测试都用**同一个不存在的文件**（`a.ts`）驱动多轮
+（habituation 8 轮 / lift 12 轮 / readback 3 轮）。每轮 `read_file` 都失败
+且**批次指纹相同** → 正是 wedge 守卫要拦的「同批次反复全错」形态 →
+守卫在第 3 次重复时正确终止了 run。
+
+**判断：这是守卫的正确行为，不是缺陷。** TS 侧没有等价的「多轮同批次失败」
+测试——Go 侧的这三个是移植时自造的，无意中构造了死循环形态。
+
+**修法**：把测试夹具改成**每轮不同文件名**（仍失败，但指纹不同 → 不触发
+守卫）。这**不弱化任何断言**——三个测试验证的是 advisory 的 habituation /
+lift / readback 行为，与「读哪个文件」无关。
+
+**教训**：新增语义级守卫会与既有测试夹具的「简化假设」冲突。全量测试
+（而非只跑新测试）是唯一能发现这类冲突的手段——本刀的 22 个新测试全绿，
+但全量跑才暴露问题。
+
 ### 由对账抓到的三处自身缺陷
 
 1. **`changed` 漏 trim**：`TestOracleGitCommitFlows` 显示 Go 输出末尾多一个
@@ -4567,6 +4589,185 @@ Go 侧工具数 21（TS 侧 full preset 48）。剩余缺口：
 **注意**：连续四刀（`ask_user_question`、`skill`、发现层、`undo`）的
 HANDOFF 估价都被证伪或偏轻——**剩余候选的估价需重新核实**，不要直接
 采信本表。
+
+
+## 第四十二刀：reasoning-spiral hook + wedge-loop guard（2026-09-23）
+
+**目标**：从「工具移植」转向「认知层」——本刀补两个认知拦截能力。
+
+### 估价修正（第五刀连续被证伪）
+
+上一轮我建议「挑 doom-loop 检测作为 hook 框架探针」。**核实结果：错了两处**：
+
+1. **doom-loop 不是 hook**——TS 的 wedge-loop guard 内联在
+   `turn-orchestrator.ts:1044-1073`（回合循环内），直接读写
+   `state.wedgeToolFingerprint` / `wedgeRepeatCount`，**不经过 hook 框架**。
+2. 真正用 hook 框架的是 **reasoning-spiral**（`preTurn` 阶段）。
+
+修正后两个都做——它们恰好覆盖两个不同的层（回合循环 vs hook 管线）。
+
+### 称量：从「工具面」转向「认知层」的依据
+
+实测数字（本刀开工前核实）：
+
+| 维度 | TS | Go | 缺口 |
+|---|---|---|---|
+| 生产代码行 | 50,417 | 41,473 | 82% |
+| 工具（full preset） | 69 | 22 | 47 |
+| **Runtime hook 注册数** | **64** | **2** | **62** |
+
+**最刺眼的不是工具数，是 hook 数。** 项目定位写着「RuntimeHookPipeline
+五阶段条件装配 60+ hook 模块，拦截服从性漂移 / doom loop / 验证债务」
+——Go 侧只有 2 个 hook，等于**认知增强能力几乎为零**：能跑，但跑的是
+「裸 agent」（无 doom loop 拦截、无验证债务门禁、无服从性漂移检测）。
+
+而剩余工具候选的边际收益已明显下降（逐一核过）：`ast_grep`/`ast_edit`
+需 tree-sitter 绑定、`job`/`monitor` 需进程管理子系统、`web_*` 超出内核、
+`undo` 需新建快照层且 TS 侧零使用、skill 管理面无消费端。
+
+### 本刀发现：快照字段「有位置、无实现」
+
+`RuntimeHookSnapshot` 有三个字段**零读取方**：
+
+| 字段 | 状态 |
+|---|---|
+| `LastThinkingLength` | 结构有、产生端未填、无 hook 读 |
+| `LastTurnHadTools` | 同上 |
+| `GitChangeRate` | 同上（仍无写入方） |
+
+这是「有地基、缺实现」的确切证据——TS 侧 hook 的输入字段留了位置，
+但 hook 与产生端都没移植。
+
+### 落地
+
+| 文件 | 内容 |
+|---|---|
+| `internal/agent/reasoning_spiral.go` | hook 本体（新增，220 行） |
+| `internal/agent/wedge_guard.go` | 守卫本体（新增，127 行） |
+| `internal/agent/hook_snapshot.go` | 快照补 3 字段 + `recordTurnOutcome` |
+| `internal/agent/loop.go` | 接线：`recordTurnOutcome` / `wedge.observeBatch` / `errorCount` / `thinkingLen` / 哨兵初值 |
+| `internal/agent/wedge_spiral_test.go` | 单元测试 18 例（新增） |
+| `internal/agent/wedge_spiral_wiring_test.go` | 接线测试 4 例（新增） |
+
+### reasoning-spiral hook 的语义（逐条对账）
+
+TS 源码原文（`reasoning-spiral-hook.ts` 文件头）：
+
+	prompt 约束（GLM calibration block）：每轮推理只产出两件事……
+	核心缺口：convergence-detector / exploration-stall / thinking-retry 都不度量
+	单轮推理长度。模型可以在一个 turn 输出 8000+ 字符推理，不调任何工具，
+	也不触发任何现有检测器——直到超时。
+
+信号：`lastThinkingLength > 3000 && lastTurnHadTools === false`。
+
+四条语义要点（都有测试锁定）：
+- **阈值 3000 字符**（`< 3000` 不触发）
+- **Cooldown 2 轮**（`turn - lastAdvisoryTurn < 2` 不重复）
+- **趋势跟踪最近 3 轮**，严格递增 → 升级文案（「推理链在自我放大」）
+- **短推理重置趋势**（`recentLengths.length = 0`）
+
+**与 TS 的差异（明示）**：TS 的 `deps.obligations`（义务追踪器）在 Go 侧
+**未移植**（`internal/context` 只有 rounds/pressure）。本 hook 只走**无义务**
+分支（通用文案），接口留了口（`Obligations` 为 nil 时走通用分支），
+义务追踪器移植后接上即可。
+
+### wedge-loop guard 的语义
+
+TS 源码原文：
+
+	Wedged-loop guard: a model that re-emits the SAME tool batch and gets
+	an all-error result every time (the classic "requires user approval"
+	denial loop) would otherwise spin to maxTurns, ballooning context
+	until the sidecar OOMs.
+
+**与 `maxTurns` 的关系**：`maxTurns` 是**计数**上限（50 轮），本守卫是
+**语义**检测——模型陷入「同批次反复被拒」时不再烧满 50 轮（每轮灌一份
+完整工具结果、上下文线性膨胀）。
+
+两处易错点（都有测试锁定）：
+- 非全错时指纹为空串，**空串不参与比较**
+- `else` 分支的 `repeatCount = allErrored ? 1 : 0`——**不是**恒置 0
+  （全错但指纹不同 → 重置为新序列的第 1 次）
+
+**与 TS 的差异（关键）**：TS 的 `JSON.stringify` 对对象键序**敏感**（插入序），
+Go 的 `encoding/json` 对 `map[string]any` **排序键**。两者对同一输入产出的
+字符串不同，但**跨轮比较的用途等价**（同一批次两次调用走同一序列化路径）。
+故用标准 `json.Marshal` 而非复刻 JS 插入序——有意的等价简化。
+
+### 由对账抓到的三处自身缺陷
+
+**（1）哨兵值未初始化（真实产品缺陷）**
+
+`lastThinkingLength` 的哨兵是 `-1`（「尚无上一轮」），但 Go 的零值是 `0`
+——而 `0` 是合法的「上一轮思考长度 0」。首版没在 `New` 里初始化，
+快照第 1 轮就声称「有上一轮数据」。由 `TestSpiralHookWiredIntoLoop` 抓到。
+
+**（2）M174/M175 首轮 0 红——测试的 turn 序列落进初始冷却期**
+
+`lastAdvisoryTurn` 初值 `-1`，故 `Turn=0` 时 `0-(-1)=1 < 2` **不触发**。
+首版测试从 `Turn=0` 起步，趋势数组始终为空 → 变异与正常产出相同。
+改为从 `Turn=2` 起步后转红。
+
+**（3）M177 首轮 0 红——缺「非全错但指纹相同」的用例**
+
+`TestWedgeResetOnSuccess` 传的是**空指纹**，与已存非空指纹天然不同 → 走
+else 分支重置，变异「去掉 `allErrored` 判定」在那里与正常产出**相同**。
+补 `TestWedgeNonErroredSameFingerprintDoesNotAccumulate`（传相同指纹）
+后转红。
+
+**（4）M182 首轮 0 红是**编译失败**（非测试缺口）
+
+首版变异 `_ = batchErrored` 让 `fingerprint` 未使用 → 编译失败 → 测试跑
+不起来 → grep 不到 `--- FAIL` → 误报 0 红。改用 `if false { ... }` 包裹
+（可编译且真正断开接线）后转红。**教训：变异 0 红先验编译是否通过。**
+
+### 变异反证 M171-M182
+
+| 变异 | 内容 | 结果 |
+|---|---|---|
+| M171 | spiral 阈值失效 | 2 红 |
+| M172 | 忽略「有工具调用」 | 1 红 |
+| M173 | cooldown 失效 | 1 红 |
+| M174 | 短推理不重置趋势 | 1 红（**修正 turn 序列后**） |
+| M175 | 递增判定退化 | 2 红（同上） |
+| M176 | wedge 阈值失效 | 2 红 |
+| M177 | 非全错也累积 | 1 红（**补用例后**） |
+| M178 | 批次不同重置为 0 | 2 红 |
+| M179 | 指纹忽略参数 | 2 红 |
+| M180 | 哨兵未初始化 | 2 红 |
+| M181 | 轮末不记录结果 | 1 红 |
+| M182 | wedge 未接进 loop | 1 红（**变异改为可编译后**） |
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./... -count=1` **24 包 ok / 0 FAIL**
+- 本刀新增测试 **22 例全 PASS**（`wedge_spiral_test.go` 18 + `wedge_spiral_wiring_test.go` 4）
+- TS 侧 `npm run typecheck` **exit=0**
+
+### 遗留
+
+- **`Obligations`（义务追踪器）未移植**——spiral hook 的义务升级分支走不到。
+- **`GitChangeRate` 仍无写入方**（TS 由 git-change-rate hook 计算）。
+- **hook 缺口仍大**：Go 3 个 hook（新增 1）vs TS 64 个注册。
+- 上一刀（e94144c）的**提交后审查超时未跑**（advisory 已提示）——本刀一并披露。
+
+### 下一步
+
+**建议继续补 hook**——这是 Go 版最大的能力缺口（64 vs 3），且框架完备
+（五阶段管线 + nil-safe effects + 超时/慢速预算），补 hook 是**在既有骨架
+上填实现**。
+
+优先候选（按「地基就位度」排序）：
+
+| 候选 | 地基状态 |
+|---|---|
+| `dead-end-detector` | `internal/context` 有 rounds/pressure；需核实信息素层 |
+| `context-pressure-hook` | `internal/context/pressure` 已有 |
+| `consistency-check` 扩展 | 已有 1 个，可扩 |
+
+**注意**：连续五刀（`ask_user_question`、`skill`、发现层、`undo`、doom-loop）
+的估价都被证伪或偏轻——**剩余候选的估价需重新核实**，不要直接采信本表。
 
 
 ## 建议的第一刀

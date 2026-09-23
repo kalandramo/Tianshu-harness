@@ -19,10 +19,16 @@ import (
 // 成熟样本（模拟跨会话积累），否则返回 nil（中性、不静音）。
 func TestLiftMuteInRealRequests(t *testing.T) {
 	root := t.TempDir()
-	// 12 轮，每轮读文件（不满足任何谓词，但 lift 静音不依赖行为）
+	// 12 轮，每轮读**不同**的（不存在的）文件。
+	//
+	// **为什么必须不同**：同一个文件反复失败会构成「同批次反复全错」——
+	// wedge-loop guard（第四十二刀）会据此终止 run，本测试就跑不满 12 轮。
+	// 用不同路径避开守卫，同时保持「每轮都有工具调用且都失败」的语义
+	// （lift 静音不依赖具体行为，只依赖轮数）。
 	responses := make([]string, 0, 24)
 	for i := 0; i < 12; i++ {
-		responses = append(responses, toolTurn("c"+string(rune('a'+i)), "read_file", `{"file_path":"a.ts"}`))
+		responses = append(responses, toolTurn("c"+string(rune('a'+i)), "read_file",
+			`{"file_path":"missing-`+string(rune('a'+i))+`.ts"}`))
 	}
 	responses = append(responses, textTurn("done"))
 	sc := &scriptedServer{responses: responses}

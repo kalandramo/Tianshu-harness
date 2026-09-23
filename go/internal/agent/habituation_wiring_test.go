@@ -21,14 +21,14 @@ import (
 func TestHabituationInRealRequests(t *testing.T) {
 	root := t.TempDir()
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "read_file", `{"file_path":"a.ts"}`),
-		toolTurn("c2", "read_file", `{"file_path":"a.ts"}`),
-		toolTurn("c3", "read_file", `{"file_path":"a.ts"}`),
-		toolTurn("c4", "read_file", `{"file_path":"a.ts"}`),
-		toolTurn("c5", "read_file", `{"file_path":"a.ts"}`),
-		toolTurn("c6", "read_file", `{"file_path":"a.ts"}`),
-		toolTurn("c7", "read_file", `{"file_path":"a.ts"}`),
-		toolTurn("c8", "read_file", `{"file_path":"a.ts"}`),
+		toolTurn("c1", "read_file", `{"file_path":"missing-1.ts"}`),
+		toolTurn("c2", "read_file", `{"file_path":"missing-2.ts"}`),
+		toolTurn("c3", "read_file", `{"file_path":"missing-3.ts"}`),
+		toolTurn("c4", "read_file", `{"file_path":"missing-4.ts"}`),
+		toolTurn("c5", "read_file", `{"file_path":"missing-5.ts"}`),
+		toolTurn("c6", "read_file", `{"file_path":"missing-6.ts"}`),
+		toolTurn("c7", "read_file", `{"file_path":"missing-7.ts"}`),
+		toolTurn("c8", "read_file", `{"file_path":"missing-8.ts"}`),
 		textTurn("done"),
 	}}
 	srv := httptest.NewServer(sc.handler())

@@ -31,6 +31,24 @@ type hookSnapshotState struct {
 	sawVisualVerify bool
 	// recentToolHistory 是**窗口**（近 N 条），非任务级。
 	recentToolHistory []ToolHistoryEntry
+	// lastThinkingLength 是**上一轮**的思考内容长度（reasoning-spiral 的输入）。
+	//
+	// 对账 TS loop-factory.ts:537 `self.lastThinkingContent.length || undefined`。
+	// Go 无 undefined，故用 -1 表示「尚无上一轮」（hook 应据此跳过）。
+	lastThinkingLength int
+	// lastTurnHadTools 报告**上一轮**是否有工具调用。
+	//
+	// 对账 TS loop-factory.ts:543：
+	//   `self.recentToolHistory.some(h => h.turn === session.getTurnCount() - 1)`
+	// ——注意 TS 用的是 **session turn**（历史里 user 消息数），而 Go 的
+	// recentToolHistory 记的是 run 局部 turn。Go 侧改在轮末直接记布尔值
+	// （语义等价且更直接，避免两套 turn 时钟的错位风险）。
+	lastTurnHadTools bool
+	// gitChangeRate 是 git 工作区变更率（0-1）。
+	//
+	// **当前无写入方**（TS 侧由 git-change-rate hook 计算）。保留字段以便
+	// 快照结构完整；读取方 hook 未移植时它恒为 0。
+	gitChangeRate float64
 }
 
 // toolHistoryWindow 是 recentToolHistory 的保留条数。
@@ -153,7 +171,27 @@ func (l *Loop) buildRuntimeSnapshot(turn int) *RuntimeHookSnapshot {
 		SawTypecheck:      l.hookState.sawTypecheck,
 		TouchedUIFiles:    l.hookState.touchedUIFiles,
 		SawVisualVerify:   l.hookState.sawVisualVerify,
+		// 上一轮推理长度与「上一轮是否有工具」——reasoning-spiral hook 的输入。
+		//
+		// **语义**（对账 loop-factory.ts:537,543）：快照描述的是**刚结束的那一轮**
+		// （`lastThinkingLength` / `lastTurnHadTools`），而非当前轮。故这两个值
+		// 在**轮末**更新（见 recordTurnOutcome），构建快照时只读。
+		LastThinkingLength: l.hookState.lastThinkingLength,
+		LastTurnHadTools:   l.hookState.lastTurnHadTools,
+		GitChangeRate:      l.hookState.gitChangeRate,
 	}
+}
+
+// recordTurnOutcome 在**轮末**记录本轮结果，供下一轮快照使用。
+//
+// 对账 TS loop-factory.ts:537,543 的两个 snapshot 字段——它们读的是
+// **上一轮**的状态，故必须在轮末（而非轮首）写入。
+//
+// **为什么单独提取**：与 buildRuntimeSnapshot 配对（一写一读），提取后
+// 接线可单测（内联在 Run 里则无法验证「确实被写入」）。
+func (l *Loop) recordTurnOutcome(thinkingLen int, hadTools bool) {
+	l.hookState.lastThinkingLength = thinkingLen
+	l.hookState.lastTurnHadTools = hadTools
 }
 
 // runHookPhase 执行某个 hook 阶段（Hooks 为 nil 时 no-op）。

@@ -13,8 +13,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/kalandramo/tianshu/go/internal/api"
 	"github.com/kalandramo/tianshu/go/internal/api/sse"
@@ -97,8 +99,7 @@ type Loop struct {
 	// nil 时跳过状态更新（最小可跑路径）。
 	State *session.Manager
 
-	// turnBudget 是单轮工具结果的 token 预算（跨轮复用，每轮 reset）。
-	//
+	// turnBudget 是单轮工具结果的 token 预算（跨轮复用，每轮 reset）。	//
 	// 对账 TS `loop.ts:543` 的 `turnBudget: TurnBudget = createTurnBudget(0)`
 	// 与 `turn-orchestrator.ts:593` 的**每轮重建**：
 	// `turnBudget = createTurnBudget(rssRatio)`。
@@ -108,6 +109,13 @@ type Loop struct {
 	//
 	// nil 时跳过预算（最小可跑路径，对账 TS 的"无快照"分支）。
 	turnBudget *TurnBudget
+
+	// wedge 是跨轮的死循环检测状态。
+	//
+	// 对账 TS 的 `deps.state.wedgeToolFingerprint` / `wedgeRepeatCount`
+	// （turn-orchestrator.ts:124-126）。**必须在 Loop 上而非 Run 局部**——
+	// 状态跨轮累积才构成「连续重复」的判定基础。
+	wedge wedgeState
 
 	// RSSRatioFn 覆盖内存压力比来源（测试注入用）。
 	//
@@ -242,6 +250,13 @@ type Loop struct {
 // New 创建 agent loop。
 func New(cfg Config, cl *client.Client, reg *tools.Registry) *Loop {
 	l := &Loop{cfg: cfg, client: cl, registry: reg}
+	// lastThinkingLength 的哨兵初值。
+	//
+	// **为什么必须显式设 -1**：Go 的零值是 0，而 0 是合法的「上一轮思考
+	// 长度」（模型没输出思考）。不初始化则 reasoning-spiral hook 在第 1 轮
+	// 看到 0，与「上一轮思考 0 字符」无法区分——虽然 0 < 3000 阈值不会误触发，
+	// 但语义已错（快照声称「有上一轮数据」）。见 hookSnapshotState 的注释。
+	l.hookState.lastThinkingLength = -1
 	if cfg.SessionID != "" {
 		l.State = session.New(cfg.SessionID)
 		// 会话持久化：落盘到 <cwd>/.rivet/sessions/<id>.jsonl。
@@ -524,6 +539,10 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 		// `endTurn: endTurn || undefined`）：**任一**工具返回 EndTurn 即置位。
 		// batch 内其余工具仍照常执行——TS 也是整个 batch 跑完才检查。
 		endTurnRequested := false
+		// errorCount 累积本轮失败工具数（wedge 守卫的判据之一）。
+		//
+		// 对账 TS `ExecuteBatchResult.errorCount`。
+		errorCount := 0
 		for _, tc := range collector.toolCalls {
 			l.emit(Event{
 				Kind: "tool_start", ToolName: tc.name, ToolInput: tc.input,
@@ -601,6 +620,9 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 			if result.EndTurn {
 				endTurnRequested = true
 			}
+			if result.IsError {
+				errorCount++
+			}
 		}
 
 		// ── endTurn：把本回合收为 final 并退出 ──
@@ -629,6 +651,39 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 			Kind: "turn_end", Turn: turn,
 			Usage: &u, StopReason: collector.stopReason,
 		})
+
+		// ── 记录本轮结果（供下一轮快照）──
+		//
+		// 对账 TS loop-factory.ts:537,543——`lastThinkingLength` 与
+		// `lastTurnHadTools` 读的是**上一轮**的状态，故必须在轮末写入。
+		// reasoning-spiral hook（preTurn 阶段）据此判断「上一轮长推理零工具」。
+		l.recordTurnOutcome(collector.thinkingLen(), len(collector.toolCalls) > 0)
+
+		// ── wedge-loop 守卫（语义级死循环检测）──
+		//
+		// 对账 TS turn-orchestrator.ts:1044-1073。**必须在工具结果全部回灌
+		// 之后**——与 endTurn 同理，历史须保持良构。
+		//
+		// `maxTurns` 是计数上限，本守卫是语义检测：模型陷入「同批次反复
+		// 被拒」时不再烧满 50 轮（每轮灌一份完整工具结果、上下文线性膨胀）。
+		//
+		// **`batchErrored` 的判据**：本轮**全部**工具失败。注意用
+		// `len(collector.toolCalls) > 0` 兜底——零工具批次不参与（那种情况
+		// 已在上方的「无工具调用 → 终答」分支返回）。
+		batchErrored := len(collector.toolCalls) > 0 && errorCount == len(collector.toolCalls)
+		fingerprint := ""
+		if batchErrored {
+			fingerprint = toolBatchFingerprint(collector.toolCalls)
+		}
+		l.wedge.observeBatch(batchErrored, fingerprint)
+		if l.wedge.shouldTerminate() {
+			l.emit(Event{
+				Kind: "error", Turn: turn,
+				Text: "检测到死循环（同一工具批次连续 " + strconv.Itoa(l.wedge.repeatCount) +
+					" 次全部失败：" + l.wedge.wedgeDetail(collector.toolCalls) + "）——已终止本回合。",
+			})
+			return nil
+		}
 
 		// ── 压缩边界（Step 6b 等价）──
 		//
@@ -962,6 +1017,17 @@ type turnCollector struct {
 }
 
 func (c *turnCollector) text() string { return c.textBuf.String() }
+
+// thinkingLen 返回本轮思考内容的长度。
+//
+// **为什么按 rune 计**：TS 的 `lastThinkingContent.length` 是 **UTF-16 code
+// unit** 计数。Go 的 `len(s)` 是字节数——中文思考内容会 3 倍膨胀，阈值
+// 3000 的语义完全不同。用 rune 计数在 BMP 内与 UTF-16 一致（中文/ASCII
+// 均落在此区间），仅 BMP 外字符（emoji）有 1 vs 2 的差异——阈值是启发式
+// 而非精确契约，该差异可接受（已在注释明示）。
+func (c *turnCollector) thinkingLen() int {
+	return utf8.RuneCountInString(c.thinkBuf.String())
+}
 
 // handler 构造 SSE 处理器，把流事件转成 agent 事件并收集工具调用。
 func (c *turnCollector) handler(l *Loop, turn int) sse.Handler {

@@ -161,11 +161,11 @@ func TestReadbackEvaluateAcrossUserTurns(t *testing.T) {
 	root := t.TempDir()
 	// 三个 user 轮，每轮模型都只读文件（不满足 bash 谓词）
 	sc := &scriptedServer{responses: []string{
-		toolTurn("c1", "read_file", `{"file_path":"a.ts"}`),
+		toolTurn("c1", "read_file", `{"file_path":"missing-1.ts"}`),
 		textTurn("r1"),
-		toolTurn("c2", "read_file", `{"file_path":"a.ts"}`),
+		toolTurn("c2", "read_file", `{"file_path":"missing-2.ts"}`),
 		textTurn("r2"),
-		toolTurn("c3", "read_file", `{"file_path":"a.ts"}`),
+		toolTurn("c3", "read_file", `{"file_path":"missing-3.ts"}`),
 		textTurn("r3"),
 	}}
 	srv := httptest.NewServer(sc.handler())
