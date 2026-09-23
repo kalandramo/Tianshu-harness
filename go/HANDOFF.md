@@ -4792,6 +4792,136 @@ else 分支重置，变异「去掉 `allErrored` 判定」在那里与正常产�
 的估价都被证伪或偏轻——**剩余候选的估价需重新核实**，不要直接采信本表。
 
 
+## 第四十三刀：lossy-observation hook + 修悬空（2026-09-23）
+
+**目标**：继续补 hook。开工前的地基盘点**抓到我上一刀留下的悬空**。
+
+### 发现 1：上一刀的 spiral hook 没在生产注册（悬空）
+
+`NewReasoningSpiralHook` 在第四十二刀写好、22 个测试全绿、变异全红、
+用户级验收也过了——但 **`main.go` 的装配段从没注册它**。生产路径不装配，
+等于白做。
+
+这与第三十七刀 `OnLeaveMark`、第三十九刀 `onSkillInvoked` 是**同一类悬空**。
+讽刺的是我上一刀还在 HANDOFF 里批评过这类问题。
+
+**根因**：单元测试都自建 pipeline 并手动 `Register`——**没有任何测试覆盖
+`main.go` 的装配**。这是测试盲区（本刀变异 M200/M201 实测 0 红证实）。
+
+### 发现 2：上一轮表格里的候选有两个不成立
+
+我上一轮凭印象给的候选表，核实后：
+
+| 候选 | 我上一轮写的 | 核实结果 |
+|---|---|---|
+| `dead-end-detector` | 「`internal/context` 有 rounds/pressure，需核实信息素层」 | 依赖**信息素沉积**（stigmergy）——Go 侧**地基不足** |
+| `context-pressure-hook` | 「pressure 已有」 | 依赖 `ContextPressure` **快照字段**——`RuntimeHookSnapshot` 里**没有** |
+
+**真正「地基就位」的**是 `lossy-observation-hook`：它只需
+`RuntimeToolEvent.ResultContent`（Go 侧 `loop.go:583` 已填充）。
+
+### 落地
+
+| 文件 | 内容 |
+|---|---|
+| `internal/agent/lossy_markers.go` | 标记表 + `IsLossyObservation`（新增） |
+| `internal/agent/lossy_observation.go` | hook 本体（新增） |
+| `internal/agent/lossy_observation_test.go` | 单元测试 15 例（新增） |
+| `internal/agent/lossy_wiring_test.go` | 接线测试 3 例（新增） |
+| `cmd/tianshu/main.go` | **修悬空**：注册 spiral + lossy hook |
+| `testdata/lossymarkers/gen-oracle.ts` + `oracle.json` | 差分 oracle（新增） |
+
+### scope 收窄（明示，重要）
+
+TS 的 `LOSSY_CONTENT_MARKERS` 有 **15 条**；Go 侧**只移植 6 条**。
+
+核实——以下 TS 标记在 Go 侧**零命中**，因为产生它们的子系统未移植：
+
+| TS 标记 | 未移植的子系统 |
+|---|---|
+| `[storm-collapsed:` | storm 折叠 |
+| `[tiered-summary:` | 分层摘要器 |
+| `[budget-evicted:` / `[budget-summarized:` | per-message-budget |
+| `[truncated: N tokens` | 同上 |
+| `lines omitted (...)` 三条 | 同上（Go 用 `[output truncated: ... — N lines omitted]` 变体） |
+| `<stale-compacted` | 过期轮次压缩 |
+
+**移植未产生的标记会让 hook 永不触发**（死模式），违反「锚定真实标记」的
+纪律。这些标记随各自子系统移植时一并加入。
+
+### 由对账抓到的自身缺陷
+
+**首版臆造了一条标记**：我加了宽前缀 `lines omitted \(`，但 TS 的三条对应
+模式都要求具体前缀（`turn read budget` 等），裸格式在 TS 判 false。
+
+由 oracle 对账抓到（我把该用例放进正例，oracle 返回 `false`）——**这正是
+我在自己注释里警告过的「移植未产生的标记」**。已删除并移入负例。
+
+### 用户级验收（2/2 met）
+
+| 验收项 | 证据 |
+|---|---|
+| lossy hook 生产装配 | 真实二进制读被截断文件 → 第 2 个请求体含「有损观测」advisory |
+| spiral hook 生产装配（悬空修复） | 真实二进制交互式两轮 → 第 2 个请求体含 spiral 提示 |
+
+**为什么必须做**：变异 M200/M201（「生产未注册 hook」）实测 **0 红**——
+单元测试够不到 `main()`。用户级验收是唯一覆盖手段。
+
+### 变异反证 M191-M201
+
+| 变异 | 内容 | 结果 |
+|---|---|---|
+| M191 | 标记表清空 | 13 红 |
+| M192 | 去掉 `[collapsed` | 6 红 |
+| M193 | 去掉 `[output truncated:` | 2 红 |
+| M194 | 去掉 `PARTIAL view` | 3 红 |
+| M195 | 锚点去掉（假阳性） | 2 红 |
+| M196 | 冷却失效 | 1 红（**变异改写后**） |
+| M197 | 优先级错（0.48→0.9） | 1 红 |
+| M198 | phase 错（postTool→preTurn） | 2 红 |
+| M199 | 空内容也触发 | **0 红——等价变异**（空串不匹配标记） |
+| M200 | 生产未注册 lossy hook | **0 红——测试盲区**（由验收覆盖） |
+| M201 | 生产未注册 spiral hook | **0 红——同上** |
+
+**M199 的判定**：等价变异（去掉空检查不改变行为，因为
+`IsLossyObservation("")` 恒 false）。但借此发现一个**真实顺序风险**——
+若实现在内容检查前就写 `lastFiredTurn`，「同轮先正常输出、后 lossy 输出」
+会漏掉后者。已补两条顺序不变量测试锁定。
+
+**M200/M201 的判定**：真实盲区，**由用户级验收覆盖**（见上）。
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./... -count=1` **24 包 ok / 0 FAIL**
+- 本刀新增测试 **18 例**（单元 15 + 接线 3）
+- 用户级验收 **2/2 met**
+- TS 侧 `npm run typecheck` **exit=0**
+
+### 遗留
+
+- **hook 缺口仍大**：Go 4 个（本刀 +1）vs TS 74 个文件 / 64 个注册。
+- `negative-fact-detector`（lossy 的 corrective 那半）未移植——本 hook 是
+  Go 侧唯一的 lossy 防线。
+
+### 下一步
+
+**建议继续补 hook**，但**必须先核实地基**（本刀证明凭印象的候选表不可信）。
+
+按「地基就位度」重新核实的候选：
+
+| 候选 | 依赖的快照字段 | 状态 |
+|---|---|---|
+| `edit-tool-advisory-hook` | `RecentToolHistory`（已有） | **可做** |
+| `probe-discipline-hook` | `RecentToolHistory`（已有） | **可做** |
+| `turn-budget-hook` | `TurnBudget`（已有） | 需核实字段映射 |
+| `context-pressure-hook` | `ContextPressure`（**快照无此字段**） | 需先扩快照 |
+| `dead-end-detector` | 信息素层（**未移植**） | 地基不足 |
+
+**注意**：连续六刀的估价都被证伪或偏轻——**动手前必须 grep 核实依赖**，
+不要采信任何表格（包括本表）。
+
+
 ## 建议的第一刀
 
 **（2026-09-22 修正：本节原建议「接 `internal/session`」——该断言已过期，

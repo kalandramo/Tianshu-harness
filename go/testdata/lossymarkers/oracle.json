@@ -1,0 +1,128 @@
+{
+  "tsMarkers": [
+    "^\\[storm-collapsed:",
+    "^\\[tiered-summary:",
+    "^\\[collapsed ",
+    "\\[output truncated:",
+    "\\[stdout truncated:",
+    "\\[stderr truncated:",
+    "PARTIAL view of ",
+    "\\[budget-evicted:",
+    "\\[budget-summarized:",
+    "\\[truncated: \\d+ tokens",
+    "lines omitted \\(turn read budget exceeded",
+    "lines omitted \\(context pressure",
+    "lines omitted \\(per-call budget",
+    "<microcompacted ",
+    "<stale-compacted "
+  ],
+  "positive": [
+    {
+      "label": "collapsed-header",
+      "content": "[collapsed grep: 14 matches in src/]",
+      "isLossy": true
+    },
+    {
+      "label": "collapsed-readfile",
+      "content": "[collapsed read_file: 42 lines, classes: Foo]",
+      "isLossy": true
+    },
+    {
+      "label": "output-truncated-footer",
+      "content": "some output\n[output truncated: last 100 of 5000 lines shown — 4900 lines omitted]",
+      "isLossy": true
+    },
+    {
+      "label": "stdout-truncated",
+      "content": "x\n[stdout truncated: 1000 bytes]",
+      "isLossy": true
+    },
+    {
+      "label": "stderr-truncated",
+      "content": "x\n[stderr truncated: 500 bytes]",
+      "isLossy": true
+    },
+    {
+      "label": "partial-view",
+      "content": "── PARTIAL view of src/a.ts (200 lines, 8000 chars) ──",
+      "isLossy": true
+    },
+    {
+      "label": "microcompacted",
+      "content": "<microcompacted tool_result id=c1>",
+      "isLossy": true
+    },
+    {
+      "label": "storm-collapsed",
+      "content": "[storm-collapsed: 3 bash calls consolidated]",
+      "isLossy": true
+    },
+    {
+      "label": "tiered-summary",
+      "content": "[tiered-summary: 5 tools]",
+      "isLossy": true
+    },
+    {
+      "label": "budget-evicted",
+      "content": "[budget-evicted: 2000 chars]",
+      "isLossy": true
+    },
+    {
+      "label": "budget-summarized",
+      "content": "[budget-summarized: bash]",
+      "isLossy": true
+    },
+    {
+      "label": "truncated-tokens",
+      "content": "[truncated: 5000 tokens → 2000 token budget for bash]",
+      "isLossy": true
+    },
+    {
+      "label": "stale-compacted",
+      "content": "<stale-compacted round=3>",
+      "isLossy": true
+    }
+  ],
+  "negative": [
+    {
+      "label": "plain-truncated-word",
+      "content": "the output was truncated by the program",
+      "isLossy": false
+    },
+    {
+      "label": "plain-collapsed-word",
+      "content": "the bridge collapsed in 1999",
+      "isLossy": false
+    },
+    {
+      "label": "normal-grep",
+      "content": "src/a.ts:12: export const x = 1",
+      "isLossy": false
+    },
+    {
+      "label": "normal-read",
+      "content": "export function foo() { return 1 }",
+      "isLossy": false
+    },
+    {
+      "label": "empty",
+      "content": "",
+      "isLossy": false
+    },
+    {
+      "label": "brackets-no-marker",
+      "content": "[INFO] all good",
+      "isLossy": false
+    },
+    {
+      "label": "mid-line-truncated",
+      "content": "log: truncated_at=12345",
+      "isLossy": false
+    },
+    {
+      "label": "lines-omitted-bare",
+      "content": "... (1234 lines omitted) ...",
+      "isLossy": false
+    }
+  ]
+}

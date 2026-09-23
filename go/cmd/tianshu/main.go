@@ -271,15 +271,25 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	//
 	// 装配四件：
 	//   1. AdvisoryBus——hook 投递的出口 + 渲染成 <星域-advisory> 块
-	//   2. Pipeline——五阶段 hook 管线（当前注册两个真实 hook）
+	//   2. Pipeline——五阶段 hook 管线
 	//   3. ClaimStore——consistency-check 的真实 claim 来源（认知层）
 	//   4. Loop.Hooks / Loop.Advisories / Loop.Effects——接进主循环
 	//
 	// 对账 TS 的 loop-factory / create-runtime-hooks 装配路径
-	// （TS 侧默认装配 ~18+ hook；这里只装已移植的两个）。
+	// （TS 侧默认装配 ~18+ hook；这里只装已移植的）。
 	bus := agent.NewAdvisoryBus()
 	pipeline := agent.NewPipeline(agent.PipelineOptions{})
 	pipeline.Register(agent.NewTypecheckReminderHook(bus))
+	// reasoning-spiral（preTurn）：长推理零工具 → 提醒收敛。
+	//
+	// **必须在此注册**——第四十二刀写了 hook 与 22 个测试，但漏了这一步，
+	// 导致生产路径从不装配它（与第三十七刀 OnLeaveMark、第三十九刀
+	// onSkillInvoked 同一类悬空）。由第四十三刀的地基盘点抓到。
+	//
+	// Obligations 传 nil（义务追踪器未移植）→ 走通用文案分支。
+	pipeline.Register(agent.NewReasoningSpiralHook(agent.ReasoningSpiralDeps{Bus: bus}))
+	// lossy-observation（postTool）：工具输出被折叠/截断 → 提醒禁止负向结论。
+	pipeline.Register(agent.NewLossyObservationHook(bus))
 
 	// claim store：落盘到 <cwd>/.rivet/claims/<sessionId>.claims.jsonl。
 	//
