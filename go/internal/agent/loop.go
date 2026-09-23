@@ -25,6 +25,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/contract"
 	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"github.com/kalandramo/tianshu/go/internal/session"
+	"github.com/kalandramo/tianshu/go/internal/skills"
 	"github.com/kalandramo/tianshu/go/internal/tools"
 )
 
@@ -49,6 +50,17 @@ type Config struct {
 	// 对账 TS 的 activeStarName。空串 = 无星域（用全局预算）。
 	// **注意**：自主判断型星域（天权/瑶光）的 advisory 预算减为 1 条。
 	StarDomain string
+	// SkillRegistry 是 skill 注册表（供 Tier-1 发现层渲染 + skill 工具取用）。
+	//
+	// 对账 TS 的模块级单例 `skillRegistry`。Go 侧经 Config 注入，使测试可隔离。
+	//
+	// **两个消费方**：
+	//   - `renderSkillDiscoveryBlock`（发现层，本刀）——把可用 skill 的
+	//     name + description 注入请求尾部，让模型知道有哪些 skill 可加载
+	//   - `buildToolCallParams`（工具）——`skill` 工具按名加载正文
+	//
+	// nil = 无发现层注入（且 skill 工具回退到包级 Default）。
+	SkillRegistry *skills.Registry
 }
 
 // Event 是循环产出的事件（供 CLI 展示）。
@@ -680,6 +692,25 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 		p.OnOutput = l.ToolParams.OnOutput
 		p.OnLeaveMark = l.ToolParams.OnLeaveMark
 		p.OnAskUserQuestion = l.ToolParams.OnAskUserQuestion
+		p.OnSkillInvoked = l.ToolParams.OnSkillInvoked
+		p.OnSkillCompleted = l.ToolParams.OnSkillCompleted
+		// SkillRegistry：skill 工具的注册表来源。
+		//
+		// **必须在此继承**——`buildToolCallParams` 只填 Loop 自己知道的字段
+		// （Input/Cwd/ArtifactStore/...），注册表是**装配层注入**的依赖。
+		// 漏了这行则工具恒走包级 `skills.Default`（生产路径为空注册表），
+		// 表现为「skill 工具总是报未找到」——与第三十七刀 OnLeaveMark
+		// 的悬空接线同一类缺陷。
+		p.SkillRegistry = l.ToolParams.SkillRegistry
+	}
+	// 回退：ToolParams 未设注册表时用 Config 的。
+	//
+	// **为什么需要回退**：注册表有**两个**消费方——发现层读 `cfg.SkillRegistry`、
+	// 工具读 `ToolParams.SkillRegistry`。装配方漏设任一个会让功能**静默半失效**
+	// （发现层列得出 skill，但工具报未找到）。回退消除这个双来源陷阱：
+	// 只设 `cfg.SkillRegistry` 即可全链路可用。
+	if p.SkillRegistry == nil {
+		p.SkillRegistry = l.cfg.SkillRegistry
 	}
 
 	started := time.Now()

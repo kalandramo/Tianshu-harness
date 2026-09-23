@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/kalandramo/tianshu/go/internal/api/wire"
+	"github.com/kalandramo/tianshu/go/internal/skills"
 )
 
 // hookSnapshotState 是跨轮累积的 hook 快照状态。
@@ -204,22 +205,65 @@ func wrapSystemReminder(text string) string {
 
 // buildRequestMessages 构建本轮发给模型的消息列表。
 //
-// **核心职责**：在持久化的 `l.messages` 之上叠加**本轮专属**的注入
-// （advisory 块），而**不写回** `l.messages`。
+// **核心职责**：在持久化的 `l.messages` 之上叠加**本轮专属**的注入块
+// （advisory / skill 发现层），而**不写回** `l.messages`。
 //
 // **为什么请求级而非持久化**：
 //   - TTL=1 的 advisory 自然只出现在一轮（下轮 render 时 bus 已清空）
 //   - 缓存安全：不改写历史，只在尾部追加（对账 TS 的 append-only 细断点通道）
 //
 // 对账 TS 的 `promptEngine.setHarnessAdvisoryBlock(advisoryBus.render(...))`
-// （turn-step-producer.ts:654-655）——**Go 侧的最小实现**：把渲染块作为
+// 与 `setSkillAdvisoryBlock(skillRegistry.renderDiscoveryBlock(...))`
+// （turn-step-producer.ts:456,654）——**Go 侧的最小实现**：把各块作为
 // `<system-reminder>` 包裹的 user 消息追加在尾部。
 //
-// **未移植**：完整 prompt appendix 机制（TS 把块注入 system prompt 的 appendix
-// 区，Go 侧暂无该结构）。见 HANDOFF。
+// **与 TS 的差异（有意）**：TS 把这些块注入 system prompt 的 **dynamic
+// appendix 区**（`buildDynamicAppendixParts`），Go 无该机制，故走尾部 user
+// 消息。两者**缓存语义等价**——都是「不改写历史、只在尾部追加、不破前缀」。
+// 详见 HANDOFF 第三十九/四十刀。
 func (l *Loop) buildRequestMessages() []*wire.OrderedMap {
-	if l.Advisories == nil {
+	blocks := l.collectInjectionBlocks()
+	if len(blocks) == 0 {
 		return l.messages
+	}
+
+	out := make([]*wire.OrderedMap, 0, len(l.messages)+len(blocks))
+	out = append(out, l.messages...)
+	for _, b := range blocks {
+		out = append(out, wire.NewOrderedMap().
+			Set("role", "user").
+			Set("content", wrapSystemReminder(b)))
+	}
+	return out
+}
+
+// collectInjectionBlocks 收集本轮要注入的块（按稳定顺序）。
+//
+// **为什么拆出来**：原实现在 `l.Advisories == nil` 时直接 `return l.messages`
+// ——那是**早退吞注入**的缺陷：一旦新增第二个注入源（本刀的 skill 发现层），
+// 未装 advisory bus 的会话就永远拿不到它。拆成「各源独立贡献 → 统一拼接」
+// 后，任一源缺席不影响其他源。
+//
+// **顺序**：advisory 在前、skill 发现层在后。两者都是尾部追加，顺序只影响
+// 字节位置（不影响语义）——固定顺序保证**同输入同输出**（缓存可预测）。
+func (l *Loop) collectInjectionBlocks() []string {
+	var blocks []string
+	if b := l.renderAdvisoryBlock(); b != "" {
+		blocks = append(blocks, b)
+	}
+	if b := l.renderSkillDiscoveryBlock(); b != "" {
+		blocks = append(blocks, b)
+	}
+	return blocks
+}
+
+// renderAdvisoryBlock 渲染本轮 advisory 块（无 bus 时返回空串）。
+//
+// **副作用（必须无条件执行）**：`DrainDelivered` + `Readback.Track` 在
+// `Render` 之后**无条件**调用——见下方注释。
+func (l *Loop) renderAdvisoryBlock() string {
+	if l.Advisories == nil {
+		return ""
 	}
 
 	block := l.Advisories.Render(l.cfg.StarDomain, 0)
@@ -232,7 +276,7 @@ func (l *Loop) buildRequestMessages() []*wire.OrderedMap {
 	//
 	// **为什么关键**：holdout 把条目扣留时 block 为空，但那些 shadow 条目
 	// **照常进 delivered**（核销闭环）。若此处提前 return，shadow 样本全部丢失
-	// → GetMatureLift 恒 nil → 负 lift 静音永不触发。这是本刀修掉的既有缺陷。
+	// → GetMatureLift 恒 nil → 负 lift 静音永不触发。这是既有缺陷，勿回退。
 	//
 	// **必须 drain**——不 drain 会让 delivered 无限累积。drain 出的快照同时
 	// 喂给 Track（送达跟踪）与未来的 control adapter（TS 的控制面 tee 模式：
@@ -248,14 +292,45 @@ func (l *Loop) buildRequestMessages() []*wire.OrderedMap {
 		l.Readback.Track(delivered, l.SessionTurn())
 	}
 
-	if block == "" {
-		return l.messages
-	}
+	return block
+}
 
-	out := make([]*wire.OrderedMap, 0, len(l.messages)+1)
-	out = append(out, l.messages...)
-	out = append(out, wire.NewOrderedMap().
-		Set("role", "user").
-		Set("content", wrapSystemReminder(block)))
-	return out
+// renderSkillDiscoveryBlock 渲染 skill 的 Tier-1 发现块。
+//
+// 对账 TS 的 `skillRegistry.renderDiscoveryBlock(userInput, { exclude })`
+// （turn-step-producer.ts:457）。
+//
+// **hint 的来源**：TS 用**本轮的 userInput**（当前用户消息）做 trigger 匹配
+// ——相关的 skill 排前并标 `relevant="true"`。Go 侧取 `l.messages` 里
+// **最后一条 user 消息**的 content（语义等价：那正是本轮的用户输入）。
+//
+// **为什么这是 per-turn 而非会话常量**：hint 每轮不同 → 排序结果不同。
+// 这正是它**不能**进 frozen 块的原因（会把整个前缀缓存打掉）。
+func (l *Loop) renderSkillDiscoveryBlock() string {
+	if l.cfg.SkillRegistry == nil {
+		return ""
+	}
+	return l.cfg.SkillRegistry.RenderDiscoveryBlock(l.lastUserInput(), skills.DiscoveryOpts{})
+}
+
+// lastUserInput 返回历史里**最后一条 user 消息**的文本内容。
+//
+// 用于 skill 发现层的 trigger 匹配（对账 TS 的 `userInput` 参数）。
+// 无 user 消息时返回空串（发现层退化为纯字母序，不标 relevant）。
+func (l *Loop) lastUserInput() string {
+	for i := len(l.messages) - 1; i >= 0; i-- {
+		role, ok := l.messages[i].Get("role")
+		if !ok {
+			continue
+		}
+		if rs, ok := role.(string); ok && rs == "user" {
+			if c, ok := l.messages[i].Get("content"); ok {
+				if s, ok := c.(string); ok {
+					return s
+				}
+			}
+			return ""
+		}
+	}
+	return ""
 }

@@ -34,6 +34,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"github.com/kalandramo/tianshu/go/internal/retry"
 	"github.com/kalandramo/tianshu/go/internal/session"
+	"github.com/kalandramo/tianshu/go/internal/skills"
 	"github.com/kalandramo/tianshu/go/internal/tools"
 )
 
@@ -185,6 +186,28 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 		app.Agent.SessionID = session.NewID()
 	}
 	loop := agent.New(app.Agent, cl, reg)
+
+	// ── skill 注册表装配 ──
+	//
+	// 对账 TS `bootstrap.ts:2084` 的 `loadProjectSkills(cwd, ...)`。
+	//
+	// **为什么必须在 CLI 装**：两个消费方都靠它——
+	//   - Tier-1 发现层（`renderSkillDiscoveryBlock`）：把可用 skill 的
+	//     name + description 注入请求尾部，让模型知道有哪些 skill
+	//   - `skill` 工具：按名加载正文
+	// 不装的话发现层渲染为空（模型看不到任何 skill）、工具只能撞「未找到」。
+	//
+	// **fail-soft**：加载失败不阻断会话（技能加载问题不该让 agent 起不来）。
+	skillReg, skillLoad := skills.Assemble(app.Agent.Cwd)
+	app.Agent.SkillRegistry = skillReg
+	if loop.ToolParams == nil {
+		loop.ToolParams = &tools.CallParams{}
+	}
+	loop.ToolParams.SkillRegistry = skillReg
+	if len(skillLoad.Errors) > 0 {
+		// 常规启动零输出（"loaded 0" 是纯噪音）；有错误才提示。
+		fmt.Fprintf(os.Stderr, "skill 加载警告：%s\n", strings.Join(skillLoad.Errors, "; "))
+	}
 
 	// ── artifact store 装配 ──
 	//

@@ -339,6 +339,46 @@ type FileListOpts struct {
 	MaxEntries int
 }
 
+// Assemble 装配一个可用的注册表（内置技能 + 项目技能）。
+//
+// 对账 TS 的 `loadProjectSkills(cwd, opts)` 的**项目层子集**。
+//
+// ## scope 收窄（明示）
+//
+// TS 的 loadProjectSkills 有 **5 层优先级**（后者覆盖前者同名）：
+//
+//  1. builtin（随天枢发布）
+//  2. ~/.agents/skills（agentskills.io 跨 agent 标准目录）
+//  3. ~/.rivet/skills（跨项目复用）
+//  4. 项目 .agents/skills（标准目录项目级）
+//  5. 项目 .rivet/skills（项目定制，优先级最高）
+//
+// Go 侧**只做 1 与 5**——中间三层是**用户级/跨项目**目录，属管理面
+// （随桌面端扩展面板 / CLI 管理命令一起做）。项目级 `.rivet/skills` 是
+// 日常最常用的那层，覆盖「项目自定义技能」的核心场景。
+//
+// TS 还会在加载前 `seedBundledSkills`（把 app 内置技能种入项目目录）与
+// `retireRetiredBundledSkills`（清理退役副本）——两者都是**写盘**操作，
+// 属管理面，不在此做。
+//
+// 返回加载结果（loaded / errors 供调用方展示）。
+func Assemble(cwd string) (*Registry, LoadResult) {
+	r := NewRegistry()
+	res := LoadResult{}
+
+	// 1. 内置技能（最低优先级）。
+	res.Loaded = append(res.Loaded, RegisterBuiltinSkills(r)...)
+
+	// 5. 项目级 .rivet/skills（最高优先级——同名覆盖内置）。
+	if cwd != "" {
+		project := r.LoadFromDirectory(filepath.Join(cwd, ".rivet", "skills"), SourceRivet)
+		res.Loaded = append(res.Loaded, project.Loaded...)
+		res.Errors = append(res.Errors, project.Errors...)
+	}
+
+	return r, res
+}
+
 // itoa 是 strconv.Itoa 的本地别名（避免为一个调用引入 strconv）。
 func itoa(n int) string {
 	if n == 0 {

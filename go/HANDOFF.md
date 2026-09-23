@@ -4293,6 +4293,142 @@ Go 侧工具数 21（TS 侧 full preset 48）。剩余缺口：
 ——**剩余候选的估价需重新核实**，不要直接采信本表。
 
 
+## 第四十刀：skill 发现层接入 prompt（2026-09-23）
+
+**目标**：把上一刀留下的 `RenderDiscoveryBlock`（纯函数、无消费方）接入
+prompt——让 `skill` 工具对模型**真正可达**。
+
+### 落点选择（三条路径的称量）
+
+TS 的发现层进 **dynamic appendix**（`buildDynamicAppendixParts`，
+`volatile.ts:597`），**Go 侧无 appendix 机制**（全仓 grep：唯一命中的
+`pressure_monitor.go` 枚举与 prompt appendix 无关）。三条可选路径：
+
+| 路径 | 做法 | 缓存影响 |
+|---|---|---|
+| **A. 尾部 user 消息注入** | 复用 `buildRequestMessages`（advisory 已走此路） | **不破前缀** ✓ |
+| B. frozen 块 | 塞进 `VolatileContext` → `BuildFullSystemPrompt` | **每轮打掉整个前缀** ✗ |
+| C. 建 appendix 机制 | 移植 `buildDynamicAppendixParts` 全量 | 与 TS 对齐，但工作量远超本刀 |
+
+**选 A**（用户确认）。判据：TS 的 `renderDiscoveryBlock(userInput, ...)` 是
+**per-turn 动态**的——每轮按当前用户输入重新排序（相关 skill 提前）。这正是
+它**不能**进 frozen 的原因（TS 的 `skillAdvisoryBlock` 在 `dynamicCtx` 里，
+不在 frozen 块）。路径 A 与 TS 的**缓存语义等价**：都是「不改写历史、只在
+尾部追加、不破前缀」。
+
+### 落地
+
+| 文件 | 内容 |
+|---|---|
+| `internal/agent/hook_snapshot.go` | `buildRequestMessages` 重构 + `collectInjectionBlocks` / `renderAdvisoryBlock` / `renderSkillDiscoveryBlock` / `lastUserInput` |
+| `internal/agent/loop.go` | `Config.SkillRegistry` 字段 + `executeTool` 继承 + 回退 |
+| `internal/skills/registry.go` | `Assemble(cwd)` 装配函数（内置 + 项目层） |
+| `cmd/tianshu/main.go` | 装配注册表并注入 Config / ToolParams |
+| `internal/agent/skill_discovery_test.go` | 7 个测试（新增） |
+
+### 顺带修掉的两处**既有缺陷**
+
+**（1）`buildRequestMessages` 的早退吞注入**
+
+原实现在 `l.Advisories == nil` 时直接 `return l.messages`。加第二个注入源后，
+**未装 advisory bus 的会话就永远拿不到发现层**。拆成「各源独立贡献 → 统一
+拼接」后，任一源缺席不影响其他源。
+
+`TestSkillDiscoveryWorksWithoutAdvisoryBus` 锁定这一点。
+
+**（2）`skills.Default` / `LoadFromDirectory` 的悬空**
+
+上一刀交付的 `RegisterBuiltinSkills` 与 `LoadFromDirectory` **无生产调用方**
+（全仓 grep 确认）。不修的话发现层渲染出来是空的。新增 `skills.Assemble`
+并在 `main.go` 接线。
+
+### 双来源陷阱（本刀自造并自修）
+
+注册表有**两个**消费方——发现层读 `cfg.SkillRegistry`、工具读
+`ToolParams.SkillRegistry`。装配方漏设任一个会让功能**静默半失效**
+（发现层列得出 skill，但工具报「未找到」）。
+
+`TestSkillEndToEndReachable` 首轮实测**正是撞到这个**（工具报「可用 skill：
+（未加载任何 skill）」）。修法：`executeTool` 在 `ToolParams` 未设注册表时
+**回退到 `cfg.SkillRegistry`**——只设一个即可全链路可用。
+
+### `Assemble` 的 scope 收窄（明示）
+
+TS 的 `loadProjectSkills` 有 **5 层优先级**：
+
+| 层 | 目录 | Go 侧 |
+|---|---|---|
+| 1 | builtin（随天枢发布） | ✓ 已做 |
+| 2 | `~/.agents/skills` | ✗ 未做（用户级，属管理面） |
+| 3 | `~/.rivet/skills` | ✗ 未做（跨项目，属管理面） |
+| 4 | 项目 `.agents/skills` | ✗ 未做（同上层） |
+| 5 | 项目 `.rivet/skills` | ✓ 已做（最高优先级） |
+
+中间三层是**用户级/跨项目**目录，随桌面端扩展面板 / CLI 管理命令一起做。
+项目级 `.rivet/skills` 是日常最常用的那层。
+
+TS 还会在加载前 `seedBundledSkills`（种入内置技能到项目）与
+`retireRetiredBundledSkills`（清理退役副本）——两者都是**写盘**操作，属管理面。
+
+### 由对账抓到的自身缺陷
+
+1. **M154 首轮 0 红——断言层选错**：`TestSkillDiscoveryNotPersistedToHistory`
+   初版只查「历史内容含 `<available-skills`」，而变异注入的是另一条
+   `"leak"` 消息——内容断言看不见。补**条数层**断言（注入不得改变历史长度）
+   后转红。**教训**：查「没写进去」要断言**不变量**（条数/结构），
+   不是断言特定内容缺席。
+2. **`sc.bodies` 是 JSON 序列化的**：断言 `name="design-it"` 必须写成
+   `name=\"design-it\"`（引号被转义）。首轮因此误报。
+3. **测试夹具未模拟生产装配**：`newTestLoop` 不设 `ToolParams`（生产由
+   `main.go` 装）。首轮 `EndToEndReachable` 失败实为夹具不全——但**它
+   暴露了真实的双来源陷阱**（见上），故修的是产品代码而非测试。
+
+### 变异反证 M151-M155
+
+| 变异 | 内容 | 结果 |
+|---|---|---|
+| M151 | 发现层完全移除（回到未接线状态） | 4 红 |
+| M152 | 恢复早退吞注入（`Advisories == nil` 直接返回） | 4 红 |
+| M153 | hint 恒空（不传 userInput） | 1 红 |
+| M154 | 写回历史（破坏缓存安全） | 1 红（**补条数断言后**） |
+| M155 | 工具侧不回退 Config 注册表 | 1 红 |
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./... -count=1` **24 包 ok / 0 FAIL**
+- 本刀新增测试 **7 例全 PASS**（含端到端可达性）
+- TS 侧 `npm run typecheck` **exit=0**
+
+### 遗留
+
+- **`Assemble` 只做 2/5 层**（见上表）——中间三层属管理面。
+- 发现层**每轮渲染**（与 TS 一致）——`RenderDiscoveryBlock` 内部有 1500 字符
+  预算与排序，开销可接受（skill 数量通常 <10）。**未做缓存**：若将来 skill
+  数量增长，可考虑按 hint 缓存渲染结果。
+
+### 下一步
+
+**skill 链路现已闭合**：发现层告知模型有哪些 skill → 模型调 `skill` 工具 →
+加载正文。上一刀「工具不可达」的技术债已还清。
+
+Go 侧工具数 21（TS 侧 full preset 48）。剩余缺口：
+
+| 候选 | 依赖面 | 备注 |
+|---|---|---|
+| `undo` | 中 | 需检查点子系统（`checkpoint.go` 已有部分） |
+| `job` / `monitor` | **深** | 后台进程管理（`proctree.go` 已有地基） |
+| `ast_grep` / `ast_edit` | **深** | 需 tree-sitter 绑定（Go 侧无） |
+| `web_*` / `browser_debug` / `computer_use` | **超出内核** | 网络 + 桌面自动化 |
+| skill 管理面（import/uninstall/seed） | 中 | 随 UI/命令一起做 |
+
+**推荐下一刀**：`undo`（中依赖，检查点地基已有）。或补 skill 管理面
+（`Assemble` 的剩余三层 + 安装/卸载）。
+
+**注意**：连续三刀（`ask_user_question`、`skill`、发现层）的 HANDOFF 估价
+都被证伪或偏轻——**剩余候选的估价需重新核实**，不要直接采信本表。
+
+
 ## 建议的第一刀
 
 **（2026-09-22 修正：本节原建议「接 `internal/session`」——该断言已过期，
