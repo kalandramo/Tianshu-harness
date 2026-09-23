@@ -4429,6 +4429,146 @@ Go 侧工具数 21（TS 侧 full preset 48）。剩余缺口：
 都被证伪或偏轻——**剩余候选的估价需重新核实**，不要直接采信本表。
 
 
+## 第四十一刀：`Assemble` 补齐五层加载（2026-09-23）
+
+**目标**：补完第三十九/四十刀留下的 scope 收窄——`Assemble` 原只做
+2/5 层（内置 + 项目 `.rivet/skills`），补齐中间三层。
+
+### 估价修正（第四刀连续被证伪）
+
+上一刀的建议把 `undo` 标为「中依赖，`checkpoint.go` 地基已有」。
+**核实结果：这个类比是错的**——
+
+- `checkpoint.go` 是**对话历史**的压缩检查点（`ReplaceWithCheckpoint`），
+  与文件回滚**毫无关系**
+- `undo` 的真实依赖是 `src/agent/file-history.ts`（345 行）——一个**快照序列**
+  系统（`trackEdit` 按 messageId 分组 / `getDiffStats` / `rewind`），
+  而 Go 的 `recovery.Stack` 只做「单文件、最新备份」，**粒度不同**
+- 移植它等于**新建快照层**并改四个写工具的公共路径（高危面）
+
+**且 TS 侧注释写着 `undo`「全会话零使用」。** 收益（一个零使用的工具）
+与代价（动写工具公共路径）不对称，故改用户确认后转做 skill 管理面。
+
+### 称量：管理面**没有消费端**（本刀最重要的发现）
+
+核实每个 TS 管理面函数的消费者：
+
+| TS 函数 | 消费者 |
+|---|---|
+| `listInstallableSkills` | `session-manager.ts:3140` |
+| `writeSkill` | `session-manager.ts:3184` |
+| `uninstallSkill` | `session-manager.ts:3197` |
+| `readSkillContent` | `session-manager.ts:3171` |
+| `countInstalledSkills` | `init-scaffold.ts:143` + `session-manager.ts` |
+| `importSkillsIntoRivet` | `bootstrap.ts:2084` |
+
+**全部六个消费者都在 Go 侧不存在的层**：`src/server/`（桌面端 HTTP/SSE
+sidecar）与 `src/bootstrap/`（脚手架初始化）。Go 侧 `cmd/tianshu/main.go`
+只有 8 个 flag（`-p`/`--json`/`--model`/...），**无管理命令、无 HTTP 层**。
+
+故「安装/卸载」移植出来**就是死代码**——违反本项目反复出现的纪律
+（`summarize.go` sections 无消费端不移植）。
+
+**但「补 Assemble 三层」不同**：那是**加载路径**，有真实消费端（`main.go`
+调 `Assemble`），补齐后用户级技能立刻能被发现层看到并加载。
+
+**故本刀只做加载三层，不做安装/卸载。**
+
+### 落地
+
+| 文件 | 内容 |
+|---|---|
+| `internal/skills/registry.go` | `Assemble` 补齐五层 + 新增 `AssembleWithHome` / `osUserHomeDir` |
+| `internal/skills/assemble_test.go` | 10 个测试（新增） |
+
+### 五层优先级（靠加载顺序实现）
+
+```
+1. builtin              最低
+2. ~/.agents/skills     agentskills.io 跨 agent 标准目录
+3. ~/.rivet/skills      跨项目复用
+4. 项目 .agents/skills   标准目录项目级
+5. 项目 .rivet/skills    最高（同名覆盖以上全部）
+```
+
+**覆盖语义靠调用顺序**——`Registry.Register` 是同名覆盖，故**后加载者胜**。
+顺序写反了功能看起来照常工作（skill 都能加载），只是覆盖方向反了：
+只有逐层断言才能发现。
+
+### 两处设计决定
+
+**（1）`AssembleWithHome` 参数化 home**
+
+用户级目录在测试里必须可控——否则测试会读到开发者真实 `~/.rivet/skills`，
+结果随机器而异（非确定性测试）。
+
+**（2）`osUserHomeDir` 不读 `RIVET_HOME`**
+
+`internal/trust.RivetHome` 会优先读 `RIVET_HOME`（那是 rivet 的**数据根
+目录**覆盖），但 skill 的用户级路径对账 TS 的 `homedir()`——直接用主目录。
+混用会让 `RIVET_HOME` 意外改变 skill 搜索路径。
+
+### 由对账抓到的自身缺陷
+
+**`TestAssemblePrecedenceChain` 首版写反方向**：我把 layers 数组按**优先级
+高低**排列（project-rivet 在前），而 `Assemble` 的加载顺序是**低到高**。
+「累积 0..upto 层」于是先加载最高层，后续加低层不影响结果——4 个子用例
+全红。改为按**加载顺序**排列后全绿。
+
+**教训**：测试的累积方向必须与被测实现的执行方向一致，否则测试自身
+逻辑就是错的（而非实现错）。
+
+### 变异反证 M161-M165
+
+| 变异 | 内容 | 结果 |
+|---|---|---|
+| M161 | 层 2/3 顺序对调 | 2 红 |
+| M162 | 层 4/5 顺序对调 | 3 红 |
+| M163 | 内置技能移到末尾（优先级反转） | 2 红 |
+| M164 | 用户级层完全移除 | 3 红 |
+| M165 | 目录不存在时报错（噪音回归） | 3 红 |
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./... -count=1` **24 包 ok / 0 FAIL**
+- 本刀新增测试 **10 例**（含 4 个优先级链子用例）
+- TS 侧 `npm run typecheck` **exit=0**
+
+### 遗留
+
+- **安装/卸载未移植**（有意）——消费者在 Go 侧不存在，移植即死代码。
+  待 Go 侧有管理命令或 HTTP 层时再做。
+- `seedBundledSkills` / `retireRetiredBundledSkills` 未移植——两者都是
+  **写盘**操作，属管理面。
+
+### 下一步
+
+skill 加载链路现已完整（五层 + 发现层 + 工具），**本主题可收束**。
+
+Go 侧工具数 21（TS 侧 full preset 48）。剩余缺口：
+
+| 候选 | 依赖面 | 备注 |
+|---|---|---|
+| `undo` | **重** | 需**新建快照层**（非接线）+ 改四个写工具公共路径；TS 侧零使用 |
+| `job` / `monitor` | **深** | 后台进程管理（`proctree.go` 已有地基） |
+| `ast_grep` / `ast_edit` | **深** | 需 tree-sitter 绑定（Go 侧无） |
+| `web_*` / `browser_debug` / `computer_use` | **超出内核** | 网络 + 桌面自动化 |
+
+**推荐下一刀**：**转向非工具面**。工具移植的边际收益在下降（剩余候选
+要么深依赖、要么零使用），而架构面还有明显欠账：
+
+- **prompt appendix 机制**——Go 目前用尾部 user 消息模拟 TS 的
+  dynamic appendix。做真 appendix 能对齐 TS 结构，并解锁更多 per-turn
+  动态块（volatile 层的其余部分）。
+- **`job`/`monitor`** 若要做，先核实 `proctree.go` 的真实完备度
+  （HANDOFF 说「已有地基」，但连续四刀的估价都被证伪）。
+
+**注意**：连续四刀（`ask_user_question`、`skill`、发现层、`undo`）的
+HANDOFF 估价都被证伪或偏轻——**剩余候选的估价需重新核实**，不要直接
+采信本表。
+
+
 ## 建议的第一刀
 
 **（2026-09-22 修正：本节原建议「接 `internal/session`」——该断言已过期，

@@ -339,44 +339,87 @@ type FileListOpts struct {
 	MaxEntries int
 }
 
-// Assemble 装配一个可用的注册表（内置技能 + 项目技能）。
+// Assemble 装配一个可用的注册表（内置技能 + 用户级 + 项目级）。
 //
-// 对账 TS 的 `loadProjectSkills(cwd, opts)` 的**项目层子集**。
+// 对账 TS 的 `loadProjectSkills(cwd, opts)`。
 //
-// ## scope 收窄（明示）
+// ## 五层优先级（后者覆盖前者同名）
 //
-// TS 的 loadProjectSkills 有 **5 层优先级**（后者覆盖前者同名）：
-//
-//  1. builtin（随天枢发布）
+//  1. builtin（随天枢发布，最低）
 //  2. ~/.agents/skills（agentskills.io 跨 agent 标准目录）
 //  3. ~/.rivet/skills（跨项目复用）
 //  4. 项目 .agents/skills（标准目录项目级）
-//  5. 项目 .rivet/skills（项目定制，优先级最高）
+//  5. 项目 .rivet/skills（项目定制，最高）
 //
-// Go 侧**只做 1 与 5**——中间三层是**用户级/跨项目**目录，属管理面
-// （随桌面端扩展面板 / CLI 管理命令一起做）。项目级 `.rivet/skills` 是
-// 日常最常用的那层，覆盖「项目自定义技能」的核心场景。
+// **覆盖语义靠调用顺序**：`Registry.Register` 是同名覆盖，故后加载者胜出。
+// 顺序即优先级——改动此顺序会静默改变覆盖行为，`TestAssembleLayerPrecedence`
+// 锁定它。
 //
-// TS 还会在加载前 `seedBundledSkills`（把 app 内置技能种入项目目录）与
+// `.agents/skills` 槽位低于同层 rivet 原生（生态技能可被原生覆盖）。
+//
+// ## 未做（明示）
+//
+// TS 在加载前还会 `seedBundledSkills`（把 app 内置技能种入项目目录）与
 // `retireRetiredBundledSkills`（清理退役副本）——两者都是**写盘**操作，
-// 属管理面，不在此做。
+// 属管理面（随桌面端扩展面板 / CLI 管理命令一起做）。
 //
-// 返回加载结果（loaded / errors 供调用方展示）。
+// 返回加载结果（loaded / errors 供调用方展示）。目录不存在时**静默跳过**
+// （用户级目录常不存在，不应产生噪音）——`LoadFromDirectory` 已保证这点。
 func Assemble(cwd string) (*Registry, LoadResult) {
+	return AssembleWithHome(cwd, osUserHomeDir())
+}
+
+// AssembleWithHome 是 Assemble 的可注入 home 版本（测试用）。
+//
+// **为什么参数化 home**：用户级目录（层 2/3）在测试里必须可控——否则测试
+// 会读到开发者真实 `~/.rivet/skills`，结果随机器而异（非确定性测试）。
+func AssembleWithHome(cwd, home string) (*Registry, LoadResult) {
 	r := NewRegistry()
 	res := LoadResult{}
+
+	load := func(dir string, source Source) {
+		if dir == "" {
+			return
+		}
+		lr := r.LoadFromDirectory(dir, source)
+		res.Loaded = append(res.Loaded, lr.Loaded...)
+		res.Errors = append(res.Errors, lr.Errors...)
+	}
 
 	// 1. 内置技能（最低优先级）。
 	res.Loaded = append(res.Loaded, RegisterBuiltinSkills(r)...)
 
-	// 5. 项目级 .rivet/skills（最高优先级——同名覆盖内置）。
+	// 2. 用户级 ~/.agents/skills（agentskills.io 跨 agent 标准目录）。
+	if home != "" {
+		load(filepath.Join(home, ".agents", "skills"), SourceGlobalAgents)
+	}
+	// 3. 用户级 ~/.rivet/skills（跨项目复用）。
+	if home != "" {
+		load(filepath.Join(home, ".rivet", "skills"), SourceGlobalRivet)
+	}
+	// 4. 项目级 .agents/skills（标准目录项目级）。
 	if cwd != "" {
-		project := r.LoadFromDirectory(filepath.Join(cwd, ".rivet", "skills"), SourceRivet)
-		res.Loaded = append(res.Loaded, project.Loaded...)
-		res.Errors = append(res.Errors, project.Errors...)
+		load(filepath.Join(cwd, ".agents", "skills"), SourceProjectAgents)
+	}
+	// 5. 项目级 .rivet/skills（最高优先级——同名覆盖以上全部）。
+	if cwd != "" {
+		load(filepath.Join(cwd, ".rivet", "skills"), SourceRivet)
 	}
 
 	return r, res
+}
+
+// osUserHomeDir 返回用户主目录（失败返回空串）。
+//
+// **不读 `RIVET_HOME`**：那是 rivet 的**数据根目录**覆盖（见
+// internal/trust.RivetHome），而 skill 的用户级路径对账 TS 的 `homedir()`
+// ——直接用主目录。混用会让 `RIVET_HOME` 意外改变 skill 搜索路径。
+func osUserHomeDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home
 }
 
 // itoa 是 strconv.Itoa 的本地别名（避免为一个调用引入 strconv）。
