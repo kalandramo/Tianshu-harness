@@ -241,6 +241,7 @@ func TestDeclaredVerifyNotTruncated(t *testing.T) {
 // 同 runtime-env 的教训：BuildStableVolatileBlock 只插位置，探测/读取
 // 必须在 BuildFullSystemPrompt 里调——否则字段恒空、块从不出现。
 func TestBuildFullSystemPromptDeclaredVerify(t *testing.T) {
+	trustProjectForTest(t)
 	dir := t.TempDir()
 	cfg := `{"verify":{"test":"go test ./...","typecheck":"go vet ./..."}}`
 	if err := os.WriteFile(filepath.Join(dir, projectConfigFile), []byte(cfg), 0644); err != nil {

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/kalandramo/tianshu/go/internal/trust"
 )
 
 // VerifyRoute 对账 TS 的 VerifyRoute（schema.ts 的 routes 元素）。
@@ -66,16 +68,38 @@ const projectConfigFile = ".rivet-config.json"
 //
 // 对账 TS 的 findProjectConfig + loadDeclaredVerify：
 //   - 向上查找最多 20 层
+//   - **项目未授信 → 返回空 config + 单次提示**（安全门，见下）
 //   - 文件不存在 / JSON 非法 / verify 节缺失 → 返回空 config
 //
-// **未移植的部分（有意）**：TS 的信任门（isProjectTrusted）——未授信项目
-// 返回空声明。Go 侧暂无 trust store，故不实现该门。这是已知的行为差异，
-// 记于 HANDOFF；若后续需要，应在此处加。
+// ## 信任门（2026-09-23 补，此前是缺失的安全缺口）
+//
+// **为什么必须有**：verify 声明是**仓库内容驱动的执行通道**——它被渲染进
+// system prompt 后，模型会照着执行里面的命令。未授信项目因此能通过
+// `.rivet-config.json` 让 agent 跑任意命令，**绕过所有审批**（声明来自
+// 仓库、agent 认为它是项目约定）。
+//
+// 这是**接线缺口而非移植缺口**：本文件的 `LoadDeclaredVerify` 早已存在，
+// 但其注释曾写「Go 侧暂无 trust store，故不实现该门」——该前提在第四十七刀
+// （`internal/trust` 落地）后**已过期**。本刀据实修正。
+//
+// **对账 TS 的 memo 语义**：TS 用 `memo` 缓存**已授信**的解析结果，但
+// **刻意不缓存未授信结果**——这样 `/trust` 授信后无需 invalidate 即刻生效。
+// Go 侧当前无 memo（每次重读文件），故天然满足该语义；若将来加缓存，
+// **必须保持「不缓存未授信结果」**。
 func LoadDeclaredVerify(cwd string) VerifyConfig {
 	path := findProjectConfig(cwd)
 	if path == "" {
 		return VerifyConfig{}
 	}
+
+	// 信任门：声明命令是仓库内容驱动的执行通道，未授信项目一律不声明。
+	// 与 TS 的 `loadDeclaredVerify` 逐字对账（projectDir = dirname(path)）。
+	projectDir := filepath.Dir(path)
+	if !trust.IsProjectTrusted(projectDir) {
+		trust.NotifyUntrustedOnce("config", projectDir, nil)
+		return VerifyConfig{}
+	}
+
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return VerifyConfig{}

