@@ -5127,6 +5127,157 @@ hook，语义自包含（连续只读工具计数 + 冷却 + 两种文案）。
 不要采信任何表格（包括本表）。
 
 
+## 第四十六刀：probe-discipline hook（2026-09-23）
+
+**目标**：补 `probe-discipline`——连续 5 轮只读工具而无探针 → 提醒
+「30 秒探针能否杀死当前假设」；零观察锚点时**先催取证**（探针杀假设，
+但杀不了编出来的假设）。
+
+### 称量：三处对账发现（两处是 TS 侧缺陷）
+
+**（1）TS 的 `ANCHOR_HINT` 正则是死代码——硬探针确证**
+
+TS 的锚点判定是：
+
+	ANCHORED_READONLY_TOOLS.has(tool.name) || ANCHOR_HINT.test(argString)
+
+其中 `argString = JSON.stringify(input)`，而
+
+	ANCHOR_HINT = /(?:offset|limit|focus|context_lines|start|end|line)\s*[=:]/
+
+**对 JSON 形态恒不匹配**——`"context_lines":3` 的 `context_lines` 与 `:`
+之间隔着闭引号，`\s*[=:]` 吃不到。实测：
+
+	{"pattern":"x","context_lines":3}  => match: false
+	{"file_path":"a.ts","offset":10}   => match: false
+	"context_lines=3"（字符串形态）      => match: true   ← 唯一命中的形态
+
+**直接调真实 hook 硬证**（`.rivet/scratch/anchor_probe.ts`）：喂一个全带锚点
+参数、但**不含 read_section** 的只读序列 → 注入的是**取证**分支。
+
+**故 TS 的锚点判定实际只靠三个工具名**（read_section / lsp_goto_definition /
+lsp_find_references）。TS 测试之所以绿，是因为锚点用例首行恰好是 `read_section`
+——`context_lines` 那行是装饰性的。
+
+**Go 侧决定**：不移植失效的正则（移植死代码 = 搬运缺陷），只保留工具名判定。
+**行为与 TS 完全等价**（TS 的实际行为就是工具名判定）。这是**显式偏差**，
+已在 `probe_discipline.go` 文件头记录——若 TS 侧将来修正该正则，Go 需同步。
+
+**（2）TS 测试 1 的断言是侥幸通过的**
+
+TS 测试 1 断言 `content.includes('探针')`，但其序列零锚点（走**取证**分支）
+——它通过是因为**取证文案末句含「探针」二字**（「探针杀假设，但杀不了编出来
+的假设」）。
+
+**Go 侧测试的修正**：区分分支**不能用** `Contains("探针")`，必须断言
+「含取证 / 含锚点」与「不含锚点」的组合。已在测试注释中写明这个陷阱。
+
+**（3）TS 的 key 用 `Date.now()` 是刻意设计——不是随意**
+
+TS：`key: \`probe-discipline-${Date.now()}\``——**故意让每次注入 key 不同**。
+
+**为什么必须如此**：`TTL = 2` → 条目进 `alive` 池存活到下一轮渲染。若 key
+固定，第二次注入的条目会与 alive 里的旧条目**撞键**，去重时（同优先级保留
+先出现者）**新内容被静默丢弃**——第二次注入形同虚设。
+
+**Go 侧实现**：用单调计数器 `seq`（比时间戳更优——确定性、可测）。
+
+### 落地
+
+| 文件 | 内容 |
+|---|---|
+| `internal/agent/probe_discipline.go` | hook 本体 + 判定集（新增） |
+| `internal/agent/probe_discipline_test.go` | 单元测试 13 例（新增） |
+| `cmd/tianshu/main.go` | 注册（第 6 个 hook） |
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./internal/agent/ -run ProbeDiscipline` **13/13 PASS**
+- `go test ./... -count=1` **23 包 ok**（3 FAIL 全部来自并发会话的
+  `TestLossyHookCooldownAcrossRuns`，非本刀引入——见下）
+- 变异反证 **M230–M241 共 12 个，全部转红，无盲区**；还原后 0 红
+- **用户级验收 2/2 met**（两场景）
+- TS 侧 `npm run typecheck` 见下
+
+### 变异反证 M230–M241
+
+| 变异 | 内容 | 结果 |
+|---|---|---|
+| M230 | 阈值 5 → 1 | 5 红 |
+| M231 | 冷却 12 → 1 | 2 红 |
+| M232 | 锚点分支反转 | 2 红 |
+| M233 | 锚点集恒空 | 2 红 |
+| M234 | 写工具只重置 streak、漏 anchoredReads | 1 红 |
+| M235 | key 固定（去掉 seq） | 1 红 |
+| M236 | 通道改 bus | 1 红 |
+| M237 | 只读集恒空 | 8 红 |
+| M238 | TTL 2 → 1 | 2 红 |
+| M239 | 冷却哨兵归零 | 8 红 |
+| M240 | bus nil 检查失效 | 1 红 |
+| M241 | tool nil 检查失效 | 1 红 |
+
+**M234 是本刀最值得记的**：它验证了「anchoredReads 与 readStreak 同步重置」
+这条不变量——漏掉前者会让上一轮的锚点「漏」进下一轮，让本该催取证的裸读串
+误走探针分支。
+
+### 用户级验收（2/2 met，含有效性反证）
+
+**为什么必须单独做这一层**：单元测试 + 接线测试 + 变异反证**都不覆盖
+「生产路径是否真的装配了它」**。HANDOFF 第四十三刀的 M200/M201（生产未注册）
+恒 0 红——所有测试都自建 pipeline，够不到 `main()`。
+
+**做法**：真实编译的二进制 + **mock SSE 端点**，让模型连发 5 个只读工具，
+断言 CLI 实际发出的请求体里出现注入文案。
+
+| 场景 | 序列 | 结果 |
+|---|---|---|
+| 零锚点 | read_file×2 / grep / glob / repo_map | **取证**分支 met |
+| 有锚点 | read_section / grep / glob / read_file / repo_map | **探针**分支 met |
+
+**有效性反证**：摘掉 `main.go` 的 `Register` → 重建 → 验收**转红**（「未通过」）。
+这证明验收真的覆盖生产装配路径。恢复后重回 2/2 met。
+
+**Windows 注意事项**（复现用）：mock 端点必须返回 `text/event-stream`
+（CLI 要求 SSE，返回 `application/json` 会被拒）；环境变量名是
+`DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `RIVET_API_KEY`（**不是**
+`TIANSHU_API_KEY`）；Python 读输出须 `encoding='utf-8'`（否则 GBK 解码失败）。
+
+### 遗留
+
+- **Go 侧工具表比 TS 少 9 个只读工具**（ast_grep / repo_graph /
+  semantic_search / recall / memory / lsp_* / web_*）——判定集保留了这些名字
+  （对账 TS），但 Go 侧尚无对应工具，**行为等价于不存在**（永不匹配）。
+  将来移植时自动生效。
+- **Go 侧已有但 TS 未列入的只读工具**（inspect_project / file_info /
+  related_tests / diff）**未加入判定集**——TS 的列表是权威 oracle，
+  差异应由 TS 侧决定，不由移植方发明。
+- **TS 侧 `ANCHOR_HINT` 死代码未修**——那是 TS 侧的决定，不在本刀 scope。
+  Go 侧文件头已标注同步锚点。
+
+### 并发会话（必须报告）
+
+`go/internal/agent/` 下 **7 个文件不是本刀所改**——`hook_snapshot.go`、
+`loop.go`、`lossy_markers.go`、`lossy_observation.go`、`lossy_observation_test.go`、
+`hook_wiring_test.go`，外加新增的 `lossy_crossrun_test.go`。那是**另一个会话**
+在修我第四十三刀引入的缺陷。
+
+**它抓到的缺陷是真的**：`lossy-observation` 曾用 `snapshot.Turn`（**run 局部
+序号**，每 Run 从 0 重启）判冷却，导致第二个 Run 被误抑制。当前该测试仍红
+（会话进行中）。**与 `probe-discipline` 无交集**——本刀未碰那些文件。
+
+### 下一步
+
+hook 缺口：Go **6 个** vs TS 74 文件 / 64 注册。
+
+**候选**（**动手前必须 grep 核实依赖**——连续九刀的估价全部被证伪或偏轻）：
+
+- `readonly-spiral`——语义与 probe-discipline 相邻（连续只读），但需核实是否
+  已有对应实现（`advisory_bus.go` 的 `keyCooldownTurns` 已注册该 key）。
+- `negative-fact-detector`——第四十三刀核实其 corrective 半未移植。
+- `context-pressure-hook`——第四十二刀核实缺 `ContextPressure` 快照字段。
+
+
 ## 建议的第一刀
 
 **（2026-09-22 修正：本节原建议「接 `internal/session`」——该断言已过期，

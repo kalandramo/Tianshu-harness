@@ -294,6 +294,12 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	// → 提醒改用 edit_file / write_file（锚点 stale 是 bracket-mismatch 的
 	// 头号成因，TS 侧事故 53e1e4a8）。
 	pipeline.Register(agent.NewEditToolAdvisoryHook(bus))
+	// probe-discipline（postTool）：连续 5 轮只读而无探针 → 提醒「30 秒探针
+	// 能否杀死当前假设」；零观察锚点时先催取证。
+	//
+	// **通道 = system-reminder**——该 hook 的文案是**即时纠偏**（此刻的取证
+	// 停滞），不该与常规提醒抢 CVM 注入预算（cvmInjectionBaseBudget = 3）。
+	pipeline.Register(agent.NewProbeDisciplineHook(bus))
 
 	// claim store：落盘到 <cwd>/.rivet/claims/<sessionId>.claims.jsonl。
 	//
