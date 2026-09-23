@@ -64,6 +64,14 @@ const waitDelay = 2 * time.Second
 // prepareCommand 做 Start() 前的统一准备：平台组语义 + Wait 兜底。
 //
 // 两个平台共用——调用方（bash / run_tests）只需调这一个函数。
+// PrepareCommand 是 prepareCommand 的导出形式——供 tools 包外的调用方
+// （如 internal/hooks 的脚本执行）复用同一套进程树语义。
+//
+// **为什么导出而非各写一份**：进程组 + WaitDelay 的细节是踩过坑的
+// （见 waitDelay 的注释——Windows 上超时形同虚设的真缺陷）。复制一份到
+// 别处意味着下次修 bug 要修两处，且极易漏。
+func PrepareCommand(cmd *exec.Cmd) { prepareCommand(cmd) }
+
 func prepareCommand(cmd *exec.Cmd) {
 	configureProcessGroup(cmd)
 	cmd.WaitDelay = waitDelay
@@ -75,6 +83,9 @@ func prepareCommand(cmd *exec.Cmd) {
 // 返回后再杀。主进程一死，其进程组组长身份消失，事后 kill(-pid) 可能命中
 // 已回收的 pgid；Windows 上父子链也会因主进程退出而断裂，taskkill /T 再也
 // 找不到孙进程。
+// KillProcessTree 是 killProcessTree 的导出形式（同 PrepareCommand 的理由）。
+func KillProcessTree(cmd *exec.Cmd) { killProcessTree(cmd) }
+
 func killProcessTree(cmd *exec.Cmd) {
 	killProcessTreePlatform(cmd)
 }

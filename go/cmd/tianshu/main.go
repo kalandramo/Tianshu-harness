@@ -278,7 +278,19 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	// 对账 TS 的 loop-factory / create-runtime-hooks 装配路径
 	// （TS 侧默认装配 ~18+ hook；这里只装已移植的）。
 	bus := agent.NewAdvisoryBus()
-	pipeline := agent.NewPipeline(agent.PipelineOptions{})
+	// user hooks 的依赖（Pipeline 构造时就要用于 OnError，故提前声明）。
+	userHookDeps := agent.UserHooksDeps{
+		Cwd:       app.Agent.Cwd,
+		SessionID: app.Agent.SessionID,
+		GetTurn:   func() int { return loop.SessionTurn() },
+	}
+	pipeline := agent.NewPipeline(agent.PipelineOptions{
+		// OnError：**hook 自身失败**时触发 user 的 onError 脚本
+		// （对账 TS 的 loop-factory.ts:977 `onError: err => runOnErrorHooks(...)`）。
+		//
+		// **递归防护**在 UserHooksErrorSink 内：user-hooks 自身的失败不回灌。
+		OnError: agent.UserHooksErrorSink(userHookDeps),
+	})
 	pipeline.Register(agent.NewTypecheckReminderHook(bus))
 	// reasoning-spiral（preTurn）：长推理零工具 → 提醒收敛。
 	//
@@ -300,6 +312,21 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	// **通道 = system-reminder**——该 hook 的文案是**即时纠偏**（此刻的取证
 	// 停滞），不该与常规提醒抢 CVM 注入预算（cvmInjectionBaseBudget = 3）。
 	pipeline.Register(agent.NewProbeDisciplineHook(bus))
+
+	// ── user hooks（用户自定义生命周期脚本）──
+	//
+	// 读 `<cwd>/.rivet/hooks.json`，在 4 个阶段执行用户脚本。
+	//
+	// **安全边界**：hooks.json 属仓库内容，脚本拿完整用户权限——未授信项目
+	// 一律不执行（由 internal/trust 把守）。这一接线同时点亮了此前悬空的
+	// `internal/trust`（380 行、13 个导出符号、零生产 import）。
+	//
+	// **Sink 传 nil**：Go 侧无桌面端事件流（TS 的 emitHookResult 是 I4 的
+	// hook_result 事件）。脚本的 stdout/stderr 仍被 Runner 捕获，只是当前
+	// 无消费方——传 nil 时 onError 链**不执行**（对账 TS 的守卫）。
+	for _, h := range agent.CreateUserHooksBridge(userHookDeps) {
+		pipeline.Register(h)
+	}
 
 	// claim store：落盘到 <cwd>/.rivet/claims/<sessionId>.claims.jsonl。
 	//

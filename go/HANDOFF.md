@@ -5278,6 +5278,161 @@ hook 缺口：Go **6 个** vs TS 74 文件 / 64 注册。
 - `context-pressure-hook`——第四十二刀核实缺 `ContextPressure` 快照字段。
 
 
+## 第四十七刀：user hooks + 点亮 trust（2026-09-23）
+
+**目标**：移植 user hooks（`.rivet/hooks.json` → 生命周期脚本），**并点亮
+此前完全悬空的 `internal/trust`**（380 行、13 个导出符号、零生产 import）。
+
+两者是同一个安全机制的两半——`hooks.json` 属仓库内容、脚本拿完整用户权限，
+**不能自我授权**，故必须由 trust 门把守。分开移植没有意义。
+
+### 悬空盘点的产出（本刀的由来）
+
+上一轮做了全仓悬空盘点（18 个包、225 个零生产引用符号）。结论：
+
+| 包 | 生产 import | 判定 |
+|---|---|---|
+| contract / session / prompt / artifact | 26 / 14 / 12 / 11 | 深度接线 |
+| plan / filediff / cache | 1（经工具层单点） | 接线但窄 |
+| **trust** | **0** | **完全悬空** |
+| **hook 层** | 6 个构造函数 / 6 个注册 | **零悬空** |
+
+**没有一个是「接线漏了」**——`trust` 是**移植超前**：它的消费端
+（`user-hooks-runner.ts` / `verify-config.ts`）在 Go 侧不存在。
+
+**盘点还纠正了一个我自己的错误判断**：上一轮我说「`internal/skills` 零命中、
+是悬空」——**错的**。`skills.Assemble` 在 `main.go:201` 有生产调用，只是那行
+被输出折叠掉了。从截断输出推负向结论，正是 lossy-observation 纪律要防的。
+
+### 落地
+
+| 文件 | 内容 |
+|---|---|
+| `internal/hooks/user_hooks.go` | 核心：配置加载 + 信任门 + spawn（新增，339 行） |
+| `internal/hooks/user_hooks_test.go` | 单元测试 17 例（新增） |
+| `internal/hooks/user_hooks_windows_test.go` | Windows 执行路径覆盖 6 例（新增） |
+| `internal/agent/user_hooks_bridge.go` | 桥接：4 个 runtime hook + onError（新增） |
+| `internal/agent/user_hooks_bridge_test.go` | 接线测试 7 例（新增） |
+| `internal/tools/proctree.go` | **导出** `PrepareCommand` / `KillProcessTree` |
+| `cmd/tianshu/main.go` | 注册 4 个 bridge hook + 挂 `OnError` |
+
+### 对账 TS 的差异（全部显式）
+
+| # | 差异 | 理由 |
+|---|---|---|
+| 1 | **不设 `shell: true`** | TS 经 shell 执行（`script` 字段可写 shell 语法）。Go 侧直接执行文件——**刻意的安全收窄**：即使信任门失效，也只能执行文件，不能注入命令。 |
+| 2 | 无 `pluginHooks` 合并 | Go 侧无 plugins 子系统。传空等价于 TS 的 `getPluginHooks?.()` 返回 undefined。 |
+| 3 | `emitHookResult` → `ResultSink` 回调 | Go 侧无桌面端事件流（TS 的 I4 `hook_result` 事件）。 |
+| 4 | `ANTI_INTERACTIVE_ENV` 本地内联 | Go 侧无 `resolved-env` 模块，按 TS 原文逐条内联 8 个变量。 |
+| 5 | **递归防护**（新增，TS 无） | user-hooks 自身失败不再回灌 onError——否则脚本失败会无限递归。 |
+
+### 由测试抓到的两个真实缺陷
+
+**（1）超时形同虚设（Windows）——首版实测 29.5 秒**
+
+首版超时路径只调 `cmd.Process.Kill()`。实测 400ms 超时**实际耗时 29.5 秒**。
+
+**根因**：`.bat` 由 cmd.exe 包装执行，Kill 只杀包装进程，子进程（`ping.exe`）
+存活且**继承了 stdout 管道写端**——`cmd.Wait()` 阻塞到管道 EOF。这与
+`tools/proctree.go` 里记载的 `WaitDelay` 缺陷**完全同类**。
+
+**修法**：复用 `tools.PrepareCommand`（进程组 + WaitDelay）+ 超时时
+`tools.KillProcessTree`（杀整棵树而非主进程）。修后 **29.5s → 2.94s**。
+
+**关键决策**：把 `prepareCommand` / `killProcessTree` **导出**而非在 hooks 包
+重写——这两个细节都是踩过坑的，复制意味着下次修 bug 修两处。
+
+**（2）测试假绿：宿主环境自带 `PAGER=cat`**
+
+M258 变异（删掉 `"PAGER": "cat"`）**两轮都 0 红**。第二轮的根因是：**宿主
+环境本来就设了 `PAGER=cat`**，故 `os.Environ()` 里的那条让存在性断言通过
+——无法区分「我们注入的」与「宿主自带的」。
+
+**修法**：断言改为**直接查 `antiInteractiveEnv` 表**（不依赖宿主），
+另补 `TestBuildEnvOverridesHostPager` 覆盖「注入值在宿主之后」的语义。
+
+### 变异反证 M250-M262
+
+| 变异 | 内容 | 结果 |
+|---|---|---|
+| M250 | 信任门失效 | 2 红 |
+| M251 | 不过滤非法 event | 1 红 |
+| M252 | 坏 JSON 不降级 | **0 红——等价变异**（两条路径都返回空配置） |
+| M253 | 不过滤事件 | 1 红 |
+| M254 | 默认超时改成 1ms | 1 红 |
+| M255 | 默认超时改成 60s | 1 红（**补测试后**） |
+| M256 | 不杀进程树 | 1 红 |
+| M257 | 环境变量名改错 | 2 红 |
+| M258 | 删 PAGER | 1 红（**补测试后**） |
+| M259 | 超时逻辑破坏 | 1 红（重写为可编译形式后） |
+| M260 | nil sink 守卫失效 | 1 红 |
+| M261 | 递归防护失效 | 1 红 |
+| M262 | postTool 上下文丢失 | 1 红 |
+
+**M255/M258 是本刀最有价值的两条**——它们首轮 0 红，暴露了测试盲区
+（不覆盖默认超时分支 / 弱断言 + 宿主干扰），补测试后才转红。
+
+### 用户级验收（2/2 met，含有效性反证）
+
+真实二进制 + mock SSE 端点，在真实 cwd 放 `.rivet/hooks.json`：
+
+| 场景 | 期望 | 结果 |
+|---|---|---|
+| 已授信 | 脚本执行（哨兵出现） | **met** |
+| 未授信 | 脚本**不**执行 | **met** |
+
+**有效性反证**：摘掉 `main.go` 的 `CreateUserHooksBridge` 注册 → 重建 →
+场景 1 **转红**（脚本未执行）。这证明验收真的覆盖生产装配路径。
+
+**验收脚本自身的一个缺陷（已修）**：首版两场景共用 `root/proj` 目录——
+场景 1 留下的哨兵让场景 2 **假红**。改为每场景独立目录。**这是验收脚本的
+缺陷，不是产品缺陷**——记录以免误判。
+
+### 一次探针残留事故（必须记录）
+
+变异脚本的还原逻辑有 bug：第二次运行时 `base` 是在**已被污染的状态**下读取的
+（第一次的还原在写入前就完成了快照？不——是 finally 分支在异常路径下未执行）。
+结果 `user_hooks_bridge.go:53` 残留 `if false {`，导致两个测试在全量下失败。
+
+**由全量测试抓到**（单独跑那两个测试时是绿的——因为污染在文件里，但当时
+测试模式没覆盖到）。这印证了「必须跑全量」的纪律。
+
+**修法**：手工修复 + 全仓 `grep "if false {"` 核查 + 变异脚本加「还原校验」
+（结束时逐字节比对基线）。脚本已清理（不留不可靠的还原逻辑）。
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./internal/hooks/` **全绿**（23 例，5 个 POSIX-only skip）
+- `go test ./internal/agent/ -run 'UserHooks|RunOnErrorHooks'` **7/7 PASS**
+- 全量 `go test ./...` 见下
+- 变异反证 13 个（12 红 + 1 等价）
+- 用户级验收 **2/2 met** + 摘注册转红反证
+
+### 遗留
+
+- **`internal/trust` 的另一半消费端未接**：TS 的 `verify-config.ts:35` 用
+  `isProjectTrusted` 做**配置校验门**。Go 侧无 config 校验子系统——trust 现在
+  只被 hooks 消费（从「完全悬空」变为「单点接线」）。
+- **`StripUntrustedProjectKeys` / `FindSensitiveProjectKeys` /
+  `DetectProjectTrustStakes` 仍无消费者**——它们服务 config 层，待该层移植。
+- **Sink 传 nil**：脚本输出当前无消费方（无桌面端事件流）。CLI 若要显示
+  hook 输出，接一个 Sink 即可。
+- 全量测试仍有 `TestLossyHookCooldownAcrossRuns` 失败（**并发会话的**，
+  非本刀引入）。
+
+### 下一步
+
+hook 缺口：Go **10 个** vs TS 74 文件 / 64 注册。
+
+**候选**（**动手前必须 grep 核实依赖**——连续十刀的估价全部被证伪或偏轻）：
+
+- **config 校验层**——能点亮 trust 剩余 3 个导出符号，且 TS 侧 `verify-config.ts`
+  是完整模块。
+- `readonly-spiral`——语义与 probe-discipline 相邻。
+- `negative-fact-detector`——第四十三刀核实其 corrective 半未移植。
+
+
 ## 建议的第一刀
 
 **（2026-09-22 修正：本节原建议「接 `internal/session`」——该断言已过期，
