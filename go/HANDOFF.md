@@ -5021,6 +5021,112 @@ edit-tool advisory（`"stale"`）。证明生产装配生效。
 不要采信任何表格（包括本表）。
 
 
+## 第四十五刀：SR 通道分派（2026-09-23）
+
+**目标**：补 `channel: 'system-reminder'` 的分派逻辑——上一刀核实出
+`AdvisoryEntry.Channel` 在 Go 侧是死字段，阻塞了 `probe-discipline-hook`。
+
+### 称量：Go 侧的通道语义与 TS 不同（关键）
+
+核实发现 Go 与 TS 的通道结构**根本不同**：
+
+| 维度 | TS | Go |
+|---|---|---|
+| `bus` 通道 | 进 `<星域-advisory>` 附录块（占 Top-N 预算） | 同左 |
+| `system-reminder` 通道 | 走 `drainSystemReminders()` 细断点，**独立注入路径** | **无独立路径** |
+| `status` 通道 | 走 TUI 状态区 sink | **无 sink** |
+
+Go 侧只有**一条**注入路径（`buildRequestMessages` 统一包
+`<system-reminder>` 尾部注入，第四十刀落地）。
+
+**故 Go 侧通道的唯一实际语义是「是否绕过竞争预算」**——这是**有意的等价
+简化**，不是缺陷。TS 分通道是为其 appendix 机制服务，Go 无该机制。
+
+**收益是真实的**：Go 有 `cvmInjectionBaseBudget = 3`（`advisory_bus.go`），
+最终进 prompt 的条目被截到 3 条。SR 通道让条目绕过它。
+
+### 落地
+
+| 文件 | 内容 |
+|---|---|
+| `internal/agent/advisory.go` | `AdvisoryChannel` 类型 + 3 常量（含语义说明） |
+| `internal/agent/advisory_bus.go` | **4a 分流**（在一切竞争逻辑之前）+ 合并时保留 |
+| `internal/agent/advisory_channel_test.go` | 8 个测试（新增） |
+
+### 顺序敏感性（本刀最重要的设计点）
+
+TS 注释原文：
+
+	Phase 2 通道分流（bus 竞争前分走,不占 Top-N 预算）
+
+**「竞争前」是语义核心**。`Render` 有多个截断点：
+
+	4.  类别上限（maxPerCategory = 2）
+	5.  分层取用预算（advisoryBudgetForDomain）
+	7.  CVM 注入预算（cvmInjectionBaseBudget = 3）
+
+**首版把 SR 豁免放在第 7 步**（加进 `exempt`）——结果被
+`TestSRChannelBypassesBudget` 抓到：条目在**第 4 步的类别上限**就被截掉了，
+第 7 步的豁免来不及生效。
+
+**修法**：分流提前到 **4a**（类别上限之前），让 SR 条目从 `deduped` 里摘出，
+绕过全部竞争逻辑。
+
+### 由对账抓到的两处自身缺陷
+
+**（1）重建分支丢弃 SR（真实缺陷）**
+
+第 7 步的预算重建是：
+
+	keep = exempt + nonexempt[:budget]
+
+首版**漏了 `srEntries`**——当普通条目 ≥4（触发重建）时，SR 被静默丢弃。
+
+由 `TestSRChannelBypassesBudget` 抓到（它用 5 条普通条目，恰好触发重建）。
+
+**（2）测试只覆盖一条合并路径（覆盖缺口）**
+
+`Render` 有两条产出 `sorted` 的路径（不触发重建 / 触发重建）。首版测试只
+用了「5 条普通条目」——**恰好只走重建路径**，故 M224 变异（删掉第 6 步的
+`sorted = append(sorted, srEntries...)`）0 红。
+
+补 `TestSRChannelSurvivesBothMergePaths`（两条路径各一个子用例）后转红。
+
+### 变异反证 M221-M226
+
+| 变异 | 内容 | 结果 |
+|---|---|---|
+| M221 | 4a 分流完全不生效 | 2 红 |
+| M222 | 分流位置错 | **0 红——等价变异**（我的变异是 no-op） |
+| M223 | 重建时丢弃 srEntries | 2 红 |
+| M224 | 合并不含 SR | 4 红（**补两路径用例后**） |
+| M225 | status 也绕过 | 2 红（**变异改写后**） |
+| M226 | 常量值错 | 1 红（同上） |
+
+### 验证
+
+- `gofmt -l .` 干净 · `go vet ./...` exit=0 · `go build ./...` exit=0
+- `go test ./... -count=1` **24 包 ok / 0 FAIL**
+- 本刀新增测试 **8 例**（含 2 个子用例）
+- 既有 advisory 测试全绿（改动未破坏竞争逻辑）
+- TS 侧 `npm run typecheck` **exit=0**
+
+### 遗留
+
+- **`status` 通道未实现**：Go 无 TUI sink，当前按 bus 处理（对账 TS 的
+  「宁可占预算不静默消失」）。将来有 TUI 时补。
+- `probe-discipline-hook` **仍可做**——SR 通道已就位，它是下一个候选。
+- hook 缺口：Go 5 个 vs TS 74 个文件 / 64 个注册。
+
+### 下一步
+
+**`probe-discipline-hook` 现已解锁**（它需要的 SR 通道已就位）。它是 98 行的
+hook，语义自包含（连续只读工具计数 + 冷却 + 两种文案）。
+
+**注意**：连续八刀的估价都被证伪或偏轻——**动手前必须 grep 核实依赖**，
+不要采信任何表格（包括本表）。
+
+
 ## 建议的第一刀
 
 **（2026-09-22 修正：本节原建议「接 `internal/session`」——该断言已过期，

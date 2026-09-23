@@ -821,6 +821,32 @@ func (b *AdvisoryBus) Render(activeStarDomain string, turn int) string {
 	constDeduped := dedupByKeyKeepingHigherPriority(constitutional)
 	deduped := dedupByKeyKeepingHigherPriority(nonConstitutional)
 
+	// ── 4a. system-reminder 通道分流（**在一切竞争逻辑之前**）──
+	//
+	// 对账 TS 的「Phase 2 通道分流」（advisory-bus.ts:1013）——TS 注释原文：
+	//
+	//	Phase 2 通道分流（bus 竞争前分走,不占 Top-N 预算）
+	//	system-reminder:细断点,直接计送达(delivered)并出队给调用方注入消息流。
+	//
+	// **为什么必须在类别上限之前**：SR 通道的语义是「不参与竞争」——若放在
+	// 第 7 步（CVM 预算）才豁免，条目可能已在第 4 步（类别上限）或第 5 步
+	// （分层取用预算）被截掉，豁免来不及生效。这是**顺序敏感**的：分流的
+	// 位置决定了它能否真正绕过竞争。
+	//
+	// **Go 侧的等价实现**：Go 只有一条注入路径（统一 `<system-reminder>`
+	// 尾部），故 SR 分流的实际效果是「绕过所有竞争预算」。它们照常进
+	// `sorted`（参与渲染）与 `delivered`（核销闭环）。
+	srEntries := make([]AdvisoryEntry, 0)
+	rest := make([]AdvisoryEntry, 0, len(deduped))
+	for _, e := range deduped {
+		if e.Channel == ChannelSystemReminder {
+			srEntries = append(srEntries, e)
+		} else {
+			rest = append(rest, e)
+		}
+	}
+	deduped = rest
+
 	// ── 4. 类别上限 ──
 	//
 	// **注意顺序**：TS 先对 deduped 排序，再按排序序取前 N 个每 category——
@@ -908,8 +934,11 @@ func (b *AdvisoryBus) Render(activeStarDomain string, turn int) string {
 		taken = kept
 	}
 
-	// ── 6. 合并：constitutional 在前，其余按 priority ──
-	sorted := make([]AdvisoryEntry, 0, len(constDeduped)+len(taken))
+	// ── 6. 合并：constitutional 在前，其余按 priority，**SR 条目殿后** ──
+	//
+	// **SR 殿后的理由**：它们在 4a 已绕过全部竞争逻辑，位置只影响渲染顺序。
+	// 放最后保证「竞争胜出者优先可见」，与 TS 的「细断点单独注入」意图一致。
+	sorted := make([]AdvisoryEntry, 0, len(constDeduped)+len(taken)+len(srEntries))
 	constList := make([]AdvisoryEntry, 0, len(constDeduped))
 	for _, e := range constDeduped {
 		constList = append(constList, e)
@@ -918,8 +947,15 @@ func (b *AdvisoryBus) Render(activeStarDomain string, turn int) string {
 	sorted = append(sorted, constList...)
 	b.sortEntriesByPriority(taken)
 	sorted = append(sorted, taken...)
+	// SR 条目：已绕过竞争，此处仅参与渲染
+	b.sortEntriesByPriority(srEntries)
+	sorted = append(sorted, srEntries...)
 
 	// ── 7. CVM 注入预算（constitutional / immediate 豁免）──
+	//
+	// **注意**：SR 通道条目**不在此处**处理——它们已在 4a 分流（绕过全部
+	// 竞争逻辑），不会出现在 `sorted` 的 `taken` 段里。此处只处理
+	// constitutional 与 immediate 两类豁免。
 	exempt := make([]AdvisoryEntry, 0)
 	nonexempt := make([]AdvisoryEntry, 0)
 	for _, e := range sorted {
@@ -930,8 +966,12 @@ func (b *AdvisoryBus) Render(activeStarDomain string, turn int) string {
 		}
 	}
 	if len(nonexempt) > cvmInjectionBaseBudget {
-		keep := make([]AdvisoryEntry, 0, len(exempt)+cvmInjectionBaseBudget)
+		// **注意**：重建时必须**保留 srEntries**——它们已在 4a 绕过竞争，
+		// 不属于 `nonexempt`。首版漏了这一步，导致「普通条目 ≥4 时 SR 被
+		// 静默丢弃」（由本刀测试 TestSRChannelBypassesBudget 抓到）。
+		keep := make([]AdvisoryEntry, 0, len(exempt)+len(srEntries)+cvmInjectionBaseBudget)
 		keep = append(keep, exempt...)
+		keep = append(keep, srEntries...)
 		keep = append(keep, nonexempt[:cvmInjectionBaseBudget]...)
 		sorted = keep
 	}

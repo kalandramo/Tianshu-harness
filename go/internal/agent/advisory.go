@@ -114,8 +114,44 @@ type AdvisoryEntry struct {
 	// Corroborates 是多信号确认——本条目可提前确认这些 key 的挂起条目。
 	Corroborates []string
 	// Channel 是投递通道（缺省 bus）。
-	Channel string
+	Channel AdvisoryChannel
 }
+
+// AdvisoryChannel 是 advisory 的投递通道。
+//
+// 对账 TS 的 `AdvisoryChannel = 'bus' | 'system-reminder' | 'status'`
+// （advisory-bus.ts:64）。
+//
+// ## Go 侧的语义（与 TS 的差异，重要）
+//
+// TS 的三个通道各有**独立注入路径**：
+//   - `bus` —— 进 `<星域-advisory>` 附录块（占 Top-N 预算）
+//   - `system-reminder` —— 走 `drainSystemReminders()` 细断点，**不占预算**
+//   - `status` —— 走 TUI 状态区 sink
+//
+// Go 侧**只有一条注入路径**（`buildRequestMessages` 统一包
+// `<system-reminder>` 尾部注入，见 hook_snapshot.go）——故通道的**唯一实际
+// 语义是「是否绕过 CVM 注入预算」**：
+//
+//   - `ChannelBus`（缺省）—— 占 `cvmInjectionBaseBudget`
+//   - `ChannelSystemReminder` —— **绕过预算**（加进 exempt 列表）
+//   - `ChannelStatus` —— Go 侧无 TUI sink，**当前按 bus 处理**（保守：不静默丢弃）
+//
+// 这是**有意的等价简化**：TS 分通道是为其 appendix 机制服务，Go 无该机制。
+// 详见 HANDOFF 第四十五刀。
+type AdvisoryChannel string
+
+const (
+	// ChannelBus 是缺省通道——参与 Top-N 预算竞争。
+	ChannelBus AdvisoryChannel = "bus"
+	// ChannelSystemReminder 绕过 CVM 注入预算（TS 的「细断点」语义）。
+	ChannelSystemReminder AdvisoryChannel = "system-reminder"
+	// ChannelStatus 是 TUI 状态区通道。
+	//
+	// **Go 侧无 TUI sink**——当前按 bus 处理（对账 TS 的「宁可占预算不静默
+	// 消失」：`status` 仅在 sink 存在时分流，否则回退 bus）。
+	ChannelStatus AdvisoryChannel = "status"
+)
 
 // AdvisorySink 是 hook 投递 advisory 的出口。
 //
