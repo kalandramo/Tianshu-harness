@@ -1,5 +1,6 @@
 import type { Usage } from './api/types.js'
 import type { AgentCallbacks, AgentLoop } from './agent/loop.js'
+import { tapAgentCallbacks, type EventSink } from './agent/event-tap.js'
 import { serializeEvent } from './stream-json.js'
 import { redactText, redactValue } from './server/redact.js'
 
@@ -38,6 +39,11 @@ export interface HeadlessRunConfig {
    *  existing text/json callers stay unchanged. */
   sessionId?: string
   model?: string
+  /**
+   * `--stream-events <path>` 的落点：把本次 run 镜像成与 TUI / sidecar attach
+   * 同一 schema 的 `SessionEvent` 流。缺省 = 不接线（老调用方零改动）。
+   */
+  eventSink?: EventSink
   createAgent: () => Pick<AgentLoop, 'run'> | HeadlessAgent
 }
 
@@ -62,6 +68,7 @@ export function parseCliArgs(args: string[]): HeadlessCliArgs {
 
 export async function runHeadless(config: HeadlessRunConfig): Promise<HeadlessRunResult> {
   const agent = config.createAgent()
+  const streamJson = config.streamJson
   let text = ''
   let usage: Partial<Usage> | undefined
   let error: string | undefined
@@ -69,57 +76,88 @@ export async function runHeadless(config: HeadlessRunConfig): Promise<HeadlessRu
   // 脱敏纪律与 sidecar/event-tap 同口径：stdout 进 CI 日志即成泄漏面。
   const emit = (ev: import('./stream-json.js').StreamJsonEvent) => process.stdout.write(serializeEvent(ev))
 
-  const callbacks: AgentCallbacks = config.streamJson
-    ? {
-        onTextDelta: delta => { text += delta; emit({ type: 'text_delta', text: redactText(delta) }) },
-        onThinkingDelta: delta => emit({ type: 'thinking_delta', text: redactText(delta) }),
-        onToolUse: (id, name, input) => emit({ type: 'tool_use', id, name, input: redactValue(input) as Record<string, unknown> }),
-        onToolResult: (id, name, result, isError) => {
-          if (isError) error = result
-          emit({ type: 'tool_result', id, name, result: redactText(result), isError: isError ?? false })
-        },
-        onTurnComplete: (turnUsage, turnNumber, isFinal) => {
-          usage = turnUsage
-          emit({ type: 'turn_complete', usage: turnUsage, turn: turnNumber, is_final: isFinal ?? false })
-        },
-        onPhaseChange: (phase, detail) => emit({ type: 'phase', phase, tool: detail?.tool, reason: detail?.reason }),
-        onDelegationActivity: activity => emit({
-          type: 'worker',
-          work_order_id: activity.workOrderId,
-          parent_tool_id: activity.parentToolId,
-          status: activity.status,
-          profile: activity.profile,
-          authority: activity.authority,
-          objective: activity.objective,
-          progress_line: activity.progressLine ? redactText(activity.progressLine) : undefined,
-          tool_use_count: activity.toolUseCount,
-          token_count: activity.tokenCount,
-          model: activity.model,
-          failure_reason: activity.failureReason,
-        }),
-        onError: err => { error = err.message; emit({ type: 'error', error: redactText(err.message) }) },
-        onAbort: () => { error = 'Aborted' },
-        onApprovalRequired: async () => false,
-      }
-    : {
-        onTextDelta: delta => { text += delta },
-        onThinkingDelta: () => {},
-        onToolUse: () => {},
-        onToolResult: (_id, _name, result, isError) => { if (isError) error = result },
-        onTurnComplete: turnUsage => { usage = turnUsage },
-        onError: err => { error = err.message },
-        onAbort: () => { error = 'Aborted' },
-        onApprovalRequired: async () => false,
-      }
+  // 回调集恒为**全量**，不再按 streamJson 二分成两套（2026-09-18 无头
+  // --stream-events 0 字节事故的根因之一）：事件 tap 只在 inner **定义了**某个
+  // 回调时才包装它（event-tap.ts 里 onPhaseChange / onDelegationActivity 都是条件
+  // 挂载），所以"非 stream-json 就少定义几个"会让 --stream-events 的事件流随输出
+  // 开关静默变薄——同一面审计镜换个开关就少两类事件。现在统一全量定义，stdout 侧
+  // 仍由 streamJson 逐处 gate，输出字节不变。
+  const base: AgentCallbacks = {
+    onTextDelta: delta => {
+      text += delta
+      if (streamJson) emit({ type: 'text_delta', text: redactText(delta) })
+    },
+    onThinkingDelta: delta => { if (streamJson) emit({ type: 'thinking_delta', text: redactText(delta) }) },
+    onToolUse: (id, name, input) => {
+      if (streamJson) emit({ type: 'tool_use', id, name, input: redactValue(input) as Record<string, unknown> })
+    },
+    onToolResult: (id, name, result, isError) => {
+      if (isError) error = result
+      if (streamJson) emit({ type: 'tool_result', id, name, result: redactText(result), isError: isError ?? false })
+    },
+    onTurnComplete: (turnUsage, turnNumber, isFinal) => {
+      usage = turnUsage
+      if (streamJson) emit({ type: 'turn_complete', usage: turnUsage, turn: turnNumber, is_final: isFinal ?? false })
+    },
+    onPhaseChange: (phase, detail) => {
+      if (streamJson) emit({ type: 'phase', phase, tool: detail?.tool, reason: detail?.reason })
+    },
+    onDelegationActivity: activity => {
+      if (!streamJson) return
+      emit({
+        type: 'worker',
+        work_order_id: activity.workOrderId,
+        parent_tool_id: activity.parentToolId,
+        status: activity.status,
+        profile: activity.profile,
+        authority: activity.authority,
+        objective: activity.objective,
+        progress_line: activity.progressLine ? redactText(activity.progressLine) : undefined,
+        tool_use_count: activity.toolUseCount,
+        token_count: activity.tokenCount,
+        model: activity.model,
+        failure_reason: activity.failureReason,
+      })
+    },
+    onError: err => {
+      error = err.message
+      if (streamJson) emit({ type: 'error', error: redactText(err.message) })
+    },
+    onAbort: () => { error = 'Aborted' },
+    onApprovalRequired: async () => false,
+    // 事件面与 TUI 对齐：tap 只在 inner **定义了**回调时才投影对应的 SessionEvent，
+    // 而 TUI 侧 bridge 定义了 checkpoint / domain_drift / intent_note
+    // （src/tui/engine/bridge.ts），无头缺定义就会在 --stream-events 的文件里静默
+    // 少掉这三类。三者都不改 stdout 契约——StreamJsonEvent 里没有对应信封，
+    // 所以 stdout 字节与从前完全一致，受益的只有事件文件。
+    //
+    // 代价说明：onCheckpoint / onDomainDrift 是**免费**的（值在调用点已经算好，
+    // 只有回调调用被 `?.` gate）；onIntentNote 是**门槛式**的——turn-intent.ts 里
+    // `!input.onIntentNote` 直接早退，定义它会启用 buildIntentPreview 的本地计算
+    //（纯内存、有 MAX_INTENT_NOTES 上限与指纹去重）。这正是 TUI 的行为，
+    // 无头对齐它换来的是"agent 当时想往哪走"这一条审计信息。
+    onCheckpoint: () => {},
+    onDomainDrift: () => {},
+    onIntentNote: () => {},
+  }
 
-  if (config.streamJson) {
+  // tap 自身对 text/thinking/result 做脱敏（与 sidecar 同口径）并合并 delta，
+  // 所以 sink 里落的是脱敏后的记录，不会把 stdout 的泄漏面挪进文件里。
+  const tapped = config.eventSink ? tapAgentCallbacks(base, config.eventSink) : null
+  const callbacks: AgentCallbacks = tapped ?? base
+
+  if (streamJson) {
     emit({ type: 'system', subtype: 'init', session_id: config.sessionId ?? '', model: config.model ?? '', cwd: process.cwd() })
   }
 
   await agent.run(config.prompt, callbacks)
 
+  // tap 把 text/thinking delta 合并到 4000 字符才落一笔；run 收尾时若还压着尾段，
+  // 必须在调用方 close() sink **之前** flush——否则丢的正好是收尾那段文本。
+  tapped?.flush()
+
   const success = !error
-  if (config.streamJson) {
+  if (streamJson) {
     emit({
       type: 'result',
       subtype: success ? 'success' : 'error',
@@ -134,7 +172,7 @@ export async function runHeadless(config: HeadlessRunConfig): Promise<HeadlessRu
     ? { success: true, text, ...(usage ? { usage } : {}) }
     : { success: false, text, error: error ?? 'Unknown error' }
 
-  const stdout = config.json ? JSON.stringify(payload) : config.streamJson ? '' : payload.text
+  const stdout = config.json ? JSON.stringify(payload) : streamJson ? '' : payload.text
 
   return {
     exitCode: success ? 0 : 1,

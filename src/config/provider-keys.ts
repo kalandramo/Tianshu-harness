@@ -13,6 +13,7 @@
  * 会看到已删除的模型、漏掉只在 key 池里的模型——消费方一律走 contractModels。
  */
 import type { ModelConfig, ProviderConfig, ProviderKeyConfig } from './schema.js'
+import { canonicalizeModelId } from '../api/model-aliases.js'
 
 export { contractModels } from './contract-models.js'
 
@@ -82,29 +83,48 @@ export interface ModelOwner {
   model: ModelConfig
 }
 
-/** 模型归属：按 modelRef（模型 id 或 alias）找所属 key。撞名取第一个命中的 key。 */
-export function findModelOwner(provider: ProviderConfig, modelRef: string): ModelOwner | undefined {
-  if (!modelRef) return undefined
-  for (const pool of providerKeyPools(provider)) {
-    const model = pool.models.find(m => m.id === modelRef)
+/** 在给定池序列里按 id 精确找——「撞名取第一个命中的 key」的池序语义在这一次遍历里。 */
+function findModelInPools(pools: ProviderKeyPool[], id: string): ModelOwner | undefined {
+  for (const pool of pools) {
+    const model = pool.models.find(m => m.id === id)
     if (model) return { owner: pool.owner, model }
   }
   return undefined
 }
 
-/** 限定 key 的模型查找——`provider:keyId:modelId` 的精确选择路径。 */
+/**
+ * 模型归属：按 modelRef（模型 id 或 alias）找所属 key。撞名取第一个命中的 key。
+ *
+ * 「id 或 alias」这句承诺此前没兑现——实现只做 `m.id === modelRef` 精确比，配置里写
+ * preset 短名（v4-flash / glm-53 等）会静默落空，调用方（src/main.ts headless、
+ * src/server/serve.ts）随即位置性回退到 providerPool[0]——那是另一个档，甚至可能是
+ * 上游不认的 id（400）或套餐已到期的卡（429）。归一入口见 canonicalizeModelId。
+ *
+ * 两轮遍历（全池精确 → 全池归一）而非「每个池内先精后归」：后者会让池序改写精确命中
+ * 的优先级。表里没有的名字原样比，行为与改动前一致。
+ */
+export function findModelOwner(provider: ProviderConfig, modelRef: string): ModelOwner | undefined {
+  if (!modelRef) return undefined
+  const pools = providerKeyPools(provider)
+  const exact = findModelInPools(pools, modelRef)
+  if (exact) return exact
+  const wanted = canonicalizeModelId(modelRef)
+  return wanted === modelRef ? undefined : findModelInPools(pools, wanted)
+}
+
+/** 限定 key 的模型查找——`provider:keyId:modelId` 的精确选择路径。语义同 findModelOwner。 */
 export function findModelInKey(
   provider: ProviderConfig,
   keyId: string,
   modelRef: string,
 ): ModelOwner | undefined {
   if (!modelRef) return undefined
-  for (const pool of providerKeyPools(provider)) {
-    if ((pool.owner?.id ?? DEFAULT_KEY_ID) !== keyId) continue
-    const model = pool.models.find(m => m.id === modelRef)
-    if (model) return { owner: pool.owner, model }
-  }
-  return undefined
+  const pools = providerKeyPools(provider)
+    .filter(pool => (pool.owner?.id ?? DEFAULT_KEY_ID) === keyId)
+  const exact = findModelInPools(pools, modelRef)
+  if (exact) return exact
+  const wanted = canonicalizeModelId(modelRef)
+  return wanted === modelRef ? undefined : findModelInPools(pools, wanted)
 }
 
 export interface ParsedModelRef {

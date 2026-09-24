@@ -4,6 +4,7 @@ import { formatToolCard, formatToolCardLive, isToolCardTruncated, toolCardTitle 
 import { formatDiff, isDiffContent } from '../format/diff.js'
 import { formatThinking } from '../format/thinking.js'
 import { displayWidth } from '../width.js'
+import { isKnownTool } from '../tool-family.js'
 import { getTheme } from '../theme.js'
 
 const theme = getTheme()
@@ -484,5 +485,144 @@ describe('formatThinking', () => {
       const b = formatThinking({ text, elapsedMs: 5000, expanded: true, maxLines: 5, columns: 80 }, theme)
       assert.deepEqual(a, b, '只给 columns 不给 maxRows 不改变行为')
     })
+  })
+})
+
+describe('toolCardTitle：未知工具如实化（live 卡「Tool (14m06s)」零信息根修）', () => {
+  it('未知工具用真实名 + 通用参数兜底，不再显示光秃秃的 Tool', () => {
+    assert.equal(stripAnsi(toolCardTitle('job', { action: 'await', id: 'job-42' })), 'job(await job-42)')
+    assert.equal(stripAnsi(toolCardTitle('monitor', { action: 'subscribe', command: 'npm run dev' })), 'monitor(subscribe npm run dev)')
+    assert.equal(stripAnsi(toolCardTitle('computer_use', { action: 'screenshot' })), 'computer_use(screenshot)')
+  })
+
+  it('mcp 工具名缩短为 mcp·server:tool', () => {
+    assert.equal(stripAnsi(toolCardTitle('mcp__github__create_issue', { title: 'bug' })), 'mcp·github:create_issue(bug)')
+  })
+
+  it('未知工具完全无参时退回裸名（仍非 Tool）', () => {
+    assert.equal(stripAnsi(toolCardTitle('some_custom_tool', {})), 'some_custom_tool')
+  })
+
+  it('通用兜底按信息密度取第一个非空字符串参数', () => {
+    assert.equal(stripAnsi(toolCardTitle('mystery', { foo: 1, query: 'hello world' })), 'mystery(hello world)')
+    assert.equal(stripAnsi(toolCardTitle('mystery', { path: '/tmp/a.ts' })), 'mystery(/tmp/a.ts)')
+  })
+})
+
+describe('formatToolCardLive：长跑无输出如实提示', () => {
+  it('≥60s 无输出时占位行提示可中断，不再只有省略号', () => {
+    const lines = formatToolCardLive({ toolName: 'bash', toolInput: { command: 'sleep 600' }, elapsedMs: 61_000, columns: 80 }, theme)
+    const plain = lines.map(stripAnsi)
+    assert.ok(plain.some(l => l.includes('仍无输出') && l.includes('Ctrl+C')), plain.join('|'))
+  })
+
+  it('<60s 无输出保持 … 占位（不制造早期噪音）', () => {
+    const lines = formatToolCardLive({ toolName: 'bash', toolInput: { command: 'sleep 5' }, elapsedMs: 5_000, columns: 80 }, theme)
+    const plain = lines.map(stripAnsi)
+    assert.ok(!plain.some(l => l.includes('仍无输出')), plain.join('|'))
+  })
+})
+
+describe('formatThinking：显示层 emphasis 剥离', () => {
+  it('剥 **bold** 标记，内容保留', () => {
+    const lines = formatThinking({ text: '关键：**生产路径** 没有日志', elapsedMs: 1000, header: false, expanded: true }, theme)
+    const plain = lines.map(stripAnsi).join('\n')
+    assert.ok(plain.includes('关键：生产路径 没有日志'), plain)
+    assert.ok(!plain.includes('**'), plain)
+  })
+
+  it('glob 双星与代码形态不剥（a/**/b、__init__、x**y**z）', () => {
+    const lines = formatThinking({ text: '匹配 a/**/b/**/c 与 __init__ 还有 x**y**z', elapsedMs: 1000, header: false, expanded: true }, theme)
+    const plain = lines.map(stripAnsi).join('\n')
+    assert.ok(plain.includes('a/**/b/**/c'), plain)
+    assert.ok(plain.includes('__init__'), plain)
+    assert.ok(plain.includes('x**y**z'), plain)
+  })
+
+  it('done 头部带 reviewHint 时显示回看提示', () => {
+    const lines = formatThinking({ text: '一些思考', elapsedMs: 3000, done: true, reviewHint: 'ctrl+t 回看' }, theme)
+    const head = stripAnsi(lines[0]!)
+    assert.ok(head.includes('已推理'), head)
+    assert.ok(head.includes('ctrl+t 回看'), head)
+  })
+
+  it('done 头部不带 reviewHint 时无提示', () => {
+    const lines = formatThinking({ text: '一些思考', elapsedMs: 3000, done: true }, theme)
+    assert.ok(!stripAnsi(lines[0]!).includes('回看'), stripAnsi(lines[0]!))
+  })
+})
+
+describe('formatToolCardLive：窄终端不溢出（rowsForLine 记账纪律）', () => {
+  const widths = (lines: readonly string[]) =>
+    lines.map(l => displayWidth(stripAnsi(l), { ambiguousAsWide: true }))
+  const longTool = 'mcp__verylongserver__some_tool'
+
+  it('窄终端下长跑占位退回短占位——每行 ≤ columns-1', () => {
+    for (const columns of [80, 40, 26, 24, 20]) {
+      const lines = formatToolCardLive(
+        { toolName: 'bash', toolInput: { command: 'sleep 600' }, elapsedMs: 61_000, columns, tailLines: 3 },
+        theme,
+      )
+      const w = widths(lines)
+      assert.ok(Math.max(...w) <= columns - 1, `columns=${columns} 溢出: ${JSON.stringify(w)}`)
+    }
+  })
+
+  it('宽终端保留「仍无输出」如实提示', () => {
+    const lines = formatToolCardLive(
+      { toolName: 'bash', toolInput: { command: 'sleep 600' }, elapsedMs: 61_000, columns: 80, tailLines: 3 },
+      theme,
+    )
+    assert.ok(lines.map(stripAnsi).some(l => l.includes('仍无输出')), lines.map(stripAnsi).join('|'))
+  })
+
+  it('长标题在窄终端被裁剪，但耗时保留（不为标题牺牲时间）', () => {
+    const lines = formatToolCardLive(
+      { toolName: longTool, toolInput: { command: 'x'.repeat(60) }, elapsedMs: 61_000, columns: 60, tailLines: 0 },
+      theme,
+    )
+    const header = stripAnsi(lines[0]!)
+    const w = displayWidth(header, { ambiguousAsWide: true })
+    assert.ok(w <= 59, `header 宽 ${w}: ${header}`)
+    assert.ok(header.includes('1m01s'), `耗时被挤掉: ${header}`)
+  })
+})
+
+describe('isKnownTool：Object.prototype 成员名不当已知工具', () => {
+  it('constructor / toString 等不冒充已知工具（否则 toolTitleVerb 抛 TypeError）', () => {
+    for (const name of ['constructor', 'toString', 'valueOf', 'hasOwnProperty']) {
+      assert.equal(isKnownTool(name), false, `${name} 不是已知工具`)
+      // 修复前：`name in TOOL_MAP` 走原型链 → 判为已知 → getToolFamily 取到
+      // Object.prototype.constructor → verb 为 undefined → charAt 抛 TypeError。
+      assert.equal(stripAnsi(toolCardTitle(name, { action: 'await' })), `${name}(await)`, name)
+    }
+  })
+})
+
+describe('formatThinking：emphasis 剥离不吞幂运算', () => {
+  const render = (text: string) =>
+    formatThinking({ text, elapsedMs: 1000, header: false, expanded: true }, theme).map(stripAnsi).join('\n')
+
+  it('2 ** 3 ** 4 保持原样（幂运算星号两侧留白）', () => {
+    const out = render('2 ** 3 ** 4 是幂运算')
+    assert.ok(out.includes('2 ** 3 ** 4'), out)
+  })
+
+  it('不规范加粗 ** A ** 保持原样（宁可留着也不乱剥）', () => {
+    const out = render('** A **')
+    assert.ok(out.includes('** A **'), out)
+  })
+
+  it('紧贴内容的加粗仍剥掉标记', () => {
+    const out = render('关键：**生产路径** 没有日志')
+    assert.ok(out.includes('关键：生产路径 没有日志'), out)
+    assert.ok(!out.includes('**'), out)
+  })
+
+  it('glob 段与 dunder 仍不剥（回归）', () => {
+    const out = render('匹配 a/**/b/**/c 与 __init__ 以及 src/**/*.ts')
+    assert.ok(out.includes('a/**/b/**/c'), out)
+    assert.ok(out.includes('__init__'), out)
+    assert.ok(out.includes('src/**/*.ts'), out)
   })
 })

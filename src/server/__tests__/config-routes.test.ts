@@ -8,6 +8,9 @@ import { createRouter } from '../index.js'
 import { buildConfigRoutes } from '../config-routes.js'
 import { readSecret, writeSecret } from '../../config/secrets-store.js'
 import { PROVIDER_PRESETS, type ProviderPresetKey } from '../../config/provider-presets.js'
+import { __setProGrantPublicKeyForTests } from '../../config/pro-license.js'
+import { makeValidGrant } from '../../config/__tests__/grant-fixtures.js'
+import { resetRootExistsMemoForTest, _resetGrantsForTest } from '../../tools/path-grants.js'
 
 const TOKEN = 'secret-token'
 const AUTH = { authorization: `Bearer ${TOKEN}` }
@@ -54,18 +57,30 @@ describe('GET /config/computer-use', () => {
   })
 
   it('reports available=true when platform supports and Pro is enabled', async () => {
-    writeConfig(home, { enabled: true, features: { computerUse: true, chatGateway: true } })
-    const router = createRouter(buildConfigRoutes(TOKEN))
-    const res = await router('GET', '/config/computer-use', {}, AUTH)
-    assert.equal(res.status, 200)
-    const body = res.body as { available: boolean; proRequired: boolean; permissions: unknown; grants: unknown[] }
-    // available follows platform + Pro; on unsupported platforms it stays false.
-    if (process.platform === 'darwin' || process.platform === 'win32') {
-      assert.equal(body.available, true)
-      assert.equal(body.proRequired, false)
-    } else {
-      assert.equal(body.available, false)
-      assert.equal(body.proRequired, false)
+    // 4fa0e87d5 起 Pro 只认签名凭证：config enabled:true 不再解锁。
+    // 签一份真实 grant 落到 home 的 license.json（走真验签路径），测后清理，
+    // 避免凭证泄漏到本文件后续用例。
+    const { token, publicKeyB64 } = makeValidGrant()
+    const licensePath = join(home, 'license.json')
+    writeFileSync(licensePath, JSON.stringify({ token, lastVerifiedAt: Date.now() }))
+    __setProGrantPublicKeyForTests(publicKeyB64)
+    try {
+      writeConfig(home, { enabled: true, features: { computerUse: true, chatGateway: true } })
+      const router = createRouter(buildConfigRoutes(TOKEN))
+      const res = await router('GET', '/config/computer-use', {}, AUTH)
+      assert.equal(res.status, 200)
+      const body = res.body as { available: boolean; proRequired: boolean; permissions: unknown; grants: unknown[] }
+      // available follows platform + Pro; on unsupported platforms it stays false.
+      if (process.platform === 'darwin' || process.platform === 'win32') {
+        assert.equal(body.available, true)
+        assert.equal(body.proRequired, false)
+      } else {
+        assert.equal(body.available, false)
+        assert.equal(body.proRequired, false)
+      }
+    } finally {
+      __setProGrantPublicKeyForTests(null)
+      rmSync(licensePath, { force: true })
     }
   })
 
@@ -913,6 +928,57 @@ describe('POST /config/providers/tunables', () => {
     assert.equal(unknownProvider.status, 400)
   })
 
+  it('effortFormat tunable 写入 capabilities 子键、列表回显、null 删除', async () => {
+    const router = createRouter(buildConfigRoutes(TOKEN))
+    await createCustomProvider(router)
+
+    const set = await router('POST', '/config/providers/tunables', {
+      providerName: 'my-spark',
+      fields: { effortFormat: 'reasoning_effort' },
+    }, AUTH)
+    assert.equal(set.status, 200, JSON.stringify(set.body))
+    let list = await router('GET', '/config/providers', {}, AUTH)
+    let providers = (list.body as { providers: { name: string; effortFormat?: string; effortSupported?: boolean; models: { id: string; effortSupported?: boolean }[] }[] }).providers
+    assert.equal(providers.find(p => p.name === 'my-spark')?.effortFormat, 'reasoning_effort')
+    // 声明生效的闭环：同一列表里 provider 级与模型级 effortSupported 都从 false 翻真，
+    // 桌面档位带随之解禁（Part 1 的诚实化判据与 Part 2 的声明入口必须同源）。
+    assert.equal(providers.find(p => p.name === 'my-spark')?.effortSupported, true)
+    assert.equal(providers.find(p => p.name === 'my-spark')?.models.find(m => m.id === 'm1')?.effortSupported, true)
+
+    const clear = await router('POST', '/config/providers/tunables', {
+      providerName: 'my-spark',
+      fields: { effortFormat: null },
+    }, AUTH)
+    assert.equal(clear.status, 200)
+    list = await router('GET', '/config/providers', {}, AUTH)
+    providers = (list.body as { providers: { name: string; effortFormat?: string; effortSupported?: boolean; models: { id: string; effortSupported?: boolean }[] }[] }).providers
+    assert.equal(providers.find(p => p.name === 'my-spark')?.effortFormat, undefined, 'null = 删声明恢复推导')
+    assert.equal(providers.find(p => p.name === 'my-spark')?.effortSupported, false, '删声明后 provider 级支持态回落')
+    assert.equal(providers.find(p => p.name === 'my-spark')?.models.find(m => m.id === 'm1')?.effortSupported, false, '删声明后模型级支持态回落')
+  })
+
+  it('effortFormat 非法值 400；capabilities 可随 /custom 创建落库', async () => {
+    const router = createRouter(buildConfigRoutes(TOKEN))
+    writeConfig(home, {})
+    const created = await router('POST', '/config/providers/custom', {
+      providerName: 'my-effort',
+      baseUrl: 'https://api.example.com/v1',
+      apiKey: 'sk-test',
+      model: { id: 'm1', contextWindow: 128000, maxTokens: 32000 },
+      capabilities: { effortFormat: 'reasoning_effort' },
+    }, AUTH)
+    assert.equal(created.status, 200, JSON.stringify(created.body))
+    const list = await router('GET', '/config/providers', {}, AUTH)
+    const providers = (list.body as { providers: { name: string; effortFormat?: string }[] }).providers
+    assert.equal(providers.find(p => p.name === 'my-effort')?.effortFormat, 'reasoning_effort')
+
+    const bad = await router('POST', '/config/providers/tunables', {
+      providerName: 'my-effort',
+      fields: { effortFormat: 'bogus' },
+    }, AUTH)
+    assert.equal(bad.status, 400)
+  })
+
   it('rejects unauthorized requests', async () => {
     const router = createRouter(buildConfigRoutes(TOKEN))
     const res = await router('POST', '/config/providers/tunables', { providerName: 'deepseek', fields: { slowThinking: true } }, {})
@@ -956,6 +1022,42 @@ describe('GET /config/providers — unconfigured 预设透传 keyUrl（获取 AP
     if (byKey.has('ollama')) {
       assert.equal(byKey.get('ollama')?.keyUrl, undefined)
     }
+  })
+
+  it('grok 预设桌面端闭环：unconfigured 卡片 → setup 克隆 → 档位契约就绪', async () => {
+    writeConfig(home, { enabled: false, features: {} })
+    const router = createRouter(buildConfigRoutes(TOKEN))
+
+    // 1) 未配置时出现在桌面预设列表：keyUrl 直链 + 模型预览（否则新用户不知道去哪拿 Key）
+    const list1 = await router('GET', '/config/providers', {}, AUTH)
+    const unconfigured = (list1.body as { unconfigured: { key: string; keyUrl?: string; modelIds?: string[] }[] }).unconfigured
+    const grokCard = unconfigured.find(u => u.key === 'grok')
+    assert.ok(grokCard, 'grok 必须作为未配置预设出现在桌面端列表')
+    assert.equal(grokCard.keyUrl, 'https://console.x.ai/team/default/api-keys')
+    assert.deepEqual(grokCard.modelIds, ['grok-4.6'])
+
+    // 2) 桌面向导保存（预设名 + key）→ setupProvider 克隆预设落库
+    const setupRes = await router('POST', '/config/providers', { providerName: 'grok', apiKey: 'sk-test' }, AUTH)
+    assert.equal(setupRes.status, 200, JSON.stringify(setupRes.body))
+
+    // 3) 档位契约：provider 与模型都 effortSupported=true（桌面档位带不禁用）；
+    //    模型默认档 high，请求侧 effortCap 再把 off→low / max→xhigh 映射成 xAI 词汇。
+    const list2 = await router('GET', '/config/providers', {}, AUTH)
+    const grok = (list2.body as {
+      providers: {
+        name: string
+        baseUrl: string
+        effortSupported?: boolean
+        models: { id: string; reasoningEffort?: string; effortSupported?: boolean; contextWindow: number }[]
+      }[]
+    }).providers.find(p => p.name === 'grok')
+    assert.ok(grok, 'setup 后 grok provider 必须在列表里')
+    assert.equal(grok.baseUrl, 'https://api.x.ai/v1')
+    assert.equal(grok.effortSupported, true, '桌面档位带依赖该标记放行')
+    const model = grok.models.find(m => m.id === 'grok-4.6')
+    assert.equal(model?.effortSupported, true)
+    assert.equal(model?.reasoningEffort, 'high')
+    assert.equal(model?.contextWindow, 500_000)
   })
 })
 
@@ -1034,6 +1136,74 @@ describe('POST /config/providers — models 批量回填（「每行一个」/ �
     const providers = (get.body as { providers: { name: string; models: { id: string }[] }[] }).providers
     const glm = providers.find((p) => p.name === 'glm')
     assert.ok(!glm?.models.some((m) => m.id === 'would-partially-save'), 'rejected batch must not persist anything')
+  })
+
+  it('modelsMode=append：并入既有清单，连续批量保存不清空上一批', async () => {
+    writeConfig(home, { enabled: false, features: {} })
+    const router = createRouter(buildConfigRoutes(TOKEN))
+    await router('POST', '/config/providers', {
+      providerName: 'deepseek',
+      models: [{ id: 'append-a', contextWindow: 64_000, maxTokens: 8_000 }],
+    }, AUTH)
+    const second = await router('POST', '/config/providers', {
+      providerName: 'deepseek',
+      models: [{ id: 'append-b', contextWindow: 64_000, maxTokens: 8_000 }],
+      modelsMode: 'append',
+    }, AUTH)
+    assert.equal(second.status, 200)
+
+    const get = await router('GET', '/config/providers', {}, AUTH)
+    const providers = (get.body as { providers: { name: string; models: { id: string }[] }[] }).providers
+    const ids = providers.find((p) => p.name === 'deepseek')?.models.map((m) => m.id) ?? []
+    assert.ok(ids.includes('append-a'), 'append 模式必须保留上一批（替换语义会只剩 append-b）')
+    assert.ok(ids.includes('append-b'), 'append 模式必须落库本批')
+  })
+
+  it('modelsMode 非法值整单 400，不落盘', async () => {
+    writeConfig(home, { enabled: false, features: {} })
+    const router = createRouter(buildConfigRoutes(TOKEN))
+    const res = await router('POST', '/config/providers', {
+      providerName: 'deepseek',
+      models: [{ id: 'mode-bad', contextWindow: 64_000, maxTokens: 8_000 }],
+      modelsMode: 'merge',
+    }, AUTH)
+    assert.equal(res.status, 400)
+    assert.match((res.body as { error: string }).error, /Invalid modelsMode/)
+
+    const get = await router('GET', '/config/providers', {}, AUTH)
+    const providers = (get.body as { providers: { name: string; models: { id: string }[] }[] }).providers
+    const ids = providers.find((p) => p.name === 'deepseek')?.models.map((m) => m.id) ?? []
+    assert.ok(!ids.includes('mode-bad'), '非法 modelsMode 不得落盘')
+  })
+
+  it('models 带 effortSupported：自定义 openai → false、responses → true、已知预设 → true', async () => {
+    writeConfig(home, { enabled: false, features: {} })
+    const router = createRouter(buildConfigRoutes(TOKEN))
+    const plain = await router('POST', '/config/providers/custom', {
+      providerName: 'effort-plain',
+      baseUrl: 'https://e-plain.example.com/v1',
+      force: true,
+      models: [{ id: 'm-plain', contextWindow: 64_000, maxTokens: 8_000 }],
+    }, AUTH)
+    assert.equal(plain.status, 200, JSON.stringify(plain.body))
+    const resp = await router('POST', '/config/providers/custom', {
+      providerName: 'effort-resp',
+      baseUrl: 'https://e-resp.example.com/v1',
+      force: true,
+      protocol: 'openai-responses',
+      models: [{ id: 'm-resp', contextWindow: 64_000, maxTokens: 8_000 }],
+    }, AUTH)
+    assert.equal(resp.status, 200, JSON.stringify(resp.body))
+
+    const get = await router('GET', '/config/providers', {}, AUTH)
+    const providers = (get.body as { providers: { name: string; models: { id: string; effortSupported?: boolean }[] }[] }).providers
+    const modelFlag = (name: string, id: string) =>
+      providers.find(p => p.name === name)?.models.find(m => m.id === id)?.effortSupported
+    assert.equal(modelFlag('effort-plain', 'm-plain'), false, '自定义 openai provider 默认无档位通道')
+    assert.equal(modelFlag('effort-resp', 'm-resp'), true, 'responses 协议直接写 reasoning.effort')
+    const deepseekModels = providers.find(p => p.name === 'deepseek')?.models ?? []
+    assert.ok(deepseekModels.length > 0, 'deepseek 预设应在列表里')
+    assert.ok(deepseekModels.every(m => m.effortSupported !== false), '已知预设 deepseek 继承 reasoning_effort')
   })
 })
 
@@ -1520,12 +1690,12 @@ describe('workspace routes (issue #147)', () => {
 
   it('PUT 写入后 GET 回读一致，且落盘到 user config.json', async () => {
     const router = createRouter(buildConfigRoutes(TOKEN))
-    const put = await router('PUT', '/config/workspace', { defaultDir: '/work/default', scratchDir: '/work/scratch' }, AUTH)
+    const put = await router('PUT', '/config/workspace', { defaultDir: '/work/default', scratchDir: join(home, 'scratch') }, AUTH)
     assert.equal(put.status, 200)
     const putBody = put.body as { defaultDir: string | null; scratchDir: string | null; scratchRoot: string }
     assert.equal(putBody.defaultDir, '/work/default')
     // scratchDir 已配 → scratchRoot 跟随它（桌面端展示的「临时会话落点」）。
-    assert.equal(putBody.scratchRoot, '/work/scratch')
+    assert.equal(putBody.scratchRoot, join(home, 'scratch'))
 
     const getRes = await router('GET', '/config/workspace', {}, AUTH)
     assert.deepEqual(getRes.body, put.body)
@@ -1536,14 +1706,23 @@ describe('workspace routes (issue #147)', () => {
 
   it('PUT 只传单字段 = 部分更新，未传字段保留（审查跟进 2026-09-15）', async () => {
     const router = createRouter(buildConfigRoutes(TOKEN))
-    await router('PUT', '/config/workspace', { defaultDir: '/work/default', scratchDir: '/work/scratch' }, AUTH)
+    await router('PUT', '/config/workspace', { defaultDir: '/work/default', scratchDir: join(home, 'scratch') }, AUTH)
     // 桌面设置页每个控件独立提交——只改默认工作区不得顺带清掉隔离根
     // （scratchDir 无 UI 编辑入口，被清掉无法自助恢复）。
     const put = await router('PUT', '/config/workspace', { defaultDir: '/work/next' }, AUTH)
     assert.equal(put.status, 200)
     const body = put.body as { defaultDir: string | null; scratchDir: string | null }
     assert.equal(body.defaultDir, '/work/next')
-    assert.equal(body.scratchDir, '/work/scratch', '未传的字段必须保留（整体替换会静默清掉它）')
+    assert.equal(body.scratchDir, join(home, 'scratch'), '未传的字段必须保留（整体替换会静默清掉它）')
+  })
+
+  it('scratchDir 落在数据根之外 → 400，不落盘（issue #223）', async () => {
+    const router = createRouter(buildConfigRoutes(TOKEN))
+    const outside = process.platform === 'win32' ? 'C:\\Windows\\Temp\\evil-scratch' : '/tmp/evil-scratch'
+    const put = await router('PUT', '/config/workspace', { scratchDir: outside }, AUTH)
+    assert.equal(put.status, 400)
+    const raw = JSON.parse(readFileSync(process.env.RIVET_CONFIG_PATH!, 'utf-8')) as { workspace?: { scratchDir?: string } }
+    assert.notEqual(raw.workspace?.scratchDir, outside, '被拒的 scratchDir 不得落盘')
   })
 
   it('PUT 空白字符串 / null = 清除字段（回到旧行为）', async () => {
@@ -1567,5 +1746,82 @@ describe('workspace routes (issue #147)', () => {
     const router = createRouter(buildConfigRoutes(TOKEN))
     const res = await router('GET', '/config/workspace', {}, {})
     assert.equal(res.status, 401)
+  })
+})
+
+// ── 常驻目录授权的探测成本（2026-09-22）────────────────────────────────
+// 桌面端「全盘只读」在 Windows 写入 26 个盘根，而 GET 每次 AutonomyMenu 挂载
+// （60s stale 后）都会打一次、PUT 每次保存都会应用一次。裸 existsSync 逐个同步
+// 探测 = 单线程 sidecar 冻结事件循环（审批事件都发不出去，UI 整体"卡住"）。
+// 这里锁两条不变量：①GET 的 exists 走 TTL 记忆（不再逐个重探）②PUT 只对
+// **本次新增**路径强制实测（新挂载的盘照样当场可见）。
+
+describe('config/permission-dirs 探测成本', () => {
+  const prevHome = process.env.RIVET_HOME
+  let home: string
+
+  before(() => {
+    home = mkdtempSync(join(tmpdir(), 'rivet-perm-dirs-'))
+    process.env.RIVET_HOME = home
+  })
+
+  after(() => {
+    if (prevHome === undefined) delete process.env.RIVET_HOME
+    else process.env.RIVET_HOME = prevHome
+    resetRootExistsMemoForTest()
+    _resetGrantsForTest()
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  it('GET 的 exists 走 TTL 记忆：记忆期内不重探，清空后如实反映磁盘', async () => {
+    resetRootExistsMemoForTest()
+    _resetGrantsForTest()
+    const router = createRouter(buildConfigRoutes(TOKEN))
+    const late = join(home, 'mounted-later')
+    // 保存一个"当下不存在"的路径 → 探测结果（不存在的负结论）进记忆
+    await router('PUT', '/config/permission-dirs', { additionalReadDirs: [late], additionalWriteDirs: [] }, AUTH)
+    mkdirSync(late, { recursive: true })
+
+    const res = await router('GET', '/config/permission-dirs', {}, AUTH)
+    const dirs = (res.body as { readDirs: Array<{ path: string; exists: boolean }> }).readDirs
+    assert.equal(dirs[0]!.exists, false, 'TTL 内命中记忆——正是这一步挡住了逐个同步 existsSync')
+
+    resetRootExistsMemoForTest()
+    const res2 = await router('GET', '/config/permission-dirs', {}, AUTH)
+    const dirs2 = (res2.body as { readDirs: Array<{ path: string; exists: boolean }> }).readDirs
+    assert.equal(dirs2[0]!.exists, true, '记忆清空后如实反映磁盘')
+  })
+
+  it('PUT 只对新增路径强制实测：未变路径读记忆（force:true 回归会被这条挡住）', async () => {
+    resetRootExistsMemoForTest()
+    _resetGrantsForTest()
+    const router = createRouter(buildConfigRoutes(TOKEN))
+    const stable = join(home, 'stable-root')
+    const added = join(home, 'added-root')
+    mkdirSync(stable, { recursive: true })
+    mkdirSync(added, { recursive: true })
+
+    // 首存：stable 存在 → 探测 true 进记忆（本次新增 → forceRoots 当场实测）。
+    const first = await router('PUT', '/config/permission-dirs', { additionalReadDirs: [stable], additionalWriteDirs: [] }, AUTH)
+    assert.equal(first.status, 200)
+    const probeOf = (body: unknown) => (body as { readDirs: Array<{ path: string; exists: boolean }> }).readDirs
+    assert.equal(probeOf(first.body)[0]!.exists, true)
+
+    // 关键区分机关：second 保存**之前**把 stable 删掉——记忆里仍是 true。
+    // 若实现回退成 force: true（整批强制实测），stable 会被重新 existsSync → false，
+    // 本断言即红；只有"未变路径读记忆"才保持 true。
+    rmSync(stable, { recursive: true, force: true })
+
+    const second = await router('PUT', '/config/permission-dirs', { additionalReadDirs: [stable, added], additionalWriteDirs: [] }, AUTH)
+    assert.equal(second.status, 200)
+    const dirs = probeOf(second.body)
+    assert.equal(dirs[0]!.exists, true, 'stable 未变 → 走记忆（未重新探测），force:true 回归会变 false')
+    assert.equal(dirs[1]!.exists, true, 'added 本次新增 → forceRoots 当场实测（已建目录 → true）')
+
+    // 对照：added 若也不存在，forceRoots 如实报 false（记忆不掩盖新路径的真值）
+    resetRootExistsMemoForTest()
+    const ghost = join(home, 'ghost-root')
+    const third = await router('PUT', '/config/permission-dirs', { additionalReadDirs: [ghost], additionalWriteDirs: [] }, AUTH)
+    assert.equal(probeOf(third.body)[0]!.exists, false, '新增路径如实探测：不存在就是 false')
   })
 })

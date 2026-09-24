@@ -30,6 +30,7 @@ import { lastSessionPointerDir, rivetHome, stateDir } from './config/paths.js'
 import { setTargetConventions, applyConfiguredGitBashPath } from './platform.js'
 import { AgentLoop } from './agent/loop.js'
 import { resolveZenConfig } from './agent/zen-mode.js'
+import { resolveMaxTurns } from './agent/turn-budget-policy.js'
 import { createAgentConfig, createMainAgentConfigInput } from './agent/create-agent-config.js'
 import { SessionContext } from './agent/context.js'
 import { SessionPersist, evictOldSessions, getSessionDir } from './agent/session-persist.js'
@@ -91,12 +92,14 @@ import { createModeAwareRunner, workerIsolationEnabled, workerIsolationMode } fr
 import type { ResolvedReviewOverride } from './agent/review-model-override.js'
 import { createAuthProvider } from './auth/registry.js'
 import { resolveCapabilities } from './api/provider.js'
+import { canonicalizeModelId } from './api/model-aliases.js'
+import { contractModels } from './config/contract-models.js'
 import { DelegationCoordinator } from './agent/coordinator.js'
 import { ProviderHealthTracker } from './agent/provider-health.js'
 import { effectiveBanditMode, resolveBanditPromotion } from './agent/bandit-promotion.js'
 import { DomainKnowledgeStore } from './agent/domain-knowledge-store.js'
 import { emptyObligationStore } from './agent/evidence-obligation.js'
-import { resolvePlanConstraints } from './agent/plan-constraints.js'
+import { resolvePlanConstraints, resolvePlanContract } from './agent/plan-constraints.js'
 import { profileRegistry } from './agent/profile-registry.js'
 import { starDomainRegistry } from './agent/star-domain-registry.js'
 import type { WorkerRuntimeFactory } from './agent/coordinator.js'
@@ -498,7 +501,7 @@ export function createInteractiveToolRegistry(
     fetchOptions: buildFetchOptions(config),
   })
 
-  // delegate_task —— taiyi 评测档排除（编排类不在 16 核心集；TAIYI_EXCLUDES），
+  // delegate_task —— taiyi 评测档排除（编排类不在 14 核心集；TAIYI_EXCLUDES），
   // 其余档位照旧无条件注册。
   if (presetIncludes(toolPreset, 'delegate_task')) {
     reg.register(createDelegateTaskTool(
@@ -508,6 +511,14 @@ export function createInteractiveToolRegistry(
       () => refs.claimStore ?? undefined,
       () => refs.sessionId ?? undefined,
       () => refs.getProblemAttackStore?.() ?? null,
+      // B1 worker 归属回流：passed 的 changedFiles 写回主控 ledger + ownership——
+      // 修复 worker 写入不在 owned 集（交付需 adopt 补交）的机制根因。
+      (files) => {
+        for (const f of files) {
+          refs.taskLedger?.record({ type: 'file_write', path: f })
+          refs.ownershipLedger?.registerOwned(f)
+        }
+      },
     ))
   }
 
@@ -525,6 +536,13 @@ export function createInteractiveToolRegistry(
       () => refs.claimStore ?? undefined,
       () => refs.sessionId ?? undefined,
       () => refs.getProblemAttackStore?.() ?? null,
+      // B1 worker 归属回流（同 delegate_task 语义）。
+      (files) => {
+        for (const f of files) {
+          refs.taskLedger?.record({ type: 'file_write', path: f })
+          refs.ownershipLedger?.registerOwned(f)
+        }
+      },
     ))
   }
 
@@ -613,7 +631,8 @@ export function createInteractiveToolRegistry(
   if (presetIncludes(toolPreset, 'team_orchestrate')) {
     teamOrchestrateTool = createTeamOrchestrateTool(planExecutorDeps, {
       defaultMaxParallel: config.agent.maxTeamParallel,
-      // Pro gate（双层模式）：桌面端由 Rust 验签后注入 RIVET_PRO=1；CLI 保持软 gate。
+      // Pro gate（双层模式）：桌面端由 shell 验签 + 完整性校验后注入签名凭证
+      // （RIVET_PRO_GRANT，sidecar 侧再验一次签名）；CLI 保持软 gate。
       teamMaxEnabled: isProFeatureEnabled(config, 'teamMax'),
     })
     reg.register(teamOrchestrateTool)
@@ -655,7 +674,7 @@ export function createInteractiveToolRegistry(
     }))
   }
 
-  // recall_capsule —— taiyi 排除（不在 16 核心集）。
+  // recall_capsule —— taiyi 排除（不在 14 核心集）。
   if (presetIncludes(toolPreset, 'recall_capsule')) reg.register(createRecallCapsuleTool(() => cwd))
 
   // 将星账本（B1/B2）：recall_general 读战绩，record_general_finding 追加战绩。
@@ -687,7 +706,7 @@ export function createInteractiveToolRegistry(
   if (presetIncludes(toolPreset, 'semantic_search') || zenStructuredRead) reg.register(SEMANTIC_SEARCH_TOOL)
   // APPLY_PATCH: EXTENDED layer — overlap with hash_edit covers >90% of
   // use cases; kept here (interactive) for edge cases (e.g. git-format patches).
-  // taiyi 排除（16 核心集已有 edit_file/hash_edit 覆盖编辑面）。
+  // taiyi 排除（14 核心集已有 edit_file/hash_edit 覆盖编辑面）。
   if (presetIncludes(toolPreset, 'apply_patch')) reg.register(APPLY_PATCH_TOOL)
   // W5 session_vitals: EXTENDED layer（interactive 装配，不占 kernel budget）。
   // 只读自查工具——模型写"系统状态"类结论前的取证入口（incident 20b9714e）。
@@ -707,7 +726,7 @@ export function createInteractiveToolRegistry(
   // web_search is now in the kernel default-registry (CORE layer).
   // Remove the interactive registration to avoid double-registration.
   // PLAN_MODE_ALLOWED_TOOLS already references web_search alongside recall.
-  // plan_task —— taiyi 排除（编排类；16 核心集保留 plan_submit/plan_close 轻量对）。
+  // plan_task —— taiyi 排除（编排类；14 核心集保留 plan 轻量对）。
   if (presetIncludes(toolPreset, 'plan_task')) {
     reg.register(createPlanTaskTool({
       getCoordinator: () => refs.coordinator,
@@ -875,19 +894,37 @@ export function createAgentRuntime(deps: {
   // 而兜底的 models[0] 常常是同名的纯文本档——症状是「配了视觉模型却完全看不到
   // 图片」，界面上却毫无异常，是最难查的一类故障。别名失配尤其容易踩：preset 给
   // 模型加的 alias 进不了存量 config 快照（数组整组替换 + alias 不在回填白名单）。
+  // 归一后再比：上面那段说的存量字符串（preset 短名 / 旧名）本该按 canonical id 比。
+  // 不归一的话失配 → models[0] 位置性回退 → 请求打到另一个档（上游不认的 id → 400，
+  // 套餐绑定的卡 → 429）。精确命中优先、归一只是补位（别名 key 可能是池内某个模型的
+  // 真实 id）；表里没有的名字原样保留（L4：不猜），行为与改动前一致。
+  //
+  // 池子取契约层（provider-keys.ts 头注释：消费方一律走 contractModels）——keys 池
+  // 才是模型的事实源，顶层 provider.models 是迁移时的快照。读顶层会漏掉只在 key 池里
+  // 的模型（失配 → 回退到快照的 models[0]，正是上面那类故障），也会让用户已从 key 池
+  // 删掉的模型继续可用。
+  const contractPool = contractModels(provider)
+  const resolvedModelId = modelId ? canonicalizeModelId(modelId) : undefined
   const matchedModel = modelId
-    ? provider.models.find(m => m.id === modelId)
+    ? (contractPool.find(m => m.id === modelId)
+      ?? (resolvedModelId !== undefined && resolvedModelId !== modelId
+        ? contractPool.find(m => m.id === resolvedModelId)
+        : undefined))
     : undefined
   if (modelId && !matchedModel && !warnedModelFallback.has(modelId)) {
     warnedModelFallback.add(modelId)
     // 与 warnVisionBridge 同惯例：console.warn 在终端可见（stderr，不进渲染回路）。
+    // 归一过就在告警里点名，否则「配置里写短名」会被读成「配错了模型」。
+    const normalizedHint = resolvedModelId && resolvedModelId !== modelId
+      ? `（已按别名表归一为 "${resolvedModelId}"）`
+      : ''
     console.warn(
-      `[model] 配置的模型 "${modelId}" 不在 provider "${provider.name}" 下，已回退到 `
-      + `"${provider.models[0]!.id}"（该档不支持视觉时图片将无法被识别）。`
-      + `可选：${provider.models.map(m => m.id).join(', ')}`,
+      `[model] 配置的模型 "${modelId}"${normalizedHint} 不在 provider "${provider.name}" 下，已回退到 `
+      + `"${contractPool[0]!.id}"（该档不支持视觉时图片将无法被识别）。`
+      + `可选：${contractPool.map(m => m.id).join(', ')}`,
     )
   }
-  const currentModel = matchedModel ?? provider.models[0]!
+  const currentModel = matchedModel ?? contractPool[0]!
 
   // wire 上下文会话固化（2026-08-07 spark T1）：meta 已有值 → 恒用之（resume/
   // 跨端字节稳定）；无值且 provider 注册了默认（spark 的 env 解析 N）→ 取默认
@@ -1051,7 +1088,8 @@ export function createAgentRuntime(deps: {
       // serve.ts）都会把 maxTurns 置 0，唯独「持久化 YOLO 为默认 → 重启」的构造
       // 路径漏了联动：YOLO 会话按 config maxTurns（如 50）跑，turn 45 注入预算
       // 预警、turn 50 被 GUARD 硬截断（session 92a38900，用户观感=自己停止）。
-      maxTurns: config.agent.approval === 'dangerously-skip-permissions' ? 0 : config.agent.maxTurns,
+      // 策略单点在 agent/turn-budget-policy.ts（2026-09-22 收口，别在这里重写三元式）。
+      maxTurns: resolveMaxTurns(config.agent.approval, config.agent.maxTurns),
       checkpointEveryTurns: config.agent.checkpointEveryTurns,
       getSessionMemoryState: () => persist.getSessionMemoryState(),
       fileHistory,
@@ -1065,6 +1103,11 @@ export function createAgentRuntime(deps: {
       playbookStore: process.env['RIVET_PLAYBOOK'] === '1' ? new PlaybookStore(cwd) : undefined,
       providerHealth,
       effortBanditEnabled: effortGate.enabled,
+      // 跨会话 registry 透传（2026-09-22）：与协调器同源（同为 refs.sessionRegistry）。
+      // 此前这个字段从未被填充，导致 AgentLoop 侧整个跨会话块失效——包括
+      // peer 编辑后的读去重失效（invalidateReadCachesForEvents）。注意该块内部
+      // 的「往 prompt 注入」三项仍各有独立开关且默认关。
+      sessionRegistry: refs.sessionRegistry ?? undefined,
       taskLedger: refs.taskLedger ?? undefined,
       ownershipLedger: refs.ownershipLedger ?? undefined,
       verificationSnapshotManager: refs.verificationSnapshotManager ?? undefined,
@@ -1161,7 +1204,16 @@ export function createAgentRuntime(deps: {
       resolvePlanConstraints(cwd, {
         objective,
         fromContract: agent.getTaskContract()?.planConstraints,
+        planRef: agent.getTaskContract()?.planRef,
       }),
+    // D1/D2：同一个 resolvePlanContract 派生指针——约束与指针同源（不会出现
+    // 「约束来自 A 计划、指针指向 B」），并带上会话契约里存的 planRef。
+    getPlanRef: objective =>
+      resolvePlanContract(cwd, {
+        objective,
+        fromContract: agent.getTaskContract()?.planConstraints,
+        planRef: agent.getTaskContract()?.planRef,
+      }).planRef,
   })
 
   // H4-D3 恢复半边：session meta 里有 PAL 快照就原地恢复（覆盖 resume、
@@ -1231,8 +1283,9 @@ export async function initializeLsp(
   toolRegistry: ReturnType<typeof createDefaultToolRegistry>,
 ): Promise<ReturnType<typeof createLspManager>> {
   // Polyglot: the multi-language manager routes each file to its matching
-  // server (typescript-language-server / pyright / gopls / rust-analyzer /
-  // clangd / jdtls), lazily spawning installed ones on first use.
+  // server (the LSP_SERVERS registry in lsp/server-registry.ts — TS/Python/Go/
+  // Rust/C/C++/Java/C#/Kotlin/Swift/PHP/Ruby/… 20+ languages), lazily spawning
+  // the installed ones on first use.
   const lspManager = createMultiLspManager(cwd)
 
   try {
@@ -1403,7 +1456,16 @@ export function resolveProviderForModel(ctx: Pick<BootstrapContext, 'config' | '
 
   for (const [provName, prov] of Object.entries(ctx.config.provider.providers)) {
     if (providerFilter && provName !== providerFilter) continue
-    const found = prov.models.find(m => m.id === modelRef)
+    // 上面注释承诺的这个 form 是「provider:modelId / provider:alias」——所以末段也经别名表
+    // 归一再比（与 provider-keys.findModelOwner、main.ts 的解析同一口径）。此前只做精确比，
+    // `/model deepseek:v4-flash` 这类短名一律落空，表现为 "not found in any provider" 的
+    // 硬报错，而不是静默回退。精确命中优先、归一补位——别名 key 可能是池内某模型的真实 id。
+    // 池子同样取契约层（keys 池并集）：本函数是 /model 切换与 startup resume 的入口，
+    // 只读顶层快照会让「只在 key 池里」的模型永远解析不到。
+    const contractPool = contractModels(prov)
+    const wanted = canonicalizeModelId(modelRef)
+    const found = contractPool.find(m => m.id === modelRef)
+      ?? (wanted !== modelRef ? contractPool.find(m => m.id === wanted) : undefined)
     if (!found) continue
     let provider = ctx.provider
     let apiKey = ctx.apiKey
@@ -2338,9 +2400,16 @@ export async function bootstrapInteractiveSession(opts: BootstrapOptions = {}): 
   // asyncExtras (default true): fire-and-forget, non-blocking for faster startup
   // asyncExtras=false: synchronous await, completes before bootstrap returns
   if (opts.asyncExtras !== false) {
+    // 晚到注册闸门（回流自 3.14alpha 71872ed9f，缓存碎裂根修）：三个异步注册器
+    // 各自 begin/end 包住；AgentLoop.run() 首请求 await 注册清零（8s 超时放行）。
+    // 晚到的 tools 变化由此吸收进 user 边界断尾，不再中途碎前缀。
+    toolRegistry.beginExtraRegistration()
     initializeMcp(config, toolRegistry, refs).then(() => {
       agent.updateTools()
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => {
+      toolRegistry.endExtraRegistration()
+    })
+    toolRegistry.beginExtraRegistration()
     initializePlugins(config.plugins, toolRegistry, cwd).then((result) => {
       refs.pluginHooks = result.hooks
       refs.pluginCommands = result.commands
@@ -2358,11 +2427,16 @@ export async function bootstrapInteractiveSession(opts: BootstrapOptions = {}): 
       }
     }).catch((err) => {
       debugLog(`[plugins] Initialization failed: ${(err as Error).message}`)
+    }).finally(() => {
+      toolRegistry.endExtraRegistration()
     })
+    toolRegistry.beginExtraRegistration()
     initializeLsp(cwd, toolRegistry).then((lspManager) => {
       refs.lspManager = lspManager
       agent.updateTools()
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => {
+      toolRegistry.endExtraRegistration()
+    })
   } else {
     await initializeMcp(config, toolRegistry, refs)
     agent.updateTools()

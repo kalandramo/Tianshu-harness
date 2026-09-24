@@ -883,9 +883,10 @@ test('team_orchestrate max mode downgrades to standard with existing plan when t
   assert.match(result.content, /\[Pro\]/)
 })
 
-test('team_orchestrate default keeps max mode available (gate defaults on for direct constructors)', async () => {
-  // 未传 teamMaxEnabled → 缺省 true：直接构造方（测试/嵌入）不受 gate 影响。
-  // bootstrap 注册时才按 pro-license 传真值。
+test('【回归】不传 teamMaxEnabled 时缺省关——max 降级 standard（Pro 门 fail-closed）', async () => {
+  // 缺省由 true 改为 false：门控参数的缺省必须是「关」。缺省放行意味着任何未来
+  // 新增的构造方（集成、嵌入、忘记传参）都白送 Pro 功能；bootstrap 注册路径总是
+  // 显式传 pro-license 的真值，因此运行路径不受影响。
   const tool = createTeamOrchestrateTool({ delegateBatch: async () => stubRun() })
   const md = ['### Task 1: edit foo', 'Modify `src/agent/foo.ts`'].join('\n')
   const result = await tool.execute({
@@ -893,9 +894,9 @@ test('team_orchestrate default keeps max mode available (gate defaults on for di
     cwd: process.cwd(),
     toolUseId: 'tu-pro-gate-3',
   })
-  // max with pre-parsed plan bypasses planner fanout — should not be Pro-blocked.
   assert.equal(result.isError, false)
-  assert.ok(!result.content.includes('[Pro]'))
+  assert.match(result.content, /team standard/, '缺省门下 max 应降级执行现有计划')
+  assert.match(result.content, /\[Pro\]/, '降级必须留 Pro 提示')
 })
 
 test('confirm:false → 只展示波次分派方案，零派发（收编 #7）', async () => {

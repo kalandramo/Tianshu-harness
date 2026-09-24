@@ -61,11 +61,13 @@ import {
   shiftTabPlanToggleHint,
 } from './agent/plan-mode.js'
 import type { ApprovalMode } from './agent/loop-types.js'
+import { resolveMaxTurns } from './agent/turn-budget-policy.js'
 import { TIER_HINT, TIER_TO_WIRE, formatPermissionLabel, formatTierLabel } from './agent/approval-vocabulary.js'
 import { readFileSync, statSync } from 'node:fs'
 import { join as pathJoin } from 'node:path'
 import { formatWelcome, isMissionLine, missionShimmer, MISSION_SHIMMER_FRAME_MS } from './tui/format/welcome.js'
 import { settleWelcomeGreeting } from './tui/welcome-greeting.js'
+import { commitWelcomeStellarIdentityLine } from './tui/account-status.js'
 import { resolveOrchestrationHintEnabled } from './tui/engine/orchestration-hint.js'
 import { HANDOFF_NUDGE_RATIO, formatHandoffNudge } from './tui/handoff.js'
 import { formatDomainDriftNudge } from './tui/domain-drift-nudge.js'
@@ -120,6 +122,7 @@ import { runTuiShutdownSequence } from './tui/engine/shutdown-sequence.js'
 import { contractModels } from './config/contract-models.js'
 import { disambiguateKeyPrefix, parseModelRef, findModelOwner, findModelInKey } from './config/provider-keys.js'
 import { tryResolveCredentialKey } from './api/factory.js'
+import { canonicalizeModelId } from './api/model-aliases.js'
 
 // ── CLI args ───────────────────────────────────────────────────
 
@@ -165,7 +168,10 @@ const skipWelcome = args.includes('--skip-welcome')
 
 // --stream-events <path> → mirror the run as NDJSON `SessionEvent`s (the same
 // records the sidecar serves to `attach`). A path is required rather than
-// optional: in TUI mode stdout is the render surface.
+// optional: in TUI mode stdout is the render surface. Both the TUI path and the
+// headless (-p / --goal) path wire the same sink — see the `sinks.push` below and
+// `eventSink:` in the headless config. (2026-09-18: the headless branch used to
+// create the sink and never attach it, so `-p` mirrored nothing at all.)
 const wantScreenReader = args.includes('--screen-reader')
 let screenReaderMode = false
 
@@ -374,16 +380,26 @@ async function main() {
       : (provName === defaultModelParts?.provider ? defaultModelParts.keyId : undefined)
     const defaultModelId = provName === defaultModelParts?.provider ? defaultModelParts.modelRef : undefined
     const wantedModelId = requestedParts ? requestedParts.modelRef : defaultModelId
+    // 经别名表归一再解析（与 src/bootstrap.ts、src/config/provider-keys.ts 同口径）：
+    // 存量 config 与 --model 里可能是 preset 短名 / 旧名，不归一就会在归属查找与池内精确
+    // 比双双落空，最后位置性回退到 providerPool[0]——那是另一个档，甚至可能是上游不认的
+    // id。精确命中优先、归一只是补位（别名 key 可能是池内某模型的真实 id）；表里没有的
+    // 名字原样保留。
+    const resolvedModelId = wantedModelId ? canonicalizeModelId(wantedModelId) : undefined
     const providerPool = contractModels(prov)
     const owner = wantedModelId
       ? (pinnedKeyId ? findModelInKey(prov, pinnedKeyId, wantedModelId) : findModelOwner(prov, wantedModelId))
       : undefined
-    const model = owner?.model
-      ?? (wantedModelId ? providerPool.find(m => m.id === wantedModelId) : undefined)
-      ?? providerPool[0]!
+    const exactInPool = wantedModelId ? providerPool.find(m => m.id === wantedModelId) : undefined
+    const normalizedInPool = resolvedModelId !== undefined && resolvedModelId !== wantedModelId
+      ? providerPool.find(m => m.id === resolvedModelId)
+      : undefined
+    const model = owner?.model ?? exactInPool ?? normalizedInPool ?? providerPool[0]!
     // 模型名失配告警（合 origin/main）：静默换档会让「配了多模态模型却看不到图片」
     // 完全无迹可循（兜底档常是同名前缀的纯文本档）。headless 每进程只解析一次，无需去重。
-    if (wantedModelId && !owner && !providerPool.some(m => m.id === wantedModelId)) {
+    // 判失配要把原文与归一结果都算上（两者都已查过），否则配置里写短名会被误报成「不在
+    // provider 下」。
+    if (wantedModelId && !owner && !exactInPool && !normalizedInPool) {
       process.stderr.write(
         `[model] 配置的模型 "${wantedModelId}" 不在 provider "${provName}" 下，`
         + `已回退到 "${model.id}"（该档不支持视觉时图片将无法被识别）。`
@@ -433,6 +449,7 @@ async function main() {
       streamJson: parsed.streamJson,
       sessionId,
       model: model.id,
+      eventSink: eventStream?.sink,
       createAgent: () => {
         const toolRegistry = createDefaultToolRegistry([], registryOptions)
 
@@ -604,7 +621,10 @@ async function main() {
         }
         return agent
       },
-    })
+    // 审计面收尾：sink 是缓冲写入，不 await close 就落到下面的 process.exit 会丢掉
+    // 尾段（TUI 侧同一份清理挂在 shutdown() 的 cleanup 列表上，无头分支不走
+    // shutdown）。finally 同时覆盖 runHeadless 抛错的情形——异常路径也要收尾。
+    }).finally(() => eventStream?.close())
 
     if (result.stdout) process.stdout.write(result.stdout + '\n')
     else if (result.json) process.stdout.write(JSON.stringify(result.json) + '\n')
@@ -1504,9 +1524,9 @@ async function main() {
       // YOLO = 完全权限（免审批 + 全盘无沙箱，2026-09-07 语义）；沙箱仅显式 RIVET_SANDBOX=1。
       applySandboxPolicyForApprovalMode(mode)
       // YOLO 联动无限轮次：真正全自动，不被 maxTurns 截断。
-      // 其他模式恢复默认 200 轮预算。
-      const yoloMaxTurns = mode === 'dangerously-skip-permissions' ? 0 : 200
-      ctx!.agent.config.maxTurns = yoloMaxTurns
+      // 其它模式恢复**配置里**的轮次预算（策略单点 agent/turn-budget-policy.ts）——
+      // 此前写死 200：用户配的 agent.maxTurns: 500 在面板切一次档就被抹平。
+      ctx!.agent.config.maxTurns = resolveMaxTurns(mode, ctx!.config.agent.maxTurns)
       try {
         persistApprovalDefault(mode)
       } catch (err) {
@@ -1888,8 +1908,10 @@ async function main() {
     const setSessionApproval = (mode: ApprovalMode) => {
       agent.setApprovalMode(mode)
       app!.setApprovalMode(mode)
-      // YOLO 联动无限轮次（与 /yes、权限面板一致）
-      agent.config.maxTurns = mode === 'dangerously-skip-permissions' ? 0 : 200
+      // YOLO 联动无限轮次（与 /yes、权限面板一致）。策略单点
+      // agent/turn-budget-policy.ts：恢复时读**配置值**而不是写死 200
+      // （用户配的 agent.maxTurns: 500 不再被一次档位切换静默抹平）。
+      agent.config.maxTurns = resolveMaxTurns(mode, loadRivetConfig().agent.maxTurns)
     }
     const current = agent.config.approvalMode ?? 'auto-safe'
     const decision = nextShiftTabPlanToggle({
@@ -1982,10 +2004,10 @@ async function main() {
         if (line) app!.commitStatic(line)
       })
     }
-    const callbacks = sinks.length > 0
+    const tapped = sinks.length > 0
       ? tapAgentCallbacks(base, (event) => { for (const s of sinks) s(event) })
-      : base
-    ctx!.agent.run(resolved.prompt, callbacks, images)
+      : null
+    ctx!.agent.run(resolved.prompt, tapped ?? base, images)
       .then((outcome) => {
         // re-entry guard 命中：本次没发起任何轮次，而 TUI 已把自己置成 busy。
         // 不复位的话那个 busy 再没人清，后续消息会全进 steer 队列等一个不存在的
@@ -1998,6 +2020,12 @@ async function main() {
       .finally(() => {
         // promise settle 是唯一一定会到达的终结信号——回调会被 bridge 的世代守卫
         // 按 gen 丢弃。中断收尾窗口在此结束，期间挂起的消息由它补发。
+        //
+        // tap 收尾 flush：delta 在 tap 内合并到 4000 字符才落一笔，正常路径由下一个
+        // 非 delta 事件带走（onTurnComplete / onError / onAbort 都会先 flush）；但 run
+        // 以 rejection 收场时可能一个终结回调都没触发，压着的尾段文本会连同
+        // --stream-events 的审计面一起丢掉——恰是排障最需要那一段的时候。
+        tapped?.flush()
         app!.notifyRunSettled()
       })
   })
@@ -2230,6 +2258,15 @@ async function main() {
   // 两者都比自然流难看。真正扎眼的「输入框下方死区」另有其因——动态段垫高与轮末塌回
   // 曾是两套口径，已在 getDynamicBudget 收口为内容驱动（空闲期同样走自然流）。
   app.start()
+
+  // 首屏星籍行(P1-3):登录后一眼看见「我是谁」——账号体系唯一不需用户敲命令的
+  // 收益。只读磁盘缓存(零网络、零启动延迟),未登录/无缓存则不出现。
+  // 主体在 src/tui/account-status.ts(main.ts 是点名巨石,只留接线)。
+  if (!skipWelcome && stdout.isTTY === true) {
+    // 收进 const 再进闭包：`app` 是可变量，narrowing 不会带进回调（与下方 settleApp 同法）
+    const identityApp = app
+    commitWelcomeStellarIdentityLine((text) => identityApp.commitStatic(text))
+  }
 
   // 欢迎页问候语 settle(P1-2):零启动延迟,LLM ≤1.2s 竞速,失败静默算法兜底;
   // 主体在 src/tui/welcome-greeting.ts(巨石只降不升,沿接缝拆出)。

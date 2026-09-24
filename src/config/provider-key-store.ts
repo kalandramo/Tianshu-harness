@@ -176,6 +176,25 @@ export function removeProviderKey(providerName: string, keyId: string): RemovePr
   }
   const [removed] = keys.splice(index, 1)
   provider.keys = keys
+  // 被删 key 的凭据正是顶层槽当前所指（keyRef 相等，或 apiKeyEnv 同名——后者是
+  // 对称面：env 型默认 key 的顶层槽钉的是 env 名而非 ref）时，把剩余首个 key 的
+  // 凭据提升到顶层槽——否则顶层悬空：状态面板显示「未配置」、供应商从设置列表
+  // 消失，若它还是默认供应商，下一次快照重建直接 resolveApiKey 抛错把整机打进
+  // setup 模式；且顶层钉着已删 key 的 ref 时其 secret 因「仍被引用」永远不可回收
+  // （僵尸凭据）。判据不看 keyId 是否 default：默认 key 的 keyRef = provider 名，
+  // 天然命中本条件；经提升接管顶层槽的 key（id 非 default）日后再被删时同样
+  // 命中——只按 id 判会漏掉后者。两侧皆 undefined 不算命中：顶层本就没钉任何
+  // 凭据，无可悬空，也避免把凭据回填进被 clearApiKey 清空过的顶层槽。keys 池与
+  // 顶层槽自此共享存活 key 的 ref（defaultKeyOf 对无 default 键的池本来就回退
+  // keys[0]，两处口径一致）。
+  if (removed !== undefined && (
+    (removed.keyRef !== undefined && removed.keyRef === provider.keyRef) ||
+    (removed.apiKeyEnv !== undefined && removed.apiKeyEnv === provider.apiKeyEnv)
+  )) {
+    const next = keys[0]!
+    provider.keyRef = next.keyRef
+    provider.apiKeyEnv = next.apiKeyEnv
+  }
   saveConfig(cfg)
 
   const keyRef = removed?.keyRef
@@ -252,6 +271,31 @@ export function addProviderKeyModel(providerName: string, keyId: string, model: 
     throw new Error(`Model "${model.id}" already exists under key "${keyId}"`)
   }
   key.models = [...key.models, model]
+  provider.userSaved = true
+  saveConfig(cfg)
+}
+
+/**
+ * key 级批量新增：先整单校验、再一次落盘。任一项冲突（与既有池重复 / 批内重复）
+ * 整批不写——逐项 saveConfig 会在中途冲突时留下半批落盘：UI 收到 400 以为没保存，
+ * 重试又永远卡在第一项冲突上，后面的新模型再也进不去（连续保存存不上）。
+ */
+export function addProviderKeyModels(providerName: string, keyId: string, models: ModelConfig[]): void {
+  const cfg = loadConfig()
+  const provider = requireProvider(cfg, providerName)
+  const key = requireKey(provider, keyId)
+  const existing = new Set(key.models.map(m => m.id))
+  const conflicts = new Set<string>()
+  const seen = new Set<string>()
+  for (const model of models) {
+    if (existing.has(model.id) || seen.has(model.id)) conflicts.add(model.id)
+    seen.add(model.id)
+  }
+  if (conflicts.size > 0) {
+    const ids = [...conflicts].map(id => `"${id}"`).join(', ')
+    throw new Error(`Model ${ids} already exists under key "${keyId}"`)
+  }
+  key.models = [...key.models, ...models]
   provider.userSaved = true
   saveConfig(cfg)
 }

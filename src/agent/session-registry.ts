@@ -150,12 +150,12 @@ export class SessionRegistry {
       // Distinguish "library missing" from "schema execution failed"
       if (err instanceof Error && err.message?.includes('better-sqlite3')) {
         // 指引修正（2026-08-17）：旧的 windows-build-tools（废弃）+ `npm rebuild
-        // better-sqlite3 -g tianshu-tui`（rebuild 不到、语法不通）换成本仓自带的
+        // better-sqlite3 -g tianshu-harness`（rebuild 不到、语法不通）换成本仓自带的
         // 预编译拉取脚本——npm 安装包含 scripts/fetch-native-sqlite.js，网络恢复后
         // 在安装目录重跑即可，无需编译工具链。
         const hint = process.platform === 'win32'
-          ? 'Run: cd "$(npm root -g)\\tianshu-tui" && node scripts\\fetch-native-sqlite.js'
-          : 'Run: cd "$(npm root -g)/tianshu-tui" && node scripts/fetch-native-sqlite.js'
+          ? 'Run: cd "$(npm root -g)\\tianshu-harness" && node scripts\\fetch-native-sqlite.js'
+          : 'Run: cd "$(npm root -g)/tianshu-harness" && node scripts/fetch-native-sqlite.js'
         console.warn(`⚠ better-sqlite3 not available. Session history & cross-session memory will NOT persist (in-memory only, lost on exit). Reason: ${(err as Error).message}\n  Fix: ${hint}`)
       } else {
         console.error('Session registry schema failed:', err)

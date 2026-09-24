@@ -19,7 +19,7 @@
  */
 
 import type { SetupProviderOptions } from '../config/manager.js'
-import type { ModelConfig, ProviderAdvancedConfig } from '../config/schema.js'
+import type { ModelConfig, ProviderAdvancedConfig, ProviderProtocol } from '../config/schema.js'
 import { PROVIDER_PRESETS, providerPresetKeys, isProviderPresetKey, type ProviderPresetKey, type ProviderPreset } from '../config/provider-presets.js'
 import { matchModelIds, type ModelMatchResult } from '../api/model-id-matcher.js'
 import { aliasTableWithProbeInfos, isVisionCapableId, VISION_PROBE_GROUND_TRUTH, type ProbeReport } from '../api/provider-probe.js'
@@ -106,7 +106,7 @@ export type ConnectCommit =
       baseUrl: string
       /** Empty for local endpoints (Ollama/vLLM) that need no auth. */
       apiKey?: string
-      protocol: 'openai' | 'anthropic'
+      protocol: ProviderProtocol
       /** Multi-model; partial entries are normalized by registerProvider. */
       models: Array<Partial<ModelConfig> & { id: string }>
       makeDefault: boolean
@@ -123,7 +123,7 @@ export type ConnectStepResult =
   | { kind: 'next'; view: ConnectView }
   | { kind: 'error'; message: string; view: ConnectView }
   /** Async probe request — the TUI runs probeProvider and calls applyProbe/probeFailed. */
-  | { kind: 'probe'; baseUrl: string; apiKey?: string; protocol: 'openai' | 'anthropic'; probeModel?: string; providerName?: string }
+  | { kind: 'probe'; baseUrl: string; apiKey?: string; protocol: ProviderProtocol; probeModel?: string; providerName?: string }
   | { kind: 'commit'; commit: ConnectCommit; summary: string }
 
 type Phase =
@@ -142,6 +142,7 @@ type Phase =
   | 'confirm'
   | 'advanced-settings'
   | 'advanced-request-timeout'
+  | 'advanced-max-body-bytes'
   | 'advanced-max-retries'
   | 'advanced-temperature'
   | 'advanced-proxy'
@@ -186,7 +187,7 @@ interface Collected {
   billingMode?: string
   baseUrl?: string
   /** Wire protocol for the DIY/custom path (defaults to openai-compatible). */
-  protocol?: 'openai' | 'anthropic'
+  protocol?: ProviderProtocol
   /** Set when the entered URL was normalized (request-path tail stripped) at collection. */
   urlNormalized?: boolean
   apiKey?: string
@@ -527,7 +528,7 @@ export class ConnectFlow {
       ? (this.advancedReturnPhase === 'capability' ? 'preset-models' : 'diy-models')
       : this.phase
     // 高级设置子菜单同为瞬态——回落确认步（已存旋钮值随 collected.advanced 持久化）。
-    if (phase === 'advanced-settings' || phase === 'advanced-request-timeout' || phase === 'advanced-max-retries' || phase === 'advanced-temperature' || phase === 'advanced-proxy') {
+    if (phase === 'advanced-settings' || phase === 'advanced-request-timeout' || phase === 'advanced-max-body-bytes' || phase === 'advanced-max-retries' || phase === 'advanced-temperature' || phase === 'advanced-proxy') {
       phase = 'confirm'
     }
     // 换型号重探的挑选步是瞬态——回落报告步（恢复后再从报告页进入）。
@@ -1077,6 +1078,7 @@ export class ConnectFlow {
           stepLabel: this.confirmStepLabel(),
           options: [
             { id: 'requestTimeoutMs', label: '请求超时', description: adv.requestTimeoutMs !== undefined ? `${adv.requestTimeoutMs} ms` : '未设置（内置 10 分钟硬顶）' },
+            { id: 'maxBodyBytes', label: '请求体上限', description: adv.maxBodyBytes !== undefined ? `${adv.maxBodyBytes} 字节` : '未设置（不限制）' },
             { id: 'maxRetries', label: '重试次数', description: adv.maxRetries !== undefined ? `${adv.maxRetries} 次` : '未设置（按错误类别默认）' },
             { id: 'temperature', label: '采样温度', description: adv.temperature !== undefined ? String(adv.temperature) : '未设置（思考模式下不生效）' },
             { id: 'proxy', label: 'HTTP 代理', description: adv.proxy ?? '未设置（跟随全局 network.proxy）' },
@@ -1091,6 +1093,14 @@ export class ConnectFlow {
           subtitle: '单次流式请求的总时限（毫秒），替换内置 10 分钟硬顶；回车清空 = 恢复内置',
           stepLabel: this.confirmStepLabel(),
           placeholder: '例如 300000',
+        }
+      case 'advanced-max-body-bytes':
+        return {
+          kind: 'input',
+          title: '高级设置：请求体上限',
+          subtitle: '发送前体积护栏（字节）。超限先截断历史工具输出、仍超限则报可行动错误；留空 = 不限制（默认）',
+          stepLabel: this.confirmStepLabel(),
+          placeholder: '例如 4194304（4MB）',
         }
       case 'advanced-max-retries':
         return {
@@ -1120,11 +1130,12 @@ export class ConnectFlow {
         return {
           kind: 'choice',
           title: '选择 API 协议',
-          subtitle: '大多数中转/网关是 OpenAI 兼容协议；Anthropic 原生端点选第二项',
+          subtitle: '大多数中转/网关是 OpenAI 兼容协议；Anthropic 原生端点选第二项；只有 /v1/responses 的端点选第三项',
           stepLabel: this.diyStepLabel(1),
           options: [
             { id: 'openai', label: 'OpenAI 兼容（/v1/chat/completions）', recommended: true },
             { id: 'anthropic', label: 'Anthropic 原生（/v1/messages）' },
+            { id: 'openai-responses', label: 'OpenAI Responses（/v1/responses）' },
           ],
         }
       case 'diy-url':
@@ -1133,7 +1144,9 @@ export class ConnectFlow {
           title: '输入服务商 API 地址',
           subtitle: this.collected.protocol === 'anthropic'
             ? '例如 https://api.anthropic.com（协议：Anthropic 原生）'
-            : '例如 https://api.deepseek.com/v1（可粘贴）',
+            : this.collected.protocol === 'openai-responses'
+              ? '例如 https://api.openai.com/v1（协议：Responses；可粘贴完整 /v1/responses 地址）'
+              : '例如 https://api.deepseek.com/v1（可粘贴）',
           stepLabel: this.diyStepLabel(2),
           placeholder: 'https://',
         }
@@ -1514,7 +1527,7 @@ export class ConnectFlow {
       return { kind: 'error', message: `未知选项：${id}`, view: this.view() }
     }
     if (this.phase === 'diy-protocol') {
-      if (id !== 'openai' && id !== 'anthropic') {
+      if (id !== 'openai' && id !== 'anthropic' && id !== 'openai-responses') {
         return { kind: 'error', message: `未知选项：${id}`, view: this.view() }
       }
       this.collected.protocol = id
@@ -1714,6 +1727,7 @@ export class ConnectFlow {
       // 进入单项输入子步——预填当前值，留空回车即清除。
       const target: Record<string, Phase> = {
         requestTimeoutMs: 'advanced-request-timeout',
+        maxBodyBytes: 'advanced-max-body-bytes',
         maxRetries: 'advanced-max-retries',
         temperature: 'advanced-temperature',
         proxy: 'advanced-proxy',
@@ -1825,6 +1839,20 @@ export class ConnectFlow {
             return { kind: 'error', message: '请填写正整数毫秒数，或回车清空恢复内置硬顶。', view: this.view() }
           }
           this.applyAdvancedKnob('requestTimeoutMs', parsed)
+        }
+        this.phase = 'advanced-settings'
+        return { kind: 'next', view: this.view() }
+      }
+
+      case 'advanced-max-body-bytes': {
+        if (value.length === 0) {
+          this.applyAdvancedKnob('maxBodyBytes', undefined)
+        } else {
+          const parsed = Number.parseInt(value, 10)
+          if (!Number.isFinite(parsed) || parsed <= 0) {
+            return { kind: 'error', message: '请填写正整数字节数（如 4194304 = 4MB），或回车清空恢复不限制。', view: this.view() }
+          }
+          this.applyAdvancedKnob('maxBodyBytes', parsed)
         }
         this.phase = 'advanced-settings'
         return { kind: 'next', view: this.view() }

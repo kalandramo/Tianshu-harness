@@ -221,7 +221,7 @@ describe('applyCommandFilter', () => {
 
     it('npm test success: strips lifecycle header, keeps summary', () => {
       const input = [
-        '> tianshu-tui@2.19.4 test',
+        '> tianshu-harness@2.19.4 test',
         '> tsx scripts/run-node-tests.ts',
         '',
         ...Array.from({ length: 14 }, (_, i) => `✔ test ${i} (1ms)`),
@@ -231,7 +231,7 @@ describe('applyCommandFilter', () => {
       ].join('\n')
       const result = applyCommandFilter('npm test', input, 0)
       assert.ok(result)
-      assert.ok(!result.includes('> tianshu-tui@'), '生命周期头应被剥除')
+      assert.ok(!result.includes('> tianshu-harness@'), '生命周期头应被剥除')
       assert.match(result, /✓ 5451 passed/)
       assert.match(result, /ℹ tests 5451/)
       assert.ok(!result.includes('✔ test one'), '通过项细节应被丢弃')

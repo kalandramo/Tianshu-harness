@@ -276,7 +276,9 @@ describe('council_convene 工具', () => {
       },
       getSessionId: () => 'sess-1',
     }
-    const tool = createCouncilConveneTool(coordinator)
+    // 本条测「多轮逻辑」本身而非门控——显式开启，不依赖缺省值
+    // （缺省已收敛为关，见 council-convene.ts 的 Pro gate）。
+    const tool = createCouncilConveneTool(coordinator, undefined, { multiRoundEnabled: true })
     const res = await tool.execute(paramsWith({
       objective: 'split loop.ts',
       seats: [{ authority: 'tianquan' }, { authority: 'tianfu' }],
@@ -287,6 +289,20 @@ describe('council_convene 工具', () => {
     // round2 请求带 -r2 后缀
     const r2Reqs = calls.requests[1]!
     assert.ok(r2Reqs.every(r => r.parentTurnId.endsWith('-r2')), 'round2 parentTurnId 带 -r2')
+  })
+
+  it('【回归】不传 options 时缺省关：rounds≥2 降为单轮（Pro 门 fail-closed）', async () => {
+    // 缺省由 true 改为 false：门控参数的缺省必须是「关」，否则忘记传参就白送 Pro 功能。
+    const { coordinator, calls } = makeCoordinator()
+    const tool = createCouncilConveneTool(coordinator)
+    const res = await tool.execute(paramsWith({
+      objective: 'split loop.ts',
+      seats: [{ authority: 'tianquan' }, { authority: 'tianfu' }],
+      rounds: 2,
+    }))
+    assert.equal(res.isError, false)
+    assert.equal(calls.requests.length, 1, '缺省门下只应扇出一轮')
+    assert.match(res.content, /\[Pro\]/, '降级必须留 Pro 提示')
   })
 
   // ── P1 终态回路：席位在桌面子代理面板必须从 running 走到真实终态 ──────────
@@ -399,7 +415,8 @@ describe('council_convene 工具', () => {
       getSessionId: () => 'sess-1',
     }
     const events: import('../types.js').DelegationActivity[] = []
-    const tool = createCouncilConveneTool(coordinator)
+    // 本条测 r2 席位终态回路（多轮逻辑本身）——显式开多轮，不依赖缺省值。
+    const tool = createCouncilConveneTool(coordinator, undefined, { multiRoundEnabled: true })
     const res = await tool.execute({
       input: { objective: 'x', seats: [{ authority: 'tianquan' }, { authority: 'tianfu' }], rounds: 2 },
       toolUseId: 't1',
@@ -677,12 +694,13 @@ describe('council_convene 工具', () => {
     assert.equal(calls.requests.length, 1)
   })
 
-  it('rounds:2 缺省 gate（未传 options）→ 不注入 Pro 提示', async () => {
+  it('【回归】rounds:2 缺省 gate（未传 options）→ 注入 Pro 提示（缺省关）', async () => {
+    // 缺省由 true 改为 false：未显式开启的构造方一律降级单轮并留 Pro 提示。
     const { coordinator } = makeCoordinator()
     const tool = createCouncilConveneTool(coordinator)
     const res = await tool.execute(paramsWith({ objective: 'review the plan', rounds: 2 }))
     assert.equal(res.isError, false)
-    assert.ok(!res.content.includes('[Pro]'))
+    assert.match(res.content, /\[Pro\]/, '缺省门下应降级单轮并留 Pro 提示')
   })
 
   it('rounds:1 在 gate 关闭时不受影响', async () => {

@@ -15,7 +15,7 @@
 import { color, fileLink } from '../engine/ansi.js'
 import { classifyBrowserDebugLine } from '../../tools/browser-debug/log-capture.js'
 import type { RivetTheme } from '../theme.js'
-import { getToolFamily } from '../tool-family.js'
+import { getToolFamily, isKnownTool } from '../tool-family.js'
 import { toolArgSummary } from '../tool-label.js'
 import { isDelegationTool } from './tool-domain.js'
 import { formatElapsed } from '../tool-elapsed.js'
@@ -73,6 +73,8 @@ export function getDefaultMaxLines(toolName: string): number {
 
 const BODY_FIRST_PREFIX = '⎿  '
 const BODY_CONT_PREFIX = '   '
+/** 长跑无输出的如实占位（仅在整行放得下时使用，见 formatToolCardLive）。 */
+const LONG_SILENT_HINT = '仍无输出 · Ctrl+C 可中断'
 
 /** 标题动词：family verb 首字母大写（Run/Read/Patch/Write/Search/Find…） */
 function toolTitleVerb(toolName: string): string {
@@ -80,12 +82,23 @@ function toolTitleVerb(toolName: string): string {
   return verb.charAt(0).toUpperCase() + verb.slice(1)
 }
 
-/** 标题行文本（无色）：`Run(npm test)` 或 `Read(foo.ts)` */
+/** 未知工具的标题头：mcp__server__tool → mcp·server:tool，其余用原名——如实优先于美观。 */
+function toolTitleHead(toolName: string): string {
+  if (isKnownTool(toolName)) return toolTitleVerb(toolName)
+  if (toolName.startsWith('mcp__')) {
+    const segs = toolName.split('__')
+    // mcp__<server>__<tool>（工具名里可能还有 __，全部并入尾段）
+    if (segs.length >= 3) return `mcp·${segs[1]}:${segs.slice(2).join('__')}`
+  }
+  return toolName
+}
+
+/** 标题行文本（无色）：`Run(npm test)` 或 `Read(foo.ts)`；未知工具用真实名（`job(await x)`）。 */
 export function toolCardTitle(toolName: string, toolInput?: Record<string, unknown>, rawPath?: string): string {
-  const verb = toolTitleVerb(toolName)
+  const head = toolTitleHead(toolName)
   let arg = toolInput ? toolArgSummary(toolName, toolInput) : ''
   if (!arg && rawPath) arg = rawPath.split('/').pop() ?? rawPath
-  return arg ? `${verb}(${arg})` : verb
+  return arg ? `${head}(${arg})` : head
 }
 
 /** 缩进 body 行：第一行 `⎿  `，后续行对齐缩进 */
@@ -280,15 +293,25 @@ export interface FormatToolCardLiveInput {
  * live 区进行中工具的渲染：dim `●` 标题行 + 末 N 行输出（⎿ 缩进）。
  */
 export function formatToolCardLive(input: FormatToolCardLiveInput, theme: RivetTheme): string[] {
-  const title = toolCardTitle(input.toolName, input.toolInput)
   const useAscii = useAsciiGlyphs()
   const bullet = input.tick !== undefined
     ? (useAscii ? ['-', '\\', '|', '/'][((input.tick % 4) + 4) % 4]! : brailleSpinnerFrame(input.tick))
     : '●'
-  let header = `${color(bullet, theme.dim)} ${color(title, theme.toolColor(input.toolName), { bold: true })}`
-  if (input.elapsedMs !== undefined && input.elapsedMs >= 1000) {
-    header += ` ${color(`(${formatElapsed(input.elapsedMs)})`, theme.muted)}`
-  }
+  const title = toolCardTitle(input.toolName, input.toolInput)
+  const elapsedSuffix = input.elapsedMs !== undefined && input.elapsedMs >= 1000
+    ? ` (${formatElapsed(input.elapsedMs)})`
+    : ''
+  // 标题按整行预算裁剪，**耗时永不裁剪**：未知工具的名字 + 参数摘要可长过 80 列
+  // （`mcp·server:tool(50 字符)`），窄终端折行会让 rowsForLine 低估 → chrome 残留
+  // 重影；而耗时是「还要不要等」的判断依据，优先级高于标题全文。
+  // 前缀宽度按 wide 上界实算——`●` 是 ambiguous 符号，CJK 终端按 2 列渲染。
+  const headerPrefixW = displayWidth(`${bullet} `, WIDE)
+  const titleBudget = input.columns - 1 - headerPrefixW - displayWidth(elapsedSuffix, WIDE)
+  const clippedTitle = displayWidth(title, WIDE) > titleBudget
+    ? `${truncateToDisplayWidth(title, Math.max(1, titleBudget - 2), WIDE)}…`
+    : title
+  let header = `${color(bullet, theme.dim)} ${color(clippedTitle, theme.toolColor(input.toolName), { bold: true })}`
+  if (elapsedSuffix) header += color(elapsedSuffix, theme.muted)
 
   const lines: string[] = [header]
   // 优先用调用方预切的行（按累加器引用缓存），否则从 outputTail 现切。
@@ -317,9 +340,18 @@ export function formatToolCardLive(input: FormatToolCardLiveInput, theme: RivetT
     tailLines.push(...indentBody(shown, '', theme))
   }
 
-  // 无输出时显示占位符，保持固定高度（tailCount=0 表示只要标题行，不占位）
+  // 无输出时显示占位符，保持固定高度（tailCount=0 表示只要标题行，不占位）。
+  // 长跑（≥60s）仍无输出时把占位符换成如实提示——「在跑但没产出」与「刚启动」
+  // 是同一种静默，用户需要一个可动作的说法（grok-build 的 waiting 如实化同族）。
   if (tailCount > 0 && tailLines.length === 0) {
-    tailLines.push(`${color(BODY_FIRST_PREFIX, theme.dim)}${color('…', theme.dim)}`)
+    // 长跑如实提示只在整行放得下时使用：窄终端退回 '…'。占位行不走截断——
+    // 截成「仍无输出 · Ctrl+…」比省略号更难读，而且这一行同样受 columns-1 约束
+    // （超出即折行 → rowsForLine 低估 → 重影）。
+    const longSilent = (input.elapsedMs ?? 0) >= 60_000
+    const placeholder = longSilent && displayWidth(`${BODY_FIRST_PREFIX}${LONG_SILENT_HINT}`, WIDE) <= input.columns - 1
+      ? LONG_SILENT_HINT
+      : '…'
+    tailLines.push(`${color(BODY_FIRST_PREFIX, theme.dim)}${color(placeholder, theme.dim)}`)
   }
   while (tailLines.length < tailCount) {
     tailLines.unshift(BODY_CONT_PREFIX)

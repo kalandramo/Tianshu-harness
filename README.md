@@ -26,10 +26,11 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/v/release/huiliyi37/Tianshu-Tui?color=8B5CF6&label=Release&logo=github&style=for-the-badge" alt="GitHub release">
+  <img src="https://img.shields.io/github/v/release/huiliyi37/Tianshu-harness?color=8B5CF6&label=Release&logo=github&style=for-the-badge" alt="GitHub release">
   <img src="https://img.shields.io/badge/License-Apache%202.0-3B5BDB?style=for-the-badge&logo=apache" alt="License">
   <img src="https://img.shields.io/badge/TypeScript-Strict-blue?style=for-the-badge&logo=typescript" alt="TypeScript">
   <img src="https://img.shields.io/badge/Tests-16%2C000%2B%20Passed-green?style=for-the-badge&logo=testinglibrary" alt="Tests">
+  <a href="https://discord.gg/XjWTATCHB"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
 ---
@@ -45,16 +46,16 @@ Application / TUI / IDE / Desktop
               ↓
    Tianshu Cognitive Runtime      ← 状态 · 目标 · 证据 · 控制 · 回放
               ↓
-       Foundation Models          ← DeepSeek · GLM · Claude · Codex · MiniMax · MiMo …
+       Foundation Models          ← DeepSeek · GLM · Claude · Codex · Grok · MiniMax · MiMo …
 ```
 
 - **稳定交付，不虚报完成** —— 这是核心。任务契约（TaskContract）钉住全局目标，交付门禁要求「完成」必须带运行时证据（测试、diff、验证命令），收敛检测独立判断认知轨迹是否还在推进——模型说完成 ≠ 运行时确认完成。
-- **终端 × 桌面，一个内核** —— 纯 ANSI 自研 TUI（`rivet`）与 Tauri 桌面端（macOS / Windows / Linux）共用同一 agent 内核，两端能力一致。
+- **终端 × 桌面，一个内核** —— 纯 ANSI 自研 TUI（`tianshu`）与 Tauri 桌面端（macOS / Windows / Linux）共用同一 agent 内核，两端能力一致。
 - **认知虚拟机（CVM）** —— 72 个运行时 hook 横跨 5 大阶段，在模型输出与真实动作之间加一层可观测、可纠偏的认知运行时（[理念文档](docs/reference/cvm-cognitive-runtime.md) · [A/B 实证](docs/CVM运行时对Agent模型的实证影响.md)）。
 - **前缀缓存引擎，全模型适用** —— 冻结前缀 + 增量 appendix + 边界压缩，对所有支持前缀缓存的模型生效：各家模型长会话实测稳态命中率均在 **98–99%**（DeepSeek V4 另有针对性优化），显著降低 token 成本。
 
 <p align="center">
-  <img src="docs/brand/assets/tianshu-tui-screenshot.png" alt="天枢 TUI（终端版）" width="49%">
+  <img src="docs/brand/assets/tianshu-harness-screenshot.png" alt="天枢 TUI（终端版）" width="49%">
   <img src="docs/brand/assets/tianshu-gui-screenshot.jpg" alt="天枢桌面端 GUI" width="49%">
 </p>
 <p align="center">
@@ -62,7 +63,7 @@ Application / TUI / IDE / Desktop
 </p>
 
 > [!NOTE]
-> 本项目最初的开发代号为 **Rivet**；为保持向后兼容，已安装的 CLI 命令名仍为 `rivet`。
+> 本项目最初的开发代号为 **Rivet**。CLI 主命令现为 `tianshu`，`rivet` 保留为兼容别名（同一入口）；数据目录仍为 `~/.rivet`。
 
 ## 目录
 
@@ -139,7 +140,7 @@ CLI 源码 1,078 文件 / 257,623 行，测试 1,361 文件 / **16,471 用例**�
 - **API 成本控制** —— reasoning effort 自动降档路由、compact 走 flash 侧路、峰谷计价提醒。[细节](docs/user-guide.md#api-成本控制)
 - **Plan Mode 与 Goal 自治** —— 先计划后执行的审批工作流；`/goal` 目标驱动自主续跑。[细节](docs/user-guide.md#plan-mode计划模式)
 - **会话交接与倒带** —— `/handoff` 结构化交接自动注入新会话；双击 ESC 倒带到任一历史点。[细节](docs/user-guide.md#会话交接与恢复handoff--resume)
-- **LSP 深度集成** —— 自研 JSON-RPC 客户端接入语言服务器（TypeScript / Python / Go / Rust，本机装了才启用、缺失静默降级）：跳转定义与查找引用成为 agent 工具，编辑后诊断自动注入回环——改出类型错误模型立刻看见。
+- **LSP 深度集成** —— 自研 JSON-RPC 客户端接入语言服务器（TypeScript / Python / Go / Rust / C / C++ / Java / C# / Kotlin / Swift / PHP / Ruby / Lua / Dart / Zig / Scala / Shell / Terraform / Vue / Svelte 等 20+ 种，本机装了才启用、缺失静默降级）：跳转定义与查找引用成为 agent 工具，编辑后诊断自动注入回环——改出类型错误模型立刻看见。
 - **MCP 与 Skills** —— 外部工具服务器接入 + 可复用工作流剧本，渐进披露。[细节](docs/user-guide.md#mcpmodel-context-protocol)
 - **T9 自研 TUI** —— 纯 ANSI 零依赖：GlanceBar 状态栏、流式中打断、命令面板、Cockpit 驾驶舱、内联图片。[细节](docs/user-guide.md#终端-uitui)
 - **桌面端增强** —— 集成终端、主题工作室、语音输入（本地 whisper）、手机遥控审批、多会话并发。[桌面端指南](docs/desktop-guide.md)
@@ -151,27 +152,60 @@ CLI 源码 1,078 文件 / 257,623 行，测试 1,361 文件 / **16,471 用例**�
 
 ```bash
 # 方式一：一键安装脚本（macOS / Linux，Windows 用 PowerShell 版本）
-bash <(curl -fsSL https://raw.githubusercontent.com/huiliyi37/Tianshu-Tui/main/scripts/install-tui.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/huiliyi37/Tianshu-harness/main/scripts/install-tui.sh)
 
 # 方式二：npm
-npm install -g tianshu-tui
+npm install -g tianshu-harness
 
 # 方式三：桌面端——从 GitHub Releases 下载安装包，开箱即用
-# https://github.com/huiliyi37/Tianshu-Tui/releases/latest
+# https://github.com/huiliyi37/Tianshu-harness/releases/latest
 ```
 
-然后：
+> **从旧包 `tianshu-tui` 迁移**：旧包占着 `rivet` 命令链接，直接装新包会报 `EEXIST`——先卸再装：`npm uninstall -g tianshu-tui && npm install -g tianshu-harness`（一键安装脚本已内置该迁移，自动处理）。
+
+**首次运行**会先进入主界面，再自动打开 `/connect` 向导——在那里选择服务商并粘贴 API Key：
 
 ```bash
-rivet            # 首次运行自动打开 /connect 向导，选择服务商并完成认证
+tianshu            # 看到 〉 提示符即就绪
 ```
 
-无界面模式（脚本 / CI 集成）：
+### 第一个任务
+
+先让它**只读**地认识你的项目（不改任何东西）：
+
+```
+阅读这个项目，告诉我它的结构、入口在哪、以及一处最值得改进的地方
+```
+
+确认它读得准之后，再给一个**多步任务**：
+
+```
+修复这个项目里第一个失败的测试，并说明根因
+```
+
+接下来它会自己 grep、读文件、改代码、跑测试——每一步都有对应的工具调用，不是"说完就结束"。默认权限档是**自动**：低风险动作直接执行，高风险动作会停下来问你（档位与会话内切换见下方 [权限模式](#权限模式)）。
+
+### 做完之后看两处
+
+**① 交付报告** —— 收尾时天枢会调用 `deliver_task`，输出一块交付报告：交付门状态（GREEN / YELLOW / RED）、本次改动的文件、跑过的验证、逐条完成度审计。「完成」必须有证据；没有证据的收尾会被门禁拦下。
+
+**② Cockpit 驾驶舱** —— 输入 `/cockpit` 打开（`Ctrl+P` 命令面板里也能进）：
+
+| 面板 | 看什么 |
+|------|--------|
+| `/cockpit verify` | 交付验证：已验证 / 未验证 / 失败 / 受阻，跑过哪些命令、影响面多大 |
+| `/cockpit advisory` | 运行时提醒台账：累计渲染 / 采纳 / 忽略，以及每条提醒的采纳率与效果增益（lift） |
+| `/cockpit model` | 缓存命中率、输入输出 tokens、本轮成本 |
+| `/cockpit safety` | 风险等级与空转检测 |
+
+不带参数是总览，`/cockpit off` 关闭。
+
+### 无界面模式（脚本 / CI 集成）
 
 ```bash
-rivet -p "解释 src/agent/loop.ts"           # 单次提示
-rivet --stream-json -p "重构这个模块"       # NDJSON 事件流，输出内置脱敏
-rivet --goal "修复所有类型错误" --budget 50  # 无头目标自主模式
+tianshu -p "解释 src/agent/loop.ts"           # 单次提示
+tianshu --stream-json -p "重构这个模块"       # NDJSON 事件流，输出内置脱敏
+tianshu --goal "修复所有类型错误" --budget 50  # 无头目标自主模式
 ```
 
 > 全部安装路径（Windows WebView2 / Linux AppImage / Android Termux / 源码构建 / Shell 补全 / 自动更新）与平台注意事项见 [安装与平台说明](docs/guides/installation.md)；CLI 参数全表见 [用户手册](docs/user-guide.md#命令行参数)。
@@ -197,6 +231,7 @@ rivet --goal "修复所有类型错误" --budget 50  # 无头目标自主模式
 | Claude | API key（通过 `cc-switch` 代理） | claude-opus-4-8, claude-sonnet-4-5 |
 | GLM（智谱） | API key | glm-5.3 (1M ctx), glm-5.3-flash（视觉）, glm-5.2 |
 | Codex (GPT-5.6) | OAuth PKCE（ChatGPT 订阅） | gpt-5.6-sol |
+| Grok (xAI) | API key | grok-4.6 (500K ctx, 视觉, 推理档 low/medium/high/xhigh) |
 | MiniMax | API key | MiniMax-M3, MiniMax-M2.7 |
 | MiMo | API key | mimo-v2.5-pro |
 
@@ -215,6 +250,7 @@ rivet --goal "修复所有类型错误" --budget 50  # 无头目标自主模式
 | [权限与沙箱指南](docs/user-guide-sandbox-permissions.md) | 权限规则、路径授权、沙箱模型、故障排查 |
 | [识图能力手册](docs/user-guide-vision.md) | 视觉通道配置与排查 |
 | [远程访问指南](docs/remote-access.md) | 手机/平板遥控审批的启用与安全边界 |
+| [手机端操作手册](docs/guides/mobile-guide.md) | 手机/平板连接的完整步骤、能力清单、外网（Tailscale）与常见问题 |
 | [排障与 FAQ](docs/guides/troubleshooting.md) | 高频现场速查：卡住、429、缓存异常 |
 
 **理念与架构**
@@ -254,12 +290,13 @@ node dist/cli/entry.js
 - **破坏性命令门禁** —— `rm -rf`、force push、`DROP/TRUNCATE` 需显式确认
 - **检查点 + 文件级撤销** —— 每回合首次修改前创建 Git 检查点；每次写/编辑前版本化备份
 
-安全漏洞请走 [私密报告](https://github.com/huiliyi37/Tianshu-Tui/security/advisories/new)，不要开公开 issue。
+安全漏洞请走 [私密报告](https://github.com/huiliyi37/Tianshu-harness/security/advisories/new)，不要开公开 issue。
 
 ## 🤝 社区与支持
 
-- **使用问题 / 讨论** → [GitHub Discussions](https://github.com/huiliyi37/Tianshu-Tui/discussions)
-- **Bug 报告 / 功能请求** → [GitHub Issues](https://github.com/huiliyi37/Tianshu-Tui/issues)（附 `rivet logs --json` 输出可加速定位）
+- **使用问题 / 讨论** → [GitHub Discussions](https://github.com/huiliyi37/Tianshu-harness/discussions)
+- **Discord 交流群** → [加入「天枢 tianshu-harness 官方交流群」](https://discord.gg/XjWTATCHB)（邀请链接，不受 7 天限制）
+- **Bug 报告 / 功能请求** → [GitHub Issues](https://github.com/huiliyi37/Tianshu-harness/issues)（附 `tianshu logs --json` 输出可加速定位）
 - **贡献代码** → [CONTRIBUTING.md](CONTRIBUTING.md) · **求助指南** → [SUPPORT.md](SUPPORT.md)
 - **微信交流群** → 「天枢 harness 交流群」，扫码加入（二维码 7 天有效，过期请在 Discussions 留言补码）：
 
@@ -271,7 +308,7 @@ node dist/cli/entry.js
 
 ## ✨ 贡献者
 
-感谢所有贡献者——项目创建者与核心开发 [@banxia](https://github.com/banxia)；完整名单（17 位外部贡献者 / 89 个 PR）见 [CONTRIBUTORS.md](CONTRIBUTORS.md)。外部 PR 经「收编」流程合入后，作者署名以 `Co-authored-by` 计入贡献者图谱（`scripts/credit-contributors.sh` 自动落账）：
+感谢所有贡献者——项目创建者与核心开发 [@huiliyi37](https://github.com/huiliyi37)；完整名单（22 位外部贡献者 / 145 个 PR）见 [CONTRIBUTORS.md](CONTRIBUTORS.md)。外部 PR 经「收编」流程合入后，作者署名以 `Co-authored-by` 计入贡献者图谱（`scripts/credit-contributors.sh` 自动落账）：
 
 <p>
 <a href="https://github.com/HarriethWiKk"><img src="https://github.com/HarriethWiKk.png?size=100" width="50" height="50" alt="HarriethWiKk" title="HarriethWiKk" /></a>
@@ -291,13 +328,28 @@ node dist/cli/entry.js
 <a href="https://github.com/nzz0991999-ai"><img src="https://github.com/nzz0991999-ai.png?size=100" width="50" height="50" alt="nzz0991999-ai" title="nzz0991999-ai" /></a>
 <a href="https://github.com/L4XB"><img src="https://github.com/L4XB.png?size=100" width="50" height="50" alt="L4XB" title="L4XB" /></a>
 <a href="https://github.com/Wanming08"><img src="https://github.com/Wanming08.png?size=100" width="50" height="50" alt="Wanming08" title="Wanming08" /></a>
+<a href="https://github.com/lei454577-web"><img src="https://github.com/lei454577-web.png?size=100" width="50" height="50" alt="lei454577-web" title="lei454577-web" /></a>
+<a href="https://github.com/jian-in"><img src="https://github.com/jian-in.png?size=100" width="50" height="50" alt="jian-in" title="jian-in" /></a>
+<a href="https://github.com/sky-mirrors"><img src="https://github.com/sky-mirrors.png?size=100" width="50" height="50" alt="sky-mirrors" title="sky-mirrors" /></a>
+<a href="https://github.com/moyan3691"><img src="https://github.com/moyan3691.png?size=100" width="50" height="50" alt="moyan3691" title="moyan3691" /></a>
+<a href="https://github.com/EarthxxRhythm"><img src="https://github.com/EarthxxRhythm.png?size=100" width="50" height="50" alt="EarthxxRhythm" title="EarthxxRhythm" /></a>
 </p>
+
+## ⭐ Star History
+
+<a href="https://star-history.com/#huiliyi37/tianshu-harness&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=huiliyi37/tianshu-harness&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=huiliyi37/tianshu-harness&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=huiliyi37/tianshu-harness&type=Date" width="700" />
+  </picture>
+</a>
 
 ## ☕ 赞助支持
 
 如果天枢对你有用，欢迎随缘打赏——这只是一杯咖啡，不是合同。赞助不会改变 issue 优先级，也不会影响功能排期。
 
-<img src="docs/brand/assets/wechat-pay.jpg" width="240" alt="微信支付">
+<img src="docs/brand/assets/wechat-donate.png" width="240" alt="微信支付">
 
 ## 许可证
 

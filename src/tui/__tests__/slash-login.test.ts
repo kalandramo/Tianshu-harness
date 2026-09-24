@@ -74,3 +74,10 @@ test('登出只清账号凭据，不碰 provider 的 OAuth', () => {
     '登出实现里出现了 runOAuthLogin——不该动 provider 凭据',
   )
 })
+
+test('/status 接了星籍段（实现在 account-status.ts，slash 侧只留一行）', () => {
+  assert.match(src, /accountIdentityLines\(\)/, '/status 未接星籍段——用户看不到自己的星籍')
+  assert.match(src, /import\('\.\/account-status\.js'\)/, '星籍段未外置（行数棘轮要求沿接缝拆分）')
+  // 登录成功时顺带取一次星籍（与 sidecar 的 poll 同法），否则首次 /status 是空的
+  assert.match(accountSrc, /primeStellarIdentity\(/, '登录后未预热星籍缓存')
+})

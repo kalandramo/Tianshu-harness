@@ -12,11 +12,25 @@
  * 于是 root 变成 `<pkg>/dist`：欢迎页版本号消失、更新检查拿不到包名。两处不再各自
  * 留一份实现；本地开发与发布包都拿真版本。
  * 找不到时同样回退 `unknown`，保持输出形状不变。
+ *
+ * 2026-09-16 二修（审查发现的回归）：只校验「有 version 字段」还不够——runtime
+ * bundle 的布局没有根级 package.json（build-runtime-bundle.sh 只写 version.txt），
+ * 若它被解压进一个自带 package.json 的目录树，会继续上溯并命中那个**无关项目**，
+ * 把别人的版本当成 CLI 版本显示出来——比不显示更坏。故改为同时校验 name 是本包。
  */
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-/** 从脚本路径（默认 argv[1]）向上找最近的带 version 的 package.json 目录。 */
+/** 本包名——用于确认找到的声明属于本包，而非祖先链上无关项目的。 */
+const PACKAGE_NAME = 'tianshu-harness'
+
+/**
+ * 改名前的旧包名（3.22.x 及更早以 tianshu-tui 发布）。过渡期身份校验双认：
+ * 旧全局安装的 package.json 仍是旧名，不兼容则版本探测/更新检查对存量用户失效。
+ */
+const LEGACY_PACKAGE_NAME = 'tianshu-tui'
+
+/** 从脚本路径（默认 argv[1]）向上找最近的、**属于本包**的 package.json 目录。 */
 export function findInstallRoot(scriptPath: string | undefined = process.argv[1]): string | null {
   if (!scriptPath) return null
   let dir: string
@@ -29,8 +43,10 @@ export function findInstallRoot(scriptPath: string | undefined = process.argv[1]
     const pkgPath = join(dir, 'package.json')
     if (existsSync(pkgPath)) {
       try {
-        const parsed = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { version?: unknown }
-        if (typeof parsed.version === 'string' && parsed.version.length > 0) return dir
+        const parsed = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { name?: unknown; version?: unknown }
+        // name 必须匹配：只认本包的声明（含改名前的旧包名）。只看 version 会命中
+        // 外层无关项目（runtime bundle 解压进别人的项目目录时），把他人版本当成本包版本。
+        if ((parsed.name === PACKAGE_NAME || parsed.name === LEGACY_PACKAGE_NAME) && typeof parsed.version === 'string' && parsed.version.length > 0) return dir
       } catch {
         // 坏包声明不终止查找——继续向上（与版本兜底同一个 fail-open 姿态）。
       }
@@ -52,9 +68,9 @@ export function readInstallVersion(root: string): string | null {
   }
 }
 
-/** `tianshu-tui vX.Y.Z\n` —— main.ts 与 launcher 共用的 --version 输出。 */
+/** `tianshu-harness vX.Y.Z\n` —— main.ts 与 launcher 共用的 --version 输出。 */
 export function formatVersionLine(scriptPath?: string): string {
   const root = findInstallRoot(scriptPath)
   const version = root ? readInstallVersion(root) : null
-  return `tianshu-tui v${version ?? 'unknown'}\n`
+  return `${PACKAGE_NAME} v${version ?? 'unknown'}\n`
 }

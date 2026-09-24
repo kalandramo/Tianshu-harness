@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { REQUEST_PATH_ACCESS_TOOL } from '../request-path-access.js'
+import { REQUEST_PATH_ACCESS_TOOL, isForbiddenGrantRoot } from '../request-path-access.js'
 import { isWriteGranted, isReadGranted, loadPersistedGrants, _resetGrantsForTest } from '../path-grants.js'
 
 function params(input: Record<string, unknown>, cwd: string) {
@@ -78,9 +78,10 @@ describe('request_path_access tool', () => {
   it('refuses filesystem roots and system directories', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'rivet-cwd-'))
     try {
-      // 平台分流（issue #189 核对表标注）：POSIX 路径在 Windows 上不是文件
-      // 系统根（`/etc/passwd` 落到当前盘 \etc\passwd）——按各平台真实系统根断言，
-      // 工具的 Windows 拒绝清单（C:\Windows / C:\ / C:\Users 等）本就内建。
+      // 平台分流（issue #189 核对表标注）：POSIX 路径在 Windows 上不是文件系统根
+      // （`/etc/passwd` 落到当前盘 \etc\passwd），所以这组 execute 断言只能按宿主
+      // 真实系统根写。win32 分支在开发机上是死覆盖——它的守卫点是下面那条
+      // isForbiddenGrantRoot 用例（纯函数，跨平台可跑）。
       const roots = process.platform === 'win32'
         ? ['C:\\', 'C:\\Windows', 'C:\\Program Files', 'C:\\Users']
         : ['/', '/etc', '/usr', '/Users', '/etc/passwd', '/System']
@@ -88,14 +89,30 @@ describe('request_path_access tool', () => {
         const res = await REQUEST_PATH_ACCESS_TOOL.execute(params({ path: p, mode: 'write' }, cwd) as never)
         assert.equal(res.isError, true, `should refuse ${p}`)
       }
-      if (process.platform === 'win32') {
-        assert.equal(isWriteGranted('C:\\Windows\\System32\\x'), false)
-      } else {
-        assert.equal(isWriteGranted('/etc/hosts'), false)
-        assert.equal(isWriteGranted('/usr/local/bin/x'), false)
-      }
+      // isWriteGranted 只回答「有没有覆盖该路径的 write 授权」，不查
+      // FORBIDDEN_GRANT_ROOTS——所以这两句与宿主平台无关（未授权即 false），
+      // 不该藏进 win32 分支冒充平台覆盖。
+      assert.equal(isWriteGranted('/etc/hosts'), false)
+      assert.equal(isWriteGranted('/usr/local/bin/x'), false)
     } finally {
       rmSync(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+    }
+  })
+
+  // Windows 清单的守卫点在这里，不在上面那条的平台分支里：isForbiddenGrantRoot 是
+  // 纯函数（去尾分隔符 + 盘根正则 + 小写查表），没有任何 process.platform 分支，
+  // 所以在 macOS/Linux 上跑得到真结果——execute 的 win32 分支在开发机上永不执行，
+  // 只靠它覆盖等于零覆盖。
+  it('forbidden grant roots cover POSIX and Windows system dirs on every platform', () => {
+    for (const p of [
+      '/', '/etc', '/usr', '/bin', '/var', '/opt', '/private', '/System',
+      'C:\\', 'D:\\', 'C:\\Windows', 'C:\\Program Files', 'C:\\Users',
+    ]) {
+      assert.equal(isForbiddenGrantRoot(p), true, `${p} must be a forbidden grant root`)
+    }
+    // 反例：用户自己的工作目录树仍可授权（issue #117 只封根与系统目录）。
+    for (const p of ['/tmp/work', '/Users/me/proj', 'C:\\Users\\me\\proj', 'C:\\dev\\x']) {
+      assert.equal(isForbiddenGrantRoot(p), false, `${p} must stay grantable`)
     }
   })
 

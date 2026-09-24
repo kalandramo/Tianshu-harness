@@ -30,7 +30,8 @@ import { summarizeRepairTelemetry } from './repair-pipeline.js'
 import type { InterventionLevel } from './prediction-error.js'
 import { assessToolRisk, CONFIDENCE_THRESHOLDS, hasOutOfWorkspaceWriteTarget, isDestructiveGitAction, isSafeWriteOnly, requiresBashWriteApproval, requiresUnconditionalApproval } from './approval-risk.js'
 import type { Sensorium } from './sensorium.js'
-import { isToolAllowed, isToolDenied, isBashCommandAllowlisted, isBashCommandDenied, learnBashPrefix, learnFileApproval } from './permissions.js'
+import { isToolAllowed, isToolDenied, isBashCommandAllowlisted, isBashCommandDenied, learnBashPrefix, learnFileApproval, extractBashPrefix } from './permissions.js'
+import { appendBashAllowPrefix } from '../config/bash-permissions.js'
 import { isSelfDestructiveKill, selfProcessTree } from './self-preservation.js'
 import { isSandboxActive, sandboxCoversCommand } from '../tools/sandbox-profile.js'
 import { applyApprovalEdit, type ApprovalResult } from './approval-edit.js'
@@ -302,6 +303,11 @@ function buildOwnershipGuard(deps: {
   return makeOwnershipGuard(registry, sessionId, deps.cwd)
 }
 
+/** T11 超时恢复指引（withToolTimeout 超时错误文案的一部分）——主控要知道
+ *  超时不等于执行停止：worker 写入已落盘、可续跑或交付已完成的波次。 */
+export const TOOL_TIMEOUT_RECOVERY_HINT =
+  '— 底层执行可能仍在后台继续（worker 写入已落盘）。检查 git status / 会话 checkpoint；可用 executePlanWaves fromWave=N 续跑或 deliver 已完成的波次'
+
 function withToolTimeout<T>(
   promise: Promise<T>,
   toolName: string,
@@ -320,7 +326,7 @@ function withToolTimeout<T>(
       // Cascade abort to the underlying op (child proc / fetch) BEFORE rejecting,
       // so the tool stops consuming resources instead of orphaning.
       try { timeoutController?.abort() } catch { /* noop */ }
-      reject(new Error(`Tool ${toolName} timed out after ${timeoutMs / 1000}s`))
+      reject(new Error(`Tool ${toolName} timed out after ${timeoutMs / 1000}s ${TOOL_TIMEOUT_RECOVERY_HINT}`))
     }, timeoutMs)
     const onAbort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')) }
     signal?.addEventListener('abort', onAbort, { once: true })
@@ -1192,6 +1198,18 @@ async function executeToolUseInner(
     // net, not prompts. Deny rules and self-kill protection still apply above.
     const yoloBypassesUnconditional = skipAllApproval
 
+    // Per-app fail-closed invariant: computer_use 的逐应用「始终允许」授权是
+    // 它的核心安全边界。旧逻辑只在 manual 档消费 needsApproval，auto-safe
+    // （桌面端默认档）会因风险等级为 none/low 而静默执行未授权应用的
+    // snapshot/click/type —— 工具描述与设置页却承诺逐应用审批（实测复现）。
+    // 这里把它升级为 supervised/default 两档的模式无关不变量：needsApproval=true
+    // 必须弹审批，permissions.allow 与 sensorium 都不能豁免（豁免只有两条：
+    // 应用级 grant 让 needsApproval=false，或用户显式选 YOLO）。auto-accept
+    // 保持历史语义（所有工具整体免审），不在本轮收窄。
+    const computerUsePerAppGate = tu.name === 'computer_use'
+      && needsApproval
+      && (approvalMode === 'manual' || approvalMode === 'auto-safe')
+
     let shouldAsk = (unconditionalApproval && !yoloBypassesUnconditional)
       ? true
       : skipAllApproval
@@ -1202,15 +1220,17 @@ async function executeToolUseInner(
             ? true
             : bashWriteRequiresApproval
               ? true
-              : allowlisted
-                ? false
-                : canAutoApprove
+              : computerUsePerAppGate
+                ? true
+                : allowlisted
                   ? false
-                  : approvalMode === 'manual'
-                    ? needsApproval
-                    : approvalMode === 'auto-safe'
-                      ? isHighRisk
-                      : false
+                  : canAutoApprove
+                    ? false
+                    : approvalMode === 'manual'
+                      ? needsApproval
+                      : approvalMode === 'auto-safe'
+                        ? isHighRisk
+                        : false
 
     // YOLO mode intelligent fallback: auto-grant write access for file-tool
     // paths already covered by a read grant. This eliminates the validatePath →
@@ -1295,6 +1315,13 @@ async function executeToolUseInner(
       // Thermocline 2: learn bash command prefix into session allowlist after approval
       if (tu.name === 'bash' && typeof tu.input.command === 'string') {
         learnBashPrefix(tu.input.command, deps.config.permissions)
+        // 「永久记住」（审批卡勾选）：同一份前缀写进 config.permissions.bash.allowlist，
+        // 跨会话生效——会话级 overlay 只活在当次会话，而自动化任务每次触发都是新会话，
+        // 不落盘等于每次都白放行（见 config/bash-permissions.ts 注释）。落盘失败不阻断
+        // 本次已批准的执行（overlay 已学到，本次照常免审）。
+        if (resolved.remember === true) {
+          try { appendBashAllowPrefix(extractBashPrefix(tu.input.command)) } catch { /* 落盘失败不阻断执行 */ }
+        }
      }
       // Learn a file-scoped approval so subsequent identical edits to the same
       // file don't re-prompt (a key driver of the "approve → edit → approve
@@ -1481,7 +1508,7 @@ async function executeToolUseInner(
             : toolAbort.signal
           // Zen 相位下未注册工具（幻觉调用）不晋升，但把 registry 的裸
           // Unknown tool 报错变成可行动的 zen_unlock 指引，避免死路重试。
-          const execution = deps.config.toolRegistry.execute(tu.name, { ...params, approvalMode, abortSignal: composedSignal })
+          const execution = deps.config.toolRegistry.execute(tu.name, { ...params, approvalMode, approvalGrantedAt: shouldAsk ? Date.now() : undefined, abortSignal: composedSignal })
           const zenGuardedExecution = execution.catch(err => {
             const zenHint = deps.getZenUnregisteredHint?.(tu.name)
             if (zenHint) {
@@ -1866,11 +1893,27 @@ async function executeToolUseInner(
           // A2: bash commands matching a declared verify command get structured
           // semantics (kind + declared flag) instead of regex-only guesses.
           const declaredKind = classifyDeclaredCommand(cmd, loadDeclaredVerify(deps.cwd))
+          // exitCode / errorClass 是「这条命令到底怎么结束的」的原始事实。
+          // 此前只记 passed/failed/skipped，而这三者在输出不含测试计数时被默认
+          // 成 0（typecheck/lint/build 天然没有计数）——下游据此把「没解析到计数」
+          // 误读成「没跑成」，把真实编译错误与超时都归为 tool_invocation_failure，
+          // 并告诉模型「不是代码问题」。这里补齐原始事实，判定策略统一放读取侧
+          // （verification-attribution）。timeout 尤其要留痕：超时不等于执行停止，
+          // 底层进程可能仍在写盘（见 TOOL_TIMEOUT_RECOVERY_HINT）。
+          const exitCode = harnessResult.isError ? 1 : 0
+          const timedOut = harnessResult.errorClass === 'timeout'
+            || /timed out after \d+s/.test(output)
           deps.taskLedger.record({
             type: 'verification',
             command: cmd.slice(0, 200),
             status: testStatus,
-            meta: { scope: 'full', passed, failed, skipped, ...(declaredKind ? { declared: true, kind: declaredKind } : {}) },
+            meta: {
+              scope: 'full', passed, failed, skipped,
+              exitCode,
+              ...(harnessResult.errorClass ? { errorClass: harnessResult.errorClass } : {}),
+              ...(timedOut ? { timedOut: true } : {}),
+              ...(declaredKind ? { declared: true, kind: declaredKind } : {}),
+            },
           })
           // bash 跑测试/typecheck/lint 也归零 TDD 门禁——否则 agent 用 bash npm test
           // 而非 run_tests 工具时门禁计数器永远不重置，第 4 次编辑必误报拦截。
@@ -1899,6 +1942,10 @@ async function executeToolUseInner(
             m.resolvedCommand = v.command
             m.recommendedCommand = v.command
             if (v.failureKind) m.failureKind = v.failureKind
+            // blockedReason 此前在 ledger 边界被丢弃，导致 run_tests 明明判定
+            // blockedReason: 'timeout'，下游只看到 status failed + 计数全 0，
+            // 又退回「像是崩溃」的推断（2026-09-22）。
+            if (v.blockedReason) m.blockedReason = v.blockedReason
             if (v.targetFiles) m.targetFiles = v.targetFiles
             // VSW: carry snapshot identity + phase so the gate can apply
             // staleness supersession and integration_conflict attribution.
@@ -2082,7 +2129,7 @@ async function executeToolUseInner(
       // 先相对化再判；出界路径（relative 以 .. 开头）才落回内存图。
       const filePath = tu.input.file_path as string
       const db = deps.meridianIndexer?.getDb()
-      const relFilePath = isAbsolute(filePath) ? relative(deps.cwd, filePath) : filePath
+      const relFilePath = (isAbsolute(filePath) ? relative(deps.cwd, filePath) : filePath).replace(/\\/g, '/')
       // P1-2：冷库（新 clone 首启索引为空）时 db 为真值但无数据——analyzeImpact 恒返回
       // 空集且不落回 importGraph，impact hint 静默变空（9a9bbf49b 提交信息「importGraph
       // 留作兜底」仅对 indexer=null/路径出界成立）。加 hasFiles() 空库探测：库空时与

@@ -36,7 +36,16 @@ const TOOL_MAP: Record<string, ToolFamilyInfo> = {
 const DEFAULT: ToolFamilyInfo = { family: 'other', verb: 'tool' }
 
 export function getToolFamily(toolName: string): ToolFamilyInfo {
-  return TOOL_MAP[toolName] ?? DEFAULT
+  // own-property 查询而非 `TOOL_MAP[name] ?? DEFAULT`：原型链成员
+  // （'constructor'/'toString'…）会绕过 ?? 取出一个函数，verb/family 全是 undefined。
+  return Object.hasOwn(TOOL_MAP, toolName) ? (TOOL_MAP[toolName] ?? DEFAULT) : DEFAULT
+}
+
+/** 是否在已知工具表内——未知工具（mcp__* 等）的卡片标题应如实用工具名而非「Tool」。 */
+export function isKnownTool(toolName: string): boolean {
+  // 必须用 Object.hasOwn：`in` 含原型链，会把 'constructor'/'toString'/'valueOf'
+  // 判成已知工具 → 标题走 toolTitleVerb → getToolFamily 拿不到 verb → charAt 抛 TypeError。
+  return Object.hasOwn(TOOL_MAP, toolName)
 }
 
 export function getGroupSummary(tools: ReadonlyArray<{ toolName?: string }>): string {

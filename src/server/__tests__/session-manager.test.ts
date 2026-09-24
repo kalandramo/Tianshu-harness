@@ -47,6 +47,20 @@ class FakeAgent implements ManagedAgent {
   liveApprovalMode?: string
   /** 每次 run 收到的 prompt，按序记录（含自动续跑注入的 'continue'）。 */
   prompts: string[] = []
+  /** 累计用量快照——只有显式设值的用例才会让「中断补发」事件出现（默认
+   *  undefined，避免给既有用例的事件流凭空多一条 turn_complete）。 */
+  usageSnapshot?: {
+    input_tokens?: number
+    output_tokens?: number
+    cache_read_input_tokens?: number
+    cache_creation_input_tokens?: number
+  }
+  usageTurns = 0
+  getTotalUsage() { return this.usageSnapshot ?? {} }
+  getTurnCount() { return this.usageTurns }
+  /** 实时上下文占用（默认 0 = 不携带，避免扰动既有用例的事件形状）。 */
+  estimatedTokens = 0
+  getEstimatedTokens() { return this.estimatedTokens }
   private resolveRun?: () => void
 
   run(prompt: string, cb: AgentCallbacks): Promise<void> {
@@ -653,6 +667,79 @@ test('S: setApprovalMode before first run applies on agent build', async () => {
 test('S: setApprovalMode returns false for a missing session', async () => {
   const { manager } = makeManagerCapturingMode()
   assert.equal(manager.setApprovalMode('nope', 'manual'), false)
+})
+
+// ── 免审批档改档：挂起审批的收口语义（2026-09-22）────────────────────
+// 用户最常见的"授权后卡住"：看到审批卡 → 改成全自动以为这就是批准了。审批
+// promise 默认永不超时，改档若不收口，那次已挂起的调用会一直在原地等。
+
+test('S: 切到免审批档放行已在等待的审批（不再永久挂起）', async () => {
+  const { manager, agents } = makeManagerCapturingMode()
+  const s = manager.createSession({ prompt: 'go' })
+  const cb = agents[0]!.callbacks!
+
+  const pending = cb.onApprovalRequired('tool-skip', 'bash', { command: 'rm x' })
+  assert.equal(manager.getSession(s.id)!.pendingApprovals, 1)
+  assert.equal(manager.getEvents(s.id, 0)!.events.some((e) => e.type === 'approval_resolved'), false)
+
+  manager.setApprovalMode(s.id, 'dangerously-skip-permissions')
+
+  assert.deepEqual(await pending, { approved: true }, '挂起的审批被放行，而不是继续等')
+  assert.equal(manager.getSession(s.id)!.pendingApprovals, 0)
+  const resolved = manager.getEvents(s.id, 0)!.events.find((e) => e.type === 'approval_resolved')
+  assert.equal(resolved!.data.decision, 'skip-mode', 'decision 如实标注来源（非人工批准）')
+  assert.equal(agents[0]!.liveApprovalMode, 'dangerously-skip-permissions')
+})
+
+test('S: 非免审批档改档不追认挂起的审批（不伪造用户授权）', async () => {
+  const { manager, agents } = makeManagerCapturingMode()
+  const s = manager.createSession({ prompt: 'go' })
+  const cb = agents[0]!.callbacks!
+
+  let settled = false
+  const pending = cb.onApprovalRequired('tool-keep', 'bash', { command: 'rm x' })
+    .then((r) => { settled = true; return r })
+  manager.setApprovalMode(s.id, 'auto-safe')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.equal(settled, false, 'auto-safe 不替用户批准高风险调用')
+  assert.equal(manager.getSession(s.id)!.pendingApprovals, 1)
+  manager.answerIntervention(s.id, 'tool-keep', 'approve')
+  assert.deepEqual(await pending, { approved: true })
+})
+
+test('S: 全局广播到免审批档同样收口挂起审批（设置页切「完全权限」）', async () => {
+  const { manager, agents } = makeManagerCapturingMode()
+  const s = manager.createSession({ prompt: 'go' })
+  const cb = agents[0]!.callbacks!
+
+  const pending = cb.onApprovalRequired('tool-global', 'edit_file', { file_path: 'a.ts' })
+  assert.equal(manager.getSession(s.id)!.pendingApprovals, 1)
+
+  const applied = manager.applyGlobalApprovalMode('dangerously-skip-permissions')
+
+  assert.equal(applied, 1)
+  assert.deepEqual(await pending, { approved: true })
+  assert.equal(manager.getSession(s.id)!.pendingApprovals, 0)
+})
+
+test('S: 会话已钉档时不参与全局广播，其挂起审批也不被收口', async () => {
+  const { manager, agents } = makeManagerCapturingMode()
+  const s = manager.createSession({ prompt: 'go' })
+  manager.setApprovalMode(s.id, 'manual') // 显式钉档
+  const cb = agents[0]!.callbacks!
+
+  let settled = false
+  const pending = cb.onApprovalRequired('tool-pinned', 'bash', { command: 'rm x' })
+    .then((r) => { settled = true; return r })
+  const applied = manager.applyGlobalApprovalMode('dangerously-skip-permissions')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.equal(applied, 0, '有 per-session override 的会话尊重用户选择')
+  assert.equal(settled, false, '钉档会话的挂起审批不被全局广播放行')
+  assert.equal(manager.getSession(s.id)!.pendingApprovals, 1)
+  manager.answerIntervention(s.id, 'tool-pinned', 'reject')
+  assert.deepEqual(await pending, { approved: false })
 })
 
 // ── T2: todo_state emission ─────────────────────────────────────────
@@ -1371,7 +1458,10 @@ test('PlusMenu（多 key）：三段式记录只标对应 key；两段式记录�
 // a976167f 新建会话模型优先级：显式 input.model > 项目配置默认 provider 首模型
 // > 注入的 defaultModelId。该特性此前无测试覆盖——上方 listModels 测试正因
 // 优先级改动在本机真实配置下静默失效。
+// agent.defaultModel 进入优先级链后，本机全局配置的 defaultModel 会经
+// loadConfig 合并渗进断言——withIsolatedHome 隔离（同 workspaceMode 用例）。
 test('PlusMenu: createSession model precedence — project config beats injected default, explicit input beats project', async () => {
+  withIsolatedHome(() => {
   const projectDir = mkdtempSync(join(tmpdir(), 'rivet-plus-proj-'))
   // 信任门预存债收口：项目层 provider 键未授信即剥离（project-trust.ts）。
   // 本用例测优先级不测信任——显式授信后按原意图断言。
@@ -1414,6 +1504,95 @@ test('PlusMenu: createSession model precedence — project config beats injected
     // 显式 input.model（新建会话对话框同路径）> 项目配置
     const s2 = manager.createSession({ model: 'model-a' })
     assert.equal(manager.getSession(s2.id)!.model, 'model-a')
+  } finally {
+    if (prevTrust === undefined) delete process.env.RIVET_TRUST_PROJECT
+    else process.env.RIVET_TRUST_PROJECT = prevTrust
+    rmSync(projectDir, { recursive: true, force: true })
+  }
+  })
+})
+
+// agent.defaultModel（设置页「默认模型」）进入优先级链：显式 input.model >
+// agent.defaultModel > 默认 provider 首模型 > 注入的 defaultModelId。
+// 此前桌面新会话不消费 agent.defaultModel——设置页钉的默认模型对桌面形同虚设。
+test('PlusMenu: createSession honors agent.defaultModel between explicit input and provider pool head', async () => {
+  const projectDir = mkdtempSync(join(tmpdir(), 'rivet-plus-proj-'))
+  const prevTrust = process.env.RIVET_TRUST_PROJECT
+  process.env.RIVET_TRUST_PROJECT = '1'
+  try {
+    writeFileSync(join(projectDir, '.rivet-config.json'), JSON.stringify({
+      provider: {
+        default: 'p',
+        providers: {
+          p: {
+            name: 'p',
+            baseUrl: 'https://example.com/v1',
+            models: [
+              { id: 'proj-model', contextWindow: 128000, maxTokens: 8192 },
+              { id: 'pinned-model', contextWindow: 128000, maxTokens: 8192 },
+            ],
+          },
+        },
+      },
+      agent: { defaultModel: 'p:pinned-model' },
+    }, null, 2))
+
+    const models: ModelOption[] = [
+      { id: 'proj-model', alias: 'Proj Model', provider: 'p', contextWindow: 128000 },
+      { id: 'pinned-model', alias: 'Pinned Model', provider: 'p', contextWindow: 128000 },
+      { id: 'model-a', alias: 'Model A', provider: 'p', contextWindow: 128000 },
+    ]
+    const manager = new RuntimeSessionManager({
+      createAgent: () => new PlusFakeAgent(),
+      defaultCwd: projectDir,
+      listModels: () => models,
+      defaultModelId: 'model-a',
+    })
+
+    // agent.defaultModel > 默认 provider 首模型（proj-model）
+    const s1 = manager.createSession({})
+    assert.equal(manager.getSession(s1.id)!.model, 'p:pinned-model')
+
+    // 显式 input.model > agent.defaultModel
+    const s2 = manager.createSession({ model: 'model-a' })
+    assert.equal(manager.getSession(s2.id)!.model, 'model-a')
+  } finally {
+    if (prevTrust === undefined) delete process.env.RIVET_TRUST_PROJECT
+    else process.env.RIVET_TRUST_PROJECT = prevTrust
+    rmSync(projectDir, { recursive: true, force: true })
+  }
+})
+
+// 无效 agent.defaultModel 引用（手改配置）：静默回落默认 provider 首模型，
+// 不把坏 ref 写进会话记录。
+test('PlusMenu: createSession falls back to provider pool head on invalid agent.defaultModel ref', async () => {
+  const projectDir = mkdtempSync(join(tmpdir(), 'rivet-plus-proj-'))
+  const prevTrust = process.env.RIVET_TRUST_PROJECT
+  process.env.RIVET_TRUST_PROJECT = '1'
+  try {
+    writeFileSync(join(projectDir, '.rivet-config.json'), JSON.stringify({
+      provider: {
+        default: 'p',
+        providers: {
+          p: {
+            name: 'p',
+            baseUrl: 'https://example.com/v1',
+            models: [{ id: 'proj-model', contextWindow: 128000, maxTokens: 8192 }],
+          },
+        },
+      },
+      agent: { defaultModel: 'p:ghost-model' },
+    }, null, 2))
+
+    const manager = new RuntimeSessionManager({
+      createAgent: () => new PlusFakeAgent(),
+      defaultCwd: projectDir,
+      listModels: () => [{ id: 'proj-model', alias: 'Proj Model', provider: 'p', contextWindow: 128000 }],
+      defaultModelId: 'model-a',
+    })
+
+    const s1 = manager.createSession({})
+    assert.equal(manager.getSession(s1.id)!.model, 'proj-model')
   } finally {
     if (prevTrust === undefined) delete process.env.RIVET_TRUST_PROJECT
     else process.env.RIVET_TRUST_PROJECT = prevTrust
@@ -1613,6 +1792,56 @@ test('普通 watchdog（非 goal）同样自动续跑', async () => {
   await settle()
   assert.deepEqual(agents[0]!.prompts, ['go', 'continue'])
   assert.equal(manager.getSession(s.id)!.status, 'running')
+})
+
+test('turn_complete 携带实时 contextTokens（环形图百分比与缓存计数同频）', async () => {
+  const { manager, agents } = makeManager()
+  const s = manager.createSession({ prompt: 'go' })
+  const a = agents[0]!
+  a.estimatedTokens = 42_000
+  a.callbacks!.onTurnComplete({ input_tokens: 1_000, cache_read_input_tokens: 900, cache_creation_input_tokens: 100 }, 1, false)
+  a.finish()
+  await settle()
+  const ev = manager.getEvents(s.id, 0)!.events.filter((e) => e.type === 'turn_complete').at(-1)
+  assert.equal(ev?.data.contextTokens, 42_000)
+})
+
+test('中断收尾补发累计 usage 快照：被打断的 run 也能刷新桌面端缓存命中率', async () => {
+  // 2026-09-23：finishInterrupted 不调 onTurnComplete（只 recordStop + onAbort），
+  // 于是被用户打断 / 看门狗中止的 run 在桌面上永远不刷新命中率——实测有会话 29 条
+  // turn_complete 全是 isFinal=false、0 条 final，整行的数据源就是空的。补发一条
+  // isFinal=false 的快照：桌面 reducer 对任意 turn_complete 覆盖写计数，而 isFinal
+  // 保持 false → 不追加 turn 块、不改终态语义。
+  const { manager, agents } = makeManager()
+  const s = manager.createSession({ prompt: 'go' })
+  const a = agents[0]!
+  a.usageSnapshot = {
+    input_tokens: 1_200,
+    output_tokens: 40,
+    cache_read_input_tokens: 900,
+    cache_creation_input_tokens: 300,
+  }
+  a.usageTurns = 3
+  a.callbacks!.onTurnComplete({ input_tokens: 800, output_tokens: 20, cache_read_input_tokens: 500, cache_creation_input_tokens: 300 }, 2, false)
+  manager.abort(s.id)   // FakeAgent.abort → onAbort()（无 reason）
+  await settle()
+
+  const turns = manager.getEvents(s.id, 0)!.events.filter((e) => e.type === 'turn_complete')
+  assert.equal(turns.length, 2, '中断收尾应补发一条 turn_complete')
+  const last = turns[turns.length - 1]!
+  assert.equal(last.data.isFinal, false, '补发不得冒充 final（改终态语义）')
+  assert.equal(last.data.aborted, true)
+  assert.equal(last.data.turnNumber, 3)
+  assert.deepEqual(last.data.usage, a.usageSnapshot, '补发的是累计快照，不是增量')
+})
+
+test('中断补发：没有用量快照时不凭空造事件（test double / 空会话）', async () => {
+  const { manager } = makeManager()
+  const s = manager.createSession({ prompt: 'go' })
+  manager.abort(s.id)
+  await settle()
+  const turns = manager.getEvents(s.id, 0)!.events.filter((e) => e.type === 'turn_complete')
+  assert.equal(turns.length, 0, '无 usage 可报时不得补发')
 })
 
 test('用户 abort（无 reason）与 convergence 中止不自动续跑', async () => {
@@ -2127,4 +2356,20 @@ test('createSession: 显式 cwd 恒优先于任何模式（含 scratch）', () =
     assert.equal(rec.cwd, '/repo/app')
     assert.equal(rec.workspaceSource, 'explicit')
   })
+})
+
+// ── 标题落盘前剥终端转义（2026-09-17 审计：标题三路回放终端，OSC 52 驻留）──
+test('createSession strips CSI/OSC sequences from the raw HTTP title', () => {
+  const manager = new RuntimeSessionManager({ createAgent: () => { throw new Error('not needed') }, defaultCwd: '/tmp/work' })
+  const rec = manager.createSession({ title: '\x1B]52;c;cGduZWQ=\x07evil \x1B[2J\x1B[H title' })
+  assert.ok(!rec.title!.includes('\x1B'), 'no ESC byte may persist into the title')
+  assert.equal(rec.title, 'evil  title')
+})
+
+test('setTitle (PATCH route path) strips terminal escapes too', () => {
+  const manager = new RuntimeSessionManager({ createAgent: () => { throw new Error('not needed') }, defaultCwd: '/tmp/work' })
+  const rec = manager.createSession({ title: 'clean' })
+  manager.setTitle(rec.id, '\x1B]0;pwned\x07injected')
+  const after = manager.getSession(rec.id)!
+  assert.equal(after.title, 'injected')
 })

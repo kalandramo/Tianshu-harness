@@ -1,5 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createRouter } from '../index.js'
 import { buildSessionRoutes } from '../session-routes.js'
 import { RuntimeSessionManager, type ManagedAgent } from '../session-manager.js'
@@ -9,6 +12,8 @@ import type { OaiMessage } from '../../api/oai-types.js'
 import { DEFAULT_CONFIG } from '../../config/default.js'
 import { RECORDING_SCHEMA_VERSION } from '../../prompt/rpa-distill.js'
 import type { Config } from '../../config/schema.js'
+import { __setProGrantPublicKeyForTests } from '../../config/pro-license.js'
+import { makeValidGrant } from '../../config/__tests__/grant-fixtures.js'
 
 const TOKEN = 'tok'
 const AUTH = { authorization: `Bearer ${TOKEN}` }
@@ -107,11 +112,25 @@ test('distill 路由 Pro 门禁：computerUse 未启用时 403 pro_required', as
 })
 
 test('distill 路由 Pro 门禁：Pro 启用时放行', async () => {
-  const enabled: Config = {
-    ...DEFAULT_CONFIG,
-    pro: { ...DEFAULT_CONFIG.pro, enabled: true },
+  // Pro 的唯一正当来源是**签名凭证**（config.pro.enabled 不再是凭据）：
+  // 在 RIVET_HOME 下放一份有效签名的 license.json，模拟已激活的付费用户。
+  const home = mkdtempSync(join(tmpdir(), 'distill-pro-'))
+  const prevHome = process.env.RIVET_HOME
+  const { token, publicKeyB64 } = makeValidGrant()
+  writeFileSync(join(home, 'license.json'), JSON.stringify({ token, lastVerifiedAt: Date.now() }))
+  process.env.RIVET_HOME = home
+  __setProGrantPublicKeyForTests(publicKeyB64)
+  try {
+    const enabled: Config = {
+      ...DEFAULT_CONFIG,
+      pro: { ...DEFAULT_CONFIG.pro, enabled: false },
+    }
+    const { router } = setup(enabled)
+    const res = await router('POST', '/recordings/distill', { recordingId: 'r', jsonl: JSONL }, AUTH)
+    assert.equal(res.status, 201)
+  } finally {
+    __setProGrantPublicKeyForTests(null)
+    if (prevHome === undefined) delete process.env.RIVET_HOME
+    else process.env.RIVET_HOME = prevHome
   }
-  const { router } = setup(enabled)
-  const res = await router('POST', '/recordings/distill', { recordingId: 'r', jsonl: JSONL }, AUTH)
-  assert.equal(res.status, 201)
 })

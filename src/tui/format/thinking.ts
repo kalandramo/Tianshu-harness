@@ -37,11 +37,34 @@ export interface FormatThinkingInput {
   columns?: number
   /** 推理已完成（提交到 scrollback）。头部用过去式「✶ 已推理」而非进行时「◐ 凝思中…」。默认 false。 */
   done?: boolean
+  /** done 头部附带回看提示（如 `· ctrl+t 回看`）——仅在调用方确实留存了正文时传。 */
+  reviewHint?: string
   /** 当前激活的星域 ID（如 qiming / changgeng / wenqu / tianshu 等） */
   domainId?: string
 }
 
 const DEFAULT_MAX_LINES = 8
+
+/**
+ * 显示层剥 `**emphasis**` 标记：thinking 是模型原始 markdown，live 区不跑完整
+ * markdown 渲染，裸 `**` 是纯粹的视觉噪音（grok-build 渲染 markdown，我们取
+ * 低成本的 emphasis 剥离）。
+ *
+ * 保守边界（宁留不剥）：
+ * - 开标记前不能是单词字符、星号或斜杠——glob 双星段（目录间的连续两星）与
+ *   x**y**z 这类代码形态一律不动；
+ * - 标记必须**紧贴**内容（`**文本**`，前后各加一条非空白断言）：星号两侧留白的
+ *   形态一律不动——`2 ** 3 ** 4`（幂运算/通配表达）与 `** A **`（不规范加粗）
+ *   因此保住，代价是不规范写法不渲染，符合"宁留不剥"；
+ * - 内容不含星号（glob 片段永远不配对成功）；
+ * - `__`/`~~`/反引号不处理——`__init__` 这类 dunder 误伤代价比收益大。
+ */
+// eslint-disable-next-line no-control-regex
+const EMPHASIS_RE = /(?<![\w\/*])\*\*(?=\S)([^*\n]{1,200}?)(?<=\S)\*\*(?![\w*])/g
+
+function stripEmphasisForDisplay(line: string): string {
+  return line.includes('**') ? line.replace(EMPHASIS_RE, '$1') : line
+}
 
 /**
  * 格式化 thinking 指示器为 ANSI 行数组（星域符印与多层对比色）。
@@ -50,7 +73,7 @@ export function formatThinking(input: FormatThinkingInput, theme: RivetTheme): s
   if (!input.text) return []
 
   const lines: string[] = []
-  const textLines = input.text.split('\n').filter(l => l.trim().length > 0)
+  const textLines = input.text.split('\n').filter(l => l.trim().length > 0).map(stripEmphasisForDisplay)
   const useAscii = useAsciiGlyphs()
 
   // ── 获取当前星域元数据与符印 ──────────────────────────────────
@@ -70,11 +93,12 @@ export function formatThinking(input: FormatThinkingInput, theme: RivetTheme): s
       const secs = Math.round(input.elapsedMs / 1000)
       const glyphStr = useAscii ? '*' : rawGlyph
       const lineInfo = textLines.length > 0 ? ` · ${textLines.length} 行` : ''
-      
+      const hint = input.reviewHint ? color(` · ${input.reviewHint}`, theme.dim) : ''
+
       const headSymbol = color(glyphStr, accentColor, { bold: true })
       const headLabel = color(`${domainName}·已推理`, theme.secondary)
       const headMeta = color(` · ${secs}s${lineInfo}`, theme.dim)
-      lines.push(`${headSymbol} ${headLabel}${headMeta}`)
+      lines.push(`${headSymbol} ${headLabel}${headMeta}${hint}`)
     } else {
       const statusLabel = getThinkingStatus(input.elapsedMs)
       const lineInfo = textLines.length > 0 ? ` · ${textLines.length} 行` : ''

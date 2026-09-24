@@ -210,8 +210,8 @@ export class MeridianDb {
         // 指引修正（2026-08-17，同 session-registry）：废弃的 windows-build-tools
         // 与语法不通的 npm rebuild 换成本仓自带的预编译拉取脚本。
         const hint = process.platform === 'win32'
-          ? 'Run: cd "$(npm root -g)\\tianshu-tui" && node scripts\\fetch-native-sqlite.js'
-          : 'Run: cd "$(npm root -g)/tianshu-tui" && node scripts/fetch-native-sqlite.js'
+          ? 'Run: cd "$(npm root -g)\\tianshu-harness" && node scripts\\fetch-native-sqlite.js'
+          : 'Run: cd "$(npm root -g)/tianshu-harness" && node scripts/fetch-native-sqlite.js'
         console.warn(`⚠ better-sqlite3 not available. Code index (MeridianDb) disabled — repo symbol search & cross-file analysis will be unavailable. Reason: ${reason}\n  Fix: ${hint}`)
         this._available = false
         this.conn = createNullDb()

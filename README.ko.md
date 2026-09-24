@@ -26,10 +26,11 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/v/release/huiliyi37/Tianshu-Tui?color=8B5CF6&label=Release&logo=github&style=for-the-badge" alt="GitHub release">
+  <img src="https://img.shields.io/github/v/release/huiliyi37/Tianshu-harness?color=8B5CF6&label=Release&logo=github&style=for-the-badge" alt="GitHub release">
   <img src="https://img.shields.io/badge/License-Apache%202.0-3B5BDB?style=for-the-badge&logo=apache" alt="License">
   <img src="https://img.shields.io/badge/TypeScript-Strict-blue?style=for-the-badge&logo=typescript" alt="TypeScript">
   <img src="https://img.shields.io/badge/Tests-16%2C000%2B%20Passed-green?style=for-the-badge&logo=testinglibrary" alt="Tests">
+  <a href="https://discord.gg/XjWTATCHB"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
 ---
@@ -38,14 +39,14 @@
 
 > **天枢**는 TypeScript로 작성된 코딩 에이전트 런타임입니다. **터미널 TUI**와 **데스크톱 GUI**가 동일한 커널을 공유하며, 모델이 질문에 답하는 것에 그치지 않고, 인지 가드레일·멀티에이전트 오케스트레이션·DeepSeek V4 프리픽스 캐시에 맞춰 설계된 저비용 장대 세션을 갖추고 다단계 코딩 작업을 계속 완수할 수 있게 합니다.
 
-- **터미널 × 데스크톱, 하나의 커널** —— 순수 ANSI 자체 제작 TUI（`rivet`）와 Tauri 데스크톱（macOS / Windows / Linux）이 동일한 에이전트 커널을 공유합니다. 양쪽의 능력은 동일하며 사용 시나리오에 따라 전환할 수 있습니다.
+- **터미널 × 데스크톱, 하나의 커널** —— 순수 ANSI 자체 제작 TUI（`tianshu`）와 Tauri 데스크톱（macOS / Windows / Linux）이 동일한 에이전트 커널을 공유합니다. 양쪽의 능력은 동일하며 사용 시나리오에 따라 전환할 수 있습니다.
 - **인지 가상 머신（CVM）** —— 72개의 런타임 훅이 5대 단계에 걸쳐 있어, 모델 출력과 실제 행동 사이에 관측 가능하고 바로잡을 수 있는 인지 런타임을 둡니다（[A/B 실증](docs/CVM运行时对Agent模型的实证影响.md)）.
 - **멀티에이전트 오케스트레이션** —— 가벼운 `/scout` 읽기 전용 정찰, 병렬 `/team` 시공부터 `/council` 다중 좌석 회진, `/galaxy` 다차원 공략까지. 복잡한 작업은 파(wave) 단위로 실행하며 파마다 검수합니다.
 - **통합 프로젝트 메모리** —— 프로젝트 지식은 `.rivet/knowledge/memory.jsonl`에 기록됩니다. 자동 주입은 거버넌스/제약 계열 메모리에만 한정되며, 과거 문제와 문서는 명시적 recall을 통해서만 들어옵니다——새 작업을 납치하지 않습니다.
 - **프리픽스 캐시 최우선** —— 동결 프리픽스 + 증분 appendix + 경계 압축으로 DeepSeek V4 장대 세션에서 실측 정상 적중률 **95–99%**를 유지하여 token 비용을 크게 낮춥니다.
 
 <p align="center">
-  <img src="docs/brand/assets/tianshu-tui-screenshot.png" alt="天枢 TUI（终端版）" width="49%">
+  <img src="docs/brand/assets/tianshu-harness-screenshot.png" alt="天枢 TUI（终端版）" width="49%">
   <img src="docs/brand/assets/tianshu-gui-screenshot.jpg" alt="天枢桌面端 GUI" width="49%">
 </p>
 <p align="center">
@@ -53,7 +54,7 @@
 </p>
 
 > [!NOTE]
-> 이 프로젝트의 초기 개발 코드명은 **Rivet**입니다. 하위 호환성을 유지하기 위해 설치된 CLI의 명령어 이름은 여전히 `rivet`입니다.
+> 이 프로젝트의 초기 개발 코드명은 **Rivet**입니다. 현재 CLI 기본 명령어는 `tianshu`이며, `rivet`은 호환용 별칭으로 유지됩니다（동일 엔트리）. 데이터 디렉터리는 계속 `~/.rivet`입니다.
 
 ## 목차
 
@@ -144,40 +145,40 @@ Layer 4: RuntimeHookPipeline（72 hooks） → trap-and-emulate 拦截退化行�
 
 ### 2. 설치（택一）
 
-**방식 A: 데스크톱 앱（설치하면 바로 사용）** —— [GitHub Releases](https://github.com/huiliyi37/Tianshu-Tui/releases/latest)에서 다운로드: macOS `.dmg`（Apple Silicon / Intel 이중 아키텍처）· Windows `.exe` 설치 마법사 · Linux `.AppImage`.
+**방식 A: 데스크톱 앱（설치하면 바로 사용）** —— [GitHub Releases](https://github.com/huiliyi37/Tianshu-harness/releases/latest)에서 다운로드: macOS `.dmg`（Apple Silicon / Intel 이중 아키텍처）· Windows `.exe` 설치 마법사 · Linux `.AppImage`.
 > **Linux 지원 범위（3.11.2 최초 제공）**: x64 AppImage 무설치——`chmod +x Tianshu_*.AppImage` 후 바로 실행. glibc ≥ 2.35（Ubuntu 22.04+ / Debian 12+ 등 주요 배포판） 필요, X11 세션 권장（Wayland는 미검증）. 알려진 제한: 음성 입력은 아직 불가（whisper 커뮤니티 빌드 부재로 브라우저 음성에 자동 폴백）; 데스크톱 자동 업데이트는 Linux에서도 동작합니다.
 
-> **Windows 지원 범위**: Windows 10（1809+, 22H2 권장）/ Windows 11. 화면 렌더링은 **WebView2 Runtime（≥ 120 권장）**에 의존합니다——v3.5부터의 스크롤·렌더링 최적화는 최신 런타임이 필요하며, 구버전은 세션 영역 스크롤이 끊깁니다. 3.5.3부터 설치 프로그램에 완전한 오프라인 설치 패키지가 내장됩니다（네트워크 불필요, 시스템 레벨 등록）. 기존 사용자가 자동 업데이트 후 "너무 오래됨" 안내를 받으면: 안내 바 또는 「설정 → 런타임 및 정보」에서 「복구 도구 실행」. **창이 아예 열리지 않을 때**는 시작 메뉴의 「WebView2 복구」를 사용하거나, [Releases](https://github.com/huiliyi37/Tianshu-Tui/releases/latest)에서 `windows-repair` 디렉터리의 `repair-webview2.cmd`를 더블클릭하세요. 또는 [WebView2 오프라인 설치 패키지](https://go.microsoft.com/fwlink/p/?LinkId=2124703)를 수동 설치 후 재시작하세요.
+> **Windows 지원 범위**: Windows 10（1809+, 22H2 권장）/ Windows 11. 화면 렌더링은 **WebView2 Runtime（≥ 120 권장）**에 의존합니다——v3.5부터의 스크롤·렌더링 최적화는 최신 런타임이 필요하며, 구버전은 세션 영역 스크롤이 끊깁니다. 3.5.3부터 설치 프로그램에 완전한 오프라인 설치 패키지가 내장됩니다（네트워크 불필요, 시스템 레벨 등록）. 기존 사용자가 자동 업데이트 후 "너무 오래됨" 안내를 받으면: 안내 바 또는 「설정 → 런타임 및 정보」에서 「복구 도구 실행」. **창이 아예 열리지 않을 때**는 시작 메뉴의 「WebView2 복구」를 사용하거나, [Releases](https://github.com/huiliyi37/Tianshu-harness/releases/latest)에서 `windows-repair` 디렉터리의 `repair-webview2.cmd`를 더블클릭하세요. 또는 [WebView2 오프라인 설치 패키지](https://go.microsoft.com/fwlink/p/?LinkId=2124703)를 수동 설치 후 재시작하세요.
 > **Win10 태블릿 모드 알려진 동작**: 태블릿 모드에서 앱 전환 시 이전 앱이 화면 밖으로 밀려납니다——computer_use 스냅샷이 가림/백그라운드 자가복구를 수행하므로（PrintWindow 렌더링）태블릿 모드를 끌 필요가 없습니다.
 
-**방식 B: 원클릭 설치 스크립트（권장）** —— Node ≥ 24 확인 → `tianshu-tui` 전역 설치（기본 npmmirror 미러 가속, `NPM_CONFIG_REGISTRY`로 덮어쓰기 가능）→ `rivet` 실행. 멱등하게 반복 실행 가능:
+**방식 B: 원클릭 설치 스크립트（권장）** —— Node ≥ 24 확인 → `tianshu-harness` 전역 설치（기본 npmmirror 미러 가속, `NPM_CONFIG_REGISTRY`로 덮어쓰기 가능）→ `tianshu` 실행. 멱등하게 반복 실행 가능:
 
 ```bash
 # macOS / Linux（bash）
-bash <(curl -fsSL https://raw.githubusercontent.com/huiliyi37/Tianshu-Tui/main/scripts/install-tui.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/huiliyi37/Tianshu-harness/main/scripts/install-tui.sh)
 # 只安装不启动：
-bash <(curl -fsSL https://raw.githubusercontent.com/huiliyi37/Tianshu-Tui/main/scripts/install-tui.sh) --no-launch
+bash <(curl -fsSL https://raw.githubusercontent.com/huiliyi37/Tianshu-harness/main/scripts/install-tui.sh) --no-launch
 
 # Windows（PowerShell）
-powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/huiliyi37/Tianshu-Tui/main/scripts/install-tui.ps1 | iex"
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/huiliyi37/Tianshu-harness/main/scripts/install-tui.ps1 | iex"
 # 只安装不启动（克隆仓库后本地跑）：
 powershell -ExecutionPolicy Bypass -File scripts\install-tui.ps1 -NoLaunch
 ```
 
-**방식 C: npm 수동 설치（CLI 사용）** —— `tianshu-tui`로 배포되어 로컬 빌드가 필요 없고, 시작할 때마다 업데이트를 자동 확인합니다:
+**방식 C: npm 수동 설치（CLI 사용）** —— `tianshu-harness`로 배포되어 로컬 빌드가 필요 없고, 시작할 때마다 업데이트를 자동 확인합니다:
 
 ```bash
-npm install -g tianshu-tui
-rivet
+npm install -g tianshu-harness
+tianshu
 ```
 
-> **Windows 팁**: 설치 후 `rivet`이 인식되지 않으면——먼저 **새 터미널을 여세요**（Node 설치 당시 켜둔 창은 옛 PATH를 들고 있습니다）. 그래도 안 되면 `npm prefix -g` 출력 디렉터리를 사용자 PATH에 추가하고 새 터미널을 여세요. 공식 설치 프로그램으로 설치한 Node는 기본적으로 이 문제가 없고, nvm/fnm/scoop으로 설치한 경우 수동으로 한 번 추가해야 합니다.
+> **Windows 팁**: 설치 후 `tianshu`이 인식되지 않으면——먼저 **새 터미널을 여세요**（Node 설치 당시 켜둔 창은 옛 PATH를 들고 있습니다）. 그래도 안 되면 `npm prefix -g` 출력 디렉터리를 사용자 PATH에 추가하고 새 터미널을 여세요. 공식 설치 프로그램으로 설치한 Node는 기본적으로 이 문제가 없고, nvm/fnm/scoop으로 설치한 경우 수동으로 한 번 추가해야 합니다.
 
 **방식 D: 소스에서 빌드**:
 
 ```bash
-git clone https://github.com/huiliyi37/Tianshu-Tui.git
-cd Tianshu-Tui
+git clone https://github.com/huiliyi37/Tianshu-harness.git
+cd Tianshu-harness
 npm install
 npm run build      # 生成 dist/cli/entry.js
 npm start          # 或：node dist/cli/entry.js
@@ -195,7 +196,7 @@ cp completions/rivet.bash ~/.local/share/bash-completion/completions/rivet
 sudo cp completions/rivet.bash /usr/share/bash-completion/completions/rivet
 ```
 
-**zsh** —— `rivet.zsh`를 `_rivet` 이름으로 `$fpath`에 넣기:
+**zsh** —— `tianshu.zsh`를 `_rivet` 이름으로 `$fpath`에 넣기:
 
 ```bash
 mkdir -p ~/.zsh/completions
@@ -213,19 +214,19 @@ cp completions/rivet.fish ~/.config/fish/completions/rivet.fish
 **Windows PowerShell** —— `$PROFILE`에 dot-source:
 
 ```powershell
-Add-Content $PROFILE ". C:\path\to\rivet.ps1"
+Add-Content $PROFILE ". C:\path\to\tianshu.ps1"
 ```
 
 > 자동완성 내용은 CLI와 일치합니다: 최상위 명령어（`config` / `serve` / `sessions` / `browser` / `logs`）, 전역 flags, `config`의 모든 하위 명령어, 그리고 `~/.rivet/config.json`에서 동적으로 읽는 provider 이름.
 
 ### 4. API Key 설정（최초 필수）
 
-**직접 설치한 사용자는 수동 설정이 필요 없습니다**——`rivet`을 처음 실행하면 먼저 메인 화면에 들어간 뒤 `/connect`가 자동으로 열립니다. 거기서 서비스 제공자를 선택하고 인증을 완료하세요. 이후 언제든 `/connect`를 입력해 Provider를 추가하거나 조정할 수 있고, 데스크톱 앱에서는 Settings → Provider에서 관리할 수 있습니다.
+**직접 설치한 사용자는 수동 설정이 필요 없습니다**——`tianshu`을 처음 실행하면 먼저 메인 화면에 들어간 뒤 `/connect`가 자동으로 열립니다. 거기서 서비스 제공자를 선택하고 인증을 완료하세요. 이후 언제든 `/connect`를 입력해 Provider를 추가하거나 조정할 수 있고, 데스크톱 앱에서는 Settings → Provider에서 관리할 수 있습니다.
 
 **개발자가 소스를 받아 시작할 때**（또는 시작 전에 미리 설정하고 싶을 때）만 수동으로 진행하면 됩니다:
 
 ```bash
-rivet config set-key deepseek sk-xxx   # 密钥写入 secrets.json（0600），config.json 只留 keyRef
+tianshu config set-key deepseek sk-xxx   # 密钥写入 secrets.json（0600），config.json 只留 keyRef
 export DEEPSEEK_API_KEY=sk-xxx         # 或：环境变量（仅当前 shell 有效）
 ```
 
@@ -234,7 +235,7 @@ export DEEPSEEK_API_KEY=sk-xxx         # 或：环境变量（仅当前 shell �
 ### 5. 시작
 
 ```bash
-rivet            # 或：npm start / node dist/cli/entry.js
+tianshu            # 或：npm start / node dist/cli/entry.js
 ```
 
 `〉` 프롬프트가 있는 TUI가 나타납니다. 요구사항을 입력하고 Enter를 누르면 됩니다.
@@ -242,10 +243,10 @@ rivet            # 或：npm start / node dist/cli/entry.js
 ### 헤드리스 모드（스크립트 통합）
 
 ```bash
-rivet -p "解释 src/agent/loop.ts"       # 单次提示，文本输出，无 TUI
-rivet -p "列出所有 TODO 注释" --json    # JSON 输出，便于脚本处理
-rivet --stream-json -p "重构这个模块"  # NDJSON 事件流：text_delta/tool_use/tool_result/turn_complete…（CI 集成首选，输出内置脱敏）
-rivet --goal "修复所有类型错误" --budget 50   # 无头目标自主模式，最多跑 50 轮（默认 100）
+tianshu -p "解释 src/agent/loop.ts"       # 单次提示，文本输出，无 TUI
+tianshu -p "列出所有 TODO 注释" --json    # JSON 输出，便于脚本处理
+tianshu --stream-json -p "重构这个模块"  # NDJSON 事件流：text_delta/tool_use/tool_result/turn_complete…（CI 集成首选，输出内置脱敏）
+tianshu --goal "修复所有类型错误" --budget 50   # 无头目标自主模式，最多跑 50 轮（默认 100）
 ```
 
 ### CLI 인자
@@ -263,17 +264,17 @@ rivet --goal "修复所有类型错误" --budget 50   # 无头目标自主模式
 | `--resume <id\|前缀>` `-r <id\|前缀>` | 지정 세션 복원（짧은 접두사로 충분） |
 | `--resume` `-r`（裸） | 시작 후 세션 선택기 열기 |
 | `--new` | 강제로 새 세션 시작 |
-| `--list` · `rivet sessions` | 세션 목록 출력 후 종료 |
+| `--list` · `tianshu sessions` | 세션 목록 출력 후 종료 |
 | `--dangerously-skip-permissions` | 단발 세션 완전 자동（모든 승인 건너뜀; 샌드박스는 여전히 켜짐） |
 | `--screen-reader` | 스크린 리더 모드（동적 구간을 통째로 렌더링하지 않고 주기적 재렌더링을 중지） |
 | `--skip-welcome` | 웰컴 화면 건너뛰기 |
 | `--stream-events <path>` | 이번 run을 NDJSON `SessionEvent`로 미러링해 파일에 기록 |
 
-하위 명령어: `rivet config`（설정 명령어 도움말 보기; 대화형 Provider 설정은 TUI `/connect` 사용）, `rivet serve`（sidecar HTTP/SSE 시작）, `rivet sessions`（세션 목록）, `rivet logs`（로그 위치）, `rivet browser status` / `rivet browser install [--no-mirror]`（`browser_debug`에 필요한 chromium 점검 및 원클릭 설치, 기본은 국내 미러 사용）.
+하위 명령어: `tianshu config`（설정 명령어 도움말 보기; 대화형 Provider 설정은 TUI `/connect` 사용）, `tianshu serve`（sidecar HTTP/SSE 시작）, `tianshu sessions`（세션 목록）, `tianshu logs`（로그 위치）, `tianshu browser status` / `tianshu browser install [--no-mirror]`（`browser_debug`에 필요한 chromium 점검 및 원클릭 설치, 기본은 국내 미러 사용）.
 
 ### 자동 업데이트
 
-npm으로 설치한 경우 天枢는 24시간마다 시작 시 새 버전을 확인하고 팝업으로 알립니다. `/update`는 `npm install -g tianshu-tui@latest`를 실행하고 재시작하며, 소스 설치라면 `git pull && npm install && npm run build`를 사용합니다. `RIVET_NO_UPDATE_CHECK=1`로 확인을 끌 수 있습니다.
+npm으로 설치한 경우 天枢는 24시간마다 시작 시 새 버전을 확인하고 팝업으로 알립니다. `/update`는 `npm install -g tianshu-harness@latest`를 실행하고 재시작하며, 소스 설치라면 `git pull && npm install && npm run build`를 사용합니다. `RIVET_NO_UPDATE_CHECK=1`로 확인을 끌 수 있습니다.
 
 ## ✨ 핵심 기능
 
@@ -299,7 +300,7 @@ DeepSeek은 캐시 미스에 50× 비용을 부과합니다. 天枢의 프롬프
 - **바이트 수준 차이** —— 메시지 내용에 타임스탬프, 랜덤 ID 등 불안정 바이트가 포함된 경우
 - **경계를 넘는 재작성** —— `/compact`（`turn===0`일 때만 이력 재작성）, `/cd`로 프로젝트 전환（새 user 경계에서 꼬리 자름）
 
-진단: ① `rivet logs`（또는 TUI에서 `/logs`）로 이번 세션의 데이터 루트와 `cache-log.jsonl` / `sensorium.jsonl` 경로를 직접 출력; ② 세션 `.jsonl`을 열어 `cache_read_input_tokens`를 검색해 각 턴의 적중 여부 확인; ③ 전체 원격 측정이 필요하면 `RIVET_DEBUG_TELEMETRY=1`（또는 아무 비어 있지 않은 값） 설정 후 `sensorium.jsonl` 확인; ④ `npm exec -- tsx scripts/verify-cache-hit-rate.ts`로 멀티턴 대화를 시뮬레이션해 검증. 경로 개요는 아래「로그와 진단」을 참조하세요.
+진단: ① `tianshu logs`（또는 TUI에서 `/logs`）로 이번 세션의 데이터 루트와 `cache-log.jsonl` / `sensorium.jsonl` 경로를 직접 출력; ② 세션 `.jsonl`을 열어 `cache_read_input_tokens`를 검색해 각 턴의 적중 여부 확인; ③ 전체 원격 측정이 필요하면 `RIVET_DEBUG_TELEMETRY=1`（또는 아무 비어 있지 않은 값） 설정 후 `sensorium.jsonl` 확인; ④ `npm exec -- tsx scripts/verify-cache-hit-rate.ts`로 멀티턴 대화를 시뮬레이션해 검증. 경로 개요는 아래「로그와 진단」을 참조하세요.
 
 ### 선(Zen) 모드: 읽기 중심 시작, 손대면 잠금 해제
 
@@ -357,7 +358,7 @@ DeepSeek은 캐시 미스에 50× 비용을 부과합니다. 天枢의 프롬프
 | **taiyi** | 16 | 최소 평가 셋——고빈도 핵심 + 인도 폐루프, 오케스트레이션/브라우저/네트워크/비주얼 등 무거운 도구 제거; 太一 星域 고정 시 자동으로 이 셋에（아래「최소 툴셋」참조） |
 
 ```bash
-RIVET_TOOL_PRESET=full rivet          # 本次会话用 full
+RIVET_TOOL_PRESET=full tianshu          # 本次会话用 full
 ```
 
 ```json
@@ -481,9 +482,9 @@ Plan Mode에는 星域 위임이 내장되어 있습니다——복잡한 계획
 - **상태 복원** —— 사이드바, 대기 작업, 활성 계획을 함께 복원
 
 ```bash
-rivet --continue                 # 恢复当前 cwd 最近会话
-rivet --resume abc123            # 恢复指定会话（短前缀即可）
-rivet --resume                   # 启动后打开会话选择器
+tianshu --continue                 # 恢复当前 cwd 最近会话
+tianshu --resume abc123            # 恢复指定会话（短前缀即可）
+tianshu --resume                   # 启动后打开会话选择器
 ```
 
 ### 평의회（다각도 심사）
@@ -506,7 +507,7 @@ rivet --resume                   # 启动后打开会话选择器
 
 `.rivet/skills/`에 YAML frontmatter（`name`, `description`, `triggers`）가 있는 `.md` 커스텀 skill을 넣을 수도 있습니다.
 
-> `writing-plans` / `executing-plans`는 이미 네이티브 프로세스로 내장되어 있습니다（계획기는 시스템 프롬프트의 `<plan-mode>` 규율, 실행기는 `<plan-executing>` 규율에 따라 실행）, 더 이상 skill 파일이 필요 없습니다. `agent-harness-testing` / `cognitive-alignment` / `research-spec`은 기본 배포에서 빠지고 [`docs/skills/optional/`](docs/skills/optional/)에 보관됩니다——필요 시 수동으로 `.rivet/skills/`에 복사해 넣으면 활성화됩니다.
+> `writing-plans` / `executing-plans`는 이미 네이티브 프로세스로 내장되어 있습니다（계획기는 시스템 프롬프트의 `<plan-mode>` 규율, 실행기는 `<plan-executing>` 규율에 따라 실행）, 더 이상 skill 파일이 필요 없습니다. `agent-harness-testing` / `research-spec`은 기본 배포에서 빠지고 [`docs/skills/optional/`](docs/skills/optional/)에 보관됩니다——필요 시 수동으로 `.rivet/skills/`에 복사해 넣으면 활성화됩니다.
 
 ### 세션 간 메모리
 
@@ -536,10 +537,10 @@ rivet --resume                   # 启动后打开会话选择器
 외부 도구 서버——문서 검색, 데이터베이스, API——를 agent의 도구 파이프라인에 직접 연결합니다. 시작 시 자동 발견되며 도구는 `mcp__<serverId>__<toolName>` 형태로 나타납니다.
 
 ```bash
-rivet config mcp add-stdio <server-id> npx -y <package> [args...]   # 本地进程
-rivet config mcp add-sse <server-id> http://localhost:3001/sse      # 远程/网络
-rivet config mcp add-preset context7                               # 常用预设
-rivet config mcp list                                              # 列出 + 状态
+tianshu config mcp add-stdio <server-id> npx -y <package> [args...]   # 本地进程
+tianshu config mcp add-sse <server-id> http://localhost:3001/sse      # 远程/网络
+tianshu config mcp add-preset context7                               # 常用预设
+tianshu config mcp list                                              # 列出 + 状态
 ```
 
 세션 내에서: `/mcp`（상태）, `/debug mcp`（진단）. MCP 도구와 내장 도구는 동일한 승인 모드를 따릅니다.
@@ -630,7 +631,7 @@ TUI는 CLI의 기본 표면입니다. 데스크톱 앱（Tauri）과 VS Code/Cur
 
 휴대폰/태블릿을 톈수의 "두 번째 화면"으로——세션은 PC에서 실행되고, 휴대폰으로 진행 상황 확인·승인 처리가 가능합니다：
 
-- **활성화**：데스크톱 **설정 → Network → Remote Access**（LAN URL·액세스 토큰·스캔 연결 QR 표시）；또는 CLI에서 `RIVET_SERVE_HOST=0.0.0.0`（+ 데스크톱 빌드 산출물을 가리키는 `--mobile-dir`）로 `rivet serve`를 시작하면 같은 포트에서 `/mobile`이 제공됩니다
+- **활성화**：데스크톱 **설정 → Network → Remote Access**（LAN URL·액세스 토큰·스캔 연결 QR 표시）；또는 CLI에서 `RIVET_SERVE_HOST=0.0.0.0`（+ 데스크톱 빌드 산출물을 가리키는 `--mobile-dir`）로 `tianshu serve`를 시작하면 같은 포트에서 `/mobile`이 제공됩니다
 - **연결**：같은 LAN의 휴대폰 브라우저에서 `http://<PC LAN IP>:3100/mobile` 열기——QR 스캔 시 토큰 자동 입력（직후 URL에서 제거되어 유출 방지）；수동 입력도 지원
 - **할 수 있는 것**：세션 목록（승인 대기가 상단 강조）→ 단일 세션 읽기 전용 라이브 타임라인（데스크톱과 동일한 폴딩/자동 재연결 의미론）→ 승인·플랜·질문 카드 + 중단 버튼. 메시지 전송은 의도적으로 범위 밖
 - **보안 경계**：신뢰할 수 있는 LAN 또는 터널（Tailscale/SSH）만. LAN 모드에서는 액세스 토큰이 유일한 자격 증명——비밀번호처럼 취급하고, 공개 인터넷에 포트를 노출하지 마세요
@@ -690,7 +691,7 @@ TUI는 CLI의 기본 표면입니다. 데스크톱 앱（Tauri）과 VS Code/Cur
 
 해석 체인: `RIVET_LEAN` 환경 변수（항상 우선）→ 星域 덮어쓰기 → 전역 runtime. 데스크톱: 설정 → 동작 → Lean 리소스 단계 → 星域별 덮어쓰기（星域 목록은 새 星域 추가에 따라 자동 확장）. 주의: 星域 덮어쓰기는 세션 조립 시점에 적용됩니다（시작 시 星域이 고정될 때）; 실행 중 `/domain` 전환은 이미 동결된 도구 세트와 lean에 영향을 주지 않습니다（도구 지문을 바꾸면 프리픽스 캐시를 재구성하게 됨）.
 
-**파일 수정 없는 원클릭 시작**: `/config` → Basics →「최소 셋 星域 바인딩」——어떤 星域을 선택（changgeng 또는 taiyi 등）하면 저장 시 자동으로 `defaultDomain` 고정 + 해당 星域의 taiyi 최소 도구 셋 덮어쓰기가 기록됩니다（lean 리소스 감축은 포함하지 않음）. 이후 `rivet`를 그냥 시작해도 그 星域의 최소 셋 세션으로 들어갑니다. 「기본 모델」필드（`agent.defaultModel`, `provider:modelId` 형식）와 함께 쓰면 인자 없이 완전히 시작할 수 있습니다. 바인딩을 지우면 기본 星域으로 복귀합니다（星域 덮어쓰기 구성은 유지）. 데스크톱 동일 항목: 설정 → 시스템 →「최소 셋 星域 바인딩」.
+**파일 수정 없는 원클릭 시작**: `/config` → Basics →「최소 셋 星域 바인딩」——어떤 星域을 선택（changgeng 또는 taiyi 등）하면 저장 시 자동으로 `defaultDomain` 고정 + 해당 星域의 taiyi 최소 도구 셋 덮어쓰기가 기록됩니다（lean 리소스 감축은 포함하지 않음）. 이후 `tianshu`를 그냥 시작해도 그 星域의 최소 셋 세션으로 들어갑니다. 「기본 모델」필드（`agent.defaultModel`, `provider:modelId` 형식）와 함께 쓰면 인자 없이 완전히 시작할 수 있습니다. 바인딩을 지우면 기본 星域으로 복귀합니다（星域 덮어쓰기 구성은 유지）. 데스크톱 동일 항목: 설정 → 시스템 →「최소 셋 星域 바인딩」.
 
 ### 🎨 이미지 생성（텍스트→이미지）
 
@@ -720,10 +721,10 @@ OpenAI 형식의 텍스트→이미지 엔드포인트（SiliconFlow, OpenAI Ima
 세션 안에서 `/model <name>`으로 언제든 제공자를 전환할 수 있습니다.
 
 ```bash
-rivet                                 # 启动 TUI；首次缺 key 时自动打开 /connect
-rivet config                          # 查看配置命令帮助
-rivet config setup codex --default    # Codex 走 OAuth（首次浏览器登录）
-rivet config show                     # 查看完整配置
+tianshu                                 # 启动 TUI；首次缺 key 时自动打开 /connect
+tianshu config                          # 查看配置命令帮助
+tianshu config setup codex --default    # Codex 走 OAuth（首次浏览器登录）
+tianshu config show                     # 查看完整配置
 ```
 
 config.json을 직접 편집할 수도 있습니다（덮어써야 할 필드만 작성하면 기본값이 깊이 병합됨）. 파일 위치: CLI는 `~/.rivet/config.json`（Windows는 `%LOCALAPPDATA%\.rivet`）; 데스크톱 앱은 Settings → 저장 위치 기준이며, 포터블 버전은 exe 옆 `TianshuData\.rivet`에 있습니다——자세한 내용은 [먼저 데이터 루트 찾기](#먼저-데이터-루트-찾기)를 참조하세요:
@@ -796,8 +797,8 @@ config.json을 직접 편집할 수도 있습니다（덮어써야 할 필드만
 ```
 
 ```bash
-rivet --dangerously-skip-permissions      # 单次会话全自动
-rivet config set-approval auto-safe       # 持久化默认档位
+tianshu --dangerously-skip-permissions      # 单次会话全自动
+tianshu config set-approval auto-safe       # 持久化默认档位
 ```
 
 - 규칙은 `[config]`（영구）와 `[session]`（이번 세션）두 층으로 나뉘며, `deny`가 항상 우선합니다.
@@ -963,11 +964,11 @@ src/
 
 ```bash
 # 终端（TUI 起不来也能用——不初始化 agent、不读配置、不联网）
-rivet logs                         # 列出本项目最近主会话的全部落点 + 是否已产生 + 门控说明
-rivet logs --session <id>          # 指定会话
-rivet logs --json                  # 结构化输出，可贴进 issue
-rivet logs open                    # 在文件管理器中打开会话目录
-rivet logs open desktop            # 打开 sidecar 日志目录（GUI 起不来时第一现场）
+tianshu logs                         # 列出本项目最近主会话的全部落点 + 是否已产生 + 门控说明
+tianshu logs --session <id>          # 指定会话
+tianshu logs --json                  # 结构化输出，可贴进 issue
+tianshu logs open                    # 在文件管理器中打开会话目录
+tianshu logs open desktop            # 打开 sidecar 日志目录（GUI 起不来时第一现场）
 ```
 
 - **TUI**: `/logs`（위와 같은 목록）; `/logs open` / `/logs open desktop`으로 디렉터리를 직접 열기
@@ -987,18 +988,18 @@ rivet logs open desktop            # 打开 sidecar 日志目录（GUI 起不来
 | `desktop/sidecar-exit.json` | sidecar 종료 원인 부스러기 | 종료 시 |
 | `desktop/sessions/<id>/events.jsonl` | 데스크톱 UI 이벤트 스트림（위 세션 `.jsonl`과는 별개의 데이터） | 데스크톱 비-ephemeral 세션 |
 
-프로젝트 내에는 `<cwd>/.rivet/knowledge/`, `artifacts/`, `plans/` 등 공유 데이터가 더 있고, `sessionId`가 없으면 6차원이 가끔 `<cwd>/.rivet/sensorium.jsonl`로 폴백해 기록하기도 합니다——`rivet logs`가 실제 경로를 출력합니다.
+프로젝트 내에는 `<cwd>/.rivet/knowledge/`, `artifacts/`, `plans/` 등 공유 데이터가 더 있고, `sessionId`가 없으면 6차원이 가끔 `<cwd>/.rivet/sensorium.jsonl`로 폴백해 기록하기도 합니다——`tianshu logs`가 실제 경로를 출력합니다.
 
 #### 시나리오별 빠른 확인
 
 | 현상 | 먼저 볼 것 |
 |------|------|
-| 데스크톱 창은 열렸는데 어시스턴트가 답하지 않음 | `rivet logs open desktop`, 또는 Settings →「로그 디렉터리 열기」; 그다음 `desktop/sidecar-exit.json` 확인 |
-| 캐시 적중률 이상 / 비용이 갑자기 상승 | `rivet logs` → 해당 세션의 `cache-log.jsonl`과 `.jsonl` 안의 `cache_read_*` 확인 |
+| 데스크톱 창은 열렸는데 어시스턴트가 답하지 않음 | `tianshu logs open desktop`, 또는 Settings →「로그 디렉터리 열기」; 그다음 `desktop/sidecar-exit.json` 확인 |
+| 캐시 적중률 이상 / 비용이 갑자기 상승 | `tianshu logs` → 해당 세션의 `cache-log.jsonl`과 `.jsonl` 안의 `cache_read_*` 확인 |
 | 6차원 / advisory가 적용됐는지 회고 | `RIVET_DEBUG_TELEMETRY`를 켰는지 확인한 뒤 `sensorium.jsonl` 읽기 |
-| 버그 리포트 / 기여 조사 | `rivet logs --json` 전체를 issue에 붙여넣기（대화 본문 제외, 경로와 크기만 포함） |
+| 버그 리포트 / 기여 조사 | `tianshu logs --json` 전체를 issue에 붙여넣기（대화 본문 제외, 경로와 크기만 포함） |
 
-`RIVET_SESSION_DIR` / `RIVET_DESKTOP_DIR`로 세션 트리와 데스크톱 트리를 각각 옮길 수 있습니다. 적용 중인 덮어쓰기는 `rivet logs` 출력 상단에 나타납니다.
+`RIVET_SESSION_DIR` / `RIVET_DESKTOP_DIR`로 세션 트리와 데스크톱 트리를 각각 옮길 수 있습니다. 적용 중인 덮어쓰기는 `tianshu logs` 출력 상단에 나타납니다.
 
 ## 🔒 보안
 
@@ -1156,16 +1157,17 @@ rivet logs open desktop            # 打开 sidecar 日志目录（GUI 起不来
 
 ## 🤝 커뮤니티와 지원
 
-- **사용 문제 / 토론** → [GitHub Discussions](https://github.com/huiliyi37/Tianshu-Tui/discussions)
-- **버그 리포트 / 기능 요청** → [GitHub Issues](https://github.com/huiliyi37/Tianshu-Tui/issues)
-- **보안 취약점** → [비공개 보고](https://github.com/huiliyi37/Tianshu-Tui/security/advisories/new)（공개 issue를 열지 말 것）
+- **사용 문제 / 토론** → [GitHub Discussions](https://github.com/huiliyi37/Tianshu-harness/discussions)
+- **Discord 커뮤니티** → [Tianshu Harness Discord 참여](https://discord.gg/XjWTATCHB)
+- **버그 리포트 / 기능 요청** → [GitHub Issues](https://github.com/huiliyi37/Tianshu-harness/issues)
+- **보안 취약점** → [비공개 보고](https://github.com/huiliyi37/Tianshu-harness/security/advisories/new)（공개 issue를 열지 말 것）
 - **코드 기여** → [CONTRIBUTING.md](CONTRIBUTING.md) 참조
 - **도움 요청 가이드** → [SUPPORT.md](SUPPORT.md) 참조
 - **위챗 교류 그룹** → 「天枢 harness 교류 그룹」, QR 코드를 스캔해 입장, 일상 토론 / 피드백 / 최신 릴리스 소식을 가장 먼저 받아볼 수 있습니다:
 
 <img src="docs/brand/assets/wechat-group-qr.png" width="280" alt="天枢 harness 交流群微信群二维码">
 
-> 위챗 그룹 QR 코드에는 유효기간이 있습니다（7일）. 만료되면 [Discussions](https://github.com/huiliyi37/Tianshu-Tui/discussions)나 Issue에 남겨 주시면 관리자가 새 코드를 올려 드립니다.
+> 위챗 그룹 QR 코드에는 유효기간이 있습니다（7일）. 만료되면 [Discussions](https://github.com/huiliyi37/Tianshu-harness/discussions)나 Issue에 남겨 주시면 관리자가 새 코드를 올려 드립니다.
 
 > 참고: 먼저 저장소 관리자가 `Settings → General → Discussions`에서 Discussions 기능을 켜 두어야 합니다.
 
@@ -1175,9 +1177,9 @@ rivet logs open desktop            # 打开 sidecar 日志目录（GUI 起不来
 
 | 기여자 | 기여 내용 |
 |--------|----------|
-| [@banxia](https://github.com/banxia) | 프로젝트 창시자 · 핵심 개발 |
+| [@huiliyi37](https://github.com/huiliyi37) | 프로젝트 창시자 · 핵심 개발 |
 
-전체 목록（외부 기여자 17명 / 89 PR）→ CONTRIBUTORS.md
+전체 목록（외부 기여자 22명 / 145 PR）→ CONTRIBUTORS.md
 
 외부 PR은「이식(收编)」절차로 병합되며, 저자 서명은 `Co-authored-by`로 기여자 그래프에
 반영됩니다（scripts/credit-contributors.sh 가 자동 기록）——기여자 월（전체 목록은 CONTRIBUTORS.md）:
@@ -1200,15 +1202,30 @@ rivet logs open desktop            # 打开 sidecar 日志目录（GUI 起不来
 <a href="https://github.com/nzz0991999-ai"><img src="https://github.com/nzz0991999-ai.png?size=100" width="50" height="50" alt="nzz0991999-ai" title="nzz0991999-ai" /></a>
 <a href="https://github.com/L4XB"><img src="https://github.com/L4XB.png?size=100" width="50" height="50" alt="L4XB" title="L4XB" /></a>
 <a href="https://github.com/Wanming08"><img src="https://github.com/Wanming08.png?size=100" width="50" height="50" alt="Wanming08" title="Wanming08" /></a>
+<a href="https://github.com/lei454577-web"><img src="https://github.com/lei454577-web.png?size=100" width="50" height="50" alt="lei454577-web" title="lei454577-web" /></a>
+<a href="https://github.com/jian-in"><img src="https://github.com/jian-in.png?size=100" width="50" height="50" alt="jian-in" title="jian-in" /></a>
+<a href="https://github.com/sky-mirrors"><img src="https://github.com/sky-mirrors.png?size=100" width="50" height="50" alt="sky-mirrors" title="sky-mirrors" /></a>
+<a href="https://github.com/moyan3691"><img src="https://github.com/moyan3691.png?size=100" width="50" height="50" alt="moyan3691" title="moyan3691" /></a>
+<a href="https://github.com/EarthxxRhythm"><img src="https://github.com/EarthxxRhythm.png?size=100" width="50" height="50" alt="EarthxxRhythm" title="EarthxxRhythm" /></a>
 </p>
 
 > PR을 통한 코드 기여를 환영합니다. 자세한 내용은 CONTRIBUTING.md를 참조하세요.
+
+## ⭐ 스타 히스토리
+
+<a href="https://star-history.com/#huiliyi37/tianshu-harness&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=huiliyi37/tianshu-harness&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=huiliyi37/tianshu-harness&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=huiliyi37/tianshu-harness&type=Date" width="700" />
+  </picture>
+</a>
 
 ## ☕ 후원
 
 天枢가 유용했다면 기분 내키는 대로 후원해 주셔도 좋습니다——이것은 한 잔의 커피일 뿐, 계약이 아닙니다. 후원이 issue 우선순위를 바꾸거나 기능 일정에 영향을 주지는 않습니다.
 
-<img src="docs/brand/assets/wechat-pay.jpg" width="240" alt="微信支付">
+<img src="docs/brand/assets/wechat-donate.png" width="240" alt="微信支付">
 
 ## 라이선스
 

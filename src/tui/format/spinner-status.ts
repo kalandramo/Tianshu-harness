@@ -13,7 +13,26 @@ import { color } from '../engine/ansi.js'
 import { useAsciiGlyphs } from '../term-caps.js'
 import type { RivetTheme } from '../theme.js'
 import { circleSpinnerFrame } from '../braille-spinner.js'
+import { displayWidth, truncateToDisplayWidth } from '../width.js'
 import type { JobRow } from '../job-registry.js'
+
+/** 宽度口径与 LiveEngine.rowsForLine / clampLine 一致（ambiguous 按 2 列）。 */
+const WIDE = { ambiguousAsWide: true }
+
+/**
+ * activityLabel 的整行宽度适配。
+ *
+ * 不裁剪时整行超宽 → 调用方的 clampLine 从**尾部**截，正好把耗时切掉：
+ * 「在等什么」可见而「等了多久」不可见——与本次如实化的意图正相反。这里把
+ * 预算让给耗时（它是「还要不要等」的判断依据），只裁标签中段并加省略号。
+ * 未提供 columns 时原样返回（纯 formatter 不知道终端宽度）。
+ */
+function clipActivityLabel(label: string, columns: number | undefined, frame: string, elapsedText: string): string {
+  if (!columns) return label
+  const budget = columns - 1 - displayWidth(`${frame} `, WIDE) - displayWidth(` ${elapsedText}`, WIDE)
+  if (budget <= 2 || displayWidth(label, WIDE) <= budget) return label
+  return `${truncateToDisplayWidth(label, Math.max(1, budget - 2), WIDE)}…`
+}
 
 export type SpinnerPhase = 'idle' | 'thinking' | 'streaming' | 'waiting' | 'analyzing'
 
@@ -87,6 +106,17 @@ export interface SpinnerStatusInput {
    * 变成「可见的等待」。waitMs 是审批等待时长（非 turn 时长）。
    */
   approvalWait?: { toolName: string; waitMs: number }
+  /**
+   * 活动如实标签（如 `运行 Bash(npm test)`）：设置后取代动词池轮换——
+   * analyzing 相位下工具在跑却显示「琢磨中…」是冒充模型活动（与 approvalWait /
+   * job-await 如实化同族，grok-build 的相位标签同构）。
+   */
+  activityLabel?: string
+  /**
+   * 终端列数：给定时 activityLabel 按「整行 ≤ columns-1」裁剪，保证耗时不被
+   * 尾部截断（见 clipActivityLabel）。省略则不做宽度适配。
+   */
+  columns?: number
 }
 
 export function formatSpinnerStatus(input: SpinnerStatusInput, theme: RivetTheme): string | null {
@@ -98,8 +128,11 @@ export function formatSpinnerStatus(input: SpinnerStatusInput, theme: RivetTheme
     const text = `${frame} 等待审批 ${toolName} · ${formatElapsedHuman(waitMs)}`
     return color(text, theme.warning)
   }
-  const label = `${verbFor(input.elapsedMs)}…`
-  const text = `${frame} ${label} ${formatElapsedHuman(input.elapsedMs)}`
+  const elapsedText = formatElapsedHuman(input.elapsedMs)
+  const label = input.activityLabel
+    ? clipActivityLabel(input.activityLabel, input.columns, frame, elapsedText)
+    : `${verbFor(input.elapsedMs)}…`
+  const text = `${frame} ${label} ${elapsedText}`
   const phaseColor: Record<SpinnerPhase, string> = {
     idle: theme.muted,
     thinking: theme.muted,

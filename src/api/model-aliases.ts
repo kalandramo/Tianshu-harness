@@ -62,6 +62,7 @@ const MODEL_SYNONYMS: Record<string, string> = {
   'sf-glm': 'zai-org/GLM-5.2',
   'sf-kimi': 'moonshotai/Kimi-K2.7-Code',
   'sf-qwen': 'Qwen/Qwen3.6-27B',
+  'grok': 'grok-4.6',
   'sol': 'gpt-5.6-sol',
   'terra': 'gpt-5.6-terra',
   'luna': 'gpt-5.6-luna',
@@ -137,4 +138,32 @@ export function findAliasEntryLower(rawId: string): ModelAliasEntry | undefined 
 
 export function listAliasEntries(): readonly ModelAliasEntry[] {
   return MODEL_ALIAS_TABLE
+}
+
+/**
+ * 把配置 / 命令行 / 会话记录里手写的模型引用归一到 canonical id（preset 短名、
+ * 聚合前缀名、别名字段废弃前落盘的旧名）。
+ *
+ * 表里没有的名字**原样返回**——调用方据此 fail-closed：不做模糊匹配，不悄悄把请求
+ * 路由到另一个模型。同义表的单一来源就是上面那张 MODEL_ALIAS_TABLE。
+ */
+export function canonicalizeModelId(rawId: string): string {
+  return findAliasEntryExact(rawId)?.canonicalId ?? rawId
+}
+
+/**
+ * 模型池条目 id 是否匹配某个引用——**精确优先，归一次之**（精确命中永不被别名改写）。
+ *
+ * 为什么不直接比 `canonicalizeModelId(ref)`：别名表的 key 是短名，而用户自建
+ * provider 里完全可能真有一个模型的 id 就叫 `glm` / `kimi`。那种池里「先归一、只比
+ * 归一结果」会把写 `glm` 的引用改写成 `glm-5.2`，即把既有可解析引用改坏；两段式
+ * 判断是**单调扩展**——只补精确落空的情形。
+ *
+ * 与 src/agent/review-model-override.ts 的既有 predicate 同口径（那份现已改用本函数），
+ * 消费者：bootstrap 池内比、provider-keys 归属查找、review override 解析。
+ */
+export function modelRefMatches(modelId: string, ref: string): boolean {
+  if (modelId === ref) return true
+  const canonical = findAliasEntryExact(ref)?.canonicalId
+  return canonical !== undefined && modelId === canonical
 }

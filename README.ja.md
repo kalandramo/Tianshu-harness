@@ -26,10 +26,11 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/v/release/huiliyi37/Tianshu-Tui?color=8B5CF6&label=Release&logo=github&style=for-the-badge" alt="GitHub release">
+  <img src="https://img.shields.io/github/v/release/huiliyi37/Tianshu-harness?color=8B5CF6&label=Release&logo=github&style=for-the-badge" alt="GitHub release">
   <img src="https://img.shields.io/badge/License-Apache%202.0-3B5BDB?style=for-the-badge&logo=apache" alt="License">
   <img src="https://img.shields.io/badge/TypeScript-Strict-blue?style=for-the-badge&logo=typescript" alt="TypeScript">
   <img src="https://img.shields.io/badge/Tests-16%2C000%2B%20Passed-green?style=for-the-badge&logo=testinglibrary" alt="Tests">
+  <a href="https://discord.gg/XjWTATCHB"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
 ---
@@ -38,14 +39,14 @@
 
 > **天枢**は TypeScript で書かれたコーディングエージェントのランタイムです。**ターミナル TUI** と**デスクトップ GUI** が同一カーネルを共有し、モデルが質問に答えるだけでなく、認知的ガードレール・マルチエージェントオーケストレーション・DeepSeek V4 のプレフィックスキャッシュ向けに設計された低コストの長大セッションを備え、多段階のコーディング作業を継続的に完遂できるようにします。
 
-- **ターミナル × デスクトップ、一つのカーネル** —— 純 ANSI 自前 TUI（`rivet`）と Tauri デスクトップ（macOS / Windows / Linux）が同一エージェントカーネルを共有。両端で能力は一致し、利用シーンに応じて切り替えられます。
+- **ターミナル × デスクトップ、一つのカーネル** —— 純 ANSI 自前 TUI（`tianshu`）と Tauri デスクトップ（macOS / Windows / Linux）が同一エージェントカーネルを共有。両端で能力は一致し、利用シーンに応じて切り替えられます。
 - **認知仮想マシン（CVM）** —— 5 大フェーズにまたがる 72 のランタイムフックが、モデル出力と実際のアクションの間に観測可能で修正可能な認知レイヤーを挟みます（[A/B 実証](docs/CVM运行时对Agent模型的实证影响.md)）。
 - **マルチエージェントオーケストレーション** —— 軽量な `/scout` 読み取り専用偵察、並行 `/team` 施工から、`/council` の複数席会診、`/galaxy` の多次元攻略まで。複雑なタスクは波（wave）単位で実行し、波ごとに検収します。
 - **統一プロジェクトメモリ** —— プロジェクト知識は `.rivet/knowledge/memory.jsonl` に書き込まれます。自動注入はガバナンス／制約系メモリに限定され、過去の問題やドキュメントは明示的な recall 経由のみ——新しいタスクを乗っ取りません。
 - **プレフィックスキャッシュ最優先** —— フリーズしたプレフィックス＋インクリメンタル appendix＋境界圧縮により、DeepSeek V4 の長大セッションで実測の定常ヒット率 **95–99%** を維持し、token コストを大幅に削減します。
 
 <p align="center">
-  <img src="docs/brand/assets/tianshu-tui-screenshot.png" alt="天枢 TUI（ターミナル版）" width="49%">
+  <img src="docs/brand/assets/tianshu-harness-screenshot.png" alt="天枢 TUI（ターミナル版）" width="49%">
   <img src="docs/brand/assets/tianshu-gui-screenshot.jpg" alt="天枢 デスクトップ GUI" width="49%">
 </p>
 <p align="center">
@@ -53,7 +54,7 @@
 </p>
 
 > [!NOTE]
-> 本プロジェクトの当初の開発コードネームは **Rivet** でした。後方互換性のため、インストール済み CLI のコマンド名は現在も `rivet` のままです。
+> 本プロジェクトの当初の開発コードネームは **Rivet** でした。CLI の主コマンドは現在 `tianshu` で、`rivet` は互換エイリアスとして残っています（同一エントリ）。データディレクトリは引き続き `~/.rivet` です。
 
 ## 目次
 
@@ -144,40 +145,40 @@ Layer 4: RuntimeHookPipeline（72 hooks）→ trap-and-emulate で退化行動�
 
 ### 2. インストール（いずれかを選択）
 
-**方法 A：デスクトップ版（すぐ使える）** —— [GitHub Releases](https://github.com/huiliyi37/Tianshu-Tui/releases/latest) からダウンロード：macOS `.dmg`（Apple Silicon / Intel 両アーキテクチャ）· Windows `.exe` インストールウィザード · Linux `.AppImage`。
+**方法 A：デスクトップ版（すぐ使える）** —— [GitHub Releases](https://github.com/huiliyi37/Tianshu-harness/releases/latest) からダウンロード：macOS `.dmg`（Apple Silicon / Intel 両アーキテクチャ）· Windows `.exe` インストールウィザード · Linux `.AppImage`。
 > **Linux サポート範囲（3.11.2 初出）**：x64 AppImage はインストール不要——`chmod +x Tianshu_*.AppImage` で直接実行。glibc ≥ 2.35 が必要（Ubuntu 22.04+ / Debian 12+ など主要ディストリビューション）。X11 セッション推奨（Wayland は未検証）。既知の制限：音声入力は当面利用不可（whisper コミュニティビルドが無いため、ブラウザ音声に自動フォールバック）。デスクトップの自動更新は Linux でも有効。
 
-> **Windows サポート範囲**：Windows 10（1809+、22H2 推奨）/ Windows 11。画面描画は **WebView2 Runtime（推奨 ≥ 120）** に依存——v3.5 以降のスクロール・描画最適化には新しいランタイムが必要で、古いとセッション領域のスクロールがカクつきます。3.5.3 以降インストーラーは完全なオフラインインストールパッケージを同梱（ネット不要・システムレベル登録）。既存ユーザーが自動更新で古すぎる旨の表示が出た場合：通知バーまたは「設定 → ランタイムとバージョン情報」で「修復ツールを実行」。**ウィンドウが完全に開かない**場合は、スタートメニューの「WebView2 を修復」、または [Releases](https://github.com/huiliyi37/Tianshu-Tui/releases/latest) の `windows-repair` ディレクトリから `repair-webview2.cmd` をダブルクリック。[WebView2 オフラインインストールパッケージ](https://go.microsoft.com/fwlink/p/?LinkId=2124703) を手動インストールして再起動しても構いません。
+> **Windows サポート範囲**：Windows 10（1809+、22H2 推奨）/ Windows 11。画面描画は **WebView2 Runtime（推奨 ≥ 120）** に依存——v3.5 以降のスクロール・描画最適化には新しいランタイムが必要で、古いとセッション領域のスクロールがカクつきます。3.5.3 以降インストーラーは完全なオフラインインストールパッケージを同梱（ネット不要・システムレベル登録）。既存ユーザーが自動更新で古すぎる旨の表示が出た場合：通知バーまたは「設定 → ランタイムとバージョン情報」で「修復ツールを実行」。**ウィンドウが完全に開かない**場合は、スタートメニューの「WebView2 を修復」、または [Releases](https://github.com/huiliyi37/Tianshu-harness/releases/latest) の `windows-repair` ディレクトリから `repair-webview2.cmd` をダブルクリック。[WebView2 オフラインインストールパッケージ](https://go.microsoft.com/fwlink/p/?LinkId=2124703) を手動インストールして再起動しても構いません。
 > **Win10 タブレットモードの既知動作**：タブレットモードでアプリを切り替えると前のアプリが画面外へスライドします——computer_use のスナップショットは遮へい／バックグラウンド自己修復（PrintWindow 描画）済みで、タブレットモードを切る必要はありません。
 
-**方法 B：ワンラインインストールスクリプト（推奨）** —— Node ≥ 24 を検証 → `tianshu-tui` をグローバルインストール（デフォルトは npmmirror ミラー加速、`NPM_CONFIG_REGISTRY` で上書き可）→ `rivet` を起動。冪等で再実行可能：
+**方法 B：ワンラインインストールスクリプト（推奨）** —— Node ≥ 24 を検証 → `tianshu-harness` をグローバルインストール（デフォルトは npmmirror ミラー加速、`NPM_CONFIG_REGISTRY` で上書き可）→ `tianshu` を起動。冪等で再実行可能：
 
 ```bash
 # macOS / Linux（bash）
-bash <(curl -fsSL https://raw.githubusercontent.com/huiliyi37/Tianshu-Tui/main/scripts/install-tui.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/huiliyi37/Tianshu-harness/main/scripts/install-tui.sh)
 # インストールのみ、起動しない：
-bash <(curl -fsSL https://raw.githubusercontent.com/huiliyi37/Tianshu-Tui/main/scripts/install-tui.sh) --no-launch
+bash <(curl -fsSL https://raw.githubusercontent.com/huiliyi37/Tianshu-harness/main/scripts/install-tui.sh) --no-launch
 
 # Windows（PowerShell）
-powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/huiliyi37/Tianshu-Tui/main/scripts/install-tui.ps1 | iex"
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/huiliyi37/Tianshu-harness/main/scripts/install-tui.ps1 | iex"
 # インストールのみ、起動しない（リポジトリをクローン後ローカルで実行）：
 powershell -ExecutionPolicy Bypass -File scripts\install-tui.ps1 -NoLaunch
 ```
 
-**方法 C：npm 手動インストール（CLI を使用）** —— `tianshu-tui` として公開済み。ローカルビルド不要で、起動のたびに自動更新チェックを行います：
+**方法 C：npm 手動インストール（CLI を使用）** —— `tianshu-harness` として公開済み。ローカルビルド不要で、起動のたびに自動更新チェックを行います：
 
 ```bash
-npm install -g tianshu-tui
-rivet
+npm install -g tianshu-harness
+tianshu
 ```
 
-> **Windows のヒント**：インストール後に `rivet が認識されない` と出た場合——まず**新しいターミナルを開く**（Node インストール時に開いていたウィンドウは古い PATH のまま）。それでも駄目なら、`npm prefix -g` が出力するディレクトリをユーザー PATH に追加して新しいターミナルを開く。公式インストーラーの Node はデフォルトでこの問題がありません。nvm/fnm/scoop インストールの場合は一度手動追加が必要です。
+> **Windows のヒント**：インストール後に `tianshu が認識されない` と出た場合——まず**新しいターミナルを開く**（Node インストール時に開いていたウィンドウは古い PATH のまま）。それでも駄目なら、`npm prefix -g` が出力するディレクトリをユーザー PATH に追加して新しいターミナルを開く。公式インストーラーの Node はデフォルトでこの問題がありません。nvm/fnm/scoop インストールの場合は一度手動追加が必要です。
 
 **方法 D：ソースからビルド**：
 
 ```bash
-git clone https://github.com/huiliyi37/Tianshu-Tui.git
-cd Tianshu-Tui
+git clone https://github.com/huiliyi37/Tianshu-harness.git
+cd Tianshu-harness
 npm install
 npm run build      # dist/cli/entry.js を生成
 npm start          # または：node dist/cli/entry.js
@@ -195,7 +196,7 @@ cp completions/rivet.bash ~/.local/share/bash-completion/completions/rivet
 sudo cp completions/rivet.bash /usr/share/bash-completion/completions/rivet
 ```
 
-**zsh** —— `rivet.zsh` を `_rivet` という名前で `$fpath` に配置：
+**zsh** —— `tianshu.zsh` を `_rivet` という名前で `$fpath` に配置：
 
 ```bash
 mkdir -p ~/.zsh/completions
@@ -213,19 +214,19 @@ cp completions/rivet.fish ~/.config/fish/completions/rivet.fish
 **Windows PowerShell** —— `$PROFILE` で dot-source：
 
 ```powershell
-Add-Content $PROFILE ". C:\path\to\rivet.ps1"
+Add-Content $PROFILE ". C:\path\to\tianshu.ps1"
 ```
 
 > 補完内容は CLI と一致：トップレベルコマンド（`config` / `serve` / `sessions` / `browser` / `logs`）、グローバルフラグ、`config` の全サブコマンド、および `~/.rivet/config.json` から動的に読み込む provider 名。
 
 ### 4. API Key を設定（初回は必須）
 
-**直接インストールしたユーザーは手動設定不要**——初回 `rivet` 実行時にまずメイン画面に入り、自動で `/connect` が開きます。そこでプロバイダーを選んで認証を完了。以降いつでも `/connect` で Provider の追加・調整が可能。デスクトップ版では Settings → Provider でも管理できます。
+**直接インストールしたユーザーは手動設定不要**——初回 `tianshu` 実行時にまずメイン画面に入り、自動で `/connect` が開きます。そこでプロバイダーを選んで認証を完了。以降いつでも `/connect` で Provider の追加・調整が可能。デスクトップ版では Settings → Provider でも管理できます。
 
 **開発者がソースを起動する場合**（または起動前に設定しておきたい場合）だけ手動で行います：
 
 ```bash
-rivet config set-key deepseek sk-xxx   # キーは secrets.json（0600）に書かれ、config.json には keyRef のみ残る
+tianshu config set-key deepseek sk-xxx   # キーは secrets.json（0600）に書かれ、config.json には keyRef のみ残る
 export DEEPSEEK_API_KEY=sk-xxx         # または：環境変数（現在のシェルでのみ有効）
 ```
 
@@ -234,7 +235,7 @@ export DEEPSEEK_API_KEY=sk-xxx         # または：環境変数（現在のシ
 ### 5. 起動
 
 ```bash
-rivet            # または：npm start / node dist/cli/entry.js
+tianshu            # または：npm start / node dist/cli/entry.js
 ```
 
 `〉` プロンプト付きの TUI が表示されます。要件を入力して Enter を押せば実行されます。
@@ -242,10 +243,10 @@ rivet            # または：npm start / node dist/cli/entry.js
 ### ヘッドレスモード（スクリプト連携）
 
 ```bash
-rivet -p "src/agent/loop.ts を解説して"       # 単発プロンプト、テキスト出力、TUI なし
-rivet -p "すべての TODO コメントを列挙して" --json    # JSON 出力、スクリプト処理に便利
-rivet --stream-json -p "このモジュールをリファクタリングして"  # NDJSON イベントストリーム：text_delta/tool_use/tool_result/turn_complete…（CI 連携に最適、出力に組込みのマスキングあり）
-rivet --goal "すべての型エラーを修正して" --budget 50   # ヘッドレス目標自律モード、最大 50 ターン（デフォルト 100）
+tianshu -p "src/agent/loop.ts を解説して"       # 単発プロンプト、テキスト出力、TUI なし
+tianshu -p "すべての TODO コメントを列挙して" --json    # JSON 出力、スクリプト処理に便利
+tianshu --stream-json -p "このモジュールをリファクタリングして"  # NDJSON イベントストリーム：text_delta/tool_use/tool_result/turn_complete…（CI 連携に最適、出力に組込みのマスキングあり）
+tianshu --goal "すべての型エラーを修正して" --budget 50   # ヘッドレス目標自律モード、最大 50 ターン（デフォルト 100）
 ```
 
 ### コマンドライン引数
@@ -263,17 +264,17 @@ rivet --goal "すべての型エラーを修正して" --budget 50   # ヘッド
 | `--resume <id\|プレフィックス>` `-r <id\|プレフィックス>` | 指定セッションを復元（短いプレフィックスで可） |
 | `--resume` `-r`（裸） | 起動後にセッションセレクタを開く |
 | `--new` | 強制的に新規セッションを開始 |
-| `--list` · `rivet sessions` | セッション一覧を出力して終了 |
+| `--list` · `tianshu sessions` | セッション一覧を出力して終了 |
 | `--dangerously-skip-permissions` | このセッションだけ全自動（すべての承認をスキップ。サンドボックスは稼働） |
 | `--screen-reader` | スクリーンリーダーモード（動的セグメントを描画せず、定期再描画を停止） |
 | `--skip-welcome` | ウェルカム画面をスキップ |
 | `--stream-events <path>` | この run を NDJSON `SessionEvent` としてファイルにミラーリング |
 
-サブコマンド：`rivet config`（設定コマンドのヘルプを表示。対話型 Provider 設定には TUI `/connect` を使用）、`rivet serve`（sidecar HTTP/SSE を起動）、`rivet sessions`（セッションを列挙）、`rivet logs`（ログの保存先）、`rivet browser status` / `rivet browser install [--no-mirror]`（`browser_debug` に必要な chromium のヘルスチェックとワンクリックインストール、デフォルトで国内ミラーを使用）。
+サブコマンド：`tianshu config`（設定コマンドのヘルプを表示。対話型 Provider 設定には TUI `/connect` を使用）、`tianshu serve`（sidecar HTTP/SSE を起動）、`tianshu sessions`（セッションを列挙）、`tianshu logs`（ログの保存先）、`tianshu browser status` / `tianshu browser install [--no-mirror]`（`browser_debug` に必要な chromium のヘルスチェックとワンクリックインストール、デフォルトで国内ミラーを使用）。
 
 ### 自動更新
 
-npm でインストールした場合、天枢は 24 時間ごとに起動時に新バージョンをチェックしてポップアップ表示します。`/update` は `npm install -g tianshu-tui@latest` を実行して再起動。ソースインストールの場合は `git pull && npm install && npm run build`。`RIVET_NO_UPDATE_CHECK=1` でチェックをオフにできます。
+npm でインストールした場合、天枢は 24 時間ごとに起動時に新バージョンをチェックしてポップアップ表示します。`/update` は `npm install -g tianshu-harness@latest` を実行して再起動。ソースインストールの場合は `git pull && npm install && npm run build`。`RIVET_NO_UPDATE_CHECK=1` でチェックをオフにできます。
 
 ## ✨ コア機能
 
@@ -299,7 +300,7 @@ DeepSeek はキャッシュミスに 50× の料金を課します。天枢の�
 - **バイト単位の差異** —— メッセージ内容にタイムスタンプ、ランダム ID などの不安定なバイトが含まれる
 - **境界をまたぐ書き換え** —— `/compact`（`turn===0` のときのみ履歴書き換え）、`/cd` でのプロジェクト切替（新しい user 境界で末尾断絶）
 
-調査：① `rivet logs`（または TUI 内 `/logs`）でこのセッションのデータルートと `cache-log.jsonl` / `sensorium.jsonl` のパスを直接表示；② セッション `.jsonl` を開いて `cache_read_input_tokens` を検索し各ターンのヒットを確認；③ 全量テレメトリが必要なら `RIVET_DEBUG_TELEMETRY=1`（または任意の非空値）を設定して `sensorium.jsonl` を確認；④ `npm exec -- tsx scripts/verify-cache-hit-rate.ts` で複数ターン会話をシミュレート検証。パス一覧は下記「ログと調査」を参照。
+調査：① `tianshu logs`（または TUI 内 `/logs`）でこのセッションのデータルートと `cache-log.jsonl` / `sensorium.jsonl` のパスを直接表示；② セッション `.jsonl` を開いて `cache_read_input_tokens` を検索し各ターンのヒットを確認；③ 全量テレメトリが必要なら `RIVET_DEBUG_TELEMETRY=1`（または任意の非空値）を設定して `sensorium.jsonl` を確認；④ `npm exec -- tsx scripts/verify-cache-hit-rate.ts` で複数ターン会話をシミュレート検証。パス一覧は下記「ログと調査」を参照。
 
 ### 禅モード（Zen Mode）：読みに集中する開始、手を動かせば解除
 
@@ -357,7 +358,7 @@ DeepSeek はキャッシュミスに 50× の料金を課します。天枢の�
 | **taiyi** | 16 | 最小評価セット——高頻度コア＋納品クローズドループ。オーケストレーション/ブラウザ/ネットワーク/ビジュアル等の重いツールを除去。太一星域が固定されると自動でこのセットに（後述「最小ツールセット」） |
 
 ```bash
-RIVET_TOOL_PRESET=full rivet          # このセッションだけ full
+RIVET_TOOL_PRESET=full tianshu          # このセッションだけ full
 ```
 
 ```json
@@ -480,9 +481,9 @@ Plan Mode には星域委譲が内蔵——複雑な計画は自動で `delegate
 - **状態の復元** —— サイドバー、todo、アクティブな計画も一緒に復元
 
 ```bash
-rivet --continue                 # 現在の cwd の直近セッションを復元
-rivet --resume abc123            # 指定セッションを復元（短いプレフィックスで可）
-rivet --resume                   # 起動後にセッションセレクタを開く
+tianshu --continue                 # 現在の cwd の直近セッションを復元
+tianshu --resume abc123            # 指定セッションを復元（短いプレフィックスで可）
+tianshu --resume                   # 起動後にセッションセレクタを開く
 ```
 
 ### 委員会（多視点レビュー）
@@ -505,7 +506,7 @@ rivet --resume                   # 起動後にセッションセレクタを開
 
 `.rivet/skills/` に YAML frontmatter（`name`、`description`、`triggers`）付きの `.md` を置けばカスタム skill にもできます。
 
-> `writing-plans` / `executing-plans` はネイティブフローとして内蔵済み（計画期はシステムプロンプトの `<plan-mode>` 規律、実行期は `<plan-executing>` 規律で実行）。skill ファイルは不要になりました。`agent-harness-testing` / `cognitive-alignment` / `research-spec` はデフォルト配布から外れ、[`docs/skills/optional/`](docs/skills/optional/) にアーカイブ——必要なとき手動で `.rivet/skills/` にコピーすれば有効化できます。
+> `writing-plans` / `executing-plans` はネイティブフローとして内蔵済み（計画期はシステムプロンプトの `<plan-mode>` 規律、実行期は `<plan-executing>` 規律で実行）。skill ファイルは不要になりました。`agent-harness-testing` / `research-spec` はデフォルト配布から外れ、[`docs/skills/optional/`](docs/skills/optional/) にアーカイブ——必要なとき手動で `.rivet/skills/` にコピーすれば有効化できます。
 
 ### セッション間メモリ
 
@@ -535,10 +536,10 @@ rivet --resume                   # 起動後にセッションセレクタを開
 外部ツールサーバー——ドキュメント検索、データベース、API——を agent のツールパイプラインに直接接続。起動時に自動発見され、ツールは `mcp__<serverId>__<toolName>` の形で出現します。
 
 ```bash
-rivet config mcp add-stdio <server-id> npx -y <package> [args...]   # ローカルプロセス
-rivet config mcp add-sse <server-id> http://localhost:3001/sse      # リモート/ネットワーク
-rivet config mcp add-preset context7                               # よく使うプリセット
-rivet config mcp list                                              # 一覧＋ステータス
+tianshu config mcp add-stdio <server-id> npx -y <package> [args...]   # ローカルプロセス
+tianshu config mcp add-sse <server-id> http://localhost:3001/sse      # リモート/ネットワーク
+tianshu config mcp add-preset context7                               # よく使うプリセット
+tianshu config mcp list                                              # 一覧＋ステータス
 ```
 
 セッション内：`/mcp`（ステータス）、`/debug mcp`（診断）。MCP ツールは内蔵ツールと同じ承認モードに従います。
@@ -629,7 +630,7 @@ TUI は CLI のデフォルトサーフェスです。デスクトップ版（Ta
 
 スマホ/タブレットを天枢の「第二の画面」に——セッションは PC 上で実行し、スマホで進捗確認・承認操作ができます：
 
-- **有効化**：デスクトップ **設定 → Network → Remote Access**（LAN URL・アクセストークン・スキャン接続 QR を表示）；または CLI 側で `RIVET_SERVE_HOST=0.0.0.0`（＋デスクトップのビルド成果物を指す `--mobile-dir`）を指定して `rivet serve` を起動すると、同一ポートで `/mobile` が提供されます
+- **有効化**：デスクトップ **設定 → Network → Remote Access**（LAN URL・アクセストークン・スキャン接続 QR を表示）；または CLI 側で `RIVET_SERVE_HOST=0.0.0.0`（＋デスクトップのビルド成果物を指す `--mobile-dir`）を指定して `tianshu serve` を起動すると、同一ポートで `/mobile` が提供されます
 - **接続**：同一 LAN 内のスマホブラウザで `http://<PCのLAN IP>:3100/mobile` を開く——QR スキャンでトークンが自動入力されます（直後に URL から除去され漏えい防止）；手動入力にも対応
 - **できること**：セッション一覧（承認待ちが上位にハイライト）→ 単一セッションの読み取り専用ライブタイムライン（デスクトップと同じ折りたたみ/自動再接続セマンティクス）→ 承認・プラン・質問カード＋中止ボタン。メッセージ送信は意図的に範囲外です
 - **セキュリティ境界**：信頼できる LAN またはトンネル（Tailscale/SSH）のみ。LAN モードではアクセストークンが唯一の資格情報——パスワードと同様に扱い、公開インターネットへのポート公開はしないでください
@@ -689,7 +690,7 @@ TUI は CLI のデフォルトサーフェスです。デスクトップ版（Ta
 
 解決チェーン：`RIVET_LEAN` 環境変数（常に優先）→ ドメイン上書き → グローバル runtime。デスクトップ版：設定 → 動作 → Lean リソースセット → ドメイン単位の上書き（ドメインリストは新規星域の追加に合わせて自動拡張）。注意：ドメイン上書きはセッション組立期に有効（起動時にドメインを固定）。実行中の `/domain` 切替はフリーズ済みツールセットと lean に影響しません（ツールフィンガープリント変更でプレフィックスキャッシュが再構築されるため）。
 
-**ファイル編集不要のワンクリック起動**：`/config` → Basics → 「最小セットと星域バインド」——あるドメイン（changgeng や taiyi など）を選択して保存すると、自動で `defaultDomain` にそのドメインを固定＋そのドメインの taiyi 最小ツールセット上書き（lean リソース削減は含まない）。以降 `rivet` の素起動でその星域の最小セットセッションに入れます。「デフォルトモデル」フィールド（`agent.defaultModel`、`provider:modelId` 形式）と組み合わせれば完全にパラメータなしで起動可能。バインドをクリアすればデフォルトドメインに復帰（ドメイン上書き設定は保持）。デスクトップ版も同じ項目：設定 → システム → 「最小セットと星域バインド」。
+**ファイル編集不要のワンクリック起動**：`/config` → Basics → 「最小セットと星域バインド」——あるドメイン（changgeng や taiyi など）を選択して保存すると、自動で `defaultDomain` にそのドメインを固定＋そのドメインの taiyi 最小ツールセット上書き（lean リソース削減は含まない）。以降 `tianshu` の素起動でその星域の最小セットセッションに入れます。「デフォルトモデル」フィールド（`agent.defaultModel`、`provider:modelId` 形式）と組み合わせれば完全にパラメータなしで起動可能。バインドをクリアすればデフォルトドメインに復帰（ドメイン上書き設定は保持）。デスクトップ版も同じ項目：設定 → システム → 「最小セットと星域バインド」。
 
 
 ### 🎨 画像生成（テキストから画像）
@@ -720,10 +721,10 @@ OpenAI 形式のテキスト→画像エンドポイント（SiliconFlow / OpenA
 セッション内では `/model <name>` でいつでもプロバイダーを切替。
 
 ```bash
-rivet                                 # TUI を起動。初回 key 欠如時は自動で /connect を開く
-rivet config                          # 設定コマンドのヘルプを表示
-rivet config setup codex --default    # Codex は OAuth（初回ブラウザログイン）
-rivet config show                     # 完全な設定を表示
+tianshu                                 # TUI を起動。初回 key 欠如時は自動で /connect を開く
+tianshu config                          # 設定コマンドのヘルプを表示
+tianshu config setup codex --default    # Codex は OAuth（初回ブラウザログイン）
+tianshu config show                     # 完全な設定を表示
 ```
 
 config.json を直接編集することも可能（上書きしたいフィールドだけを書き、デフォルト値は深くマージされます）。ファイル位置：CLI は `~/.rivet/config.json`（Windows は `%LOCALAPPDATA%\.rivet`）。デスクトップ版は Settings → ストレージ位置に従い、ポータブル版は exe 横の `TianshuData\.rivet`——詳細は[データルートを先に特定](#データルートを先に特定する)：
@@ -795,8 +796,8 @@ config.json を直接編集することも可能（上書きしたいフィー�
 ```
 
 ```bash
-rivet --dangerously-skip-permissions      # このセッションだけ全自動
-rivet config set-approval auto-safe       # デフォルト段階を永続化
+tianshu --dangerously-skip-permissions      # このセッションだけ全自動
+tianshu config set-approval auto-safe       # デフォルト段階を永続化
 ```
 
 - ルールは `[config]`（永続）と `[session]`（このセッション）の 2 層で、`deny` が常に優先。
@@ -960,11 +961,11 @@ src/
 
 ```bash
 # ターミナル（TUI が起動できなくても使える——agent を初期化せず、設定を読まず、ネットもしない）
-rivet logs                         # このプロジェクトの直近メインセッションの全ログ保存先＋生成有無＋ゲート説明を一覧
-rivet logs --session <id>          # 指定セッション
-rivet logs --json                  # 構造化出力、issue に貼れる
-rivet logs open                    # ファイルマネージャでセッションディレクトリを開く
-rivet logs open desktop            # sidecar ログディレクトリを開く（GUI が起動できないときの第一現場）
+tianshu logs                         # このプロジェクトの直近メインセッションの全ログ保存先＋生成有無＋ゲート説明を一覧
+tianshu logs --session <id>          # 指定セッション
+tianshu logs --json                  # 構造化出力、issue に貼れる
+tianshu logs open                    # ファイルマネージャでセッションディレクトリを開く
+tianshu logs open desktop            # sidecar ログディレクトリを開く（GUI が起動できないときの第一現場）
 ```
 
 - **TUI**：`/logs`（同上の一覧）。`/logs open` / `/logs open desktop` でディレクトリを直接開く
@@ -984,18 +985,18 @@ rivet logs open desktop            # sidecar ログディレクトリを開く�
 | `desktop/sidecar-exit.json` | sidecar 終了理由のパンくず | 終了時 |
 | `desktop/sessions/<id>/events.jsonl` | デスクトップ UI イベントストリーム（上記のセッション `.jsonl` とは別データ） | デスクトップの非 ephemeral セッション |
 
-プロジェクト内には他に `<cwd>/.rivet/knowledge/`、`artifacts/`、`plans/` などの共有データがあります。`sessionId` がないとき、六次元は `<cwd>/.rivet/sensorium.jsonl` にフォールバック書き込みされることもあります——`rivet logs` が実際のパスを表示します。
+プロジェクト内には他に `<cwd>/.rivet/knowledge/`、`artifacts/`、`plans/` などの共有データがあります。`sessionId` がないとき、六次元は `<cwd>/.rivet/sensorium.jsonl` にフォールバック書き込みされることもあります——`tianshu logs` が実際のパスを表示します。
 
 #### シナリオ別早見
 
 | 現象 | まず見るもの |
 |------|------|
-| デスクトップウィンドウは開いたがアシスタントが返事しない | `rivet logs open desktop`、または Settings →「ログディレクトリを開く」。次に `desktop/sidecar-exit.json` |
-| キャッシュヒット率が異常 / コストが突然上がる | `rivet logs` → そのセッションの `cache-log.jsonl` と `.jsonl` 内の `cache_read_*` を開く |
+| デスクトップウィンドウは開いたがアシスタントが返事しない | `tianshu logs open desktop`、または Settings →「ログディレクトリを開く」。次に `desktop/sidecar-exit.json` |
+| キャッシュヒット率が異常 / コストが突然上がる | `tianshu logs` → そのセッションの `cache-log.jsonl` と `.jsonl` 内の `cache_read_*` を開く |
 | 六次元 / advisory が効いたか振り返りたい | `RIVET_DEBUG_TELEMETRY` を確認し、`sensorium.jsonl` を読む |
-| バグ報告 / 貢献の調査 | `rivet logs --json` をまるごと issue に貼る（会話本文は含まず、パスとサイズのみ） |
+| バグ報告 / 貢献の調査 | `tianshu logs --json` をまるごと issue に貼る（会話本文は含まず、パスとサイズのみ） |
 
-`RIVET_SESSION_DIR` / `RIVET_DESKTOP_DIR` でセッションツリーとデスクトップツリーをそれぞれ移動可能。有効な上書きは `rivet logs` 出力の先頭に表示されます。
+`RIVET_SESSION_DIR` / `RIVET_DESKTOP_DIR` でセッションツリーとデスクトップツリーをそれぞれ移動可能。有効な上書きは `tianshu logs` 出力の先頭に表示されます。
 
 ## 🔒 セキュリティ
 
@@ -1154,16 +1155,17 @@ rivet logs open desktop            # sidecar ログディレクトリを開く�
 
 ## 🤝 コミュニティとサポート
 
-- **使い方の質問 / ディスカッション** → [GitHub Discussions](https://github.com/huiliyi37/Tianshu-Tui/discussions)
-- **バグ報告 / 機能リクエスト** → [GitHub Issues](https://github.com/huiliyi37/Tianshu-Tui/issues)
-- **セキュリティ脆弱性** → [プライベート報告](https://github.com/huiliyi37/Tianshu-Tui/security/advisories/new)（公開 issue を開かないでください）
+- **使い方の質問 / ディスカッション** → [GitHub Discussions](https://github.com/huiliyi37/Tianshu-harness/discussions)
+- **Discord コミュニティ** → [「天枢 tianshu-harness 官方交流群」に参加](https://discord.gg/XjWTATCHB)
+- **バグ報告 / 機能リクエスト** → [GitHub Issues](https://github.com/huiliyi37/Tianshu-harness/issues)
+- **セキュリティ脆弱性** → [プライベート報告](https://github.com/huiliyi37/Tianshu-harness/security/advisories/new)（公開 issue を開かないでください）
 - **コードへのコントリビュート** → [CONTRIBUTING.md](CONTRIBUTING.md) を参照
 - **ヘルプガイド** → [SUPPORT.md](SUPPORT.md) を参照
 - **WeChat 交流グループ** →「天枢 harness 交流群」。QR コードで参加。日常の議論 / フィードバック / リリース情報をいち早く入手：
 
 <img src="docs/brand/assets/wechat-group-qr.png" width="280" alt="天枢 harness 交流群 WeChat グループ QR コード">
 
-> WeChat グループの QR コードには有効期限（7 日）があります。期限切れの場合は [Discussions](https://github.com/huiliyi37/Tianshu-Tui/discussions) または Issue にコメントしてください。メンテナーが新しい QR を補充します。
+> WeChat グループの QR コードには有効期限（7 日）があります。期限切れの場合は [Discussions](https://github.com/huiliyi37/Tianshu-harness/discussions) または Issue にコメントしてください。メンテナーが新しい QR を補充します。
 
 > ヒント：リポジトリメンテナーが先に `Settings → General → Discussions` で Discussions 機能を有効化する必要があります。
 
@@ -1173,9 +1175,9 @@ rivet logs open desktop            # sidecar ログディレクトリを開く�
 
 | コントリビューター | 貢献内容 |
 |--------|----------|
-| [@banxia](https://github.com/banxia) | プロジェクト創設者 · コア開発 |
+| [@huiliyi37](https://github.com/huiliyi37) | プロジェクト創設者 · コア開発 |
 
-完全なリスト（外部コントリビューター 17 名 / 89 PR）→ CONTRIBUTORS.md。
+完全なリスト（外部コントリビューター 22 名 / 145 PR）→ CONTRIBUTORS.md。
 
 外部 PR は「取り込み（收编）」フローでマージされ、著者署名は `Co-authored-by` で
 コントリビューターグラフに計上されます（scripts/credit-contributors.sh が自動記録）——
@@ -1199,15 +1201,30 @@ rivet logs open desktop            # sidecar ログディレクトリを開く�
 <a href="https://github.com/nzz0991999-ai"><img src="https://github.com/nzz0991999-ai.png?size=100" width="50" height="50" alt="nzz0991999-ai" title="nzz0991999-ai" /></a>
 <a href="https://github.com/L4XB"><img src="https://github.com/L4XB.png?size=100" width="50" height="50" alt="L4XB" title="L4XB" /></a>
 <a href="https://github.com/Wanming08"><img src="https://github.com/Wanming08.png?size=100" width="50" height="50" alt="Wanming08" title="Wanming08" /></a>
+<a href="https://github.com/lei454577-web"><img src="https://github.com/lei454577-web.png?size=100" width="50" height="50" alt="lei454577-web" title="lei454577-web" /></a>
+<a href="https://github.com/jian-in"><img src="https://github.com/jian-in.png?size=100" width="50" height="50" alt="jian-in" title="jian-in" /></a>
+<a href="https://github.com/sky-mirrors"><img src="https://github.com/sky-mirrors.png?size=100" width="50" height="50" alt="sky-mirrors" title="sky-mirrors" /></a>
+<a href="https://github.com/moyan3691"><img src="https://github.com/moyan3691.png?size=100" width="50" height="50" alt="moyan3691" title="moyan3691" /></a>
+<a href="https://github.com/EarthxxRhythm"><img src="https://github.com/EarthxxRhythm.png?size=100" width="50" height="50" alt="EarthxxRhythm" title="EarthxxRhythm" /></a>
 </p>
 
 > PR でのコントリビュート歓迎。詳細は CONTRIBUTING.md を参照。
+
+## ⭐ スター履歴
+
+<a href="https://star-history.com/#huiliyi37/tianshu-harness&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=huiliyi37/tianshu-harness&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=huiliyi37/tianshu-harness&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=huiliyi37/tianshu-harness&type=Date" width="700" />
+  </picture>
+</a>
 
 ## ☕ スポンサー支援
 
 天枢が役に立ったなら、気軽に投げ銭をどうぞ——これは一杯のコーヒーであり、契約ではありません。スポンサーは issue の優先度を変えず、機能スケジュールにも影響しません。
 
-<img src="docs/brand/assets/wechat-pay.jpg" width="240" alt="WeChat Pay">
+<img src="docs/brand/assets/wechat-donate.png" width="240" alt="WeChat Pay">
 
 ## ライセンス
 

@@ -29,7 +29,7 @@ Options:
   -p, --print "<prompt>"   headless: answer one prompt, then exit
   --goal "<task>"          headless goal autonomy (--budget N caps turns)
   --json | --stream-json   headless output format
-  --stream-events <path>   mirror the run as NDJSON SessionEvents to a file
+  --stream-events <path>   mirror the run as NDJSON SessionEvents to a file (TUI + -p/--goal)
   --skip-welcome           skip the welcome page
   --screen-reader          screen-reader mode
   --dangerously-skip-permissions   skip permission prompts (high risk)

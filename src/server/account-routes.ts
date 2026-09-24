@@ -35,6 +35,7 @@ import type {
   FetchInjection,
   FetchLike,
   RequestDeviceCodeOpts,
+  StellarIdentity,
 } from '../auth/account.js'
 import type { TokenStore, TokenData } from '../auth/token-store.js'
 
@@ -50,6 +51,13 @@ export interface AccountApi {
   fetchAccountProfile(accessToken: string, opts?: FetchInjection): Promise<AccountProfile | null>
   accountStore(rivetHome: string): TokenStore
   saveAccountToken(store: TokenStore, poll: DevicePollResult): TokenData
+  /** 读本人星籍（PostgREST + 用户 JWT，RLS 收口）。失败回 null，不抛。 */
+  fetchStellarIdentity(accessToken: string, opts?: FetchInjection): Promise<StellarIdentity | null>
+  saveAccountIdentity(store: TokenStore, token: TokenData, identity: StellarIdentity): TokenData
+  cachedAccountIdentity(token: TokenData | null): { identity: StellarIdentity; fetchedAt: number } | null
+  isAccountIdentityStale(fetchedAt: number, now?: number): boolean
+  /** 官网星籍页 URL（「在官网查看」按钮的目标）。 */
+  accountIdentityUrl(): string
 }
 
 export interface AccountRoutesDeps {
@@ -104,6 +112,11 @@ function defaultAccountApi(): AccountApi {
     fetchAccountProfile: accountModule.fetchAccountProfile,
     accountStore: accountModule.accountStore,
     saveAccountToken: accountModule.saveAccountToken,
+    fetchStellarIdentity: accountModule.fetchStellarIdentity,
+    saveAccountIdentity: accountModule.saveAccountIdentity,
+    cachedAccountIdentity: accountModule.cachedAccountIdentity,
+    isAccountIdentityStale: accountModule.isAccountIdentityStale,
+    accountIdentityUrl: accountModule.accountIdentityUrl,
   }
 }
 
@@ -115,6 +128,26 @@ export function buildAccountRoutes(deps: AccountRoutesDeps): Record<string, Rout
   // 与 /status、/abort 同一份认证实现（routes.ts 的 withAuth）——
   // 认证规则漂移出第二份就是安全洞。
   const guard = (handler: RouteHandler): RouteHandler => withAuth(handler, deps.apiToken)
+
+  /**
+   * 后台刷新星籍缓存（stale-while-revalidate）。
+   *
+   * ⚠️ 写回前**重新 load 一次**并与发起时的 accessToken 对账：期间用户可能重新
+   * 登录（`POST /account/poll` 写入了新 token），用请求开始时的旧 token 覆盖，
+   * 等于把刚登录的会话打回旧凭据——用户表现为「登录后又掉线」。登录态变了就放弃
+   * 这次刷新（下一次 status 会自然重取）。
+   */
+  const refreshIdentity = async (store: TokenStore, accessToken: string): Promise<void> => {
+    try {
+      const identity = await api.fetchStellarIdentity(accessToken, { fetchImpl })
+      if (!identity) return
+      const fresh = store.load()
+      if (!fresh || fresh.accessToken !== accessToken) return
+      api.saveAccountIdentity(store, fresh, identity)
+    } catch {
+      // 拉不到就继续用旧值：宁可显示陈旧星籍，也不让身份消失
+    }
+  }
 
   return {
     /** 申请设备码。前端拿 userCode/verifyUrl 去 openExternal，拿 deviceCode 轮询。 */
@@ -147,19 +180,43 @@ export function buildAccountRoutes(deps: AccountRoutesDeps): Record<string, Rout
 
       // `approved` 却缺 accessToken 在 saveAccountToken 里抛错——空凭据落盘会让
       // 下次启动谎报「已登录」，所以这里是 5xx 而不是 200。
+      const store = api.accountStore(deps.rivetHome)
+      let saved: TokenData
       try {
-        api.saveAccountToken(api.accountStore(deps.rivetHome), poll)
+        saved = api.saveAccountToken(store, poll)
       } catch (e) {
         return { status: 500, body: { error: (e as Error).message } }
+      }
+
+      // 星籍随登录顺带取一次并落盘：这是唯一确定在线的时刻，也是身份归属刚确定
+      // 的时刻。**失败绝不影响登录结果**——星籍是装饰性信息，且用户可能压根没有
+      // （不是每个账号都建了 stellar_identities 行）。
+      try {
+        const identity = await api.fetchStellarIdentity(saved.accessToken, { fetchImpl })
+        if (identity) api.saveAccountIdentity(store, saved, identity)
+      } catch {
+        // 静默：登录已经成功，不该因为星籍拉不到而对外报异常
       }
       return { status: 200, body: { status: 'approved' } }
     }),
 
     /** 登录态。拉不到资料只降级 email，不改判登录与否。 */
     'GET /account/status': guard(async () => {
-      const token = api.accountStore(deps.rivetHome).load()
+      const store = api.accountStore(deps.rivetHome)
+      const token = store.load()
       if (!token?.accessToken) {
-        return { status: 200, body: { loggedIn: false, email: null, userId: null, expiresAt: null } }
+        return {
+          status: 200,
+          body: {
+            loggedIn: false,
+            email: null,
+            userId: null,
+            expiresAt: null,
+            stellarId: null,
+            primaryDomain: null,
+            title: null,
+          },
+        }
       }
 
       let profile: AccountProfile | null = null
@@ -169,6 +226,13 @@ export function buildAccountRoutes(deps: AccountRoutesDeps): Record<string, Rout
         // 离线不等于未登录——本地 token 才是事实，拉不到资料只是拉不到
       }
 
+      const cached = api.cachedAccountIdentity(token)
+      // 陈旧就后台刷新，**不 await**：星籍是装饰性信息，不该让设置页为它多等一次
+      // 网络往返；也绝不轮询（星籍一生只变一次，reroll 上限 1）。
+      if (api.isAccountIdentityStale(cached?.fetchedAt ?? 0)) {
+        void refreshIdentity(store, token.accessToken)
+      }
+
       return {
         status: 200,
         body: {
@@ -176,6 +240,57 @@ export function buildAccountRoutes(deps: AccountRoutesDeps): Record<string, Rout
           email: profile?.email ?? null,
           userId: profile?.userId ?? null,
           expiresAt: token.expiresAt,
+          // 离线/未取到时为 null —— 前端按"字段存在才渲染"，不显示空壳
+          stellarId: cached?.identity.stellarId ?? null,
+          primaryDomain: cached?.identity.primaryDomain ?? null,
+          title: cached?.identity.title ?? null,
+          // 上次同步时刻：让界面能解释"为什么这可能是旧的"（TTL 24h + 手动刷新）
+          identityFetchedAt: cached && cached.fetchedAt > 0 ? cached.fetchedAt : null,
+          identityUrl: api.accountIdentityUrl(),
+        },
+      }
+    }),
+
+    /**
+     * 强制刷新星籍（桌面端身份卡的「刷新」按钮）。
+     *
+     * 存在的理由：缓存 TTL 是 24h，而用户在官网 reroll 星域之后不会等一天。
+     * 与 status 的后台刷新共用同一套取数，区别是这里 **await**——用户明确点了
+     * 按钮，就该拿到结果或明确的「没刷上」，而不是回一个看不出新旧的值。
+     */
+    'POST /account/identity/refresh': guard(async () => {
+      const store = api.accountStore(deps.rivetHome)
+      const token = store.load()
+      if (!token?.accessToken) return { status: 401, body: { error: 'not signed in' } }
+
+      const identity = await api.fetchStellarIdentity(token.accessToken, { fetchImpl })
+      if (!identity) {
+        const cached = api.cachedAccountIdentity(token)
+        return {
+          status: 200,
+          body: {
+            refreshed: false,
+            stellarId: cached?.identity.stellarId ?? null,
+            primaryDomain: cached?.identity.primaryDomain ?? null,
+            title: cached?.identity.title ?? null,
+          },
+        }
+      }
+
+      // 刷新期间用户可能重新登录（新 token = 可能换了账号）。那就不写盘——
+      // 把 A 的星籍挂到 B 的凭据上比不刷新糟得多。
+      const fresh = store.load()
+      if (!fresh || fresh.accessToken !== token.accessToken) {
+        return { status: 200, body: { refreshed: false, stellarId: null, primaryDomain: null, title: null } }
+      }
+      api.saveAccountIdentity(store, fresh, identity)
+      return {
+        status: 200,
+        body: {
+          refreshed: true,
+          stellarId: identity.stellarId,
+          primaryDomain: identity.primaryDomain,
+          title: identity.title,
         },
       }
     }),

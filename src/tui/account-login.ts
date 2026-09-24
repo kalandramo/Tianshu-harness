@@ -64,8 +64,13 @@ export async function handleAccountLogin(app: StaticLineApp): Promise<boolean> {
   })
 
   if (result.status === 'approved' && result.accessToken) {
-    saveAccountToken(accountStore(rivetHome()), result)
+    const token = saveAccountToken(accountStore(rivetHome()), result)
+    // 顺带把星籍取回来落盘（与 sidecar 的 POST /account/poll 同法）：这是唯一
+    // 确定在线的时刻，之后 /status 就能离线显示身份。拉不到不影响登录结果。
+    const { primeStellarIdentity } = await import('./account-status.js')
+    const identityLine = await primeStellarIdentity(token.accessToken)
     app.commitStatic('✅ 已登录天枢账号——桌面端与网页端现在看到同一份设备与订阅。')
+    if (identityLine) app.commitStatic(`星籍：${identityLine}`)
     return true
   }
 

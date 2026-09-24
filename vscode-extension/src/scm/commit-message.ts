@@ -64,7 +64,7 @@ function runHeadless(cli: string, cwd: string, prompt: string): Promise<string> 
     child.stderr.on('data', (c: Buffer) => { err += c.toString() })
     child.on('error', (e: NodeJS.ErrnoException) => {
       clearTimeout(timer)
-      if (e.code === 'ENOENT') reject(new Error('未找到 rivet CLI。请先安装（npm i -g tianshu-tui），或在设置 tianshu.cliPath 指定路径。'))
+      if (e.code === 'ENOENT') reject(new Error('未找到 rivet CLI。请先安装（npm i -g tianshu-harness），或在设置 tianshu.cliPath 指定路径。'))
       else reject(e)
     })
     child.on('close', (code) => {

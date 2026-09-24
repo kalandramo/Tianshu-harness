@@ -1,6 +1,6 @@
 {
-  "name": "tianshu-tui",
-  "version": "3.21.1",
+  "name": "tianshu-harness",
+  "version": "3.25.0",
   "description": "Cognitive runtime (CVM) for coding agents — stable, evidence-gated delivery; prefix cache works with all models (98–99% hit rate)",
   "license": "Apache-2.0",
   "type": "module",
@@ -26,6 +26,7 @@
   "files": [
     "dist/",
     "!dist/native",
+    "!dist/pro",
     "!dist/node_modules/**",
     "dist/node_modules/better-sqlite3/",
     "scripts/check-mobile-env.mjs",
@@ -37,18 +38,20 @@
     "completions/"
   ],
   "bin": {
-    "rivet": "dist/cli/entry.js"
+    "rivet": "dist/cli/entry.js",
+    "tianshu": "dist/cli/entry.js"
   },
   "scripts": {
     "postinstall": "node scripts/check-mobile-env.mjs && (node scripts/install-git-hooks.mjs || node -e 1) && (node scripts/fetch-native-sqlite.js || node -e 1) && (node scripts/prune-installed-wasms.js || node -e 1)",
     "prepack": "npm run build && node scripts/stage-cli-sqlite-wrapper.js",
     "dev": "tsup --watch",
-    "build": "tsup && node scripts/pack-native.js && node scripts/stage-runtime-deps.js",
+    "build": "tsup && node scripts/pack-native.js && node scripts/stage-runtime-deps.js && node scripts/assert-runtime-imports.js",
     "build:bundle": "tsup",
     "start": "node --expose-gc --max-old-space-size=4096 dist/cli/entry.js",
     "typecheck": "tsx scripts/typecheck-guard.ts",
     "lint": "oxlint src scripts",
     "budgets:check": "tsx scripts/verify-source-budgets.ts",
+    "surfaces:check": "tsx scripts/verify-injection-surfaces.ts",
     "lint:fix": "oxlint src scripts --fix",
     "typecheck:direct": "tsc --noEmit",
     "typecheck:baseline": "tsx scripts/typecheck-baseline.ts",
@@ -78,7 +81,8 @@
     "playwright-core": "1.62.0",
     "tree-sitter-wasms": "^0.1.13",
     "typescript": "^5.7.0",
-    "web-tree-sitter": "^0.24.7"
+    "web-tree-sitter": "^0.24.7",
+    "zod-to-json-schema": "^3.25.2"
   },
   "optionalDependencies": {
     "@huiliyi37/node-addon-landlock-run": "^0.4.0",
@@ -111,15 +115,5 @@
     "turndown": "^7.2.4",
     "undici": "^8.3.0",
     "zod": "^3.24.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@ast-grep/lang-json",
-      "@ast-grep/lang-python",
-      "@ast-grep/napi",
-      "better-sqlite3",
-      "esbuild",
-      "lzo"
-    ]
   }
 }

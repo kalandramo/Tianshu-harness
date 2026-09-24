@@ -11,6 +11,7 @@ import { join, dirname } from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { startServer } from './index.js'
 import { loadProModule, resolvePresetLabel } from '../api/pro-registry.js'
+import { resolveEffortSupported } from '../api/provider.js'
 import { desktopDir, desktopSessionsDir } from '../config/paths.js'
 import { serverLogger } from './logger.js'
 import { createRoutes, type ServerState } from './routes.js'
@@ -25,6 +26,7 @@ import { ServerEventBus } from './server-event-bus.js'
 import { SseConnectionRegistry } from './sse-registry.js'
 import { buildServerEventsRoute } from './server-events-route.js'
 import { buildGreetingRoute } from './greeting-route.js'
+import { buildSettingsIntentRoutes } from './settings-intent-route.js'
 import { isAuthorizedRequest } from './auth.js'
 import { LoopHealthMonitor } from './loop-health.js'
 import { buildScheduleRoutes } from './schedule-routes.js'
@@ -33,6 +35,7 @@ import { buildConfigRoutes } from './config-routes.js'
 import { buildEnvRoute } from './env-route.js'
 import { buildBrowserRoutes } from './browser-routes.js'
 import { buildProjectTemplatesRoutes } from './project-templates-routes.js'
+import { registeredWorkspaces } from './workspace-guard.js'
 import { buildProjectDocsRoutes } from './project-docs-routes.js'
 import { buildTrustRoutes } from './trust-api.js'
 import { buildCacheRoutes } from './cache-routes.js'
@@ -70,7 +73,7 @@ import { createAuthProvider } from '../auth/registry.js'
 import type { AuthProvider } from '../auth/types.js'
 import { SessionPersist } from '../agent/session-persist.js'
 import { SessionContext } from '../agent/context.js'
-import { buildOpenPathCommand, buildRevealCommand } from '../tools/open-path.js'
+import { buildOpenPathCommand, buildRevealCommand, decideOpenAction, isDirectoryPath, windowsFileHasHandler } from '../tools/open-path.js'
 import { installStallObserver, listStallActivities } from '../agent/stall-observer.js'
 import { SessionRegistry } from '../agent/session-registry.js'
 import { ProviderHealthTracker } from '../agent/provider-health.js'
@@ -406,6 +409,8 @@ export function listAllModels(ctx: ServeContext): {
   description?: string
   keyId?: string
   keyLabel?: string
+  /** 会话内调档能否真正上线（桌面 EffortMenu / TUI 选择器据此禁用假动作）。 */
+  effortSupported: boolean
 }[] {
   const out: {
     id: string
@@ -416,6 +421,7 @@ export function listAllModels(ctx: ServeContext): {
     description?: string
     keyId?: string
     keyLabel?: string
+    effortSupported: boolean
   }[] = []
   for (const [provName, prov] of Object.entries(ctx.config.provider.providers)) {
     // 只列可用 provider——无 key 云端 / 未认证 oauth 的预设模型不进 picker。
@@ -435,13 +441,22 @@ export function listAllModels(ctx: ServeContext): {
             description: m.description,
             keyId: key.id,
             ...(key.label ? { keyLabel: key.label } : {}),
+            effortSupported: resolveEffortSupported(provName, prov, m.capabilities),
           })
         }
       }
       continue
     }
     for (const m of contractModels(prov)) {
-      out.push({ id: m.id, alias: m.id, provider: provName, providerLabel, contextWindow: m.contextWindow, description: m.description })
+      out.push({
+        id: m.id,
+        alias: m.id,
+        provider: provName,
+        providerLabel,
+        contextWindow: m.contextWindow,
+        description: m.description,
+        effortSupported: resolveEffortSupported(provName, prov, m.capabilities),
+      })
     }
   }
   return out
@@ -963,16 +978,17 @@ export async function runServe(opts: RunServeOptions = {}): Promise<RunningServe
   Object.assign(routes, buildBrowserRoutes(apiToken))
 
   // Project templates route: first-run AGENTS.md / .rivet.md bootstrap for desktop UI.
-  Object.assign(routes, buildProjectTemplatesRoutes(apiToken))
+  // issue #221：project-docs / project-templates / project/trust 的 cwd 只接受已注册工作区。
+  Object.assign(routes, buildProjectTemplatesRoutes(apiToken, () => registeredWorkspaces(sharedRuntime.sessions ?? undefined)))
 
   // Project docs route: read/write AGENTS.md / .rivet.md for the desktop settings UI.
-  Object.assign(routes, buildProjectDocsRoutes(apiToken))
+  Object.assign(routes, buildProjectDocsRoutes(apiToken, () => registeredWorkspaces(sharedRuntime.sessions ?? undefined)))
 
   // Cache usage route: 跨会话 cache-log 聚合 — 桌面端读不到 ~/.rivet 下的日志文件。
   Object.assign(routes, buildCacheRoutes({ apiToken, defaultCwd: () => process.cwd() }))
 
   // 桌面端的项目授信入口（此前只有 CLI 能授信，配置被剥离后无处恢复）。
-  Object.assign(routes, buildTrustRoutes(apiToken))
+  Object.assign(routes, buildTrustRoutes(apiToken, () => registeredWorkspaces(sharedRuntime.sessions ?? undefined)))
 
   // MCP routes: server management + live status for the desktop MCP settings UI.
   Object.assign(routes, buildMcpRoutes({
@@ -1013,14 +1029,24 @@ export async function runServe(opts: RunServeOptions = {}): Promise<RunningServe
     if (!existsSync(resolved)) {
       return { status: 404, body: { error: `Path not found: ${resolved}` } }
     }
-    const command = reveal ? buildRevealCommand(resolved) : buildOpenPathCommand(resolved)
+    const command = buildOpenPathCommand(resolved)
     // Windows 上 reveal=false (打开文件/文件夹) 时绕过 buildOpenPathCommand 的
     // PowerShell Start-Process——实测 spawned ok 但实际窗口/编辑器不弹 (尤其
     // 中文/特殊字符路径)。直接 spawn explorer.exe [路径]: explorer 对文件夹
     // 打开资源管理器, 对文件用关联程序打开 (跟双击一样), 不经 PowerShell 引号
     // 二次解析, 最可靠。reveal=true 仍走 buildRevealCommand (explorer /select,)。
-    let effectiveCommand = command
-    if (!reveal && process.platform === 'win32') {
+    //
+    // 例外（issue #193）：文件若没有关联处理程序，「跟双击一样」会弹「选取应用」
+    // 对话框——它 detached 存活，调用方既回收不了也察觉不到。这类退化为定位
+    // (explorer /select, 必定成功且不弹框)，并把结果如实回报（此前一律回 opened）。
+    const isDir = isDirectoryPath(resolved)
+    const action = reveal ? 'reveal' : decideOpenAction({
+      platform: process.platform,
+      isDirectory: isDir,
+      hasHandler: isDir ? undefined : windowsFileHasHandler(resolved),
+    })
+    let effectiveCommand = action === 'reveal' ? buildRevealCommand(resolved) : command
+    if (action === 'open' && process.platform === 'win32') {
       effectiveCommand = { cmd: 'explorer.exe', args: [resolved.replace(/\//g, '\\')] }
     }
     try {
@@ -1030,7 +1056,9 @@ export async function runServe(opts: RunServeOptions = {}): Promise<RunningServe
         child.on('error', reject)
         child.on('spawn', () => { child.unref(); resolve() })
       })
-      return { status: 200, body: { opened: resolved } }
+      return action === 'reveal'
+        ? { status: 200, body: { opened: false, revealed: true, path: resolved } }
+        : { status: 200, body: { opened: resolved } }
     } catch (err) {
       console.error(`[open-file] spawn failed: ${effectiveCommand.cmd} ${effectiveCommand.args.join(' ')} → ${(err as Error).message}`)
       return { status: 500, body: { error: `启动失败: ${(err as Error).message}` } }
@@ -1096,6 +1124,20 @@ export async function runServe(opts: RunServeOptions = {}): Promise<RunningServe
     buildGreetingRoute(greetingBaseUrl, greetingApiKey, () => getGreetingConfig(), apiToken),
   )
 
+  // Settings intent (Wave 3，回流自 3.14alpha)：自然语言 → 设置动作的 LLM 兜底。
+  // 桌面端设置窗搜索框的规则引擎未命中时才调用；默认 provider 单次 chat，
+  // 模型/baseUrl/apiKey 均按请求求值（ctx 在配置重载时会被整体替换，闭包不能
+  // 捕获旧值——首启无 key 后配好 key、或切换 provider 时，按值捕获会让兜底失效）。
+  Object.assign(
+    routes,
+    buildSettingsIntentRoutes({
+      getBaseUrl: () => ctx.provider.baseUrl,
+      getApiKey: () => ctx.apiKey,
+      getModel: () => ctx.model.id,
+      apiToken,
+    }),
+  )
+
   // N3: async orchestration — cron scheduler → task registry → runtime pool that
   // spins up *visible* sessions. Disabled in ephemeral mode (tests) to avoid
   // leaking timers.
@@ -1122,7 +1164,8 @@ export async function runServe(opts: RunServeOptions = {}): Promise<RunningServe
     Object.assign(routes, buildScheduleRoutes(scheduler, apiToken, {
       getStatus: () => wiring?.getStatus(),
       // 付费版 v1 · T5 — 非 always-review / 含 computer_use 的定时任务归 Pro。
-      // 用启动时的 ctx.config：Pro 状态经 RIVET_PRO 注入，激活后本就要求重启 sidecar。
+      // 用启动时的 ctx.config：桌面端 Pro 状态经签名凭证注入（激活/吊销后要求
+      // 重启 sidecar），CLI 走配置软 gate。
       isUnattendedAutomationEnabled: () =>
         isProFeatureEnabled(ctx.config, 'unattendedAutomation'),
     }))

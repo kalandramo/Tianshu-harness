@@ -244,3 +244,23 @@ test('对照：普通工具的 terminal 结果照常落 scrollback（防上面�
     `普通工具结果必须进 scrollback，否则对照失效。实际前 200 字：${plain.slice(0, 200)}`,
   )
 })
+
+// ── zen_unlock 虚拟工具：不进 pending、结果不挂卡 ─────────────
+// 回归锚（用户实测「zen_unlock (22m48s) 仍无输出」悬停卡）：虚拟工具的 TTL 提示
+// 拦截了结果渲染，但 pending 条目没人清——live 卡永远等不到终态。
+
+test('zen_unlock：onToolUse 不建 pending，结果只留 TTL 提示', () => {
+  const { app } = makeApp()
+  app.callbacks.onToolUse('z1', 'zen_unlock', {})
+  assert.equal((app as any).toolGroupController.getPendingSize(), 0, '虚拟工具不得建 pending 卡')
+  tr(app, 'z1', 'zen_unlock', '禅模式已解除')
+  assert.equal((app as any).toolGroupController.getPendingSize(), 0)
+  assert.ok((app as any).zenUnlockNoticeUntil > Date.now(), 'TTL 提示应已设置')
+})
+
+test('zen_unlock：即便 pending 被其它路径建过，结果到达时也防御性清除', () => {
+  const { app } = makeApp()
+  ;(app as any).toolGroupController.setPending('z9', { name: 'zen_unlock', input: {}, startMs: Date.now() })
+  tr(app, 'z9', 'zen_unlock', '禅模式已解除')
+  assert.equal((app as any).toolGroupController.getPendingSize(), 0, '悬停卡必须清除')
+})

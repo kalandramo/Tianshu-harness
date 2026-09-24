@@ -1,7 +1,37 @@
 import type { ChildProcess } from 'node:child_process'
+import { readFileSync, statSync } from 'node:fs'
 import { isAbsolute, resolve as resolvePath, relative as relativePath } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { createRpcClient, DEFAULT_LSP_REQUEST_TIMEOUT_MS, type RpcClient, type RpcClientOptions } from './rpc.js'
+
+/** didOpen/didChange 文本载荷上限——超过此大小的文件不把内容灌进 server。 */
+const MAX_LSP_DOCUMENT_BYTES = 512 * 1024
+
+/**
+ * 读磁盘内容作为 didOpen/didChange 的 text 载荷。
+ *
+ * 必须发真实内容：多数语言服务器（sourcekit-lsp / jdtls / metals / roslyn）
+ * 按 didOpen 的 text 建立文档缓冲——发空文本等于告诉它"这个文件是空的"，
+ * 之后的 definition / references 一律查不到符号。实测：sourcekit-lsp 收到
+ * 空 text 时 textDocument/definition 1.4s 内返回空数组；收到真实内容才返回定义。
+ * tsserver 会自行读盘，所以这个假设历史上只对 TypeScript 成立——极易漏检。
+ * （getFileDiagnostics 内已单独修过同一问题，此处是同类点的收口。）
+ *
+ * 返回 null 表示读不到或超过上限：调用方必须**跳过通知**——didOpen 既不发也不
+ * 缓存 uri（缓存了 openedDocs 就永不补发），didChange 直接 return。发空文本会把
+ * server 的文档缓冲清成空，比内容略旧更坏；而「暂时读不到」一旦被当成「文档为空」
+ * 发给 server，就是不可恢复的静默失效（definition/references 一律返回空）。
+ */
+function readDocumentText(absPath: string): string | null {
+  try {
+    const stat = statSync(absPath)
+    if (!stat.isFile() || stat.size > MAX_LSP_DOCUMENT_BYTES) return null
+    return readFileSync(absPath, 'utf-8')
+  } catch {
+    return null
+  }
+}
+
 interface Location {
   uri: string
   range: {
@@ -72,9 +102,11 @@ function uriToRelPath(uri: string, cwd: string): string {
   return out.split('\\').join('/')
 }
 
-function languageId(filePath: string): string {
+/** 单服务器调用的默认 languageId 解析（TS/JS 家族）。多语言路径由
+ *  createMultiLspManager 注入 registry 的 per-def 解析器覆盖。 */
+function defaultLanguageId(filePath: string): string {
   if (filePath.endsWith('.tsx')) return 'typescriptreact'
-  if (filePath.endsWith('.ts')) return 'typescript'
+  if (filePath.endsWith('.ts') || filePath.endsWith('.mts') || filePath.endsWith('.cts')) return 'typescript'
   if (filePath.endsWith('.jsx')) return 'javascriptreact'
   return 'javascript'
 }
@@ -83,7 +115,13 @@ export function createLspManager(
   spawnFn: SpawnFn,
   cwd: string,
   rpcOptions: RpcClientOptions = {},
+  /**
+   * 该 server 处理某文件时应发的 LSP languageId。多语言路径由
+   * createMultiLspManager 按 registry 的 def 注入；省略时回落 TS/JS 家族。
+   */
+  languageIdFor?: (filePath: string) => string,
 ): LspManager {
+  const resolveLanguageId = languageIdFor ?? defaultLanguageId
   let rpc: RpcClient | null = null
   let proc: ChildProcess | null = null
   let capabilities: ServerCapabilities | null = null
@@ -94,8 +132,8 @@ export function createLspManager(
 
   /**
    * Ensure the document is opened in the LSP server.
-   * Uses a dummy text because TypeScript language server reads from disk
-   * and does not rely on the text content from didOpen.
+   * Sends the file's real content — servers that build their document buffer from
+   * didOpen (sourcekit-lsp / jdtls / metals / roslyn) see nothing otherwise.
    * Caches opened URIs — only sends didOpen + waits on first access.
    */
   async function ensureDocument(filePath: string): Promise<void> {
@@ -103,14 +141,20 @@ export function createLspManager(
     const absPath = absFromCwd(filePath, cwd)
     const uri = fileToUri(filePath, cwd)
     if (openedDocs.has(uri)) return
+    // 读不到（已删除 / 超体积上限）时**不认账**：宁可这次不发，也不发空文本把
+    // 「暂时读不到」固化成「永久空文档」——server 收到空 text 即认为文件为空，
+    // 而 add(uri) 之后 ensureDocument 永远短路，内容再也不会补发。
+    const text = readDocumentText(absPath)
+    if (text === null) return
     openedDocs.add(uri)
     try {
       rpc.notify('textDocument/didOpen', {
         textDocument: {
           uri,
-          languageId: languageId(filePath),
+          languageId: resolveLanguageId(filePath),
           version: 1,
-          text: '',
+          // 真实内容（0 字节文件是 ''，属真实内容而非读不到——判据用 null 不用 falsy）
+          text,
         },
       })
       // Allow server to process the notification
@@ -255,13 +299,17 @@ export function createLspManager(
       if (!rpc || !ready) return
       const uri = fileToUri(filePath, cwd)
       if (!openedDocs.has(uri)) return // never opened, server has no cached state
+      // 必须带真实内容：空文本会把 server 的文档缓冲清空，之后的查询全部失真。
+      // 读不到（已删除 / 超上限）时干脆不发——保持 server 现有缓冲，比清空更安全。
+      const text = readDocumentText(absFromCwd(filePath, cwd))
+      if (text === null) return
       try {
         rpc.notify('textDocument/didChange', {
           textDocument: { uri, version: Date.now() },
-          contentChanges: [{ text: '' }],
+          contentChanges: [{ text }],
         })
       } catch {
-        // Best-effort: if the notification fails, next LSP query re-reads from disk anyway
+        // Best-effort: 通知失败时 server 保留旧缓冲，查询结果可能略旧但不会失空
       }
     },
 

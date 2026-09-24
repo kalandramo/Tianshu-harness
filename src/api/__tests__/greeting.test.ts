@@ -163,7 +163,7 @@ test('欢迎语请求带出站身份头:OpenCode Go 的会话头与专属 UA', a
     const r = await generateGreetingLlm('https://opencode.ai/zen/go/v1', 'sk-k', 'deepseek-v4-flash', 20, 'zh-CN', { timeoutMs: 100 })
     assert.equal(r, '晚上好')
     assert.equal(seen[0]?.['x-opencode-session'], 'tianshu-greeting')
-    assert.match(seen[0]?.['User-Agent'] ?? '', /^tianshu-tui\//)
+    assert.match(seen[0]?.['User-Agent'] ?? '', /^tianshu-harness\//)
   } finally {
     restoreFetch()
   }

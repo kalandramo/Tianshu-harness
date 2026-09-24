@@ -314,6 +314,39 @@ describe('multi-key server contract', () => {
     assert.equal(missing.status, 400)
   })
 
+  it('批量新增整单校验：含冲突项时整批不落盘（no partial write）', async () => {
+    writeConfig(home, {
+      [RELAY]: {
+        name: RELAY,
+        baseUrl: 'http://127.0.0.1:1/v1',
+        keys: [{ id: 'k2', models: [{ id: 'existing' }] }],
+        models: [],
+      },
+    }, RELAY)
+    router = createRouter(buildConfigRoutes(TOKEN)) as Router
+
+    const mixed = await router('POST', `/config/providers/${RELAY}/keys/k2/models`, {
+      models: [{ id: 'existing' }, { id: 'brand-new' }],
+    }, AUTH)
+    assert.equal(mixed.status, 400)
+    assert.match(String((mixed.body as { error: string }).error), /already exists/)
+    assert.deepEqual(
+      loadConfig().provider.providers[RELAY]!.keys![0]!.models.map(m => m.id),
+      ['existing'],
+      '冲突批次不得部分落盘 brand-new',
+    )
+
+    const intraDup = await router('POST', `/config/providers/${RELAY}/keys/k2/models`, {
+      models: [{ id: 'twice' }, { id: 'twice' }],
+    }, AUTH)
+    assert.equal(intraDup.status, 400)
+    assert.deepEqual(
+      loadConfig().provider.providers[RELAY]!.keys![0]!.models.map(m => m.id),
+      ['existing'],
+      '批内重复同样整批拒绝、零落盘',
+    )
+  })
+
   it('upserts and deletes a model within the addressed key only', async () => {
     writeConfig(home, {
       [RELAY]: {
@@ -350,5 +383,34 @@ describe('multi-key server contract', () => {
     withProvider({ keyRef: RELAY, models: [{ id: 'legacy-a' }] })
     const res = await router('POST', `/config/providers/${RELAY}/keys`, { apiKey: 'sk-x' }, {})
     assert.equal(res.status, 401)
+  })
+
+  // 2026-09-23 回归钉：CJK/非 ASCII 供应商名的 key-pool 路由。浏览器 fetch 会把
+  // 路径里的中文 percent-encode，路由原样捕获 —— handler 必须 decodeRouteParam
+  // 还原（provider 级路由一直这么做；key-pool 六条曾漏掉，中文名供应商的 key
+  // 增删/模型编辑全部 404）。名字里的 `?`/`#` 走客户端 encodeURIComponent 兜底。
+  it('CJK 供应商名：key-pool 路由按 percent-decode 后的名字命中', async () => {
+    const CJK = '我的中转'
+    writeConfig(home, {
+      [CJK]: {
+        name: CJK,
+        baseUrl: 'http://127.0.0.1:1/v1',
+        keys: [
+          { id: 'default', keyRef: `${CJK}:default`, models: [{ id: 'k0-a' }] },
+          { id: 'spare', keyRef: `${CJK}:spare`, models: [{ id: 'k1-a' }] },
+        ],
+        models: [{ id: 'k0-a' }],
+      },
+    }, CJK)
+    writeSecret(`${CJK}:default`, 'sk-cjk-0', home)
+    writeSecret(`${CJK}:spare`, 'sk-cjk-1', home)
+    router = createRouter(buildConfigRoutes(TOKEN)) as Router
+
+    // 模拟浏览器：路径里是 percent-encoded 形态
+    const res = await router('DELETE', `/config/providers/${encodeURIComponent(CJK)}/keys/spare`, {}, AUTH)
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+    assert.deepEqual(keysOf(res.body).map(k => k.id), ['default'])
+    // 源配置真的变了（不是只回了 200）
+    assert.equal(loadConfig().provider.providers[CJK]!.keys!.length, 1)
   })
 })

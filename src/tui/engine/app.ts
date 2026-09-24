@@ -58,12 +58,13 @@ import { SlashCommandRegistry, type SlashCommandContext } from '../slash-command
 import { getTheme, getActiveThemeName, type RivetTheme } from '../theme.js'
 import { formatUserMessage } from '../format/user-message.js'
 import { formatAskUserQuestion } from '../format/ask-user-question.js'
-import { formatToolCard, formatToolCardLive, isToolCardTruncated } from '../format/tool-card.js'
+import { formatToolCard, formatToolCardLive, isToolCardTruncated, toolCardTitle } from '../format/tool-card.js'
 import { formatCollapsedGroup, formatCollapsedGroupLive, CollapsedReadSearchBuffer, isCollapsibleTool, type CollapsedReadSearchGroup } from '../format/collapsed-read-search.js'
 import { formatCollapsedBashGroup, formatCollapsedBashGroupLive, isCollapsibleBashCommand, type CollapsedBashGroup } from '../format/collapsed-bash.js'
 import { formatPermissionDiff } from '../format/permission-diff.js'
 import { formatApprovalPrompt } from '../format/approval-renderers.js'
 import { formatThinking } from '../format/thinking.js'
+import { ThinkingReviewStore, formatThinkingReview } from './thinking-review.js'
 import { formatPromptFooter } from '../format/prompt-footer.js'
 import { formatGlanceBar, resolveStarDomainDisplay, formatGlanceLeft, formatGlanceRight, formatPermissionModeLine } from '../format/glance-bar.js'
 import { remainingSec, shouldFire } from '../plan-auto-approve.js'
@@ -627,6 +628,19 @@ export class TuiApp {
   private slashRegistry = new SlashCommandRegistry()
   /** 消息队列（W4a：streaming 时 Enter 入队，turn 边界 drain 注入） */
   readonly steerBuffer = new SteerBuffer()
+  /**
+   * issue #238 同族（TUI 侧）——run 进行中提交、但插话通道送不出去的附件。
+   *
+   * SteerBuffer 的 drain 契约是 string（工具边界注入的只能是文本），图片没有注入
+   * 路径：此前这条路径会把图片静默丢掉（气泡渲染了图、模型从未收到、无提示）。
+   * 现在暂存到这里，随下一条 prompt 一并发出，并即时告知用户去向。
+   */
+  private deferredImages: string[] = []
+
+  /** 测试断言用：暂存待随下一条 prompt 发送的附件数。 */
+  getDeferredImagesCount(): number {
+    return this.deferredImages.length
+  }
   /**
    * /queue 显式排队 lane：简单 FIFO（不走 steer 的优先级/意图分类）。
    * busy/idle 都可入队；不进 steer 队列（不参与 turn 边界 drain），
@@ -1359,6 +1373,22 @@ export class TuiApp {
         if (this.state.isThinking) {
           this.state.thinkingExpanded = !this.state.thinkingExpanded
           this.renderLive()
+        } else if (!this.isAgentActive()) {
+          // 真空闲才回看最近一次 thinking：正文完整重印进 scrollback（诚实重印——
+          // scrollback 只追加不改写，重印本即持久记录；take() 防空按重复重印）。
+          // 工具执行期间 isThinking 已为 false 但 agent 仍忙（agentBusy / phase）——
+          // 此时重印会一次刷进最多 400 逻辑行，take() 之后不可撤回，故与 ctrl_r
+          // 分支同法加 isAgentActive 守卫。
+          const review = this.thinkingReview.take()
+          if (review) {
+            const reviewLines = formatThinkingReview(review, this.theme)
+            if (reviewLines.length > 0) {
+              this.commitAbove(() => {
+                this.commit.write({ text: reviewLines.join('\n'), trailingNewline: true })
+                this.state.committedCount++
+              })
+            }
+          }
         }
         return
       }
@@ -1519,7 +1549,9 @@ export class TuiApp {
         // The desktop renders this ladder via the decision-shift card; this
         // static warning line is the CLI counterpart.
         // image-stripped 同走此行：剥图后模型看不到图，静默处理会被读成「模型没理我的截图」。
-        if (phase === 'convergence-warning' || phase === 'image-stripped') {
+        // body-guard 同走此行：wire 体被截断/逼近上限时，模型看到的历史与用户以为的
+        // 不一致——静默即读成「模型忘了我们刚做的事」。
+        if (phase === 'convergence-warning' || phase === 'image-stripped' || phase === 'body-guard') {
           const label = phaseStatusLabel(phase, detail)
           if (label) this.commitStatic(color(label, this.theme.warning))
           return
@@ -1700,6 +1732,9 @@ export class TuiApp {
       const delivered = this.workerSteer?.(target, trimmed) ?? false
       if (!delivered) {
         this.commitStatic(color('⚠ 该子代理已结束或不支持直达，消息未送达', this.theme.warning))
+      } else if (images?.length) {
+        // 直达通道同样只承载文本（workerSteer 入参是 string）——附件不静默吞掉。
+        this.commitStatic(color(`⚠ ${images.length} 张图片未随直达消息发送（子代理通道仅支持文本）`, this.theme.warning))
       }
       this.renderLive()
       return
@@ -1725,6 +1760,12 @@ export class TuiApp {
     if (this.agentBusy && trimmed) {
       await this.awaitUserCommit(trimmed, images)
       this.steerBuffer.push(trimmed)
+      // 插话只走文本：图片暂存到下一轮随 prompt 发出，并明确告知去向。此前这里是
+      // 静默丢弃——气泡里图已经显示出来了，用户以为模型看到了，实际从未收到。
+      if (images?.length) {
+        this.deferredImages.push(...images)
+        this.commitStatic(color(`📎 ${images.length} 张图片已保留，将随下一条消息发送（插话通道仅能传文本）`, this.theme.muted))
+      }
       this.renderLive()
       return
     }
@@ -1768,11 +1809,19 @@ export class TuiApp {
       this.streamRenderController.assistantHeaderDone = false
       this.agentBusy = true
       this.todosWrittenThisRun = false
+      // 新 run 开始，上一轮的 thinking 回看作废——否则 ctrl+t 会重印出陈旧思考。
+      this.thinkingReview.clear()
     }
     // Reset turn timer for the new turn
     this.state.turnStartMs = Date.now()
     this.streamRenderController.lastActivityMs = Date.now()
-    this.onSubmitCallback?.(submitText, images)
+    // 上一 run 期间暂存的附件（插话送不出去的图片）随本次 prompt 一次性发出：
+    // 顺序按时间序——暂存在前、本次提交的图在后（与文本归并同序）。
+    const outgoingImages = this.deferredImages.length > 0
+      ? [...this.deferredImages, ...(images ?? [])]
+      : images
+    if (this.deferredImages.length > 0) this.deferredImages = []
+    this.onSubmitCallback?.(submitText, outgoingImages)
   }
 
   /** Contract 预览按键：Enter 确认 / e 返回编辑 / Esc 取消。返回是否已消费。 */
@@ -2017,14 +2066,16 @@ export class TuiApp {
    *  静默绕过 slash 分发（4175e5b9 引入的回归）。 */
   getCommandPredicate(): (name: string) => boolean {
     const fromHints = buildCommandPredicate(this.inputController.slashCommands)
-    const fromRegistry = buildCommandPredicate(this.slashRegistry.list())
+    // listNames()（canonical ∪ 别名）而非 list()：漏掉别名会让「输入别名」在谓词层
+    // 被判为非命令，别名等于没接。
+    const fromRegistry = buildCommandPredicate(this.slashRegistry.listNames().map(name => ({ name })))
     return (name: string) => fromHints(name) || fromRegistry(name)
   }
 
   /** 构建命令前缀谓词，供 looksLikeFilePath 把 `/h` 这类模糊输入识别为 slash 命令。 */
   private getCommandPrefixPredicate(): (name: string) => boolean {
     const fromHints = buildCommandPrefixPredicate(this.inputController.slashCommands)
-    const fromRegistry = buildCommandPrefixPredicate(this.slashRegistry.list())
+    const fromRegistry = buildCommandPrefixPredicate(this.slashRegistry.listNames().map(name => ({ name })))
     return (name: string) => fromHints(name) || fromRegistry(name)
   }
 
@@ -4468,6 +4519,12 @@ export class TuiApp {
   submitText(text: string, images?: string[]): void {
     // 入口先规范化图片数组，气泡/渲染/回调看到的是同一份。
     images = normalizeSubmitImages(images)
+    // 暂存附件（run 期间插话送不出去的图）与 handleInputSubmit 走同一条出口：
+    // 否则 slash/workflow 路径会让它们滞留到下一次打字提交（附件必达不变量）。
+    if (this.deferredImages.length > 0) {
+      images = normalizeSubmitImages([...this.deferredImages, ...(images ?? [])])
+      this.deferredImages = []
+    }
     // 带图提交是异步原子单元（转码完成后「气泡+图片」一起落 scrollback），
     // agent 必须等它落地后再启动，保证图片先于 assistant 输出。
     const pending = this.commitUserPrompt(text, images)
@@ -4950,6 +5007,7 @@ export class TuiApp {
   clearScreen(): void {
     process.stdout.write('\x1B[2J\x1B[H')
     this.live.reset()
+    this.resetLiveHighWater()
     this.renderLive()
   }
 
@@ -4980,21 +5038,9 @@ export class TuiApp {
         handler: () => true,
       },
       {
+        // /quit 收敛为别名（曾是与 /exit 逐字重复的第二条命令）。
         name: '/exit',
-        description: 'Exit Rivet',
-        immediate: true,
-        handler: () => {
-          this.dispose()
-          if (this.onExitCallback) {
-            this.onExitCallback()
-          } else {
-            process.exit(0)
-          }
-          return true
-        },
-      },
-      {
-        name: '/quit',
+        aliases: ['/quit'],
         description: 'Exit Rivet',
         immediate: true,
         handler: () => {
@@ -5244,7 +5290,12 @@ export class TuiApp {
   private handleToolUse(id: string, name: string, input: Record<string, unknown>): void {
     this.setPhase('analyzing')
     this.markActivity()
-    this.toolGroupController.setPending(id, { name, input, startMs: Date.now(), _approvalMode: this._approvalMode })
+    // zen_unlock 是虚拟工具（无 registry 实体、结果即时合成并走 TTL 提示）：
+    // 不进 pending——它没有常规意义的「执行中→终态」生命周期，进 pending 就是
+    // 一张永远等不到终态的悬停卡（曾实挂 22 分钟：「zen_unlock (22m48s) 仍无输出」）。
+    if (name !== ZEN_UNLOCK) {
+      this.toolGroupController.setPending(id, { name, input, startMs: Date.now(), _approvalMode: this._approvalMode })
+    }
     // 注意：派发类工具（delegate_*/team_orchestrate/galaxy）不再切换 GlanceBar 星域——
     // 「天机」是子代理编排阶段的内部路由标记，不是用户可选的会话星域；把它顶到
     // 主面板星域位会让用户误以为 /domain 切了域（还牵连缓存语义），且顺带改变了
@@ -5485,6 +5536,9 @@ export class TuiApp {
     // 永远等不到终态），表现为「禅模式已解除」一直挂在推理区下面。相位状态本身已由
     // 「禅」徽章消失表达；这里只补一条限时提示（TTL 到点自动消失）。
     if (name === ZEN_UNLOCK) {
+      // 防御性清理：onToolUse 已不再为 zen_unlock 建 pending，但若有其它路径
+      // 建过（旧会话回放/未来改动），不删就是永久悬停卡。
+      this.toolGroupController.deletePending(id)
       this.zenUnlockNoticeUntil = Date.now() + TuiApp.ZEN_UNLOCK_NOTICE_MS
       this.markActivity()
       this.writeBatcher.schedule()
@@ -5767,6 +5821,14 @@ export class TuiApp {
       // Reset state
       this.agentBusy = false
       this.lastSubmittedText = null // 回合成功 settle——错误回填底料作废
+      // 收尾段 thinking 不落 scrollback（正文答案即收尾），但留存供 ctrl+t 回看。
+      if (this.state.thinkingText) {
+        this.thinkingReview.save({
+          text: this.state.thinkingText,
+          elapsedMs: Date.now() - this.state.thinkStartMs,
+          domainId: this.getActiveDomainId(),
+        })
+      }
       this.state.thinkingText = ''
       this.state.isStreaming = false
       this.state.isThinking = false
@@ -5787,13 +5849,14 @@ export class TuiApp {
       })
 
       // /handoff 归档：交接 turn 产出项目内文档后，拷贝到会话目录 <id>.handoff.md
-      // （loadPrevHandoff 注入管线认的位置），新会话于是自动吃到交接。
+      // （loadPrevHandoff 注入管线认的位置）。注入默认关闭（并行会话安全，
+      // 2026-09-22 产品决策），RIVET_PREV_HANDOFF=1 可显式开启。
       if (this.pendingHandoffCopy) {
         const { src, dest, sinceMs } = this.pendingHandoffCopy
         try {
           if (existsSync(src) && statSync(src).mtimeMs > sinceMs) {
             copyFileSync(src, dest)
-            this.commitStatic(`✦ 交接文档已写入 ${src} 并归档 ${dest}——新会话将自动注入交接内容。`)
+            this.commitStatic(`✦ 交接文档已写入 ${src} 并归档 ${dest}（默认不注入新会话；RIVET_PREV_HANDOFF=1 可开启）。`)
           }
         } catch { /* best-effort：归档失败不阻断会话 */ }
         this.pendingHandoffCopy = undefined
@@ -6160,6 +6223,9 @@ export class TuiApp {
    *  ticker / 批渲染帧文本未变时直接复用，消除每帧 O(n) split。主题切换经 forceRedraw 失效。 */
   private thinkingLinesMemo: { key: string; lines: string[] } | null = null
 
+  /** thinking 回看仓：commit 时留存正文，ctrl+t 空闲重印（grok-build 诚实重印对标）。 */
+  private thinkingReview = new ThinkingReviewStore()
+
   /**
    * 输入框静态 chrome 缓存：leftBar / rightBar / botBorder 只依赖
    * (separator, innerWidth, borderColor)，与输入文本、光标、GlanceBar 指标无关。
@@ -6295,6 +6361,15 @@ export class TuiApp {
    * 但归零即高度回缩，而回缩就是输入框上跳——空白换稳定是这里刻意做的取舍。
    */
   private liveRowsHighWater = 0
+
+  /**
+   * 会话边界重置高水位：/clear（整屏重绘）与 /resume 切换会话（对齐
+   * tianshu-public 的 newSession/switchSession 重置点）。旧会话的峰值预留位
+   * 对新会话无意义，不重置则上一次长回合的空白永久残留。
+   */
+  resetLiveHighWater(): void {
+    this.liveRowsHighWater = 0
+  }
 
   /**
    * @file 节点 exists 诊断（按输入值缓存——同值不重复 existsSync）。
@@ -6510,14 +6585,27 @@ export class TuiApp {
     // 低于 approvalWait（等用户决定最优先），高于通用 spinner/stale 分档。
     const jobAwaiting = approvalWaiting ? null : this.jobAwaitPending()
     const stalled = this.streamRenderController.lastActivityMs > 0 && Date.now() - this.streamRenderController.lastActivityMs > 10_000
+    // analyzing 相位如实化：有工具在跑时说出在跑什么（最新 pending 的标题），
+    // 不再轮换「琢磨中」系动词冒充模型活动——长跑工具（bash/monitor/job）下
+    // 动词池会让用户以为模型在思考，实际在等工具（与 approvalWait 如实化同族）。
+    let activityLabel: string | undefined
+    if (this.state.phase === 'analyzing' && !approvalWaiting && !jobAwaiting) {
+      const pending = [...this.toolGroupController.getPendingEntries()]
+      const latest = pending[pending.length - 1]
+      if (latest) activityLabel = toolCardTitle(latest[1].name, latest[1].input)
+    }
     const spinnerLine = jobAwaiting ? null : formatSpinnerStatus({
       tick: this.streamRenderController.tick,
       phase: this.state.phase,
       elapsedMs: Date.now() - this.state.turnStartMs,
       stalled: stalled && !approvalWaiting,
+      // 终端列数交给 formatter 做标签宽度适配——否则 clampLine 从尾部截，
+      // 长 activityLabel 会把耗时挤出可视区（「在等什么」在、「等了多久」没了）。
+      columns: this.columns,
       ...(approvalWaiting ? {
         approvalWait: { toolName: approvalWaiting.name, waitMs: Date.now() - approvalWaiting.startMs },
       } : {}),
+      ...(activityLabel ? { activityLabel } : {}),
     }, this.theme)
     if (jobAwaiting) {
       const row = jobAwaiting.jobId ? this.jobsModel.get(jobAwaiting.jobId) : undefined
@@ -6785,11 +6873,10 @@ export class TuiApp {
         ascii: useAsciiGlyphs(),
       })
       if (taskLines.length > 0) {
-        lines.push({ text: '' })
         // 面板行走 clampLine（与其余 chrome 同口径）：满列行会在 CJK 终端折行，
-        // rowsForLine 少算导致旧帧残留被提交进 scrollback。
+        // rowsForLine 少算导致旧帧残留被提交进 scrollback。上下不夹空行
+        //（对齐 tianshu-public——空行只会被定高视口的垫行吸收，徒增 chrome 高度）。
         for (const taskLine of taskLines) lines.push({ text: this.clampLine(taskLine) })
-        lines.push({ text: '' })
       }
     }
 
@@ -7257,12 +7344,17 @@ export class TuiApp {
    */
   private commitThinkingToScrollback(): void {
     if (!this.state.thinkingText) return
+    const elapsedMs = Date.now() - this.state.thinkStartMs
+    const domainId = this.getActiveDomainId()
+    // 留存正文供 ctrl+t 回看——scrollback 只有一行头部，正文是唯一可重印来源。
+    this.thinkingReview.save({ text: this.state.thinkingText, elapsedMs, domainId })
     const formatted = formatThinking({
       text: this.state.thinkingText,
-      elapsedMs: Date.now() - this.state.thinkStartMs,
+      elapsedMs,
       done: true,
       expanded: false,
-      domainId: this.getActiveDomainId(),
+      domainId,
+      reviewHint: 'ctrl+t 回看',
     }, this.theme)
     if (formatted.length === 0) return
     this.commit.write({ text: formatted.join('\n'), trailingNewline: true })

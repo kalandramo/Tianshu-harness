@@ -1,0 +1,315 @@
+/**
+ * 凭据落盘加密（账号 token / provider OAuth token / MCP OAuth token）。
+ *
+ * ## 解决的问题
+ *
+ * v3.21.1 里 `~/.rivet/<provider>.json` 是**明文 JSON**：`{accessToken,
+ * refreshToken, expiresAt}`。`writeFileSync(..., { mode: 0o600 })` 在 Windows
+ * 上不生效（NTFS ACL 不看 POSIX mode），而 `~/.rivet` 又常在用户目录里、可能
+ * 被 OneDrive/iCloud/网盘同步、被备份工具收走、被同机其它进程读走。refresh
+ * token 是长期凭据——一旦泄露，攻击者不需要动目标机器就能拿到该账号的一切。
+ *
+ * ## 方案：数据密钥放 OS 密钥库，文件里只放 AES-256-GCM 密文
+ *
+ * ```
+ * <provider>.json  = {"v":1,"s":"aes-256-gcm","b":"<backend>","d":"<base64: iv|tag|ct>"}
+ * ```
+ *
+ * 数据密钥（32 字节随机）按平台托管，**不落明文**：
+ * - `keychain`（macOS）：`security add-generic-password` 放进用户钥匙串
+ * - `dpapi`（Windows）：`CryptProtectData(CurrentUser)` 加密后落 `.token-key.dpapi`
+ * - `local-key`（兜底）：`.token-key`（0600）——**只是混淆，不是安全边界**：
+ *   同机同用户进程能读到密钥。Linux 无内置密钥库 API，先落这一档
+ * - `plaintext`：显式关闭（`RIVET_TOKEN_STORE=plaintext`），仅供排障
+ *
+ * ## 边界与诚实的说明
+ *
+ * 这一层防的是「**拿走文件**」（跨机复制、云同步、备份、换用户账户读别人
+ * home），不防「同机同用户的活体进程」——那种攻击者能直接读进程内存，任何
+ * 客户端加密都挡不住。真正的兜底在服务端：refresh token 轮换 + 复用检测 +
+ * 吊销（见 docs/security/pro-hardening.md 的向量⑥）。
+ *
+ * 兼容性：旧明文文件按原样读取，**下次写入自动升级**为密文信封；无需迁移脚本。
+ */
+import { execFileSync } from 'node:child_process'
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { userInfo } from 'node:os'
+import { join } from 'node:path'
+
+export type SecretBackend = 'keychain' | 'dpapi' | 'local-key' | 'plaintext'
+
+/** 信封版本 / 算法标识（写进文件，便于未来轮换）。 */
+const ENVELOPE_VERSION = 1
+const ENVELOPE_ALG = 'aes-256-gcm'
+
+const KEYCHAIN_SERVICE = 'rivet-token-store'
+const DPAPI_KEY_FILE = '.token-key.dpapi'
+const LOCAL_KEY_FILE = '.token-key'
+
+export interface SecretCipher {
+  readonly backend: SecretBackend
+  encrypt(plain: Buffer): Buffer
+  /** 解密失败返回 null（密文被篡改 / 换了机器 / 密钥丢失），调用方按「无凭据」处理。 */
+  decrypt(blob: Buffer): Buffer | null
+}
+
+const warned = new Set<string>()
+function warnOnce(key: string, msg: string): void {
+  if (warned.has(key)) return
+  warned.add(key)
+  try {
+    console.warn(msg)
+  } catch {
+    /* 无 TTY / stdout 关闭时忽略 */
+  }
+}
+
+/** 解析后端：显式 `RIVET_TOKEN_STORE` 优先，其次按平台默认。 */
+export function resolveSecretBackend(platform: NodeJS.Platform = process.platform): SecretBackend {
+  const override = process.env.RIVET_TOKEN_STORE?.trim().toLowerCase()
+  if (override === 'plaintext' || override === 'keychain' || override === 'dpapi' || override === 'local-key') {
+    return override
+  }
+  if (platform === 'darwin') return 'keychain'
+  if (platform === 'win32') return 'dpapi'
+  return 'local-key'
+}
+
+function aesGcmCipher(key: Buffer, backend: SecretBackend): SecretCipher {
+  if (key.length !== 32) throw new Error(`secret key must be 32 bytes, got ${key.length}`)
+  return {
+    backend,
+    encrypt(plain: Buffer): Buffer {
+      const iv = randomBytes(12)
+      const cipher = createCipheriv('aes-256-gcm', key, iv)
+      const ct = Buffer.concat([cipher.update(plain), cipher.final()])
+      const tag = cipher.getAuthTag()
+      // 布局：iv(12) | tag(16) | ciphertext
+      return Buffer.concat([iv, tag, ct])
+    },
+    decrypt(blob: Buffer): Buffer | null {
+      try {
+        if (blob.length < 12 + 16) return null
+        const iv = blob.subarray(0, 12)
+        const tag = blob.subarray(12, 28)
+        const ct = blob.subarray(28)
+        const decipher = createDecipheriv('aes-256-gcm', key, iv)
+        decipher.setAuthTag(tag)
+        return Buffer.concat([decipher.update(ct), decipher.final()])
+      } catch {
+        return null
+      }
+    },
+  }
+}
+
+function plaintextCipher(): SecretCipher {
+  return {
+    backend: 'plaintext',
+    encrypt: (plain) => plain,
+    decrypt: (blob) => blob,
+  }
+}
+
+// ── 平台密钥库 ────────────────────────────────────────────────────────
+
+function keychainKey(): Buffer | null {
+  const account = process.env.USER || process.env.USERNAME || userInfo().username || 'rivet'
+  const args = ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', account, '-w']
+  try {
+    const out = execFileSync('security', args, { encoding: 'utf8', timeout: 10_000, windowsHide: true }).trim()
+    const key = Buffer.from(out, 'hex')
+    if (key.length === 32) return key
+  } catch {
+    /* 未找到 → 下面创建 */
+  }
+  const fresh = randomBytes(32)
+  try {
+    execFileSync(
+      'security',
+      ['add-generic-password', '-U', '-s', KEYCHAIN_SERVICE, '-a', account, '-w', fresh.toString('hex')],
+      { encoding: 'utf8', timeout: 10_000, windowsHide: true }
+    )
+    return fresh
+  } catch (err) {
+    warnOnce(
+      'keychain-unavailable',
+      `[secure-store] 钥匙串不可用（${(err as Error).message}），回退到本机密钥文件（仅混淆，不是安全边界）`
+    )
+    return null
+  }
+}
+
+function dpapiCall(data: Buffer, mode: 'Protect' | 'Unprotect'): Buffer {
+  const scope = 'CurrentUser'
+  const arg = `[Convert]::FromBase64String('${data.toString('base64')}')`
+  const script = [
+    'Add-Type -AssemblyName System.Security | Out-Null;',
+    `$b=${arg};`,
+    `$r=[System.Security.Cryptography.ProtectedData]::${mode}($b,$null,'${scope}');`,
+    '[Convert]::ToBase64String($r)',
+  ].join(' ')
+  const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+    encoding: 'utf8',
+    timeout: 20_000,
+    windowsHide: true,
+  })
+  return Buffer.from(out.trim(), 'base64')
+}
+
+function dpapiKey(dir: string): Buffer | null {
+  const path = join(dir, DPAPI_KEY_FILE)
+  try {
+    if (existsSync(path)) {
+      const key = dpapiCall(Buffer.from(readFileSync(path, 'utf8').trim(), 'base64'), 'Unprotect')
+      if (key.length === 32) return key
+    }
+    const fresh = randomBytes(32)
+    const sealed = dpapiCall(fresh, 'Protect')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path, sealed.toString('base64'), { mode: 0o600 })
+    return fresh
+  } catch (err) {
+    warnOnce(
+      'dpapi-unavailable',
+      `[secure-store] DPAPI 不可用（${(err as Error).message}），回退到本机密钥文件（仅混淆，不是安全边界）`
+    )
+    return null
+  }
+}
+
+function localKey(dir: string): Buffer {
+  const path = join(dir, LOCAL_KEY_FILE)
+  try {
+    if (existsSync(path)) {
+      const raw = readFileSync(path, 'utf8').trim()
+      // 老格式兜底：也接受 base64
+      const key = Buffer.from(raw, 'hex')
+      if (key.length === 32) return key
+      const b64 = Buffer.from(raw, 'base64')
+      if (b64.length === 32) return b64
+    }
+  } catch {
+    /* 重新生成 */
+  }
+  const fresh = randomBytes(32)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(path, fresh.toString('hex'), { mode: 0o600 })
+  try {
+    chmodSync(path, 0o600)
+  } catch {
+    /* Windows 上无意义，忽略 */
+  }
+  return fresh
+}
+
+// ── 对外 API ──────────────────────────────────────────────────────────
+
+const cipherCache = new Map<string, SecretCipher>()
+
+/**
+ * 取（必要时创建）指定目录下的数据密钥并返回可用 cipher。
+ * 同一进程内按目录缓存：避免每次读写 token 都 spawn 一次 security/powershell。
+ * 密钥库不可用时**依次降级**，永远返回一个可用 cipher（绝不让鉴权功能因加密
+ * 不可用而整体挂掉）——降级会打一条 warn 说明安全等级下降。
+ */
+export function createSecretCipher(baseDir: string, backend: SecretBackend = resolveSecretBackend()): SecretCipher {
+  const cacheKey = `${backend}\u0000${baseDir}`
+  const cached = cipherCache.get(cacheKey)
+  if (cached) return cached
+
+  let cipher: SecretCipher
+  if (backend === 'plaintext') {
+    warnOnce(
+      'plaintext-backend',
+      '[secure-store] RIVET_TOKEN_STORE=plaintext：凭据以明文落盘（仅排障用，安全等级最低）'
+    )
+    cipher = plaintextCipher()
+  } else {
+    // ⚠️ 密钥**懒加载**：构造 TokenStore / cipher 本身不碰磁盘、不 spawn
+    // security/powershell。原因：TokenStore 在启动路径上会被多次构造，其中
+    // 有些目录（如只读的安装目录、别人的 home）连读都不该碰；早期版本在构造
+    // 时就写密钥文件，直接让「只是查询凭据是否存在」的调用产生了副作用。
+    let inner: SecretCipher | null = null
+    const ensure = (): SecretCipher => {
+      if (inner) return inner
+      let key: Buffer | null = null
+      // 实际生效的后端：密钥库失败降级到本机密钥文件时必须如实反映，否则信封
+      // 里的 `b` 字段会撒谎，排障时会误判安全等级。
+      let actual: SecretBackend = backend
+      if (backend === 'keychain') key = keychainKey()
+      else if (backend === 'dpapi') key = dpapiKey(baseDir)
+      if (!key) {
+        actual = 'local-key'
+        key = localKey(baseDir)
+      }
+      inner = aesGcmCipher(key, actual)
+      return inner
+    }
+    cipher = {
+      get backend(): SecretBackend {
+        return inner ? inner.backend : backend
+      },
+      encrypt: (plain) => ensure().encrypt(plain),
+      decrypt: (blob) => ensure().decrypt(blob),
+    }
+  }
+  cipherCache.set(cacheKey, cipher)
+  return cipher
+}
+
+/** 测试用：清空 cipher 缓存（改 env / 换目录后可重新解析后端）。 */
+export function __resetSecretCipherCache(): void {
+  cipherCache.clear()
+}
+
+/**
+ * 把明文编码成落盘字符串：加密后端写信封，plaintext 后端原样写。
+ */
+export function encodeSecret(cipher: SecretCipher, plaintext: string): string {
+  // 先加密再读 backend：懒加载 cipher 的 backend 在密钥解析前是「预期值」，
+  // 加密之后才是实际生效值（如钥匙串失败 → local-key）。
+  const blob = cipher.encrypt(Buffer.from(plaintext, 'utf8'))
+  const backend = cipher.backend
+  if (backend === 'plaintext') return blob.toString('utf8')
+  return `${JSON.stringify({
+    v: ENVELOPE_VERSION,
+    s: ENVELOPE_ALG,
+    b: backend,
+    d: blob.toString('base64'),
+  })}\n`
+}
+
+/**
+ * 解码落盘内容：识别密文信封 → 解密；否则按旧明文处理（向后兼容，下次写入
+ * 自动升级）。解密失败返回 null —— 调用方按「读不到凭据」处理（要求重新登录），
+ * 而不是抛异常把整个鉴权链路打断。
+ */
+export function decodeSecret(cipher: SecretCipher, raw: string): string | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  const env = parsed as { v?: unknown; s?: unknown; d?: unknown; b?: unknown }
+  const isEnvelope =
+    env && typeof env === 'object' && typeof env.d === 'string' && typeof env.v === 'number' && env.s === ENVELOPE_ALG
+  if (!isEnvelope) {
+    // 旧格式：明文 JSON 凭据。原样返回，下次 save 自动升级成密文。
+    return raw
+  }
+  const decrypted = cipher.decrypt(Buffer.from(env.d as string, 'base64'))
+  if (!decrypted) {
+    warnOnce(
+      `decrypt-failed:${cipher.backend}`,
+      '[secure-store] 凭据解密失败（密文被改 / 换了机器 / 密钥丢失）→ 视为未登录，请重新登录'
+    )
+    return null
+  }
+  return decrypted.toString('utf8')
+}
+
+/** 凭据目录里由本模块托管的辅助文件（测试/运维排查用）。 */
+export const SECRET_SIDECAR_FILES = { localKey: LOCAL_KEY_FILE, dpapiKey: DPAPI_KEY_FILE } as const

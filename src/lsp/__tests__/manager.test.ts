@@ -1,5 +1,8 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { LspManager, createLspManager } from '../manager.js'
 import { PassThrough } from 'node:stream'
 import { encodeMessage, decodeMessages } from '../rpc.js'
@@ -257,10 +260,16 @@ describe('LspManager', () => {
   })
 
   it('重新 initialize 向新服务器重发 didOpen——openedDocs 必须清空（2026-09-11 F4）', async () => {
+    // 目标文件必须真实存在：didOpen 只在读到磁盘内容时才发（读不到不发，免得把
+    // 「暂时读不到」固化成「永久空文档」，见 language-id.test.ts）。本用例断言的是
+    // 重初始化后的**重发**行为，故用真实 cwd + 真实文件。
+    const cwd = mkdtempSync(join(tmpdir(), 'lsp-reinit-'))
+    mkdirSync(join(cwd, 'src'), { recursive: true })
+    writeFileSync(join(cwd, 'src/target.ts'), 'export const x = 1\n')
     const s1 = createMockServer()
     const s2 = createMockServer()
     const servers = [s1, s2]
-    const mgr = createLspManager(() => servers.shift()!.proc as any, '/project')
+    const mgr = createLspManager(() => servers.shift()!.proc as any, cwd)
     managers.push(mgr)
 
     await mgr.initialize()

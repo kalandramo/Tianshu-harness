@@ -235,15 +235,15 @@ async function main() {
   console.warn('  Session history & cross-session memory will run in memory-only mode.')
   console.warn('')
   // Fix 指引修正（2026-08-17）：旧的 windows-build-tools（npm 包已废弃多年）+
-  // `npm rebuild better-sqlite3 -g tianshu-tui`（rebuild 不到全局安装包里的
+  // `npm rebuild better-sqlite3 -g tianshu-harness`（rebuild 不到全局安装包里的
   // optional dep，语法本身也不通）全部换成本仓库自带的预编译拉取脚本——
   // 无需任何编译工具链，网络恢复后在安装目录重跑一次即可。
   console.warn('  Fix: 网络恢复后在安装目录重跑本脚本（含预编译四镜像 + 源码编译兜底）:')
   console.warn('    npm root -g                 # 找到全局 node_modules 路径')
   if (PLATFORM === 'win32') {
-    console.warn('    cd <该路径>\\tianshu-tui && node scripts\\fetch-native-sqlite.js')
+    console.warn('    cd <该路径>\\tianshu-harness && node scripts\\fetch-native-sqlite.js')
   } else {
-    console.warn('    cd <该路径>/tianshu-tui && node scripts/fetch-native-sqlite.js')
+    console.warn('    cd <该路径>/tianshu-harness && node scripts/fetch-native-sqlite.js')
   }
   process.exit(0)
 }

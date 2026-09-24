@@ -2,13 +2,13 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync, unlinkSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
-import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { tmpdir } from 'node:os'
 
 // Use project-local temp dir to avoid sandbox EPERM on /var/folders/...
-// 注意：这里必须走 fileURLToPath，不能取 `new URL(...).pathname` —— 后者在 Windows 上带前导
-// 斜杠（`/D:/repo/...`），join 之后被拼成 `D:\D:\repo\...`，mkdir 直接 ENOENT
-// （issue #144 排查过程中在 Windows 实机上实测到 4 条红）。
+// 路径必须走 fileURLToPath：`new URL(...).pathname` 在 Windows 上带前导斜杠（`/D:/repo/...`），
+// join 后成为驱动器相对路径 `\D:\...`，fs 层再拼上当前盘符 → `D:\D:\...`（`D:` 不能作目录名）
+// → mkdir ENOENT，4 个 suite 连 before 阶段都进不去（2026-09-16 Windows 实机实测）。
 const LOCAL_TMP = join(dirname(fileURLToPath(import.meta.url)), '..', '.rivet', 'test-tmp')
 function localTmp(name: string): string {
   if (!existsSync(LOCAL_TMP)) mkdirSync(LOCAL_TMP, { recursive: true })

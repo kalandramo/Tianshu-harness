@@ -185,7 +185,7 @@ export async function ensureRuntime(storageDir: string): Promise<string> {
       }
       throw new Error(
         `运行时下载失败（已尝试 ${ENDPOINTS.length} 个端点 × ${runtimeCandidates().length} 个版本）: ${lastErr?.message ?? 'unknown'}。` +
-          '可手动安装：npm i -g tianshu-tui',
+          '可手动安装：npm i -g tianshu-harness',
       )
     },
   )

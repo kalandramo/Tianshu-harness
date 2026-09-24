@@ -23,6 +23,9 @@ import { TokenStore, type TokenData } from './token-store.js'
 /** 官网 Supabase 项目（Edge Functions 基址）。 */
 const DEFAULT_ACCOUNT_API = 'https://grcedmhghzroqnirizcy.supabase.co'
 
+/** 官网站点基址（Supabase 项目之外的另一个地址：账号页/星籍页在这里）。 */
+const DEFAULT_ACCOUNT_SITE = 'https://tianshuharness.com'
+
 /**
  * Supabase publishable key —— **公开密钥**。
  *
@@ -67,6 +70,26 @@ function accountHeaders(): Record<string, string> {
  */
 export function accountApiBase(): string {
   return (process.env.RIVET_ACCOUNT_API ?? DEFAULT_ACCOUNT_API).replace(/\/+$/, '')
+}
+
+/**
+ * 官网站点基址（账号页 / 星籍页所在）。
+ *
+ * 与 `accountApiBase()` 分开：那个是 Supabase 项目地址，这个是产品站点。
+ * 客户端只在「去官网看星籍」这类跳转里用它。
+ *
+ * **刻意不开 env 覆盖**（与上两个覆盖点不同）：`RIVET_*` 每加一个都要上
+ * `src/config/env-registry.ts` 的账（assembly-audit 会拦），而这里只是一个
+ * 跳转链接——自托管部署拿不到自定义站点时，最坏结果是打开官网首页，不是功能失效。
+ * 真有了自托管需求再加覆盖点并同步生成器。
+ */
+function accountSiteBase(): string {
+  return DEFAULT_ACCOUNT_SITE
+}
+
+/** 星籍页 URL（桌面端「在官网查看」按钮的目标；官网路由见其 router 的 `/space/identity`）。 */
+export function accountIdentityUrl(): string {
+  return `${accountSiteBase()}/space/identity`
 }
 
 // ── 授权请求 ─────────────────────────────────────────────────────────────
@@ -343,3 +366,129 @@ export async function fetchAccountProfile(
     return null
   }
 }
+
+// ── 星籍（stellar identity）─────────────────────────────────────────────
+
+/**
+ * 账号的星籍：官网选的星域 + 星籍号 + 称号。
+ *
+ * 只读展示用。换星籍（reroll）是官网的事，客户端不提供入口——一生只变一次，
+ * 为它做一个客户端写路径不值当。
+ */
+export interface StellarIdentity {
+  /** `TS-<2 位域码>-<6 位>`，如 `TS-FU-AKKV7C`。系统标识，展示时另做本地化。 */
+  stellarId: string
+  /** 域码（`FU` 等）。展示层经 `src/agent/stellar-domain-codes.ts` 换中文名。 */
+  primaryDomain: string
+  /** 进度称号（`observer` 等）。未知值由展示层原样透出。 */
+  title: string
+}
+
+/** 星籍缓存的新鲜期。星籍一生只变一次（reroll 上限 1），24h 足够且几乎不产生请求。 */
+export const ACCOUNT_IDENTITY_TTL_MS = 24 * 60 * 60 * 1000
+
+/**
+ * 从 access token 的载荷里取 `sub`（user_id）。
+ *
+ * **不验签**——它不是信任边界的判据，只用于把服务端返回的行与本人对一次账；
+ * 解不出来就返回 null（跳过一次对账，不影响主路径）。token 是官网 EF 用项目
+ * JWT secret 签的 Supabase 兼容 JWT（`_shared/crypto.ts` 的 `generateAccessToken`）。
+ */
+export function jwtSubject(token: string): string | null {
+  const payload = token.split('.')[1]
+  if (!payload) return null
+  try {
+    const json = Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
+    const sub = (JSON.parse(json) as { sub?: unknown }).sub
+    return typeof sub === 'string' && sub ? sub : null
+  } catch {
+    return null
+  }
+}
+
+/** 解析 PostgREST 返回的一行星籍。字段缺失回 null（不造半成品）。 */
+export function parseStellarIdentity(raw: unknown): StellarIdentity | null {
+  const row = (Array.isArray(raw) ? raw[0] : raw) as Record<string, unknown> | undefined
+  if (!row || typeof row !== 'object') return null
+  const stellarId = row.stellar_id
+  const primaryDomain = row.primary_domain
+  if (typeof stellarId !== 'string' || !stellarId) return null
+  if (typeof primaryDomain !== 'string' || !primaryDomain) return null
+  const title = typeof row.title === 'string' && row.title ? row.title : 'observer'
+  return { stellarId, primaryDomain, title }
+}
+
+/**
+ * 读本人的星籍（`stellar_identities`，PostgREST + 用户 JWT）。
+ *
+ * 三条设计取舍：
+ * 1. **不按 user_id 过滤**。RLS 策略是 `USING (auth.uid() = user_id)`，本就只回
+ *    本人那一行（2026-09-18 线上探针实测：不带过滤返回 1 行本人记录，只带 apikey
+ *    的反向对照返回 0 行）。加过滤要求先拿到 user_id，多一个来源、多一次网络。
+ * 2. **仍然对一次账**：返回行的 `user_id` 与 token 的 `sub` 不一致就回 null——
+ *    宁可少显示，也不显示别人的星籍（策略被改宽也不至于漏出去）。
+ * 3. **失败一律回 null 不抛**：星籍是装饰性信息，不该让账号状态查询失败；
+ *    与 `fetchAccountProfile` 同口径（离线不等于未登录）。
+ */
+export async function fetchStellarIdentity(
+  accessToken: string,
+  opts: FetchInjection = {},
+): Promise<StellarIdentity | null> {
+  const doFetch = opts.fetchImpl ?? fetch
+  try {
+    const res = await doFetch(
+      `${accountApiBase()}/rest/v1/stellar_identities?select=user_id,stellar_id,primary_domain,title&limit=1`,
+      {
+        method: 'GET',
+        headers: { ...accountHeaders(), Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+      },
+    )
+    if (!res.ok) return null
+    const rows = (await res.json()) as unknown
+    const row = (Array.isArray(rows) ? rows[0] : undefined) as Record<string, unknown> | undefined
+    if (!row) return null
+    const sub = jwtSubject(accessToken)
+    if (sub && typeof row.user_id === 'string' && row.user_id !== sub) return null
+    return parseStellarIdentity(row)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 把星籍写进账号凭据文件。
+ *
+ * **必须以 token 为底展开**：`TokenStore.save()` 是全量 `JSON.stringify` 且不校验，
+ * 只写 identity 会把 accessToken 当场抹掉（下次启动表现为「文件在但登录没了」）。
+ * 所以写入口只有这一个函数，调用方不许手搓。
+ */
+export function saveAccountIdentity(
+  store: TokenStore,
+  token: TokenData,
+  identity: StellarIdentity,
+  now: number = Date.now(),
+): TokenData {
+  const next: TokenData = { ...token, identity: { ...identity, fetchedAt: now } }
+  store.save(next)
+  return next
+}
+
+/** 读缓存副本；字段不全（老文件/坏数据）时回 null。 */
+export function cachedAccountIdentity(
+  token: TokenData | null,
+): { identity: StellarIdentity; fetchedAt: number } | null {
+  const c = token?.identity
+  if (!c || typeof c.stellarId !== 'string' || !c.stellarId) return null
+  if (typeof c.primaryDomain !== 'string' || !c.primaryDomain) return null
+  return {
+    identity: { stellarId: c.stellarId, primaryDomain: c.primaryDomain, title: c.title || 'observer' },
+    fetchedAt: typeof c.fetchedAt === 'number' ? c.fetchedAt : 0,
+  }
+}
+
+/** 缓存是否已过期（fetchedAt 缺失视为过期 → 触发一次刷新）。 */
+export function isAccountIdentityStale(fetchedAt: number, now: number = Date.now()): boolean {
+  return !Number.isFinite(fetchedAt) || fetchedAt <= 0 || now - fetchedAt > ACCOUNT_IDENTITY_TTL_MS
+}
+

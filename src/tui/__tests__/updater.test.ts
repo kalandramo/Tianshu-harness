@@ -1,6 +1,6 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -75,11 +75,11 @@ describe('updateInstallSpec', () => {
 describe('buildWindowsSelfUpdateScript', () => {
   const base = {
     pid: 4242,
-    packageName: 'tianshu-tui',
+    packageName: 'tianshu-harness',
     channel: 'latest',
     npmPath: 'C:\\Program Files\\nodejs\\npm.cmd',
     execPath: 'C:\\Program Files\\nodejs\\node.exe',
-    argv: ['C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\tianshu-tui\\dist\\main.js'],
+    argv: ['C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\tianshu-harness\\dist\\main.js'],
     cwd: 'C:\\work\\proj',
     relaunch: true,
     logPath: 'C:\\Users\\me\\AppData\\Local\\.rivet\\update.log',
@@ -90,7 +90,7 @@ describe('buildWindowsSelfUpdateScript', () => {
     assert.match(script, /Wait-Process -Id 4242/)
     // install must come after the wait so the process has exited
     assert.ok(script.indexOf('Wait-Process') < script.indexOf('npm install -g'))
-    assert.match(script, /install -g 'tianshu-tui@latest'/)
+    assert.match(script, /install -g 'tianshu-harness@latest'/)
   })
 
   // issue #124 — packageName@channel 裸插进命令行：含空格时 PowerShell 会把 spec
@@ -332,7 +332,7 @@ describe('fetchNpmLatestVersion proxy support', () => {
         headers: { 'content-type': 'application/json' },
       })
     }
-    await fetchNpmLatestVersion('tianshu-tui')
+    await fetchNpmLatestVersion('tianshu-harness')
     assert.ok(capturedDispatcher instanceof ProxyAgent, 'expected ProxyAgent')
   })
 
@@ -346,7 +346,7 @@ describe('fetchNpmLatestVersion proxy support', () => {
         headers: { 'content-type': 'application/json' },
       })
     }
-    await fetchNpmLatestVersion('tianshu-tui')
+    await fetchNpmLatestVersion('tianshu-harness')
     assert.equal(capturedDispatcher, undefined)
   })
 
@@ -358,7 +358,7 @@ describe('fetchNpmLatestVersion proxy support', () => {
       capturedDispatcher = (init as { dispatcher?: unknown }).dispatcher
       return new Response(JSON.stringify({ version: '9.9.9' }), { status: 200 })
     }
-    await fetchNpmLatestVersion('tianshu-tui')
+    await fetchNpmLatestVersion('tianshu-harness')
     assert.equal(capturedDispatcher, undefined)
   })
 })
@@ -390,7 +390,7 @@ describe('non-JSON 200 responses (proxy interception)', () => {
         status: 200,
         headers: { 'content-type': 'text/html; charset=GBK' },
       })
-    assert.equal(await fetchNpmLatestVersion('tianshu-tui'), null)
+    assert.equal(await fetchNpmLatestVersion('tianshu-harness'), null)
   })
 
   it('fetchNpmLatestVersion returns null on non-UTF-8 bytes', async () => {
@@ -401,7 +401,7 @@ describe('non-JSON 200 responses (proxy interception)', () => {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })
-    assert.equal(await fetchNpmLatestVersion('tianshu-tui'), null)
+    assert.equal(await fetchNpmLatestVersion('tianshu-harness'), null)
   })
 
   it('fetchGitHubLatestVersion returns null on HTML body with 200', async () => {
@@ -440,7 +440,7 @@ describe('npmPackageExists', () => {
       method = (init as { method?: string }).method
       return new Response(JSON.stringify({ version: '1.0.0' }), { status: 200 })
     }
-    await npmPackageExists('tianshu-tui')
+    await npmPackageExists('tianshu-harness')
     assert.equal(method, 'GET')
   })
 })
@@ -454,7 +454,7 @@ describe('detectInstallRoot 不被 dist 的 ESM 声明劫持', () => {
   /** 造一棵最小安装树：根有真包声明，dist/ 只有 ESM 声明。 */
   function makeInstallTree(): string {
     const root = mkdtempSync(join(tmpdir(), 'rivet-install-root-'))
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tianshu-tui', version: '9.9.9' }))
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tianshu-harness', version: '9.9.9' }))
     mkdirSync(join(root, 'dist', 'cli'), { recursive: true })
     writeFileSync(join(root, 'dist', 'package.json'), JSON.stringify({ type: 'module' }))
     // 入口文件必须真实存在——detectInstallRoot 对 argv[1] 做 realpathSync，
@@ -464,25 +464,45 @@ describe('detectInstallRoot 不被 dist 的 ESM 声明劫持', () => {
     return root
   }
 
+  // realpath 归一化：macOS 的 /var 是 /private/var 的 symlink，
+  // findInstallRoot 返回的是 realpath 展开后的祖先目录。
   it('入口位于 dist/ 时返回真正的包根而非 dist', () => {
     const root = makeInstallTree()
-    const origArgv1 = process.argv[1]
     try {
-      process.argv[1] = join(root, 'dist', 'main.js')
-      // realpath 归一化：macOS 的 /var 是 /private/var 的 symlink，
-      // findInstallRoot 返回的是 realpath 展开后的祖先目录。
-      assert.equal(detectInstallRoot(), realpathSync(root))
-      assert.equal(getCurrentVersion(realpathSync(root)), '9.9.9')
+      assert.equal(detectInstallRoot(join(root, 'dist', 'main.js')), realpathSync(root))
     } finally {
-      // noUncheckedIndexedAccess：argv[1] 类型是 string | undefined，
-      // 原值缺失时要 delete 而不是赋 undefined。
-      if (origArgv1 === undefined) delete process.argv[1]
-      else process.argv[1] = origArgv1
       rmSync(root, { recursive: true, force: true })
     }
   })
 
   it('入口位于 dist/cli/ 时同样返回包根', () => {
+    const root = makeInstallTree()
+    try {
+      assert.equal(detectInstallRoot(join(root, 'dist', 'cli', 'entry.js')), realpathSync(root))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  // 下游消费方的前提：返回的根必须真能读出 name/version。
+  // readPackageName → null 与 detectInstallType → local 都是「根错了」的症状，
+  // 所以断言 root 可被它们消费，而不是只断言路径相等。
+  it('返回的根可被消费方读出 name 与 version', () => {
+    const root = makeInstallTree()
+    try {
+      const resolved = detectInstallRoot(join(root, 'dist', 'main.js'))
+      assert.ok(resolved, '包根不应为 null')
+      const pkg = JSON.parse(readFileSync(join(resolved, 'package.json'), 'utf-8')) as { name?: string }
+      assert.equal(pkg.name, 'tianshu-harness')
+      assert.equal(getCurrentVersion(resolved), '9.9.9')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  // 默认参数接线：发布态 bin 不传路径，靠 process.argv[1]。
+  // 只有这条用例需要动 argv——其余走显式参数，不污染进程全局。
+  it('无参调用时默认读 process.argv[1]', () => {
     const root = makeInstallTree()
     const origArgv1 = process.argv[1]
     try {
@@ -494,6 +514,23 @@ describe('detectInstallRoot 不被 dist 的 ESM 声明劫持', () => {
       if (origArgv1 === undefined) delete process.argv[1]
       else process.argv[1] = origArgv1
       rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  // runtime bundle 的布局没有根级 package.json（build-runtime-bundle.sh 只写
+  // version.txt），若它被解压进一个自带 package.json 的目录树，仅凭「有无 version」
+  // 判定会继续上溯到那个无关项目，把它的版本当成本包版本显示出来——比 null 更坏。
+  it('祖先链上的无关包声明不会被误认成本包根', () => {
+    const outer = mkdtempSync(join(tmpdir(), 'rivet-outer-'))
+    try {
+      writeFileSync(join(outer, 'package.json'), JSON.stringify({ name: 'my-own-app', version: '0.0.1' }))
+      const bundle = join(outer, 'tools', 'tianshu-runtime-9.9.9')
+      mkdirSync(join(bundle, 'dist', 'cli'), { recursive: true })
+      writeFileSync(join(bundle, 'dist', 'package.json'), JSON.stringify({ type: 'module' }))
+      writeFileSync(join(bundle, 'dist', 'cli', 'entry.js'), '')
+      assert.equal(detectInstallRoot(join(bundle, 'dist', 'cli', 'entry.js')), null)
+    } finally {
+      rmSync(outer, { recursive: true, force: true })
     }
   })
 })

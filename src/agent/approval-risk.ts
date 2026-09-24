@@ -42,6 +42,91 @@ const GLOBAL_INSTALL_PATTERNS: ReadonlyArray<Readonly<RegExp>> = [
   /\b(?:brew|cargo)\s+install\b/,
 ]
 
+/**
+ * 可用性危害（availability hazard）——不破坏数据、却夺走操作者对本机控制权的
+ * 命令形态：抢占前台 + 合成键鼠事件（issue #235：agent 用 shell 跑 PowerShell
+ * P/Invoke user32，运行时用户键鼠被反复夺取，且没有审批、没有中断入口）。
+ *
+ * 威胁模型与「破坏数据/系统」是两回事，所以单列一张表：用户面对的是「是否允许
+ * 它占用我的键鼠」而不是「是否允许它删文件」——决策理由必须不同（见 assessToolRisk）。
+ *
+ * 判据是「注入原语 + 调用形态 / 解释器上下文」，不是裸关键词——读自己的源码
+ * （`grep -rn "SetForegroundWindow" src/`、`cat windows-driver.ts`）里出现同样的词
+ * 但没有任何执行语义，必须保持免审。函数名一律要求后跟 `(` 或 PowerShell 静态
+ * 调用 `::`；GUi 注入库（pyautogui/pynput…）与 xdotool 这类工具的唯一用途就是
+ * 模拟输入，单独出现即成判据。
+ *
+ * 误报方向刻意偏严（多一次审批），但两个高频形态被显式排除：翻源码的 grep/cat、
+ * 以及 computer_use 工具自身生成的脚本（不经 bash 工具，不进本判定）。
+ *
+ * ⚠ 新增「会合成键鼠事件」的原语时，**同步补进 INPUT_SYNTHESIS_PATTERNS**——执行期
+ * 让出监控靠它把自身注入的命令排除在外（漏补的后果是护栏杀掉正在正常干活的命令）。
+ */
+export const AVAILABILITY_HAZARD_PATTERNS: ReadonlyArray<Readonly<RegExp>> = [
+  // ── Windows：P/Invoke 声明 user32（合成输入 / 前台抢占的必经形态）──
+  /\bDllImport\s*\([^)\n]*\buser32/i,
+  // 注入函数调用形态（要求左括号，避免裸关键词误报）
+  /\b(?:SetForegroundWindow|SetCursorPos|BringWindowToTop|mouse_event|keybd_event|SendInput|BlockInput)\s*\(/i,
+  /\bSendKeys\b[^\n]*(?:\(|::)/i,
+  /\bAppActivate\s*\(/i,
+  // 解释器 + GUI 注入能力：ctypes 直调 Win32、以及纯粹的输入模拟库
+  /\b(?:pyautogui|pynput|pywinauto|AutoIt|AutoHotkey)\b/i,
+  /\bctypes\b[^\n]*\b(?:windll|user32)\b/i,
+  // ── macOS：osascript 合成键鼠 / CGEvent 底层合成 ──
+  /\bosascript\b[^\n]*\b(?:keystroke|key\s*code)\b/i,
+  /\bosascript\b[^\n]*\bSystem\s+Events\b[^\n]*\b(?:click|perform\s+action|set\s+value)\b/i,
+  /\bCGEventPost\s*\(/i,
+  // ── 通用输入注入工具（Linux 宿主同样适用）──
+  /\bxdotool\b/i,
+]
+
+/**
+ * 「前台抢占但**不**合成键鼠事件」的危害子集——**执行期让出监控只对它启用**
+ * （消费方：`src/tools/bash-yield.ts` 的 shouldWatchExecution）。
+ *
+ * 为什么不给整张 AVAILABILITY_HAZARD_PATTERNS 开执行期监控（2026-09-22 本机实测）：
+ * 合成键鼠会**重置系统的「最近输入」计时器**——静默基线 idle 216020→219715ms，
+ * 一次 CGEventPost 之后立刻读到 67ms。所以对自身在注入的命令，idle 探测读到的小值
+ * 来自命令自己而不是用户：监控会把正常干活的命令杀掉，还给出错误归因的文案
+ * （「你在 67ms 前开始操作本机」——用户根本没碰电脑）。窗口层级操作
+ * （SetForegroundWindow / BringWindowToTop / AppActivate）不合成输入事件，
+ * idle 如实反映真人活动——只有这条子集上的监控是可靠的。
+ *
+ * 刻意用**正向白名单**而非「全表减去注入签名」：负向排除遇到未知注入原语会重新
+ * 引入误杀，白名单可枚举、可审计。代价是覆盖面窄——窄而正确远好于宽而错。
+ */
+export const FOREGROUND_ONLY_HAZARD_PATTERNS: ReadonlyArray<Readonly<RegExp>> = [
+  /\bSetForegroundWindow\s*\(/i,
+  /\bBringWindowToTop\s*\(/i,
+  /\bAppActivate\s*\(/i,
+]
+
+/**
+ * 「会合成键鼠事件」的原语——执行期让出监控的**排除项**。
+ *
+ * 判据只看「是否产生输入事件」：这些原语一执行就把系统的「最近输入」计时器推到现在，
+ * 于是 idle 探测读到的小值来自命令自己（与 FOREGROUND_ONLY_HAZARD_PATTERNS 的实测
+ * 同源）。命令**同时**含前台抢占与注入原语时（issue #235 的实际形态：周期性唤起窗口
+ * 并投递按键），按注入类处理——混合脚本照样持续污染信号。
+ *
+ * `DllImport(...user32)` 形态**不在此表**：它是任何 Windows user32 调用的必经声明，
+ * 判不出「是否注入」。纯前台抢占的脚本也带它，把它算进来会把这条子集整个掏空。
+ *
+ * 表与 AVAILABILITY_HAZARD_PATTERNS 是「子集」关系（守卫测试钉住）——新增注入原语时
+ * 两处都要补。
+ */
+export const INPUT_SYNTHESIS_PATTERNS: ReadonlyArray<Readonly<RegExp>> = [
+  // SetForegroundWindow / BringWindowToTop 刻意不在其中：窗口层级操作不合成输入。
+  /\b(?:SetCursorPos|mouse_event|keybd_event|SendInput|BlockInput)\s*\(/i,
+  /\bSendKeys\b[^\n]*(?:\(|::)/i,
+  /\b(?:pyautogui|pynput|pywinauto|AutoIt|AutoHotkey)\b/i,
+  /\bctypes\b[^\n]*\b(?:windll|user32)\b/i,
+  /\bosascript\b[^\n]*\b(?:keystroke|key\s*code)\b/i,
+  /\bosascript\b[^\n]*\bSystem\s+Events\b[^\n]*\b(?:click|perform\s+action|set\s+value)\b/i,
+  /\bCGEventPost\s*\(/i,
+  /\bxdotool\b/i,
+]
+
 // Destructive commands — uses shared pattern list
 export const DANGEROUS_BASH_PATTERNS: ReadonlyArray<Readonly<RegExp>> = [
   // rm 递归+强制：合并形态（-rf/-fr）与拆分形态（rm -r -f / --recursive --force，顺序任意）同门禁。
@@ -71,15 +156,17 @@ export const DANGEROUS_BASH_PATTERNS: ReadonlyArray<Readonly<RegExp>> = [
   /\bdrop\s+table\b/i,
   /\bsudo\s+(?:rm|chmod|chown|dd|mkfs|mount|umount|systemctl|shutdown|reboot|passwd|user(?:add|del|mod))\b/,  // sudo + destructive subcommand
   /\bchmod\s+(?:777|[0-7]*7[0-7]*7)\b/,  // chmod 777, chmod 757, chmod 737, etc.
-  /\bwget\b.*\|\s*(?:sh|bash|zsh|fish)\b/,
-  /\bcurl\b.*\|\s*(?:sh|bash|zsh|fish)\b/,
+  /\bwget\b.*\|\s*(?:\S*\/)?(?:sh|bash|zsh|fish)\b/,   // 管道进 shell——执行器可以是绝对路径（/bin/bash）
+  /\bcurl\b.*\|\s*(?:\S*\/)?(?:sh|bash|zsh|fish)\b/,
+  /\b(?:sh|bash|zsh|dash)\s+-c\s+["']?\$\(/,           // shell -c "<命令替换>"——无管道无 eval 的下载执行形态
   /\beval\b.*\$[({]/,                   // eval "$(curl ...)" or eval $(...)
   FORCE_PUSH_PATTERN,                         // force push (reference shared for reason detection)
   /\b(?:shutdown|reboot|halt|poweroff)\b/,                    // system control — disruptive even without sudo
   /\bnpm\s+(?:publish|unpublish)\b/,                          // irreversible registry operations
   /\bxargs\b.*\brm\b/,                                        // mass deletion via xargs pipe
-  /\bbase64\b[^\n]*\|\s*(?:sh|bash|zsh|fish)\b/,             // obfuscated execution via base64 decode
+  /\bbase64\b[^\n]*\|\s*(?:\S*\/)?(?:sh|bash|zsh|fish)\b/,             // obfuscated execution via base64 decode
   ...GLOBAL_INSTALL_PATTERNS,                                  // global package installs — environment-level mutation
+  ...AVAILABILITY_HAZARD_PATTERNS,                             // GUI 输入注入——危害用户可用性（issue #235）
 ]
 
 /**
@@ -135,7 +222,7 @@ export const INJECTION_PATTERNS: ReadonlyArray<Readonly<RegExp>> = [
   /\beval\b.*\bexec\b/,                     // eval + exec chain
   /\bsource\b.*\/etc\/|^\.\s+\/etc\//,     // sourcing system config files
   /\benv\b.*\b(?:SHELL|PATH|HOME|LD_PRELOAD|DYLD_INSERT_LIBRARIES)=/, // env var override for privilege escalation
-  /\b(?:python|perl|ruby|node)\s+-[ec]\s/, // inline code execution interpreters
+  /\b(?:python[\d.]*|perl|ruby|node|osascript)\s+-[ec]\s/, // inline code execution interpreters（python3/osascript 同门禁）
   /\bcrontab\b/,                            // cron modification — persistence mechanism
   /\bsystemctl\b.*\b(?:enable|start|stop|restart|mask)\b/, // systemd service manipulation
 ]
@@ -168,9 +255,49 @@ function stripDevNullRedirects(command: string): string {
   return command.replace(DEV_NULL_REDIRECT_PATTERN, ' ')
 }
 
+/**
+ * 命令文本归一化——只服务风险判定，不改变执行（执行仍是原始命令）。
+ * 审批门在文本层、bash 语义在展开层：反斜杠续行拆散「命令名+旗标」、
+ * ${IFS} 替代空白、字符级转义（r\m）与引号拼接（"r"m）都能让语义不变的
+ * 命令在文本上认不出。归一化视图与原始视图并检（见 testBoth）：
+ * 语义相同、判定必须相同。
+ */
+export function normalizeBashCommand(command: string): string {
+  return command
+    .replace(/\\\r?\n/g, ' ')   // 续行：rm \<newline> -rf 是一条命令
+    .replace(/\$\{IFS\}/gi, ' ') // ${IFS} 默认展开为空白
+    .replace(/\\(.)/g, '$1')    // 字符级转义：r\m → rm（检测视图内剥转义）
+    .replace(/["']/g, '')       // 引号拼接："r"m → rm
+}
+
+function testBoth(pattern: RegExp, command: string): boolean {
+  return pattern.test(command) || pattern.test(normalizeBashCommand(command))
+}
+
+/** manual 档审批门统一入口：原始与归一化视图并检 DANGEROUS 清单。 */
+export function matchesDangerousBash(command: string): boolean {
+  return DANGEROUS_BASH_PATTERNS.some(pattern => testBoth(pattern, command))
+}
+
+/**
+ * 命中「纯前台抢占」子集（原始 + 归一化视图并检，与审批门同款 testBoth）——
+ * 执行期让出监控的启用判据。语义详见 FOREGROUND_ONLY_HAZARD_PATTERNS。
+ */
+export function matchesForegroundOnlyHazard(command: string): boolean {
+  return FOREGROUND_ONLY_HAZARD_PATTERNS.some(pattern => testBoth(pattern, command))
+}
+
+/**
+ * 命中「会合成键鼠事件」的原语——执行期让出监控的排除项（同款双视图）。
+ * 语义详见 INPUT_SYNTHESIS_PATTERNS。
+ */
+export function matchesInputSynthesis(command: string): boolean {
+  return INPUT_SYNTHESIS_PATTERNS.some(pattern => testBoth(pattern, command))
+}
+
 export function bashCommandMayWrite(command: string): boolean {
   const normalized = stripDevNullRedirects(command)
-  return BASH_WRITE_PATTERNS.some(pattern => pattern.test(normalized))
+  return BASH_WRITE_PATTERNS.some(pattern => testBoth(pattern, normalized))
 }
 
 /**
@@ -179,9 +306,9 @@ export function bashCommandMayWrite(command: string): boolean {
  */
 export function isSafeWriteOnly(command: string): boolean {
   const normalized = stripDevNullRedirects(command)
-  if (RISKY_WRITE_PATTERNS.some(p => p.test(normalized))) return false
-  if (DANGEROUS_BASH_PATTERNS.some(p => p.test(normalized))) return false
-  return SAFE_WRITE_PATTERNS.some(p => p.test(normalized))
+  if (RISKY_WRITE_PATTERNS.some(p => testBoth(p, normalized))) return false
+  if (DANGEROUS_BASH_PATTERNS.some(p => testBoth(p, normalized))) return false
+  return SAFE_WRITE_PATTERNS.some(p => testBoth(p, normalized))
 }
 
 /**
@@ -194,25 +321,30 @@ export function isSafeWriteOnly(command: string): boolean {
  * 管道符切开以覆盖 `echo x>>~/f` 粘接形态；`./out.txt`、`src/x`、裸文件名不受影响。
  */
 export function hasOutOfWorkspaceWriteTarget(command: string): boolean {
-  for (const token of stripDevNullRedirects(command).split(/\s+/)) {
-    for (const raw of token.split(/[<>|;&]+/)) {
-      // 剥首尾引号：`>"D:\x\y"` 的目标与 `~/f'` 等引号包裹形态同样要判
-      const frag = raw.replace(/^['"]+|['"]+$/g, '')
-      if (frag === '') continue
-      if (frag.startsWith('~')) return true
-      if (frag.startsWith('/') || frag.startsWith('\\')) return true
-      if (/^[A-Za-z]:[\\/]/.test(frag)) return true
-      // $VAR / ${VAR} 单独或带路径后缀——展开结果位置未知，fail-closed；
-      // awk 的 $1 位置参数（数字开头）不在此列，避免误伤常规文本处理
-      if (/^\$(?:\{[^}]+\}|[A-Za-z_][A-Za-z0-9_]*)(?:[\\/].*)?$/.test(frag)) return true
-      if (/%[^%\s]+%/.test(frag)) return true
-      // issue #118 — 按路径段判 `..`，不能只判开头：`foo/../../etc/cron.d/x` 以
-      // `foo` 开头，而内层 `/` 不在 [<>|;&] 切分集合里，于是整段不被切开 →
-      // 中段穿越被判成工作区内写，auto-safe（无沙箱）下越界写零提示放行。
-      if (frag.split(/[\\/]/).includes('..')) return true
+  const scan = (view: string): boolean => {
+    for (const token of stripDevNullRedirects(view).split(/\s+/)) {
+      for (const raw of token.split(/[<>|;&]+/)) {
+        // 剥首尾引号：`>"D:\x\y"` 的目标与 `~/f'` 等引号包裹形态同样要判
+        const frag = raw.replace(/^['"]+|['"]+$/g, '')
+        if (frag === '') continue
+        if (frag.startsWith('~')) return true
+        if (frag.startsWith('/') || frag.startsWith('\\')) return true
+        if (/^[A-Za-z]:[\\/]/.test(frag)) return true
+        // $VAR / ${VAR} 单独或带路径后缀——展开结果位置未知，fail-closed；
+        // awk 的 $1 位置参数（数字开头）不在此列，避免误伤常规文本处理
+        if (/^\$(?:\{[^}]+\}|[A-Za-z_][A-Za-z0-9_]*)(?:[\\/].*)?$/.test(frag)) return true
+        if (/%[^%\s]+%/.test(frag)) return true
+        // issue #118 — 按路径段判 `..`，不能只判开头：`foo/../../etc/cron.d/x` 以
+        // `foo` 开头，而内层 `/` 不在 [<>|;&] 切分集合里，于是整段不被切开 →
+        // 中段穿越被判成工作区内写，auto-safe（无沙箱）下越界写零提示放行。
+        if (frag.split(/[\\/]/).includes('..')) return true
+      }
     }
+    return false
   }
-  return false
+  // 归一化视图并检：${IFS} 粘成的单 token 让 `^\$` 锚定与空白分词同时失效
+  // （echo${IFS}x>${IFS}$HOME/.zshenv 在原视图是一个 token、oow=false）。
+  return scan(command) || scan(normalizeBashCommand(command))
 }
 
 /** Detect scope-bypassing bash git commands (unscoped add/commit/stash). */
@@ -263,15 +395,64 @@ export function requiresBashWriteApproval(toolName: string, input: Record<string
  * (yoloBypassesUnconditional); this predicate stays mode-agnostic.
  *
  * In every case the tool's own requiresApproval() already returns true, but
- * that is only consulted in manual mode — the hard-gate promise for the
- * supervised/default modes is enforced in the pipeline.
+ * historically that was only consulted in manual mode. tool-pipeline 现在对
+ * computer_use 的逐应用 needsApproval 做 supervised/default 两档的强制消费
+ * （computerUsePerAppGate），所以这里只负责「任何授权都不能豁免」的接管面；
+ * 普通动作的逐应用 fail-closed 不再依赖调用方记得读工具签名。
  */
 export function requiresUnconditionalApproval(toolName: string, input: Record<string, unknown>): boolean {
   if (toolName === 'request_path_access') return true
   if (toolName !== 'computer_use') return false
   const action = typeof input.action === 'string' ? input.action : ''
-  return action === 'js_eval' || action === 'browser_adopt'
+  if (action === 'js_eval' || action === 'browser_adopt') return true
+  if (action === 'sequence') {
+    const steps = input.steps
+    // 畸形/空 sequence 由 tool 拒绝；审批侧按最严处理（无条件门打开）。
+    if (!Array.isArray(steps) || steps.length === 0) return true
+    return steps.some((raw) => raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+      && requiresUnconditionalApproval('computer_use', raw as Record<string, unknown>))
+  }
+  return false
 }
+
+/**
+ * computer_use 动作风险分级 —— 逐应用授权之外的纵深防御，同时给审批卡/
+ * 遥测一个可读的风险理由。
+ *
+ * 等级上限刻意停在 medium：high 会在 auto-safe 档无条件触发审批，把
+ * 「始终允许」的免审语义打穿（js_eval/browser_adopt 的无条件接管面已由
+ * {@link requiresUnconditionalApproval} 单独置 high）。真正的逐应用
+ * fail-closed 由 tool-pipeline 强制消费 needsApproval 保证；这里只负责
+ * 区分「读屏 / 交互 / 接管」三档并解释风险。
+ */
+const COMPUTER_USE_ACTION_RISK: Record<string, { level: RiskLevel; reason: string }> = {
+  check_permissions: { level: 'none', reason: 'pure local capability probe' },
+  diagnose: { level: 'none', reason: 'local diagnostics / counters' },
+  wait: { level: 'none', reason: 'plain sleep' },
+  list_apps: { level: 'low', reason: 'enumerates running applications' },
+  snapshot: { level: 'low', reason: 'reads the app accessibility tree and screen' },
+  find: { level: 'low', reason: 'filters the app accessibility tree' },
+  wait_for: { level: 'low', reason: 'polls the app accessibility tree' },
+  focus_app: { level: 'medium', reason: 'steals foreground focus' },
+  launch_app: { level: 'medium', reason: 'launches an app and steals foreground focus' },
+  scroll: { level: 'medium', reason: 'synthesizes scroll input' },
+  navigate: { level: 'medium', reason: 'drives the browser to a new URL' },
+  read_page: { level: 'medium', reason: 'reads arbitrary page content' },
+  tabs: { level: 'medium', reason: 'lists or mutates browser tabs' },
+  click: { level: 'medium', reason: 'synthesizes a click in the target app' },
+  double_click: { level: 'medium', reason: 'synthesizes a double click in the target app' },
+  right_click: { level: 'medium', reason: 'synthesizes a right click in the target app' },
+  drag: { level: 'medium', reason: 'synthesizes drag input in the target app' },
+  type: { level: 'medium', reason: 'types arbitrary text into the target app' },
+  set_value: { level: 'medium', reason: 'writes an arbitrary value into a control' },
+  key: { level: 'medium', reason: 'sends key combos that can trigger shortcuts' },
+  menu_select: { level: 'medium', reason: 'invokes a menu command' },
+  paste_text: { level: 'medium', reason: 'pastes arbitrary text into the target app' },
+  js_eval: { level: 'high', reason: "runs arbitrary JS in the user's browser" },
+  browser_adopt: { level: 'high', reason: 'takes over an external DevTools endpoint' },
+}
+
+const RISK_RANK: Record<RiskLevel, number> = { none: 0, low: 1, medium: 2, high: 3 }
 
 /** Confidence thresholds for sensorium-driven adaptive approval. */
 export const CONFIDENCE_THRESHOLDS = {
@@ -303,6 +484,41 @@ export function assessToolRisk(
     level = 'high'
   }
 
+  // computer_use 逐动作风险：读屏/交互/接管在审批卡上要有区分度；未知动作
+  // fail-closed。等级上限 medium 的原因见 COMPUTER_USE_ACTION_RISK 注释；
+  // sequence 取所有步骤的最高档（含 js_eval 时无条件门已单独置 high）。
+  if (toolName === 'computer_use') {
+    const action = typeof input.action === 'string' ? input.action : ''
+    const applyRisk = (label: string, riskAction: string): void => {
+      const entry = COMPUTER_USE_ACTION_RISK[riskAction]
+      if (entry) {
+        reasons.push(`${label}: ${entry.reason}`)
+        if (RISK_RANK[entry.level] > RISK_RANK[level]) level = entry.level
+      } else {
+        reasons.push(`${label}: unknown computer_use action "${riskAction}" — fail closed`)
+        level = 'high'
+      }
+    }
+    if (action === 'sequence') {
+      const steps = input.steps
+      if (!Array.isArray(steps) || steps.length === 0) {
+        reasons.push('computer_use.sequence: empty/malformed steps — fail closed')
+        level = 'high'
+      } else {
+        for (let i = 0; i < steps.length; i++) {
+          const raw: unknown = steps[i]
+          const step = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+            ? raw as Record<string, unknown>
+            : {}
+          const stepAction = typeof step.action === 'string' ? step.action : ''
+          applyRisk(`computer_use.sequence[${i + 1}].${stepAction || '?'}`, stepAction)
+        }
+      }
+    } else {
+      applyRisk(`computer_use.${action}`, action)
+    }
+  }
+
   // Doom loop check. blocked is short-circuited by the pipeline early-return,
   // so destructive-git protection must trigger in the warn window too.
   if (doomLoopLevel === 'warn' || doomLoopLevel === 'blocked') {
@@ -326,8 +542,17 @@ export function assessToolRisk(
   // Destructive commands — uses shared pattern list
   if (toolName === 'bash') {
     const cmd = typeof input.command === 'string' ? input.command : ''
+    // 可用性危害单列（issue #235）：威胁模型是「夺走操作者对本机的控制权」，
+    // 不是「破坏数据」——auto-safe 档此前对该载荷判 none（静默放行），
+    // 单列后 high 同时覆盖 manual 档（matchesDangerousBash）与 auto-safe 档（此处）。
+    if (AVAILABILITY_HAZARD_PATTERNS.some(pattern => testBoth(pattern, cmd))) {
+      reasons.push('GUI 输入注入：抢占前台 / 合成键鼠事件——执行期间操作者失去本机控制权')
+      level = 'high'
+    }
     for (const pattern of DANGEROUS_BASH_PATTERNS) {
-      if (pattern.test(cmd)) {
+      // 可用性危害已单独报因（措辞不同），不重复贴 "destructive" 标签
+      if (AVAILABILITY_HAZARD_PATTERNS.includes(pattern)) continue
+      if (testBoth(pattern, cmd)) {
         // Distinguish force push for clearer reason
         if (pattern === FORCE_PUSH_PATTERN) {
           reasons.push('force push can overwrite shared remote history')
@@ -488,11 +713,24 @@ export function assessToolRisk(
     // based on the combination of risk level + confidence.
   }
 
+  // computer_use 的 suggestedAction 不能复用通用文案：低风险动作（snapshot 等）
+  // 仍受逐应用授权门约束，写「No additional approval required」会与管线行为矛盾。
+  const noApprovalAction = (v: unknown): boolean => v === 'check_permissions' || v === 'wait' || v === 'diagnose'
+  const computerUseNoApproval = toolName === 'computer_use' && (
+    noApprovalAction(input.action)
+    || (input.action === 'sequence' && Array.isArray(input.steps) && input.steps.length > 0
+      && input.steps.every((raw) => raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+        && noApprovalAction((raw as Record<string, unknown>).action)))
+  )
   const suggestedAction = level === 'high'
     ? 'Require explicit user approval before execution.'
-    : level === 'medium'
-      ? 'Show risk context and proceed only in auto-safe/manual modes.'
-      : 'No additional approval required.'
+    : computerUseNoApproval
+      ? 'No approval required for this capability probe.'
+      : toolName === 'computer_use'
+        ? 'Per-app approval: this action prompts unless the target app has an always-allow grant (or the session is YOLO).'
+        : level === 'medium'
+          ? 'Show risk context and proceed only in auto-safe/manual modes.'
+          : 'No additional approval required.'
 
   return { level, reasons, suggestedAction }
 }

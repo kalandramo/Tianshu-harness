@@ -1,4 +1,4 @@
-import { describe, it, beforeEach, afterEach } from 'node:test'
+import { describe, it, beforeEach, afterEach, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, statSync, existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -7,6 +7,17 @@ import { secretsPath, readSecret, writeSecret, deleteSecret, secretFingerprint, 
 import { loadConfig, saveConfig, runConfigCLI } from '../manager.js'
 import { resolveApiKey } from '../../api/factory.js'
 import type { ProviderConfig } from '../schema.js'
+
+// 密钥后端固定为 local-key：macOS/Windows 的默认后端会 spawn `security` / `powershell`，
+// 既慢又会在开发者机器上真实写入钥匙串。加密路径本身不变（仍是 AES-256-GCM 信封）。
+const PREV_TOKEN_STORE = process.env.RIVET_TOKEN_STORE
+before(() => {
+  process.env.RIVET_TOKEN_STORE = 'local-key'
+})
+after(() => {
+  if (PREV_TOKEN_STORE === undefined) delete process.env.RIVET_TOKEN_STORE
+  else process.env.RIVET_TOKEN_STORE = PREV_TOKEN_STORE
+})
 
 describe('secrets store', () => {
   let dir = ''
@@ -27,6 +38,38 @@ describe('secrets store', () => {
     const path = secretsPath()
     assert.equal(path, join(dir, 'secrets.json'))
     assert.equal(statSync(path).mode & 0o777, 0o600)
+  })
+
+  /**
+   * 与 `TokenStore`（src/auth/token-store.ts）同款加固：密钥材料以 AES-256-GCM
+   * 信封落盘。`0o600` 在 Windows/NTFS 上不生效（权限由 ACL 决定），而 `~/.rivet`
+   * 常落在云同步/备份路径上——只靠文件权限等于把 key 明文交给任何能读该目录的进程。
+   */
+  it('never writes the plaintext key to disk', () => {
+    writeSecret('deepseek', 'sk-plaintext-should-never-appear')
+    const raw = readFileSync(secretsPath(), 'utf8')
+    assert.ok(
+      !raw.includes('sk-plaintext-should-never-appear'),
+      'secrets.json 不得含明文 key —— 用户可直接打开这个文件'
+    )
+    // 信封形态正确 + 仍能读回 + 权限保留
+    assert.equal(JSON.parse(raw).s, 'aes-256-gcm')
+    assert.equal(readSecret('deepseek'), 'sk-plaintext-should-never-appear')
+    assert.equal(statSync(secretsPath()).mode & 0o777, 0o600)
+  })
+
+  it('reads a legacy plaintext store and upgrades it to a ciphertext envelope on next write', () => {
+    // v3.21.1 及以前的落盘形态（本文件旧实现直接 JSON.stringify）
+    const legacy = JSON.stringify({ version: 1, keys: { legacy: 'sk-legacy-plain' } }, null, 2)
+    writeFileSync(secretsPath(), legacy, { mode: 0o600 })
+
+    assert.equal(readSecret('legacy'), 'sk-legacy-plain', '旧明文文件必须仍可读，否则现有用户丢 key')
+
+    writeSecret('added', 'sk-added')
+    const raw = readFileSync(secretsPath(), 'utf8')
+    assert.ok(!raw.includes('sk-legacy-plain'), '下一次写入应把整份 store 升级为密文')
+    assert.equal(readSecret('legacy'), 'sk-legacy-plain')
+    assert.equal(readSecret('added'), 'sk-added')
   })
 
   it('keeps 0600 after rewriting an existing file', () => {

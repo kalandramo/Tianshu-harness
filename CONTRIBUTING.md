@@ -24,6 +24,34 @@ through the same four-step disposal:
    [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 Maintainers run `scripts/dispose-community-pr.sh <PR#>` for steps 3–4 (idempotent).
+The full rationale (why nothing is merged directly here, what "ported" means, and how the
+two credit ledgers work) is documented in [EXTERNAL-PRS.md](EXTERNAL-PRS.md).
+
+### Maintainer notes — landing a PR in the dev repo
+
+Keep the audit trail greppable when porting a community PR into dev:
+
+- **Subject**: include the source PR number — recommended form `收编公开仓 PR #123`
+  (the legacy variants `收编 PR #N` / `来源 PR #N` still grep fine). Trace with
+  `git log --grep '收编公开仓 PR #123'`.
+- **Body**: add the original author as `Co-authored-by: Name <email>`. The tracked
+  `commit-msg` hook (installed by `npm install`, see `scripts/git-hooks/`) **blocks**
+  landing commits — subject containing `收编/采纳/回流` plus `PR #N` — that lack this
+  trailer. Bypass with `git commit --no-verify` when there is genuinely no author to
+  credit (or `RIVET_SKIP_HOOKS=1` to disable all hooks).
+- **The two ledgers are reconciled by tooling**, independent of merge state and of the
+  exact subject wording:
+  - contributor list — `npx tsx scripts/contributors.ts --check` (CI enforces this on
+    every push to `main`);
+  - attribution — `bash scripts/credit-contributors.sh --dry-run` runs two passes (also
+    invoked automatically by `scripts/sync-to-public.sh`):
+    1. one `credit: PR #N` commit per ported PR, with a `Co-authored-by` trailer — this is
+       the per-PR record shown on the commit page;
+    2. one **non-empty** `CREDITS.md` entry per ported PR, committed with
+       `--author=<PR author>` — one commit per increment. This is what makes the account
+       appear in GitHub's repository **Contributors** list (that graph only counts
+       non-empty commits authored by the account's linked email; empty commits and
+       co-authors are not counted).
 
 ## Contribution Zones
 

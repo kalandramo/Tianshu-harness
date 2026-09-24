@@ -32,12 +32,13 @@ import type { Artifact } from '../artifact/types.js'
 import { ArtifactStore } from '../artifact/store.js'
 import { refreshAgentTools as refreshAgentToolsImpl } from './agent-tool-refresh.js'
 import type { OaiMessage } from '../api/oai-types.js'
+import type { Usage } from '../api/types.js'
 import { isAssistantWithTools, oaiMessageText, type OaiToolCall } from '../api/oai-types.js'
 import { buildUserAnchors, stripInjectedSuffix } from './rewind-anchors.js'
 import { toolArgSummary } from '../tui/tool-label.js'
 import { listPersistedResultRounds, loadPersistedResult, type PersistedResultRound } from '../agent/coordinator.js'
 import { reapSessionModuleStores } from '../agent/session-module-store-reaper.js'
-import { deleteSessionFiles } from '../agent/session-persist.js'
+import { deleteSessionFiles, SessionPersist } from '../agent/session-persist.js'
 import { loadWorkerSession } from '../agent/worker-session-persist.js'
 import type { SessionRegistry } from '../agent/session-registry.js'
 import type { DecisionShift } from '../agent/loop-types.js'
@@ -73,13 +74,14 @@ import { join, resolve, dirname } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { existsSync, copyFileSync, statSync, mkdirSync } from 'node:fs'
 import { resolveSessionWorkspaceForSession, type SessionWorkspaceMode } from './workspace.js'
+import { stripTerminalEscapes } from '../utils/safe-path.js'
 import { createWorktree, removeWorktree, listWorktrees, hasUnlandedWork, commitAll, revParseHead, squashMergeBranch, pushBranch, type WorktreeEntry } from '../agent/worktree.js'
 import { createPr } from './gh-cli.js'
 import { getGitGraph, getWorkingTreeFiles, getFileDiff, getFileAtBase, listGitBranches } from '../tools/git.js'
 import type { WorkingTreeFile } from '../tools/git.js'
 import { SessionJobs, type JobEvent } from '../tools/job-store.js'
 import { parseAskUserQuestions } from '../tools/ask-user-question.js'
-import { grantApp as grantComputerUseApp } from '../tools/computer-use/app-grants.js'
+import { grantApp as grantComputerUseApp, resolveRememberedComputerUseApp } from '../tools/computer-use/app-grants.js'
 import { outOfWorkspaceFilePaths } from '../agent/tool-pipeline.js'
 import { applySandboxPolicyForApprovalMode } from '../tools/sandbox-profile.js'
 import {
@@ -101,9 +103,11 @@ import type {
   ResolvedDomainRecord,
   PlanDraft,
   ZenPhaseMirror,
+  ForkDestination,
 } from './protocol.js'
 import { redactValue, redactText, truncateUtf16Safe } from './redact.js'
-import { contractModels } from '../config/contract-models.js'
+import { MAX_DOCUMENTS, MAX_IMAGES } from './attachment-limits.js'
+import { assertDefaultModelRef, contractModels } from '../config/contract-models.js'
 
 // The session wire contract (event types, records, statuses) lives in
 // protocol.ts so the desktop can share it type-only. Re-export so existing
@@ -115,6 +119,7 @@ export type {
   SessionRecord,
   ResolvedDomainRecord,
   PlanDraft,
+  ForkDestination,
 } from './protocol.js'
 
 // Compile-time drift guards: the wire copies of ApprovalMode / PlanModeState in
@@ -144,8 +149,9 @@ export type PlanUpdateOutcome =
       reason: string
     }
 
-/** 工具调用参数摘要(worker 转录):优先 toolArgSummary 的领域摘要,
- *  未覆盖的工具回退原始 JSON 截断。展示用途,解析失败不抛。 */
+/** 工具调用参数摘要(worker 转录):优先 toolArgSummary 的领域摘要——它已含未覆盖
+ *  工具的通用参数键兜底（tool-label.ts），仅当参数里没有可用字符串/数字时才回退
+ *  原始 JSON 截断。展示用途,解析失败不抛。 */
 function summarizeToolCallArgs(call: OaiToolCall | undefined): string | undefined {
   if (!call) return undefined
   const raw = call.function.arguments ?? ''
@@ -415,6 +421,15 @@ export interface ManagedAgent {
   setDisabledSkills?(names: Set<string>): void
   /** Estimated token count for the current conversation (including prefix overhead). */
   getEstimatedTokens?(): number
+  /**
+   * Cumulative session usage snapshot (`SessionContext.getTotalUsage()`).
+   * 中断收尾补发 turn_complete 用它——被打断的 run 走不到 natural-finish，
+   * 缺这一笔桌面端输入框的缓存命中率会永远停在上一个跑完的 run 上
+   * （2026-09-23）。Optional 以兼容 lightweight test doubles。
+   */
+  getTotalUsage?(): Partial<Usage>
+  /** Completed turn count（中断补发事件的 turnNumber）。 */
+  getTurnCount?(): number
   /** Model context window size (max tokens). */
   getContextWindow?(): number
   /**
@@ -522,6 +537,12 @@ export interface GoalSnapshot {
 
 export interface CreateSessionInput {
   cwd?: string
+  /**
+   * P1-1 fork：显式指定会话 id。缺省由 idGenerator 生成（改造前行为不变）。
+   * fork 传它是因为 worktree 分支名 `rivet-hands-<id 前 8 位>` 由 id 派生——
+   * 先建 worktree 再建会话时，两者必须用同一个 id。已存在的 id 会被忽略。
+   */
+  id?: string
   /** 工作区意图（issue #147）：缺省 'explicit' = 改造前行为；'default' = config.workspace.defaultDir；'scratch' = <rivetHome>/workspace/<短id>。 */
   workspaceMode?: SessionWorkspaceMode
   title?: string
@@ -567,6 +588,24 @@ export interface PersistedSession {
   record: SessionRecord
   events: SessionEvent[]
 }
+
+/**
+ * P1-1 — fork 结果（回流自 `origin/tianshu-alpha-3.14`）。失败原因是**可判定的
+ * 枚举**而非字符串：路由据此映射 400/404/409，避免把「会话在跑」和「worktree
+ * 建不出来」混成同一个 409。
+ */
+export type ForkSessionResult =
+  | { ok: true; record: SessionRecord }
+  | {
+      ok: false
+      reason:
+        | 'not_found'
+        | 'running'
+        | 'invalid_message_index'
+        | 'same_worktree_unavailable'
+        | 'worktree_failed'
+      detail?: string
+    }
 
 /** One archived session's on-disk footprint, for the storage cleanup UI. */
 export interface SessionStorageEntry {
@@ -693,6 +732,8 @@ export interface RuntimeSessionManagerOptions {
    * of how much history accumulates. Default 16.
    */
   maxLoadedSessions?: number
+  /** 外部新增会话的发现间隔（ms）：同 home 多进程共用时，定期装填本进程不认识的会话并推 sessions_changed。默认 5000；0 = 关闭。 */
+  externalScanMs?: number
   /** Auto-resolve a pending intervention after this many ms. 0 = never. Default 0. */
   approvalTimeoutMs?: number
   /** C2 刹车 — watchdog 停滞续跑前的可取消倒计时窗口（ms）。Default 5000. */
@@ -843,6 +884,56 @@ export interface QueueLaneEntry {
   text: string
   status: QueueLaneStatus
   ts: number
+  /** #238 — 随该条排队消息一起在下轮 run 发送的图片（provider 合法 base64
+   *  data URL；入队时已按 MAX_IMAGES / MAX_IMAGE_BYTES 校验）。归并时交给 run
+   *  既有的 persistImages 统一落盘，事件流只留 imageId。 */
+  images?: string[]
+  /** #238 — 文档附件的抽取正文（入队时在路由层抽取：run 是同步入口，归并路径
+   *  不能 await）。归并时前置在该条文本之前，与 /prompt 同构。 */
+  attachmentText?: string
+  /** #238 — 文档附件名（UI chip 显示用；抽取正文不进事件流）。 */
+  documentNames?: string[]
+}
+
+/**
+ * #238 — lane 中仍 queued 条目的附件累计（入队配额判定的单一来源）。
+ * 判定点必须与提交点同处一个同步块：/queue 路由侧校验与提交之间隔着
+ * `await extractDocumentsToText`，并发的两条请求能双双通过校验再把 lane 顶过
+ * 上限（实测复现）；这里没有让出点，判定即原子。
+ */
+function countLaneAttachments(lane: QueueLaneEntry[]): { images: number; documents: number } {
+  let images = 0
+  let documents = 0
+  for (const entry of lane) {
+    if (entry.status !== 'queued') continue
+    images += entry.images?.length ?? 0
+    documents += entry.documentNames?.length ?? 0
+  }
+  return { images, documents }
+}
+
+/**
+ * #238 — 单轮图片配额分配：本轮新提交的图片优先占额（用户当下意图），排队图片
+ * 按 FIFO 补足剩余配额。超出的按条目计数返回，由调用方显式告知（prompt 内一行
+ * 说明 + queue_status.droppedImages），不静默丢弃。
+ */
+export function planQueuedImageAllocation(
+  laneImageCounts: number[],
+  promptImageCount: number,
+  max: number,
+): { keepPerEntry: number[]; droppedPerEntry: number[]; droppedTotal: number } {
+  let room = Math.max(0, max - promptImageCount)
+  const keepPerEntry: number[] = []
+  const droppedPerEntry: number[] = []
+  let droppedTotal = 0
+  for (const count of laneImageCounts) {
+    const keep = Math.max(0, Math.min(count, room))
+    room -= keep
+    keepPerEntry.push(keep)
+    droppedPerEntry.push(count - keep)
+    droppedTotal += count - keep
+  }
+  return { keepPerEntry, droppedPerEntry, droppedTotal }
 }
 
 // Coordinator abort salvage currently waits up to five seconds. Reconcile with
@@ -1214,6 +1305,9 @@ export class RuntimeSessionManager {
   /** 阶段 4 — 会话列表失效提示回调（见 RuntimeSessionManagerOptions.onSessionsChanged）。 */
   private readonly onSessionsChanged?: (reason: string) => void
   private idleSweepTimer?: ReturnType<typeof setInterval>
+  /** 外部新增会话的扫描定时器（见 externalScanMs）。 */
+  private externalScanTimer?: ReturnType<typeof setInterval>
+  private readonly externalScanMs: number
   /** Per-session coordinator refs for worker steer/kill (set by main.ts after agent build). */
   private readonly coordinatorBySession = new Map<string, () => import('../agent/coordinator.js').DelegationCoordinator | undefined>()
 
@@ -1257,12 +1351,21 @@ export class RuntimeSessionManager {
     this.loadPlans = opts.listPlans ?? storeListPlans
     this.missionStore = opts.missionStore
     this.onSessionsChanged = opts.onSessionsChanged
+    const envExternalScan = Number(process.env.RIVET_EXTERNAL_SCAN_MS)
+    this.externalScanMs = opts.externalScanMs
+      ?? (Number.isFinite(envExternalScan) && envExternalScan >= 0 ? Math.floor(envExternalScan) : 5_000)
     if (this.idleAgentTtlMs > 0) {
       // Sweep once a minute; unref so the timer never keeps the process alive.
       this.idleSweepTimer = setInterval(() => this.sweepIdleAgents(), 60_000)
       this.idleSweepTimer.unref?.()
     }
     if (this.persistence) this.rehydrate()
+    if (this.persistence && this.externalScanMs > 0) {
+      // 同上：unref——发现定时器不该把进程钉住（sidecar 退出时它必须能退）。
+      // 首扫刻意不在此刻做：rehydrate 刚装填完，紧接着扫一次只会空转。
+      this.externalScanTimer = setInterval(() => this.adoptExternalSessions(), this.externalScanMs)
+      this.externalScanTimer.unref?.()
+    }
   }
 
   /**
@@ -1359,6 +1462,49 @@ export class RuntimeSessionManager {
    * 'aborted' (interrupted by restart) and is view-only until a fresh run is
    * started in the same cwd. events.jsonl is the source of truth for seq.
    */
+  /**
+   * 装填**外部进程**新增的会话（同 home 多进程共用场景，见 `externalScanMs`）。
+   * `rehydrate()` 只在构造时读盘一次，外部进程之后建的会话本进程无从知晓
+   * （`GET /sessions` 不返回、按 id 取 404，UI 只能重启才看得到）；这里定期补装并
+   * 通知客户端重取。只增不覆盖：归档/删除归持有它的那个进程；外部新会话不可能
+   * 处于 running，故不需要 rehydrate 里那套崩溃收尾（孤儿审批 / resume_offer）。
+   */
+  private adoptExternalSessions(): void {
+    const p = this.persistence
+    if (!p || typeof p.loadRecords !== 'function') return
+    let records: SessionRecord[]
+    try { records = p.loadRecords() } catch { return }
+    let adopted = 0
+    for (const rawRecord of records) {
+      const id = rawRecord.id
+      if (!id || this.sessions.has(id)) continue
+      const rec = sanitizeSessionDomain(rawRecord)
+      this.sessions.set(id, {
+        record: { ...rec, lastSeq: rec.lastSeq, pendingApprovals: 0 },
+        agent: null,
+        events: [],
+        eventsLoaded: false,
+        seq: rec.lastSeq,
+        running: false,
+        lifecycleGeneration: 0,
+        pending: new Map(),
+        pendingDelegations: new Map(),
+        listeners: new Set(),
+        knownArtifacts: new Set(),
+        steer: new SteerBuffer(),
+        queueLane: [],
+        domainState: resolveDomainState(rec.domain ?? 'auto')?.state,
+        disabledSkills: new Set(),
+        skillLoadErrors: [],
+        reasoningEffort: rec.reasoningEffort as import('../agent/auto-reasoning.js').ReasoningEffort | 'auto' | undefined,
+        planAutoApproveUi: rec.planAutoApproveUi === true,
+        approvalMode: rec.approvalMode,
+      })
+      adopted++
+    }
+    if (adopted > 0) this.onSessionsChanged?.('external')
+  }
+
   private rehydrate(): void {
     const p = this.persistence!
     // Lazy boot: read only the lightweight index.json records — NOT the event
@@ -2159,7 +2305,11 @@ export class RuntimeSessionManager {
   }
 
   createSession(input: CreateSessionInput = {}): SessionRecord {
-    const id = this.idGenerator()
+    // P1-1 fork：调用方可以显式指定子会话 id（worktree 分支名由 id 派生，
+    // 必须与最终会话 id 一致才能对上）。已存在的 id 一律让位给新生成——重复
+    // 注册会静默覆盖在跑的会话，是本路径唯一不可接受的失败形状。
+    const requestedId = input.id?.trim()
+    const id = requestedId && !this.sessions.has(requestedId) ? requestedId : this.idGenerator()
     // issue #147 — 判定/落盘主体在 ./workspace.ts，此处只传依赖（守行数棘轮）。
     let workspace = resolveSessionWorkspaceForSession({
       requested: input.cwd, mode: input.workspaceMode, processCwd: this.defaultCwd,
@@ -2189,8 +2339,9 @@ export class RuntimeSessionManager {
 
     // Per-project defaults: load .rivet-config.json from the session cwd so
     // agent.defaultDomain and provider.default override the global startup
-    // values. Explicit input.model/domain take top priority (user chose in the
-    // new-session dialog); then project config; then the global default.
+    // values. Priority: explicit input.model/domain (user chose in the
+    // new-session dialog) > agent.defaultModel（设置页「默认模型」）>
+    // 默认 provider 首模型 > the global startup snapshot.
     let sessionModel = this.defaultModelId
     let sessionDomain = this.defaultDomain ?? 'qiming'
     try {
@@ -2206,6 +2357,16 @@ export class RuntimeSessionManager {
         const sessionPool = contractModels(projectProvider)
         if (sessionPool[0]?.id) sessionModel = sessionPool[0].id
       }
+      // agent.defaultModel（"provider:modelId"）：此前桌面新会话完全没消费它，
+      // 设置页钉的默认模型对桌面形同虚设（CLI 启动解析 main.ts 早已同源消费）。
+      // 无效引用（手改配置）回落默认 provider 首模型。
+      const configuredDefault = projectConfig.agent?.defaultModel
+      if (configuredDefault) {
+        try {
+          assertDefaultModelRef(projectConfig.provider.providers, configuredDefault)
+          sessionModel = configuredDefault
+        } catch { /* invalid ref — fall back to the default provider's first model */ }
+      }
     } catch { /* project config load failure is non-fatal — fall back to global defaults */ }
     if (input.model) sessionModel = input.model
     if (input.domain) sessionDomain = input.domain
@@ -2218,7 +2379,9 @@ export class RuntimeSessionManager {
         updatedAt: ts,
         cwd,
         workspaceSource: workspace.source,
-        title: input.title,
+        // 标题来自 HTTP body、不经消息消毒链——落盘前剥终端转义（标题会经
+        // /sessions、Chronicle、退出摘要三条路径反复回放终端，OSC 52 驻留）。
+        title: input.title === undefined ? undefined : stripTerminalEscapes(input.title),
         lastSeq: 0,
         pendingApprovals: 0,
         approvalMode: input.approvalMode,
@@ -2334,7 +2497,10 @@ export class RuntimeSessionManager {
     // idle 提交语义，app.ts getPendingEntries+clear 归并）。幂等/竞态安全：
     // 只发生在新 run 发起前（此刻 running 刚置位、同步块内无交错）；run 进行
     // 期间的 steer 不受影响，仍走 mid-turn 注入（onSteerDrain）。
-    prompt = this.mergeQueuedIntoPrompt(session, prompt)
+    const mergedQueue = this.mergeQueuedIntoPrompt(session, prompt, images?.length ?? 0)
+    prompt = mergedQueue.prompt
+    // #238 — 排队条目的图片并入本轮：顺序与文本一致（排队段在前、本轮新提交在后）。
+    if (mergedQueue.images.length > 0) images = [...mergedQueue.images, ...(images ?? [])]
     session.record.status = 'running'
     session.record.error = undefined
     // R1 — keep the registry heartbeat fresh while this session is active.
@@ -2540,7 +2706,8 @@ export class RuntimeSessionManager {
 
   /**
    * run 收尾时的 handoff 归档：交接 run 产出项目内文档后拷贝到会话目录
-   * <id>.handoff.md 并补一条 system 事件（新会话于是自动注入交接内容）。
+   * <id>.handoff.md 并补一条 system 事件。注入新会话默认关闭（并行会话安全，
+   * 2026-09-22 产品决策，RIVET_PREV_HANDOFF=1 可显式开启）——文案如实告知。
    * best-effort——拷贝失败不阻断 done 事件。
    */
   private settleHandoffArchive(session: InternalSession): void {
@@ -2560,7 +2727,7 @@ export class RuntimeSessionManager {
         copyFileSync(pending.src, pending.dest)
         handoffRecoveries(session.record.cwd, session.record.id)
         this.append(session, 'handoff_archived', {
-          text: `✦ 交接文档已写入 ${pending.src} 并归档 ${pending.dest}——新会话将自动注入交接内容。`,
+          text: `✦ 交接文档已写入 ${pending.src} 并归档 ${pending.dest}（默认不注入新会话；RIVET_PREV_HANDOFF=1 可开启）。`,
           src: pending.src,
           dest: pending.dest,
         })
@@ -3213,6 +3380,9 @@ export class RuntimeSessionManager {
     session.approvalMode = mode
     session.record.approvalMode = mode
     try { session.agent?.setApprovalMode?.(mode) } catch { /* non-fatal */ }
+    // 免审批档：改档同时收口**已经在等**的那次审批（见 approveAllPending 注释）。
+    // 顺序在 agent.setApprovalMode 之后——恢复执行的工具要按新档位评估后续 gate。
+    if (mode === 'dangerously-skip-permissions') this.approveAllPending(session, 'skip-mode')
     this.touch(session)
     this.persistRecord(session)
     return true
@@ -3239,6 +3409,12 @@ export class RuntimeSessionManager {
         session.agent.setApprovalMode?.(mode)
         applied++
       } catch { /* non-fatal — 单会话失败不阻塞广播 */ }
+      // 免审批档：与 per-session 切换同语义——挂起中的审批一并收口，否则用户
+      // 在设置页切「完全权限」后，等在原地的那个工具调用仍然一动不动。
+      if (mode === 'dangerously-skip-permissions' && session.pending.size > 0) {
+        this.approveAllPending(session, 'skip-mode')
+        this.persistRecord(session)
+      }
     }
     try { applySandboxPolicyForApprovalMode(mode) } catch { /* non-fatal */ }
     return applied
@@ -3787,7 +3963,7 @@ export class RuntimeSessionManager {
   steer(
     id: string,
     input: string | { laneId: string },
-  ): 'queued' | 'idle' | 'not_found' | 'lane_not_found' | 'lane_not_queued' {
+  ): 'queued' | 'idle' | 'not_found' | 'lane_not_found' | 'lane_not_queued' | 'lane_has_attachments' {
     const session = this.sessions.get(id)
     if (!session) return 'not_found'
     if (!session.running) return 'idle'
@@ -3799,6 +3975,9 @@ export class RuntimeSessionManager {
       laneEntry = session.queueLane.find((e) => e.id === input.laneId)
       if (!laneEntry) return 'lane_not_found'
       if (laneEntry.status !== 'queued') return 'lane_not_queued'
+      // #238 — 含附件的条目不能升级为 mid-turn steer：SteerBuffer 只把文本注入
+      // 下一个 tool_result，图片/文档没有注入通道——静默丢附件比明确拒绝更糟。
+      if (laneEntry.images?.length || laneEntry.attachmentText) return 'lane_has_attachments'
       text = laneEntry.text
       laneEntry.status = 'steered'
     }
@@ -3822,10 +4001,19 @@ export class RuntimeSessionManager {
    * retractQueued 撤回。与 steer 同门槛（仅 running）；与 steer 的区别是
    * 不进本轮 mid-turn 注入。
    */
-  queue(id: string, text: string): { laneId: string } | 'idle' | 'not_found' {
+  queue(
+    id: string,
+    text: string,
+    attachments?: { images?: string[]; attachmentText?: string; documentNames?: string[] },
+  ): { laneId: string } | 'idle' | 'not_found' | 'image_budget' | 'document_budget' {
     const session = this.sessions.get(id)
     if (!session) return 'not_found'
     if (!session.running) return 'idle'
+    // #238 — 配额判定的权威点在同步块里（路由侧前置校验只是 fail-fast，不作为
+    // 依据：抽取文档的 await 是 TOCTOU 窗口）。超限即拒，不留到归并时静默截断。
+    const usage = countLaneAttachments(session.queueLane)
+    if (usage.images + (attachments?.images?.length ?? 0) > MAX_IMAGES) return 'image_budget'
+    if (usage.documents + (attachments?.documentNames?.length ?? 0) > MAX_DOCUMENTS) return 'document_budget'
     // 排队跟进同样是用户参与——取消倒计时自动批准（与 steer 对齐）。
     this.cancelPlanAutoApprove(session, 'queue')
     const entry: QueueLaneEntry = {
@@ -3833,11 +4021,31 @@ export class RuntimeSessionManager {
       text,
       status: 'queued',
       ts: this.now(),
+      ...(attachments?.images?.length ? { images: attachments.images } : {}),
+      ...(attachments?.attachmentText ? { attachmentText: attachments.attachmentText } : {}),
+      ...(attachments?.documentNames?.length ? { documentNames: attachments.documentNames } : {}),
     }
     session.queueLane.push(entry)
-    this.append(session, 'queue_pending', { laneId: entry.id, text: redactText(text) })
+    // #238 — 事件带附件计数：卡片据此持久显示附件 chip（不再依赖转瞬即逝的
+    // toast）。图片 data URL 与文档抽取正文都不进事件流（events.jsonl 只留计数与名）。
+    this.append(session, 'queue_pending', {
+      laneId: entry.id,
+      text: redactText(text),
+      ...(entry.images?.length ? { imageCount: entry.images.length } : {}),
+      ...(entry.documentNames?.length ? { documentNames: entry.documentNames } : {}),
+    })
     this.touch(session)
     return { laneId: entry.id }
+  }
+
+  /**
+   * #238 — lane 中已排队的附件累计（路由侧 fail-fast 文案用；权威判定在
+   * queue() 的同步块里）。null = 会话不存在。
+   */
+  queuedAttachmentUsage(id: string): { images: number; documents: number } | null {
+    const session = this.sessions.get(id)
+    if (!session) return null
+    return countLaneAttachments(session.queueLane)
   }
 
   /**
@@ -3868,24 +4076,61 @@ export class RuntimeSessionManager {
    * 据此闭环，不再「显示已发、模型从未收到」。buffer/lane 均空时原样返回
    * （不动 prompt、不写事件）。
    */
-  private mergeQueuedIntoPrompt(session: InternalSession, prompt: string): string {
+  private mergeQueuedIntoPrompt(
+    session: InternalSession,
+    prompt: string,
+    promptImageCount = 0,
+  ): { prompt: string; images: string[]; droppedImages: number } {
     const steerEntries = session.steer.getPendingEntries()
     const laneQueued = session.queueLane.filter((e) => e.status === 'queued')
-    if (steerEntries.length === 0 && laneQueued.length === 0) return prompt
+    if (steerEntries.length === 0 && laneQueued.length === 0) {
+      return { prompt, images: [], droppedImages: 0 }
+    }
     session.steer.clear()
     const sections: string[] = steerEntries.map((e) => e.text)
+    const images: string[] = []
+    let droppedImages = 0
+    let notice = ''
     if (laneQueued.length > 0) {
       // 上一轮被用户打断（status='aborted'）：排队消息是打断后的新指示，
       // 「一并处理」会诱导模型接着做被叫停的事——换头（两处调用点都在
       // status 翻 'running' 前归并，规则内聚在本函数里）。
       const header = session.record.status === 'aborted' ? QUEUE_LANE_MERGE_HEADER_AFTER_ABORT : QUEUE_LANE_MERGE_HEADER
-      sections.push(`${header}\n${laneQueued.map((e) => e.text).join('\n\n')}`)
-      for (const entry of laneQueued) {
+      // #238 — 附件与文本同归并：文档抽取正文前置在该条文本之前（与 /prompt
+      // 的 docTexts 前置同构）；图片按 FIFO 收集，配额由 planQueuedImageAllocation
+      // 决定（本轮新提交的图片优先占额）。
+      const allocation = planQueuedImageAllocation(
+        laneQueued.map((e) => e.images?.length ?? 0),
+        promptImageCount,
+        MAX_IMAGES,
+      )
+      const laneSections = laneQueued.map((e, i) => {
+        const kept = e.images?.slice(0, allocation.keepPerEntry[i] ?? 0) ?? []
+        images.push(...kept)
+        return e.attachmentText ? `${e.attachmentText}\n\n${e.text}` : e.text
+      })
+      sections.push(`${header}\n${laneSections.join('\n\n')}`)
+      droppedImages = allocation.droppedTotal
+      for (const [i, entry] of laneQueued.entries()) {
         entry.status = 'merged'
-        this.append(session, 'queue_status', { laneId: entry.id, status: 'merged' })
+        // 附件已随本轮发出（或按配额截断）——从条目上释放 data URL/抽取正文，
+        // merged 条目不再常驻大对象；事件流只留计数与文档名。
+        delete entry.images
+        delete entry.attachmentText
+        const dropped = allocation.droppedPerEntry[i] ?? 0
+        this.append(session, 'queue_status', {
+          laneId: entry.id,
+          status: 'merged',
+          ...(dropped > 0 ? { droppedImages: dropped } : {}),
+        })
+      }
+      if (droppedImages > 0) {
+        notice = `⚠ 排队消息中的 ${droppedImages} 张图片超出单轮上限（${MAX_IMAGES}），未随本轮发送`
       }
     }
-    return `${sections.join('\n\n')}\n\n${prompt}`
+    const head = sections.join('\n\n')
+    const mergedPrompt = notice ? `${head}\n\n${notice}\n\n${prompt}` : `${head}\n\n${prompt}`
+    return { prompt: mergedPrompt, images, droppedImages }
   }
 
   /** 注册 session 的 coordinator 引用（main.ts 在 agent 构建后调用）。 */
@@ -4314,6 +4559,12 @@ export class RuntimeSessionManager {
       clearInterval(this.idleSweepTimer)
       this.idleSweepTimer = undefined
     }
+    // 外部会话扫描器同样要清：虽 unref 不钉进程，但只要进程不退（测试、桌面端
+    // 重建 manager），被丢弃的 manager 会一直每 externalScanMs 扫一次盘。
+    if (this.externalScanTimer) {
+      clearInterval(this.externalScanTimer)
+      this.externalScanTimer = undefined
+    }
     const pending: Promise<void>[] = []
     for (const s of this.sessions.values()) {
       let shutdownResult: void | boolean | Promise<void | boolean> | undefined
@@ -4418,7 +4669,7 @@ export class RuntimeSessionManager {
   setTitle(id: string, title: string): boolean {
     const s = this.sessions.get(id)
     if (!s) return false
-    s.record.title = title.trim()
+    s.record.title = stripTerminalEscapes(title).trim()
     this.touch(s)
     this.persistRecord(s)
     return true
@@ -4776,11 +5027,13 @@ export class RuntimeSessionManager {
     // (the tool's requiresApproval consults the same grant store).
     let rememberedApp: string | undefined
     if (approved && remember === true && pend.toolName === 'computer_use') {
-      const app = pend.toolInput?.app
-      if (typeof app === 'string' && app.trim()) {
+      // 单动作取顶层 app；单应用 sequence 从 steps 里解析同一 app；多应用
+      // sequence 返回 undefined（不记录，fail closed）。
+      const app = resolveRememberedComputerUseApp(pend.toolInput)
+      if (app) {
         try {
-          grantComputerUseApp(app.trim())
-          rememberedApp = app.trim()
+          grantComputerUseApp(app)
+          rememberedApp = app
         } catch { /* grant persistence is best-effort — approval still resolves */ }
       }
     }
@@ -4972,6 +5225,229 @@ export class RuntimeSessionManager {
     }
 
     return true
+  }
+
+  /**
+   * P1-1 — 会话分叉（回流自 `origin/tianshu-alpha-3.14`；桌面端 ForkDialog 的服务端）。
+   *
+   * 与 rewind 互补而非同义：rewind 截断**同一个**会话，fork 从切点复制出一个
+   * **新会话**，源会话一字不动。复制三件套：① 事件流前缀（≤ 切点 seq，写进子
+   * 会话日志并镜像进内存环）；② OAI 转录前缀（走 checksummed 追加路径，子会话
+   * 首轮即带真实上下文，不触发 warnIfHistoryLost）；③ 被引用的图片附件
+   * （best-effort，缺附件不影响 fork 成立）。
+   *
+   * messageIndex 语义与 listRewindPoints() 一致：OAI 消息列表下标，且必须落在
+   * user 消息上；省略 = header fork（切到最新 user 事件，即整段对话）。
+   *
+   * 源会话在跑时拒绝——复制边界必须是静止的（调用方先 abort + 等 run settle）。
+   */
+  async forkSession(
+    id: string,
+    opts: {
+      messageIndex?: number
+      destination?: ForkDestination
+      title?: string
+      source?: NonNullable<SessionRecord['forkSource']>
+    } = {},
+  ): Promise<ForkSessionResult> {
+    const src = this.sessions.get(id)
+    if (!src) return { ok: false, reason: 'not_found' }
+    if (src.running) return { ok: false, reason: 'running' }
+
+    // 让复制边界落定：先排空合并缓冲，再优先信磁盘全量日志（内存环可能已截尾）。
+    this.ensureEvents(src)
+    this.flushDeltaBuf(src)
+    this.flushToolResultBuf(src)
+    this.persistence?.flushSync?.()
+
+    let allEvents = src.events
+    try {
+      const disk = this.persistence?.loadEvents?.(id)
+      if (disk && disk.length > 0) allEvents = disk
+    } catch {
+      // 读盘失败退回内存环——fork 仍可用，只是可能少了被截尾的早期事件。
+    }
+    allEvents = [...allEvents].sort((a, b) => a.seq - b.seq)
+
+    const userEventRefs = allEvents
+      .filter((e) => e.type === 'user')
+      .map((e) => ({ seq: e.seq, ts: e.ts, text: String((e.data as { text?: unknown }).text ?? '') }))
+    let cutSeq: number | undefined
+    let anchorPrompt = ''
+
+    // 模型侧历史直接读 OAI 转录：rehydrate 后 agent 尚未重建的会话也能 fork。
+    const sourcePersist = new SessionPersist(id, src.record.cwd)
+    let oaiAll: OaiMessage[]
+    try {
+      oaiAll = sourcePersist.loadOai()
+    } catch {
+      // 转录不可读 → 子会话从空模型上下文起步（UI 历史仍在，首轮
+      // warnIfHistoryLost 会对账提示），不让 fork 当场崩掉。
+      oaiAll = []
+    }
+    let oaiPrefix: OaiMessage[]
+
+    if (opts.messageIndex !== undefined) {
+      const idx = opts.messageIndex
+      const target = oaiAll[idx]
+      if (!target || target.role !== 'user') return { ok: false, reason: 'invalid_message_index' }
+      // 锚点配对与 rewind 同一套（buildUserAnchors）：hook 注入的独立 user 消息
+      // （磁盘对账/取证提醒/图片桥接）和多模态数组 content 会把「第 N 条 user
+      // 消息 → 第 N 个 user 事件」的序数法整体顶偏——切错位置等于子会话带上
+      // 模型从没见过的 UI 历史，转录与事件流错位。
+      const anchor = buildUserAnchors(oaiAll, userEventRefs).get(idx)
+      if (!anchor) return { ok: false, reason: 'invalid_message_index' }
+      cutSeq = anchor.seq
+      anchorPrompt = anchor.text
+      oaiPrefix = oaiAll.slice(0, idx + 1)
+    } else {
+      // header fork = 整段对话：事件流**全量**复制。只切到最后一个 user 事件
+      // 会把末轮的回复/收尾事件裁掉（UI 里最后一条 prompt 没有回复、转录里却
+      // 有），也会裁掉 rewind 标记（被回滚的尾巴在子会话 UI 复活）。全量复制
+      // 让 rewind 标记随行——桌面端回放会应用其截断语义，与磁盘上已截断的
+      // 转录保持一致。
+      cutSeq = allEvents[allEvents.length - 1]?.seq
+      anchorPrompt = userEventRefs[userEventRefs.length - 1]?.text ?? ''
+      oaiPrefix = oaiAll
+    }
+
+    const eventsPrefix = cutSeq === undefined ? [] : allEvents.filter((e) => e.seq <= cutSeq)
+
+    // 落点与标题先定、子会话后建：任一步失败都不留半注册的会话。
+    const newId = this.idGenerator()
+    const destination: ForkDestination = opts.destination ?? 'local'
+    let newCwd = src.record.cwd
+    let worktreeBranch: string | undefined
+    let worktreePath: string | undefined
+    let baselineHead: string | undefined
+
+    if (destination === 'same-worktree') {
+      if (!src.record.worktreePath || !existsSync(src.record.worktreePath)) {
+        return { ok: false, reason: 'same_worktree_unavailable' }
+      }
+      newCwd = src.record.worktreePath
+      worktreeBranch = src.record.worktreeBranch
+      worktreePath = src.record.worktreePath
+      try { baselineHead = revParseHead(newCwd) } catch { /* 基线缺省 */ }
+    } else if (destination === 'new-worktree') {
+      const repoRoot = src.record.worktreePath ?? src.record.cwd
+      let wt: ReturnType<typeof createWorktree>
+      try {
+        wt = createWorktree(repoRoot, newId)
+      } catch (err) {
+        return { ok: false, reason: 'worktree_failed', detail: (err as Error)?.message ?? String(err) }
+      }
+      newCwd = wt.path
+      worktreeBranch = wt.branch
+      worktreePath = wt.path
+      try { baselineHead = revParseHead(newCwd) } catch { /* 基线缺省 */ }
+    }
+
+    const rawBaseTitle = opts.title?.trim() || src.record.title?.trim() || src.record.id.slice(0, 8)
+    // 先剥掉既有 "(n)" 后缀，fork-of-fork 才按同一基名计数
+    //（"Foo (2)" 的下一个分叉是 "Foo (3)"，不是 "Foo (2) (2)"）。
+    const suffixMatch = /^(.*) \((\d+)\)$/.exec(rawBaseTitle)
+    const baseTitle = suffixMatch ? suffixMatch[1]! : rawBaseTitle
+    const forkTitleNumber = this.nextForkTitleNumber(baseTitle)
+    const title = `${baseTitle} (${forkTitleNumber})`
+
+    const created = this.createSession({
+      id: newId,
+      cwd: newCwd,
+      title,
+      approvalMode: src.record.approvalMode,
+      model: src.record.model,
+      domain: src.record.domain,
+      planAutoApproveUi: src.record.planAutoApproveUi,
+      ...(src.record.allowedTools !== undefined ? { allowedTools: [...src.record.allowedTools] } : {}),
+    })
+    const child = this.sessions.get(created.id)
+    if (!child) {
+      // createSession 同步注册：这里取不到说明内部不变量已破，如实上报而不是猜。
+      return { ok: false, reason: 'worktree_failed', detail: 'forked session registration failed' }
+    }
+
+    child.record.forkedFromId = id
+    if (cutSeq !== undefined) child.record.forkedFromTurnSeq = cutSeq
+    child.record.forkTitleNumber = forkTitleNumber
+    child.record.forkSource = opts.source ?? 'header'
+    child.record.worktreeBranch = worktreeBranch
+    child.record.worktreePath = worktreePath
+    child.record.baselineHead = baselineHead
+
+    // 1) 桌面端事件流：前缀先落盘，再镜像进内存环（与常规会话同样按 maxEvents 截尾）。
+    const maxSeq = eventsPrefix.length > 0 ? eventsPrefix[eventsPrefix.length - 1]!.seq : 0
+    child.seq = maxSeq
+    child.diskFirstSeq = eventsPrefix[0]?.seq ?? 1
+    child.events = eventsPrefix.length > this.maxEvents
+      ? trimEventRing(eventsPrefix, this.maxEvents)
+      : [...eventsPrefix]
+    child.eventsLoaded = true
+    for (const ev of eventsPrefix) {
+      try { this.persistence?.appendEvent(created.id, ev) } catch { /* best-effort：活状态已就位 */ }
+    }
+    this.copyForkImages(id, created.id, eventsPrefix)
+    child.record.lastSeq = maxSeq
+
+    // 2) 时间线标记只写子会话（源会话日志保持 append-only 不动）。
+    this.append(child, 'fork', {
+      forkedFromId: id,
+      ...(cutSeq !== undefined ? { forkedFromTurnSeq: cutSeq } : {}),
+      anchorPrompt,
+      destination,
+    })
+    this.persistRecord(child)
+    this.persistence?.flushSync?.()
+
+    // 3) 模型转录：agent 从 `<newCwd>/<newId>.jsonl` 恢复——前缀走 checksummed
+    //    追加路径写出，子会话首轮带真实上下文，不触发 warnIfHistoryLost。
+    const childPersist = new SessionPersist(created.id, newCwd)
+    for (const message of oaiPrefix) {
+      await childPersist.appendOaiWithChecksum(message)
+    }
+    await childPersist.flushSessionBuffer()
+
+    return { ok: true, record: { ...child.record } }
+  }
+
+  /** 源会话被引用的视觉附件 best-effort 复制到子会话（失败不影响 fork 成功）。 */
+  private copyForkImages(sourceId: string, childId: string, events: SessionEvent[]): void {
+    const images = new Set<string>()
+    for (const ev of events) {
+      const ids = (ev.data as { imageIds?: unknown }).imageIds
+      if (Array.isArray(ids)) {
+        for (const img of ids) {
+          if (typeof img === 'string') images.add(img)
+        }
+      }
+    }
+    for (const imgId of images) {
+      try {
+        const img = this.persistence?.readImage?.(sourceId, imgId)
+        if (!img) continue
+        this.persistence?.saveImage?.(childId, imgId, img.bytes.toString('base64'), img.mime)
+      } catch { /* best-effort：缺附件 fork 照样成立 */ }
+    }
+  }
+
+  /**
+   * P1-1 — Codex 式 fork 标题编号：给出下一个 `base (n)`。
+   * 首个分叉恒为 (2)——(1) 保留给原始对话。计数看**全部**同基名会话
+   * （祖先链 + 同源兄弟 + 撞名），不只沿 forkedFrom 链回溯——否则同一源
+   * 连续 fork 两次会撞号（都得到 "Foo (2)"）。撞名会话会推高序号（保守
+   * 方向，宁可跳号不重号）。
+   */
+  private nextForkTitleNumber(base: string): number {
+    const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(`^${escaped}(?: \\((\\d+)\\))?$`)
+    let max = 1 // 基名本身占 (1)
+    for (const s of this.sessions.values()) {
+      const m = re.exec(s.record.title ?? '')
+      if (!m) continue
+      const n = m[1] !== undefined ? Number(m[1]) : 1
+      if (Number.isFinite(n) && n > max) max = n
+    }
+    return Math.max(2, max + 1)
   }
 
   /** Best-effort file rollback for rewind. Surfaces result via event log. */
@@ -5302,10 +5778,18 @@ export class RuntimeSessionManager {
       onTurnComplete: (usage, turnNumber, isFinal, evidenceSummary, continuationReason) => {
         if (!isActive()) return
         session.watchdogPolicy?.recordTurnComplete()
+        // 上下文占用随事件下发的理由：`enrichRecord().contextTokens` 只在会话记录被
+        // 拉取（push 触发或 30s 兜底轮询）时才现算，长 run 中途环形图的百分比最多
+        // 落后 30s；而 usage 本来就每轮都发，顺带带上同一来源（getEstimatedTokens
+        // = getRealOccupancy）的实时占用，桌面端百分比与缓存行就同频了。additive
+        // 字段：旧客户端忽略之。
+        let contextTokens: number | undefined
+        try { contextTokens = session.agent?.getEstimatedTokens?.() } catch { /* 非致命 */ }
         this.append(session, 'turn_complete', {
           usage,
           turnNumber,
           isFinal: !!isFinal,
+          ...(contextTokens !== undefined && contextTokens > 0 ? { contextTokens } : {}),
           ...(isFinal && evidenceSummary ? { evidence: evidenceSummary } : {}),
           ...(typeof continuationReason === 'string' && continuationReason ? { continuationReason } : {}),
         })
@@ -5323,6 +5807,31 @@ export class RuntimeSessionManager {
         if (session.record.status === 'running') session.record.status = 'interrupted'
       },
       onAbort: (reason) => {
+        // ── 中断也补发一条累计 usage 快照（2026-09-23）────────────────────
+        // finishInterrupted 不调 onTurnComplete（只 recordStop + onAbort）——于是
+        // 被打断 / 看门狗中止的 run 在桌面上永远不刷新缓存命中率：实测有会话
+        // 29 条 turn_complete 全是 isFinal=false、0 条 final，整行的数据源就是空的。
+        // 补发 isFinal=false 的快照：桌面 reducer 对任意 turn_complete 覆盖写计数
+        // （早于 isFinal 闸门），而 isFinal 保持 false → 不追加 turn 块、不改终态
+        // 语义、不影响 TUI（TUI 直接消费 callbacks，不消费事件流）。
+        //
+        // ⚠ 必须放在 isActive() 之前：manager.abort() 先 `lifecycleGeneration++`
+        // 再调 `agent.abort()`，所以用户中止时本回调已经「失活」——而事件恰恰必须
+        // 在这个窗口落下（append 自身有 durability 门禁，归档/卸载的会话仍被拦）。
+        try {
+          const usage = session.agent?.getTotalUsage?.()
+          const hasUsage = !!usage && ((usage.input_tokens ?? 0) > 0
+            || (usage.cache_read_input_tokens ?? 0) > 0
+            || (usage.cache_creation_input_tokens ?? 0) > 0)
+          if (hasUsage) {
+            this.append(session, 'turn_complete', {
+              usage,
+              turnNumber: session.agent?.getTurnCount?.() ?? 0,
+              isFinal: false,
+              aborted: true,
+            })
+          }
+        } catch { /* 补发失败不得影响中断收尾 */ }
         if (!isActive()) return
         session.lastAbortReason = reason
         // 在 finally 的 rejectAllPending 清场之前捕获审批挂起态。
@@ -5583,9 +6092,16 @@ export class RuntimeSessionManager {
         if (session.record.status === 'running') return
         if (!session.queueLane.some((e) => e.status === 'queued')) return
         // 传空 prompt 取归并文本；run 入口会再 merge 一次（lane 已空，no-op）。
-        const merged = this.mergeQueuedIntoPrompt(session, '').trimEnd()
-        if (!merged) return
-        this.run(session.record.id, merged)
+        const merged = this.mergeQueuedIntoPrompt(session, '')
+        const mergedText = merged.prompt.trimEnd()
+        if (!mergedText) return
+        // #238 — 排队条目的图片随 flush 起的新 run 一并发送：归并已把 data URL
+        // 从条目上释放，此处必须显式透传，否则附件会被静默丢掉。
+        this.run(
+          session.record.id,
+          mergedText,
+          merged.images.length > 0 ? merged.images : undefined,
+        )
       } catch {
         // best-effort：flush 失败不回滚已 merged 的 lane（文本已 echo 在流中、
         // 用户可见），也不向收尾路径抛错。
@@ -5665,6 +6181,38 @@ export class RuntimeSessionManager {
       if (pend.timer) clearTimeout(pend.timer)
       pend.resolve({ approved: false })
       this.append(session, 'approval_resolved', { requestId, decision: reason })
+    }
+    session.pending.clear()
+    this.recountApprovals(session)
+  }
+
+  /**
+   * 免审批档的挂起审批收口（2026-09-22）：把**已经在等**的审批一次性批准放行。
+   *
+   * 为什么需要：审批 promise 默认永不超时（`approvalTimeoutMs=0`，见构造函数），
+   * 也不随档位变更自动收口——只由用户点批准/拒绝、abort、unattended、重启四种
+   * 出口 resolve。而工具管线是 `await callbacks.onApprovalRequired(...)` 无界等待
+   * （tool-pipeline.ts）。于是最常见的一类"授权后卡住"是：用户看到审批卡，把档位
+   * 改成「全自动」以为这就是"批准了"——档位确实变了，但**那次已挂起的调用仍在原地
+   * 等**（改档只影响之后的 gate），run 一步不动，观感=界面卡死。
+   *
+   * 只对 skip 档追认：skip 的产品承诺就是"零打扰"（plan 提交即批、出界首触即授），
+   * 用户显式选它即等于授权一切。其它档**不追认**——auto-safe 仍要问高风险、
+   * auto-accept 仍有 unconditional/path-grant 硬门禁，替用户批准等于伪造授权。
+   *
+   * 不写 `remember`：隐式批准不产生常驻授权（与 skip 档"会话级首触即授"一致）。
+   * 调用方负责 persistRecord（与 rejectAllPending 同约定）。
+   */
+  private approveAllPending(session: InternalSession, reason: string): void {
+    if (session.pending.size === 0) return
+    for (const [requestId, pend] of session.pending) {
+      if (pend.timer) clearTimeout(pend.timer)
+      pend.resolve({ approved: true })
+      this.append(session, 'approval_resolved', {
+        requestId,
+        decision: reason,
+        ...(pend.toolName ? { toolName: pend.toolName } : {}),
+      })
     }
     session.pending.clear()
     this.recountApprovals(session)

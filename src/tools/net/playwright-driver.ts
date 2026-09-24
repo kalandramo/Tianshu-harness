@@ -16,7 +16,7 @@ import { createRequire } from 'node:module'
 
 /** playwright-core 模块缺失时的安装引导——区分 CLI 安装用户 / 仓库内开发 / 桌面端。 */
 export const PLAYWRIGHT_CORE_INSTALL_HINT = [
-  'CLI 安装用户：npm install -g tianshu-tui（重新安装以补齐依赖），',
+  'CLI 安装用户：npm install -g tianshu-harness（重新安装以补齐依赖），',
   '  或当前项目内：npm i playwright-core',
   '  仓库内开发：npm i playwright-core',
   '  桌面端：检查 dist/node_modules/playwright-core 是否完整',

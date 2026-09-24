@@ -218,7 +218,8 @@ test('e2e: /team max runs planner fanout + dispatch + review + closure to comple
   consumePlan(sessionId)
   const coordinator = buildCoordinator()
   const { deps, telemetry } = buildDeps(coordinator, sessionId)
-  const tool = createTeamOrchestrateTool(deps, { defaultMaxParallel: 3 })
+  // 本条测 max 的端到端流程本身，不是门控——显式开启（缺省已收敛为关）。
+  const tool = createTeamOrchestrateTool(deps, { defaultMaxParallel: 3, teamMaxEnabled: true })
 
   const result = await tool.execute({
     input: { mode: 'max', objective: 'force: end-to-end max planning then execution', fromWave: 0 },

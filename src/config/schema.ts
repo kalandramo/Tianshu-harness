@@ -161,6 +161,11 @@ export const providerKeySchema = z.object({
 /** 由 providerKeySchema 推出的 key 类型——provider-keys.ts 纯函数模块消费。 */
 export type ProviderKeyConfig = z.infer<typeof providerKeySchema>
 
+/** Wire-protocol union — runtime list + TS type in one place so the zod enum,
+ *  route validation and CLI parsing can never drift apart. */
+export const PROVIDER_PROTOCOL_VALUES = ['openai', 'anthropic', 'openai-responses'] as const
+export type ProviderProtocol = (typeof PROVIDER_PROTOCOL_VALUES)[number]
+
 export const providerBaseSchema = z.object({
   name: z.string(),
   apiKey: z.string().nullable().optional().transform(value => value ?? undefined),
@@ -170,10 +175,13 @@ export const providerBaseSchema = z.object({
   keyRef: z.string().nullable().optional().transform(value => value ?? undefined),
   baseUrl: z.string().url(),
   /** Wire protocol of the endpoint. 'openai' = chat/completions-compatible;
-   *  'anthropic' = /v1/messages with cache_control breakpoints. Factory dispatch
-   *  is driven ONLY by this field — provider names and capability heuristics are
-   *  not consulted. A provider NAMED 'anthropic' defaults to protocol 'anthropic'. */
-  protocol: z.enum(['openai', 'anthropic']).default('openai'),
+   *  'anthropic' = /v1/messages with cache_control breakpoints;
+   *  'openai-responses' = OpenAI Responses API (POST /v1/responses) — for
+   *  API-key endpoints that only speak the Responses format (issue #239).
+   *  Factory dispatch is driven ONLY by this field — provider names and
+   *  capability heuristics are not consulted. A provider NAMED 'anthropic'
+   *  defaults to protocol 'anthropic'. */
+  protocol: z.enum(PROVIDER_PROTOCOL_VALUES).default('openai'),
   auth: authConfigSchema.nullable().optional(),
   capabilities: providerCapabilitiesSchema,
   fallback: z.array(z.string()).optional(),
@@ -220,6 +228,11 @@ export const providerBaseSchema = z.object({
    * 消费点：openai-client / anthropic-client 硬顶（OPT-003 波次接入）。
    */
   requestTimeoutMs: z.number().int().positive().optional(),
+  /** 发送前请求体体积护栏上限（字节）。未配置 = 不限制（默认）。配置后超限先截断
+   *  历史 tool 输出，削完仍超限抛可行动错误；达到 50% 给 near-limit 预警。各端点
+   *  真实上限差异大（官方约 4MB、中转可能更小），故不替用户默认猜一个值。上游报
+   *  body 类 400/413 时文案会提示配置本项；消费点见 api/request-body-guard.ts。 */
+  maxBodyBytes: z.number().int().positive().optional(),
   /** Max retry attempts for retryable API errors (0 disables). undefined =
    *  保留客户端内置默认。消费点：openai/anthropic/codex 重试预算。
    *  显式配置即生效：不再被分类器的 per-category 默认值向下夹取（0–20；
@@ -650,13 +663,21 @@ export const searchSchema = z.object({
   tavilyApiKeyEnv: z.string().default('TAVILY_API_KEY'),
   /** Env var holding the Bocha (博查) Search API key — 国内直连 AI 搜索（Tavily 国内替代）。 */
   bochaApiKeyEnv: z.string().default('BOCHA_API_KEY'),
-  /** Inline API key（明文存 config，与 provider.apiKey 同构）。桌面端 UI 可填，
-   *  解析优先级：inline config > apiKeyEnv 指向的 env > 标准 BOCHA_API_KEY。 */
+  /** Inline Bocha Search API key。**运行时物化值**——明文只活在内存：loadConfig
+   *  按 bochaKeyRef 从 secrets.json（AES-256-GCM）读回；config.json 只留 keyRef
+   *  指针，绝不落明文（issue #220，与 provider.apiKey 同规）。 */
   bochaApiKey: z.string().optional(),
-  /** Inline Brave Search API key（明文存 config）。 */
+  /** Inline Brave Search API key（运行时物化，落盘只留 braveKeyRef）。 */
   braveApiKey: z.string().optional(),
-  /** Inline Tavily Search API key（明文存 config）。 */
+  /** Inline Tavily Search API key（运行时物化，落盘只留 tavilyKeyRef）。 */
   tavilyApiKey: z.string().optional(),
+  /** secrets.json 中 Bocha key 的 keyRef 指针（`search:bocha`）。迁移前的老配置若
+   *  仍是明文 bochaApiKey，loadConfig 首次读取时迁入 secrets.json 并改写此指针。 */
+  bochaKeyRef: z.string().optional(),
+  /** secrets.json 中 Brave key 的 keyRef 指针（`search:brave`）。 */
+  braveKeyRef: z.string().optional(),
+  /** secrets.json 中 Tavily key 的 keyRef 指针（`search:tavily`）。 */
+  tavilyKeyRef: z.string().optional(),
   /** Per-backend request timeout (ms). */
   timeoutMs: z.number().int().positive().default(15_000),
   /** Optional region/country hint passed to backends that support it (Brave). */
@@ -895,11 +916,17 @@ export const verifySchema = z.object({
 }).default({})
 
 export const proSchema = z.object({
-  /** Whether Pro features are active. Can also be enabled via RIVET_PRO=1
-   *  or by placing a non-empty key in ~/.rivet/pro.license. */
+  /**
+   * Whether Pro features are active.
+   *
+   * ⚠️ 判定**不读这个字段**：桌面端只认 shell 注入的 Ed25519 凭证
+   * （`RIVET_PRO_GRANT`），CLI 读 `<rivet_home>/license.json` 并验签 —— 两边
+   * 共用同一份凭证、同一套验签（见 config/pro-license.ts）。改配置、设裸
+   * `RIVET_PRO=1`、放任意内容的许可证文件都解锁不了。字段保留仅为兼容旧配置。
+   */
   enabled: z.boolean().default(false),
-  /** Optional license key (opaque string). The runtime does not validate
-   *  signatures; online seat/validation is handled by a licensing service. */
+  /** Optional license key (opaque string)。**已不参与判定**（凭据是签名 token，
+   *  见上）；保留字段仅为兼容旧配置。 */
   licenseKey: z.string().optional(),
   /** Per-feature Pro gates. When Pro is active, features default to enabled
    *  unless explicitly set to false here. */
@@ -995,7 +1022,7 @@ export const configSchema = z.object({
   env: envSchema,
   ui: uiSchema,
   verify: verifySchema,
-  workspace: workspaceConfigSchema,  /** 工具装配档位：minimal / frontend（默认）/ full / taiyi（16 评测档）。
+  workspace: workspaceConfigSchema,  /** 工具装配档位：minimal / frontend（默认）/ full / taiyi（14 评测档）。
    *  会话启动期解析，会话内冻结（前缀缓存安全）；RIVET_TOOL_PRESET env 优先于此配置。 */
   tools: z.object({
     preset: z.enum(['minimal', 'frontend', 'full', 'taiyi']).optional(),
@@ -1084,7 +1111,7 @@ export type Config = {
 
 export type ProviderConfig = z.infer<typeof providerSchema>
 /** Optional advanced knobs carried through wizard commits and drafts. */
-export type ProviderAdvancedConfig = Pick<ProviderConfig, 'requestTimeoutMs' | 'maxRetries' | 'temperature' | 'proxy' | 'retry'>
+export type ProviderAdvancedConfig = Pick<ProviderConfig, 'requestTimeoutMs' | 'maxBodyBytes' | 'maxRetries' | 'temperature' | 'proxy' | 'retry'>
 export type AuthConfig = z.infer<typeof authConfigSchema>
 export type ProviderCapabilitiesConfig = z.infer<typeof providerCapabilitiesSchema>
 export type ModelConfig = z.infer<typeof modelConfigSchema>

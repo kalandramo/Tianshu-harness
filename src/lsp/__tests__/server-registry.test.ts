@@ -2,9 +2,11 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   serverDefForExt,
+  serverDefsForExt,
   serverForFile,
   isServerAvailable,
   availableServers,
+  hasServerForFile,
   LSP_SERVERS,
 } from '../server-registry.js'
 
@@ -48,5 +50,63 @@ describe('lsp server-registry (C2 polyglot)', () => {
     const ids = all.map(s => s.id).sort()
     // typescript (always) + pyright (present)
     assert.deepEqual(ids, ['pyright', 'typescript'])
+  })
+})
+
+describe('多语言注册表覆盖（2026-xx 语言扩展）', () => {
+  const cases: Array<[string, string]> = [
+    ['.cs', 'roslyn-language-server'],
+    ['.kt', 'kotlin-language-server'],
+    ['.kts', 'kotlin-language-server'],
+    ['.swift', 'sourcekit-lsp'],
+    ['.php', 'intelephense'],
+    ['.rb', 'ruby-lsp'],
+    ['.lua', 'lua-language-server'],
+    ['.zig', 'zls'],
+    ['.dart', 'dart'],
+    ['.scala', 'metals'],
+    ['.sh', 'bash-language-server'],
+    ['.zsh', 'bash-language-server'],
+    ['.tf', 'terraform-ls'],
+    ['.clj', 'clojure-lsp'],
+    ['.ml', 'ocamllsp'],
+    ['.hs', 'haskell-language-server'],
+    ['.nix', 'nil'],
+    ['.vue', 'vue-language-server'],
+    ['.svelte', 'svelteserver'],
+  ]
+
+  for (const [ext, id] of cases) {
+    it(`${ext} → ${id}`, () => {
+      assert.equal(serverDefForExt(ext)?.id, id)
+    })
+  }
+
+  it('C# 有多个候选：首选微软 roslyn，csharp-ls 兜底', () => {
+    const ids = serverDefsForExt('.cs').map(d => d.id)
+    assert.deepEqual(ids, ['roslyn-language-server', 'csharp-ls'])
+  })
+
+  it('只装了兜底 server 时仍能解析出 C# server', () => {
+    // 首选 roslyn 缺失、兜底 csharp-ls 存在 → 必须选兜底而不是返回 null
+    const def = serverForFile('Program.cs', (b) => b === 'csharp-ls')
+    assert.equal(def?.id, 'csharp-ls')
+  })
+
+  it('roslyn-language-server 必须显式带 --stdio（默认不走 stdio）', () => {
+    const def = LSP_SERVERS.find(s => s.id === 'roslyn-language-server')!
+    assert.deepEqual(def.args, ['--stdio'])
+    assert.equal(def.languageId, 'csharp')
+  })
+
+  it('诊断触发面按 registry 判定：已注册语言 true，未注册 false', () => {
+    assert.equal(hasServerForFile('a.py'), true)
+    assert.equal(hasServerForFile('Program.cs'), true)
+    assert.equal(hasServerForFile('Main.java'), true)
+    assert.equal(hasServerForFile('run.sh'), true)
+    // 未注册：不应为它们白跑一次 server 探测
+    assert.equal(hasServerForFile('README.md'), false)
+    assert.equal(hasServerForFile('package.json'), false)
+    assert.equal(hasServerForFile('notes.txt'), false)
   })
 })

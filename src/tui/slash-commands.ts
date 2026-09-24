@@ -1,6 +1,7 @@
 import type { AgentLoop } from '../agent/loop.js'
 import type { SessionContext } from '../agent/context.js'
 import { looksLikeFilePath } from './engine/app.js'
+import { catalogMetaFor } from './command-catalog.js'
 import { SessionPersist, getSessionDir } from '../agent/session-persist.js'
 import { forkSession, listBranches, countMessageLines } from '../agent/session-fork.js'
 import { type StarDomainId } from '../agent/star-domain.js'
@@ -26,6 +27,7 @@ import { PhaseTracker } from './phase-tracker.js'
 import { createLogEntry, type LogEntry } from './log-state.js'
 import { getPaletteCommands } from './command-palette.js'
 import { handleYoloToggle } from './yolo-toggle.js'
+import { resolveMaxTurns } from '../agent/turn-budget-policy.js'
 import { openInEditor } from './external-editor.js'
 import { formatMissionStrip } from './mission.js'
 import { PANEL_LABELS, PANELS, type Panel } from './cockpit/types.js'
@@ -86,6 +88,7 @@ import { loadSettingsDraft, loadSettingsEnv, saveSettings } from './settings-per
 import { formatMirrorStatus } from '../tools/mirror-env.js'
 import { detectEnv, formatEnvGuidance, recommendUvSetup, isPythonProject } from '../tools/env-check.js'
 import { getResolvedEnv, getResolvedPathDiff } from '../tools/resolved-env.js'
+import { detectTlsInterception, formatTlsTrustLines } from '../platform/tls-interception.js'
 import { getShellCommand } from '../platform.js'
 import { createCoordinatorReviewDeps } from '../agent/review-coordinator-deps.js'
 import { consumePendingReview, peekPendingReview } from '../agent/post-commit-review-pending.js'
@@ -305,27 +308,11 @@ export function formatVerificationStatus(agent: AgentLoop): string {
   return `Verification Status\n\nModified files:\n${lines.join('\n')}\n\nVerification: ${summary.verified}/${summary.total} (${percent}%)${lastLine}`
 }
 
-/** MCP 状态文本——/mcp（裸）与 /debug mcp 共用。
- *  修复前 /mcp 的 subcmd 取 parts[0]（恒为 '/mcp' 本身）：auth/logs 分支不可达、
- *  裸 /mcp 只打用法不打状态（排障页审计发现）。 */
-export function mcpStatusText(mgr: import('../mcp/manager.js').McpManager | null | undefined): string {
-  if (!mgr) return 'MCP not initialized (no servers configured or MCP disabled).'
-  const states = mgr.getStates()
-  const tools = mgr.getAllTools()
-  const lines = [`MCP Status (${states.length} server(s), ${tools.length} tool(s)):`]
-  for (const s of states) {
-    const detail = s.status === 'connected'
-      ? `connected — ${s.toolCount} tools`
-      : s.status === 'error'
-        ? `error: ${s.error}`
-        : s.status
-    lines.push(`  ${s.serverId}: ${detail}`)
-  }
-  if (tools.length > 0) {
-    lines.push('Tools: ' + tools.map(t => t.definition.name).join(', '))
-  }
-  return lines.join('\n')
-}
+/** MCP 状态文本——/mcp（裸）与 /debug mcp 共用。实现外提到 format/mcp-status.ts
+ *  （本文件 ceiling 顶死）；导出面保持不变。 */
+import { mcpStatusText } from './format/mcp-status.js'
+import { runMcpApprovalCommand } from './mcp-approval.js'
+export { mcpStatusText }
 
 function knowledgeDir(): string {
   return join(process.cwd(), '.rivet', 'knowledge')
@@ -553,6 +540,8 @@ export async function approvePlanAndKickoff(
 
 interface TuiSlashCommandDef {
   readonly name: string
+  /** 别名（见 SlashCommand.aliases）。别名只影响输入匹配，不进帮助/面板。 */
+  readonly aliases?: readonly string[]
   readonly description?: string
   readonly immediate?: true
   readonly handler: (ctx: SlashHandlerContext) => boolean | Promise<boolean>
@@ -635,10 +624,13 @@ const TUI_SLASH_COMMANDS: readonly TuiSlashCommandDef[] = [
   {
     name: '/status',
     immediate: true,
-    handler(ctx) {
+    async handler(ctx) {
       const { parts, pushStatic, setIsStreaming } = ctx
       const cmd = parts[0]!.toLowerCase()
-      const lines: string[] = ['Bandit Promotion State', '═══════════════════════']
+      // 星籍段在最前：用户问「我是谁」比问调度器状态更常见。展示口径在
+      // ./account-status.ts（与桌面端共用 src/agent/stellar-identity.ts）。
+      const { accountIdentityLines } = await import('./account-status.js')
+      const lines: string[] = [...accountIdentityLines(), '', 'Bandit Promotion State', '═══════════════════════']
       if (ctx.banditState && ctx.banditState.length > 0) {
         for (const b of ctx.banditState) {
           lines.push(`${b.source}: ${b.mode} (enabled=${b.enabled})`)
@@ -656,20 +648,10 @@ const TUI_SLASH_COMMANDS: readonly TuiSlashCommandDef[] = [
     },
   },
   {
+    // /quit 曾是独立注册的第二条命令（与 /exit 逐字重复）。收敛为别名，
+    // 输入侧行为不变，但注册表/帮助/面板只有一个 canonical。
     name: '/exit',
-    immediate: true,
-    handler(ctx) {
-      const { parts, pushStatic, setIsStreaming } = ctx
-      const cmd = parts[0]!.toLowerCase()
-      ctx.persist.compactOai(ctx.session.getMessages())
-      pushStatic(createLogEntry({ type: 'system', content: 'Session saved. Goodbye!' }))
-      process.emit('SIGINT')
-      return true
-
-    },
-  },
-  {
-    name: '/quit',
+    aliases: ['/quit'],
     immediate: true,
     handler(ctx) {
       const { parts, pushStatic, setIsStreaming } = ctx
@@ -1302,6 +1284,9 @@ const TUI_SLASH_COMMANDS: readonly TuiSlashCommandDef[] = [
         lines.push('若已安装，请把其可执行目录加入配置 env.extraPath（数组），或设置对应的 *_HOME 变量后重启天枢。')
       }
 
+      lines.push('', 'HTTPS 信任链 (杀毒软件 / 企业代理)', '───────────────────────')
+      for (const l of formatTlsTrustLines(detectTlsInterception())) lines.push(l)
+
       const guidance = formatEnvGuidance(env)
       const footer = '更多排障：/logs（本会话日志落点）· 排障手册 github.com/huiliyi37/Tianshu-Tui/blob/main/docs/guides/troubleshooting.md'
       pushStatic(createLogEntry({ type: 'system', content: lines.join('\n') + (guidance ? '\n\n' + guidance : '') + '\n\n' + footer }))
@@ -1424,7 +1409,10 @@ const TUI_SLASH_COMMANDS: readonly TuiSlashCommandDef[] = [
     },
   },
   {
-    name: '/cancel-goal',
+    // canonical 取 /goal-cancel（与 /goal-status|pause|resume|criteria 同族），
+    // /cancel-goal 保留为别名——它曾是注册名，且桌面端 ThreadView 仍在用。
+    name: '/goal-cancel',
+    aliases: ['/cancel-goal'],
     immediate: true,
     async handler(ctx) {
       const { parts, pushStatic, setIsStreaming } = ctx
@@ -1790,6 +1778,9 @@ const TUI_SLASH_COMMANDS: readonly TuiSlashCommandDef[] = [
       const aliased = parsePermissionAlias(sub)
       if (aliased === 'supervise') {
         agent.setApprovalMode(tierToMode('supervise'))
+        // 轮次预算随档位收回（策略单点 agent/turn-budget-policy.ts）：此前监督/自动分支
+        // 完全不碰 maxTurns——从全自动（0=无限轮）降下来收不回，监督会话静默无限轮。
+        agent.config.maxTurns = resolveMaxTurns(tierToMode('supervise'), ctx.config.agent.maxTurns)
         ctx.setAutoSafe(false)
         ctx.persistApprovalMode?.(tierToMode('supervise'))
         pushStatic(createLogEntry({ type: 'system', content: '✓ 已切换至 监督 — 所有高风险操作都需人工确认（已设为默认，重启后仍生效）' }))
@@ -1809,6 +1800,7 @@ const TUI_SLASH_COMMANDS: readonly TuiSlashCommandDef[] = [
           setCheckpointConfig({ checkpointEveryTurns: v })
         }
         agent.setApprovalMode(tierToMode('auto'))
+        agent.config.maxTurns = resolveMaxTurns(tierToMode('auto'), ctx.config.agent.maxTurns)
         ctx.setAutoSafe(true)
         ctx.persistApprovalMode?.(tierToMode('auto'))
         const interval = intervalRaw !== undefined ? Number(intervalRaw) : undefined
@@ -1837,7 +1829,7 @@ const TUI_SLASH_COMMANDS: readonly TuiSlashCommandDef[] = [
           return true
         }
         agent.setApprovalMode(tierToMode('unattended'))
-        agent.config.maxTurns = 0
+        agent.config.maxTurns = resolveMaxTurns(tierToMode('unattended'), ctx.config.agent.maxTurns)
         ctx.setAutoSafe(false)
         ctx.persistApprovalMode?.(tierToMode('unattended'))
         pushStatic(createLogEntry({ type: 'system', content: '✓ 已切换至 全自动 — 全自动执行，无刹车无打扰（已设为默认，重启后仍生效）。/rollback 可随时回滚。关闭: /yes off' }))
@@ -1855,6 +1847,7 @@ const TUI_SLASH_COMMANDS: readonly TuiSlashCommandDef[] = [
           return true
         }
         agent.setApprovalMode(mode)
+        agent.config.maxTurns = resolveMaxTurns(mode, ctx.config.agent.maxTurns)
         ctx.setAutoSafe(mode === 'auto-safe')
         pushStatic(createLogEntry({ type: 'system', content: `Approval mode → ${mode}` }))
         setIsStreaming(false)
@@ -2332,12 +2325,75 @@ const TUI_SLASH_COMMANDS: readonly TuiSlashCommandDef[] = [
     },
   },
   {
+    // 检查点回滚。与 /undo 的分工：/undo 按 FileHistory 快照撤销**本会话内的
+    // 文件写入**；/rollback 走 git 检查点（agent 触碰过的文件），撤销到检查点
+    // 时刻，且**带确认令牌的两阶段**——先预览拿到 token，再 confirm 才动手。
+    //
+    // 两阶段不是多余礼节：rollbackToCheckpoint 要求 confirmationToken 与检查点
+    // 文件里的一致（checkpoint.ts 的防误触设计），且预览会把候选文件、被其他
+    // 会话占用的跳过项、以及 git 无法撤销的 bash 副作用一并摊开。
+    //
+    // 注意：CLI 侧拿不到 SessionRegistry（那是 server 侧概念），因此跨会话归属
+    // guard 传 undefined ——预览文案会显式标注这一点，不静默降级。
     name: '/rollback',
-    handler(ctx) {
+    immediate: true,
+    async handler(ctx) {
       const { parts, pushStatic, setIsStreaming } = ctx
-      const cmd = parts[0]!.toLowerCase()
-      return false
+      setIsStreaming(false)
+      const cwd = ctx.agent.cwd
+      const sessionId = ctx.currentSessionId
+      const sub = parts[1]?.toLowerCase()
 
+      const { rollbackToCheckpoint, getRollbackPreview } = await import('../agent/checkpoint.js')
+
+      if (sub === 'confirm' || sub === 'yes') {
+        const token = ctx.rollbackTokenRef.current
+        if (!token) {
+          pushStatic(createLogEntry({ type: 'system', content: '没有待确认的回滚。先运行 /rollback 预览，再 /rollback confirm。' }))
+          return true
+        }
+        // 一次性令牌：无论成败都清掉，避免过期令牌被复用。
+        ctx.rollbackTokenRef.current = null
+        const result = await rollbackToCheckpoint(cwd, token, sessionId)
+        if (!result.success) {
+          const detail = [
+            result.skipped?.length ? `跳过（被其他会话占用）：${result.skipped.join(', ')}` : '',
+            '回滚未执行（令牌失效、无检查点，或没有可还原的文件）。重新运行 /rollback 预览。',
+          ].filter(Boolean).join('\n')
+          pushStatic(createLogEntry({ type: 'system', content: detail, isError: true }))
+          return true
+        }
+        const lines = [`✓ 已回滚到检查点 ${result.hash ?? ''}`.trim()]
+        if (result.skipped?.length) lines.push(`跳过（被其他会话占用）：${result.skipped.join(', ')}`)
+        for (const effect of result.unrevertable ?? []) lines.push(`⚠️  git 无法撤销的副作用：${effect}`)
+        pushStatic(createLogEntry({ type: 'system', content: lines.join('\n') }))
+        return true
+      }
+
+      if (sub === 'cancel') {
+        ctx.rollbackTokenRef.current = null
+        pushStatic(createLogEntry({ type: 'system', content: '已取消待确认的回滚。' }))
+        return true
+      }
+
+      // 无参（或未知子命令）：预览并预置令牌。
+      const preview = await getRollbackPreview(cwd, sessionId)
+      if (!preview) {
+        ctx.rollbackTokenRef.current = null
+        pushStatic(createLogEntry({ type: 'system', content: '没有可回滚的检查点（或已无 agent 触碰过的文件）。' }))
+        return true
+      }
+      ctx.rollbackTokenRef.current = preview.confirmationToken
+      pushStatic(createLogEntry({
+        type: 'system',
+        content: [
+          preview.text,
+          '',
+          '⚠️  CLI 端未做跨会话归属检查（无 SessionRegistry）——若同一分支有并发会话，请先确认上述文件不是别人正在改的。',
+          '执行：/rollback confirm　·　放弃：/rollback cancel',
+        ].join('\n'),
+      }))
+      return true
     },
   },
   {
@@ -2940,12 +2996,21 @@ const TUI_SLASH_COMMANDS: readonly TuiSlashCommandDef[] = [
         return true
       }
 
+      // issue #215：连接级审批的批准/拒绝入口。后端在 spawn 之前拦截，未批的 server
+      // 不会连接也不暴露工具——没有这条命令，用户只能看着「服务器不见了」却无处可按。
+      if ((subcmd === 'approve' || subcmd === 'deny') && serverId) {
+        const res = await runMcpApprovalCommand(ctx.mcpManagerRef?.current, subcmd, serverId)
+        pushStatic(createLogEntry({ type: 'system', content: res.text, isError: res.isError }))
+        setIsStreaming(false)
+        return true
+      }
+
       // Default：裸 /mcp（status）出真实状态（与 /debug mcp 同源）；未知子命令打用法
       pushStatic(createLogEntry({
         type: 'system',
         content: subcmd === 'status'
           ? mcpStatusText(ctx.mcpManagerRef?.current)
-          : 'Usage:\n  /mcp — show status\n  /mcp auth <serverId> — start OAuth flow\n  /mcp logs <serverId> [tail] — view stderr log buffer',
+          : 'Usage:\n  /mcp — show status (includes servers awaiting approval)\n  /mcp approve <serverId> — connect an awaiting server\n  /mcp deny <serverId> — refuse it\n  /mcp auth <serverId> — start OAuth flow\n  /mcp logs <serverId> [tail] — view stderr log buffer',
       }))
       setIsStreaming(false)
       return true
@@ -3436,7 +3501,7 @@ const TUI_SLASH_COMMANDS: readonly TuiSlashCommandDef[] = [
       const arg = parts[1]?.toLowerCase()
       if (arg === 'off') {
         agent.setApprovalMode('auto-safe')
-        agent.config.maxTurns = 200
+        agent.config.maxTurns = resolveMaxTurns('auto-safe', ctx.config.agent.maxTurns)
         ctx.setAutoSafe(true)
         ctx.persistApprovalMode?.('auto-safe')
         pushStatic(createLogEntry({ type: 'system', content: '✓ 已退出全自动，切回 自动 — 低/无风险自动，高风险仍确认（已设为默认，重启后仍生效）。' }))
@@ -3444,7 +3509,7 @@ const TUI_SLASH_COMMANDS: readonly TuiSlashCommandDef[] = [
         return true
       }
       agent.setApprovalMode('dangerously-skip-permissions')
-      agent.config.maxTurns = 0
+      agent.config.maxTurns = resolveMaxTurns('dangerously-skip-permissions', ctx.config.agent.maxTurns)
       ctx.setAutoSafe(false)
       ctx.persistApprovalMode?.('dangerously-skip-permissions')
       pushStatic(createLogEntry({ type: 'system', content: '✓ 全自动已开启 — 无限轮次，无刹车无打扰（已设为默认，重启后仍生效）。关闭: /yes off · 回滚: /rollback' }))
@@ -3873,6 +3938,9 @@ export function registerTuiSlashCommands(app: TuiApp, ctx: BootstrapContext): vo
         const res = switchAgentSession(ctx, targetId)
         if (res.ok) {
           app.setStreamingState(false)
+          // 会话边界重置定高视口高水位——旧会话的峰值空白不带进新会话
+          //（对齐 tianshu-public switchSession）。
+          app.resetLiveHighWater()
           // 切换后恢复目标、todo 列表与 side panel 状态，保持会话连续性。
           try {
             const restoredGoal = restoreGoalTracker(getSessionDir(ctx.cwd), targetId, {
@@ -3984,7 +4052,10 @@ export function registerTuiSlashCommands(app: TuiApp, ctx: BootstrapContext): vo
   for (const cmd of TUI_SLASH_COMMANDS) {
     app.registerSlashCommand({
       name: cmd.name,
-      description: cmd.description,
+      aliases: cmd.aliases,
+      // description 从命令目录回填：数组式定义一向留空，导致 registry 的
+      // description 字段形同虚设、描述被迫在面板里重写一遍（漂移之源）。
+      description: cmd.description ?? catalogMetaFor(cmd.name)?.description,
       immediate: cmd.immediate,
       handler: async ({ app, input, trimmed }) => cmd.handler(buildHandlerContext(trimmed)),
     })
@@ -4027,15 +4098,7 @@ export function registerTuiSlashCommands(app: TuiApp, ctx: BootstrapContext): vo
   // 进程，也绕过退出摘要。
   register("/exit", {
     description: "Exit Rivet",
-    immediate: true,
-    handler: () => {
-      process.emit('SIGINT')
-      return true
-    },
-  })
-
-  register("/quit", {
-    description: "Exit Rivet",
+    aliases: ["/quit"],
     immediate: true,
     handler: () => {
       process.emit('SIGINT')
@@ -4083,7 +4146,7 @@ export function registerTuiSlashCommands(app: TuiApp, ctx: BootstrapContext): vo
         const schedule = spawnWindowsSelfUpdate(root, spec, true, ctx.sessionId)
         if (!schedule.ok) {
           app.commitStatic(`❌ 无法启动后台更新器：${schedule.error ?? 'unknown'}`)
-          app.commitStatic(`   请手动执行：npm install -g tianshu-tui@${spec}`)
+          app.commitStatic(`   请手动执行：npm install -g tianshu-harness@${spec}`)
           return true
         }
         app.commitStatic('✅ 更新已安排：天枢将退出以释放文件占用，安装完成后会自动重新打开。')
@@ -4316,6 +4379,8 @@ export function registerTuiSlashCommands(app: TuiApp, ctx: BootstrapContext): vo
       onApprovalChange: (mode: string) => {
         try {
           ctx.agent.setApprovalMode(mode as Parameters<typeof ctx.agent.setApprovalMode>[0])
+          // 轮次上限同源（与 /permission、/yes 一致）：面板改档也必须联动 maxTurns。
+          ctx.agent.config.maxTurns = resolveMaxTurns(mode, loadConfig().agent.maxTurns)
           app.setApprovalMode(mode as Parameters<typeof app.setApprovalMode>[0])
           persistApprovalDefault(mode)
           return true
@@ -4422,6 +4487,7 @@ export function registerTuiSlashCommands(app: TuiApp, ctx: BootstrapContext): vo
     handler: ({ trimmed }) => handleYoloToggle(trimmed, {
       agent: ctx.agent,
       app,
+      configuredMaxTurns: ctx.config.agent.maxTurns,
       persistDefault: persistApprovalDefault,
     }, {
       on: '⚠ yolo 已开启 — 无限轮次，无刹车无打扰（已设为默认，重启后仍生效）。关闭: /yolo off · 回滚: /rollback',
@@ -4435,6 +4501,7 @@ export function registerTuiSlashCommands(app: TuiApp, ctx: BootstrapContext): vo
     handler: ({ trimmed }) => handleYoloToggle(trimmed, {
       agent: ctx.agent,
       app,
+      configuredMaxTurns: ctx.config.agent.maxTurns,
       persistDefault: persistApprovalDefault,
     }, {
       on: '✓ 全自动已开启 — 无限轮次，无刹车无打扰（已设为默认，重启后仍生效）。关闭: /yes off · 回滚: /rollback',

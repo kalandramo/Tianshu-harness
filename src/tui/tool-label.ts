@@ -64,13 +64,38 @@ export function toolArgSummary(name: string, input: Record<string, unknown>): st
     case 'delegate_task': return truncate(String(input.objective ?? ''), 50)
     case 'delegate_batch': return `${Array.isArray(input.tasks) ? input.tasks.length : '?'} tasks`
     case 'web_fetch': return truncate(String(input.url ?? ''), 50)
+    // action 型工具：动作 + 目标都要在标题上——只显示 action（"await"）或只显示
+    // 目标（job id）都丢一半信息，长跑 job 的 live 卡曾是「Tool (14m06s)」零信息。
+    case 'job':
+    case 'monitor': {
+      const action = typeof input.action === 'string' ? input.action : ''
+      const rest = genericArgSummary(input, ['command', 'id', 'jobId', 'pattern', 'path', 'query', 'url', 'name'])
+      return truncate([action, rest].filter(Boolean).join(' '), 55)
+    }
     case 'browser_debug': {
       const action = String(input.action ?? '')
       const detail = input.url ?? input.selector ?? input.expression ?? input.level ?? ''
       return truncate(detail ? `${action} ${detail}` : action, 50)
     }
-    default: return ''
+    // 未知工具（含 mcp__*）按常见参数键兜底取第一个非空值——标题宁可粗糙，
+    // 不可空白（空白标题 + 计时 = 用户无法判断该等还是该断）。
+    default: return genericArgSummary(input)
   }
+}
+
+/** 通用参数摘要的取键优先级（按信息密度排序）。 */
+const GENERIC_ARG_KEYS = [
+  'command', 'pattern', 'file_path', 'path', 'query', 'url', 'objective',
+  'description', 'title', 'id', 'action', 'name', 'key', 'expression', 'selector',
+] as const
+
+function genericArgSummary(input: Record<string, unknown>, keys: readonly string[] = GENERIC_ARG_KEYS): string {
+  for (const key of keys) {
+    const v = input[key]
+    if (typeof v === 'string' && v.trim()) return truncate(v.trim(), 50)
+    if (typeof v === 'number') return String(v)
+  }
+  return ''
 }
 
 export function toolLabel(name: string, input: Record<string, unknown>): string {

@@ -13,7 +13,7 @@
  */
 
 import type { WriteStream } from 'node:tty'
-import { ANSI } from './ansi.js'
+import { ANSI, enforceTextContract } from './ansi.js'
 import { createRingBuffer, type RingBuffer } from '../ring-buffer.js'
 
 /** Scrollback buffer 默认行数上限（长会话防内存无限增长）。 */
@@ -68,7 +68,12 @@ export class CommitEngine {
    * 重绘区域之前（cursor save 之前），因此天然按时间顺序排列。
    */
   write(entry: CommittedEntry): void {
-    let content = entry.ansi ?? entry.text
+    // entry.text 的契约是「不含机动 ANSI 序列」——但契约此前只写在注释里，生产者
+    // 侧没有强制，模型输出/工具输出/网页正文里的 OSC/CSI 原样进 scrollback
+    // （OSC 52 覆写系统剪贴板、CSI 清屏/踢出 alt-screen）。在唯一汇聚点兜底
+    // 执行契约：剥 OSC + 非 SGR 的 CSI + 控制字符，放行 SGR 纯样式（生产侧
+    // 经此通道传 formatMarkdown/color() 的自产样式，剥了 scrollback 全褪色）。
+    let content = entry.ansi ?? enforceTextContract(entry.text)
     if (!content.endsWith('\n')) content += '\n'
     if (entry.trailingNewline) content += '\n'
     this.buffer.push(content.trimEnd())

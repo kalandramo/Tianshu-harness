@@ -2,9 +2,13 @@
  * Disk I/O boundary for provider API keys (0600 secrets file).
  *
  * config.json holds only a `keyRef` pointer; the actual key lives in
- * `secrets.json` next to it. Mirrors the TokenStore write pattern
- * (src/auth/token-store.ts) but hardens mode on every write — writeFileSync's
- * `mode` only applies at creation, so we chmod after rename too.
+ * `secrets.json` next to it.
+ *
+ * 内容自本次加固起为 **AES-256-GCM 信封**（数据密钥托管在 OS 密钥库或本机密钥
+ * 文件，见 `src/auth/secure-store.ts`），与 `TokenStore`（src/auth/token-store.ts）
+ * 同款。原因：`0o600` 在 Windows/NTFS 上不生效（权限由 ACL 决定），而
+ * `~/.rivet` 常落在云同步/备份路径上——只靠文件权限等于把 key 明文交给任何能读
+ * 该目录的进程。旧明文文件仍按原样读取，下次写入自动升级。`chmod` 保留作纵深防御。
  *
  * Reads are fail-open: a missing/corrupt store yields undefined and the
  * caller's existing fallback chain (env vars, friendly error) takes over.
@@ -14,6 +18,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSy
 import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { rivetHome, userConfigPath } from './paths.js'
+import { createSecretCipher, decodeSecret, encodeSecret, type SecretCipher } from '../auth/secure-store.js'
 
 interface SecretsFile {
   version: 1
@@ -30,10 +35,17 @@ export function secretsPath(base?: string): string {
   }
 }
 
+/** cipher 与 secrets 文件同目录（数据密钥落 `<dir>/.token-key*`）；cipher 内部按后端+目录缓存且懒加载。 */
+function cipherFor(base?: string): SecretCipher {
+  return createSecretCipher(dirname(secretsPath(base)))
+}
+
 function readStore(base?: string): SecretsFile | undefined {
   try {
     const raw = readFileSync(secretsPath(base), 'utf-8')
-    const parsed = JSON.parse(raw) as Partial<SecretsFile>
+    const plain = decodeSecret(cipherFor(base), raw)
+    if (plain === null) return undefined
+    const parsed = JSON.parse(plain) as Partial<SecretsFile>
     if (parsed.version !== 1 || typeof parsed.keys !== 'object' || parsed.keys === null) return undefined
     return { version: 1, keys: parsed.keys as Record<string, string> }
   } catch {
@@ -45,7 +57,7 @@ function writeStore(store: SecretsFile, base?: string): void {
   const path = secretsPath(base)
   mkdirSync(dirname(path), { recursive: true })
   const tmpPath = `${path}.tmp`
-  writeFileSync(tmpPath, JSON.stringify(store, null, 2), { mode: 0o600 })
+  writeFileSync(tmpPath, encodeSecret(cipherFor(base), JSON.stringify(store, null, 2)), { mode: 0o600 })
   renameSync(tmpPath, path)
   chmodSync(path, 0o600)
 }

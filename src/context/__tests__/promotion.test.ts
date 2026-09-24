@@ -179,8 +179,8 @@ describe('canRecallClaim', () => {
   })
 
   it('returns true when at least one evidence file still exists', () => {
-    // 同 #144 的路径反模式：`new URL(...).pathname` 在 Windows 上带前导斜杠（`/D:/...`），
-    // 与本地路径拼接会变成 `D:\D:\...`。改用 fileURLToPath，跨平台一致。
+    // 同一反模式：`URL.pathname` 在 Windows 上带前导斜杠（`/D:/...`），经 canRecallClaim 的
+    // join(cwd, path) 成 `\D:\...` → existsSync 必 false（与 mkdir 那个 ENOENT 同形态路径）。
     const testDir = dirname(fileURLToPath(import.meta.url))
     const testFile = 'promotion.test.ts'
     const c = claim({

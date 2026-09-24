@@ -11,6 +11,11 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    # contributors 对账要读 PR 列表（gh pr list）；显式申请只读权限，
+    # 不依赖仓库默认 GITHUB_TOKEN 权限档（新仓库默认只有 contents: read）。
+    permissions:
+      contents: read
+      pull-requests: read
     strategy:
       matrix:
         # engines 钉 24.1.0 且 .npmrc engine-strict=true,低于 24 会在 npm ci 直接被拒
@@ -33,6 +38,16 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Contributors ledger check（仅 push main；PR 不因账本漂移提红）
+        # 贡献者名单（CONTRIBUTORS.md）以 GitHub PR 列表为数据源，只增不删。
+        # 只在 push main 上判红：外部 PR 本身就是待收编对象，不能让它们一提就红；
+        # 漂移在下一次 main 推送时兜住。修复在 dev 主仓跑：
+        #   npx tsx scripts/contributors.ts --write（润色新条目描述）→ 随 dev 提交 → sync。
+        if: github.event_name == 'push'
+        run: npm run contributors:check
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Build
         run: npm run build
 
@@ -41,6 +56,9 @@ jobs:
     # windows-latest ships Git for Windows, so this exercises the actual
     # spawn → stdio pipe → output capture → file side-effect chain that unit
     # tests on Linux cannot reach. Guards the "exit=0, empty stdout" regression.
+    # 2026-09-16 起兼作 scripts 层的 Windows 门禁：路径表达式类缺陷（`URL.pathname`
+    # 在 Windows 上带前导斜杠，join 后成 `D:\D:\...` → ENOENT）只在 Windows 暴露，
+    # 此前没有任何 job 在 Windows 上跑测试文件，只能靠人肉实机跑全量撞。
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,6 +74,12 @@ jobs:
 
       - name: Windows bash smoke test
         run: node --import tsx --test src/tools/__tests__/bash-windows-smoke.test.ts
+
+      - name: Windows path-expression tests
+        # 路径表达式缺陷的 Windows 靶子：`new URL(...).pathname` 在 Windows 上带前导斜杠
+        # （`/D:/repo/...`），经 join/readdir/mkdir 成 `D:\D:\...` → ENOENT。scripts 层
+        # （swebench-run 的 LOCAL_TMP）与 src 侧（promotion 的 existsSync 判据）各一处。
+        run: npx tsx scripts/run-node-tests.ts scripts/ src/context/__tests__/promotion.test.ts
 
   go:
     # Go 重写版（go/ 子目录）的构建与测试门禁。

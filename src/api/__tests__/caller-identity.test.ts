@@ -11,11 +11,11 @@ import {
 // 没有会话上下文也要发、普通 provider 不被污染。
 
 test('wire 声明会话头时必定发出；缺 sessionId 用进程级兜底而不是不发', () => {
-  const wire = { userAgent: 'tianshu-tui/test', sessionHeader: 'x-opencode-session' }
+  const wire = { userAgent: 'tianshu-harness/test', sessionHeader: 'x-opencode-session' }
 
   const withId = callerIdentityHeaders(wire, 'sess-1')
   assert.equal(withId['x-opencode-session'], 'sess-1')
-  assert.equal(withId['User-Agent'], 'tianshu-tui/test')
+  assert.equal(withId['User-Agent'], 'tianshu-harness/test')
 
   const withoutId = callerIdentityHeaders(wire)
   assert.equal(
@@ -34,7 +34,7 @@ test('wire 未声明会话头时保持原行为：有 sessionId 才发默认头�
 test('providerIdentityHeaders 按 baseUrl host 命中，覆盖 anthropic 形态与 FQDN 尾点', () => {
   const anthropicForm = providerIdentityHeaders('anthropic', 'https://opencode.ai/zen/go', 'sess-2')
   assert.equal(anthropicForm['x-opencode-session'], 'sess-2', 'name 是 anthropic 的形态也要命中')
-  assert.match(anthropicForm['User-Agent'] ?? '', /^tianshu-tui\//)
+  assert.match(anthropicForm['User-Agent'] ?? '', /^tianshu-harness\//)
 
   const trailingDot = providerIdentityHeaders(undefined, 'https://opencode.ai./zen/go/v1', 'sess-3')
   assert.equal(

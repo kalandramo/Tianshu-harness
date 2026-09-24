@@ -45,10 +45,18 @@ export type PlanModeState = 'off' | 'planning'
  */
 export type AskModeState = 'off' | 'asking'
 
-// `turn_complete` data 的可选 additive 字段：`continuationReason`
-// （中间 turn 之后系统注入提醒并自动续轮的原因，如
-// 'obligation-verification'）。desktop 用它区分「给用户的消息」与
-// 「给系统提醒的自检回复」；旧 sidecar 不携带时行为不变。
+// `turn_complete` data 的可选 additive 字段：
+//  · `continuationReason`（中间 turn 之后系统注入提醒并自动续轮的原因，如
+//    'obligation-verification'）。desktop 用它区分「给用户的消息」与
+//    「给系统提醒的自检回复」；旧 sidecar 不携带时行为不变。
+//  · `aborted: true`（2026-09-23）——中断 / 看门狗中止收尾的**补发**快照。
+//    被打断的 run 走不到 natural-finish，其 usage 只能由 onAbort 路径补一条
+//    isFinal=false 的累计快照；否则桌面端输入框的缓存命中率永远停在上一个
+//    跑完的 run 上（实测有会话 29 条 turn_complete 全是 isFinal=false）。
+//  · `contextTokens: number`（2026-09-23）——本轮结束时的上下文实时占用
+//    （getEstimatedTokens = getRealOccupancy，与会话记录 enrichment 同源）。
+//    记录侧只在下拉/push 时现算，长 run 中途环形图百分比最多落后 30s；带上
+//    它之后桌面端百分比与缓存计数同频。旧客户端忽略该字段。
 export type SessionEventType =
   | 'user'
   | 'text_delta'
@@ -75,6 +83,10 @@ export type SessionEventType =
   | 'error'
   | 'decision_shift'
   | 'rewind'
+  // P1-1 — 桌面端会话分叉：子会话时间线插一条「从 X 分叉而来」标记，
+  // data: { forkedFromId, forkedFromTurnSeq?, anchorPrompt, destination }。
+  // 只写子会话日志，源会话事件流保持不动（append-only 语义与 rewind 一致）。
+  | 'fork'
   // T2 — structured active task list (mirrors the `todo` tool's write payload).
   | 'todo_state'
   // T3 — mid-run user guidance accepted into the steer buffer.
@@ -289,7 +301,26 @@ export interface SessionRecord {
    *  getOrCreate（显式路径）或 maybeAutoTitle 起标题成功时隐式创建。
    *  absent → 旧 session / 未接线，桌面端回退 session.title || shortId。 */
   missionId?: string
+  /**
+   * P1-1 会话分叉血缘（回流自 `origin/tianshu-alpha-3.14`，桌面端 ForkDialog 与
+   * 时间线「从 X 分叉」用）。`forkedFromId` 指向源会话；`forkedFromTurnSeq` 是
+   * 切点 seq（messageIndex fork = 锚点 `user` 事件的 seq；header fork = 源会话
+   * 最新事件的 seq，即整段复制；源无任何事件时缺省）；`forkTitleNumber` 是
+   * Codex 式标题序号（首个 fork 恒为 2，`Foo (2)`）；`forkSource` 记录锚点类型。
+   */
+  forkedFromId?: string
+  forkedFromTurnSeq?: number
+  forkTitleNumber?: number
+  forkSource?: 'header' | 'message'
 }
+
+/**
+ * P1-1 — fork 落点（回流自 `origin/tianshu-alpha-3.14`）：
+ * - `local`：沿用源会话 cwd（共享工作区，默认）
+ * - `same-worktree`：复用源会话的隔离 worktree（源不是 worktree 会话则失败）
+ * - `new-worktree`：新建隔离 worktree（`createWorktree`），分支随新会话 id
+ */
+export type ForkDestination = 'local' | 'same-worktree' | 'new-worktree'
 
 /** Live plan-mode draft surfaced to the desktop — a growing working document,
  *  not a submitted plan. Title is the draft's H1 (null while still empty). */

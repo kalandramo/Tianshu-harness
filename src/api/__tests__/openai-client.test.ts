@@ -416,6 +416,39 @@ describe('error handling', () => {
     assert.ok(out.includes('/model'))
   })
 
+  it('appends actionable zh hint when the upstream rejects our body as JSON', () => {
+    // 用户实报：OpenAI API error (HTTP 400): Failed to parse the request body as JSON:
+    // messages[1095].content unexpected end of hex escape at line 1 column …
+    // 网关的 serde 报错原样透传，用户不知道该做什么——必须补一句人话。
+    const body = JSON.stringify({
+      error: {
+        message: 'Failed to parse the request body as JSON: messages[1095].content unexpected end of hex escape at line 1 column 964',
+      },
+    })
+    const out = parseOpenAIError(400, body)
+    assert.ok(out.includes('unexpected end of hex escape'), '原始报错必须保留（可搜索/可上报）')
+    assert.ok(out.includes('请求体被上游判为非法 JSON'), '要补中文结论')
+    assert.ok(out.includes('/compact'), '要给出路：压缩本会话')
+    assert.ok(out.includes('中转'), '要点到第三方中转的 body 上限这一常见成因')
+    // 护栏默认关闭（issue #251 后续）：触发后必须告诉用户去哪配置发送前护栏。
+    assert.ok(out.includes('maxBodyBytes'), '要给出启用发送前护栏的配置项')
+  })
+
+  it('body-parse 400 的护栏配置指引点名当前 provider', () => {
+    const body = JSON.stringify({ error: { message: 'Failed to parse the request body as JSON' } })
+    const out = parseOpenAIError(400, body, { providerName: 'deepseek', baseUrl: 'https://api.deepseek.com/v1' })
+    assert.ok(
+      out.includes('provider.providers.deepseek.maxBodyBytes'),
+      `配置路径应精确到当前 provider，实得：${out}`,
+    )
+  })
+
+  it('does not add the body-parse hint to unrelated 400s', () => {
+    const body = JSON.stringify({ error: { code: 'invalid_request_error', message: 'messages: at least one message is required' } })
+    const out = parseOpenAIError(400, body)
+    assert.ok(!out.includes('请求体被上游判为非法 JSON'), '不要把所有 400 都套上体积提示')
+  })
+
   it('detects balance errors by baseUrl when providerName is absent', () => {
     const body = JSON.stringify({
       error: { code: 'insufficient_balance', message: 'Insufficient balance' },

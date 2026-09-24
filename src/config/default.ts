@@ -270,7 +270,8 @@ export const DEFAULT_CONFIG: Config = {
   //   "domains": { "changgeng": { "lean": true, "toolPreset": "taiyi" } } } }
   // → 启动即长庚域 + lean + 最小工具集，无需启动参数（/config 面板可配）。
   runtime: { lean: false, domains: {} },
-  // Pro 双层模式：enabled 由许可证/RIVET_PRO 决定（Basic=false）；features 与
+  // Pro 双层模式：enabled 只是 CLI 软 gate 的开关（桌面端由 Rust 注入的签名凭证
+  // 决定，不看这里，Basic=false）；features 与
   // schema 默认一致为 true——「Pro 激活即全部 Pro 功能可用」，显式 false 才关。
   // 注意 DEFAULT_CONFIG 是 loadConfig 的第一层，会 deep-merge 覆盖 schema 默认，
   // 这里写 false 会导致 Pro 用户也拿不到功能（2026-07-10 修复）。

@@ -41,10 +41,10 @@ export function evaluateMobileInstallEnv(input = {}) {
   if (platform === 'android') {
     const guidance = [
       '检测到裸 Termux 环境（Android bionic）。',
-      'tianshu-tui 的必需原生依赖（@ast-grep/napi / esbuild）没有 Android 平台二进制，npm 会静默跳过它们——装完运行必坏。',
+      'tianshu-harness 的必需原生依赖（@ast-grep/napi / esbuild）没有 Android 平台二进制，npm 会静默跳过它们——装完运行必坏。',
       '官方支持路径是 proot-distro（glibc 发行版）：',
       '  pkg install proot-distro && proot-distro install ubuntu && proot-distro login ubuntu',
-      '  （容器内）apt install -y curl ripgrep，安装 Node >= 24，然后 npm i -g tianshu-tui',
+      '  （容器内）apt install -y curl ripgrep，安装 Node >= 24，然后 npm i -g tianshu-harness',
       '沙箱/LSP/语音等能力在容器内会自动降级，不影响核心功能。',
     ]
     if (env.RIVET_ALLOW_MOBILE_INSTALL === '1') {

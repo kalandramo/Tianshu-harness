@@ -22,10 +22,11 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/v/release/huiliyi37/Tianshu-Tui?color=8B5CF6&label=Release&logo=github&style=for-the-badge" alt="GitHub release">
+  <img src="https://img.shields.io/github/v/release/huiliyi37/Tianshu-harness?color=8B5CF6&label=Release&logo=github&style=for-the-badge" alt="GitHub release">
   <img src="https://img.shields.io/badge/License-Apache%202.0-3B5BDB?style=for-the-badge&logo=apache" alt="License">
   <img src="https://img.shields.io/badge/TypeScript-Strict-blue?style=for-the-badge&logo=typescript" alt="TypeScript">
   <img src="https://img.shields.io/badge/Tests-16%2C000%2B%20Passed-green?style=for-the-badge&logo=testinglibrary" alt="Tests">
+  <a href="https://discord.gg/XjWTATCHB"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
 ---
@@ -34,14 +35,14 @@
 
 > **Tianshu** is a TypeScript coding-agent runtime: one agent kernel shared by a **terminal TUI** and a **desktop GUI**. It is built to let models do continuous multi-step engineering work — with cognitive guardrails, multi-agent orchestration, and a DeepSeek V4 prefix-cache-friendly design for cost-efficient long sessions.
 
-- **One kernel, two surfaces** — a pure-ANSI terminal TUI (`rivet`) and a Tauri desktop app (macOS / Windows / Linux) share the same agent core, so capabilities stay consistent across interfaces.
+- **One kernel, two surfaces** — a pure-ANSI terminal TUI (`tianshu`) and a Tauri desktop app (macOS / Windows / Linux) share the same agent core, so capabilities stay consistent across interfaces.
 - **Cognitive Virtual Machine (CVM)** — 72 runtime hooks across 5 lifecycle phases put an observable, correctable cognitive layer between model output and real tool actions ([A/B evidence](docs/CVM运行时对Agent模型的实证影响.md)).
 - **Multi-agent orchestration** — from lightweight `/scout` reconnaissance and parallel `/team` execution to `/council` multi-model review and `/galaxy` multi-dimensional attack, complex work runs in waves with review gates.
 - **Unified project memory** — project knowledge lives in `.rivet/knowledge/memory.jsonl`; automatic injection is limited to governance/constraint/preference memories, while old failures and docs stay explicit-recall-only so they cannot hijack new questions.
 - **Prefix-cache first** — frozen prefix + incremental appendix + boundary compaction sustain a measured steady-state **95–99% prefix-cache hit rate** on DeepSeek V4.
 
 <p align="center">
-  <img src="docs/brand/assets/tianshu-tui-screenshot.png" alt="Tianshu TUI (terminal)" width="49%">
+  <img src="docs/brand/assets/tianshu-harness-screenshot.png" alt="Tianshu TUI (terminal)" width="49%">
   <img src="docs/brand/assets/tianshu-gui-screenshot.jpg" alt="Tianshu desktop GUI" width="49%">
 </p>
 <p align="center">
@@ -49,8 +50,8 @@
 </p>
 
 > [!NOTE]
-> The project was originally codenamed **Rivet**; the installed CLI binary is still
-> named `rivet` for backward compatibility.
+> The project was originally codenamed **Rivet**. The primary CLI command is now `tianshu`,
+> with `rivet` kept as a compatibility alias (same entry point); the data directory stays `~/.rivet`.
 
 ## Table of contents
 
@@ -158,35 +159,37 @@ Agent core logic (multi-turn loops, tool pipelines, context compaction) is notor
 
 ### 2. Install (pick one)
 
-**A. Desktop app (ready to use)** — download from [GitHub Releases](https://github.com/huiliyi37/Tianshu-Tui/releases/latest): macOS `.dmg` (Apple Silicon / Intel) · Windows `.exe` setup wizard · Linux `.AppImage`.
+**A. Desktop app (ready to use)** — download from [GitHub Releases](https://github.com/huiliyi37/Tianshu-harness/releases/latest): macOS `.dmg` (Apple Silicon / Intel) · Windows `.exe` setup wizard · Linux `.AppImage`.
 > **Linux support scope (new in 3.11.2)**: x64 AppImage, no install needed — `chmod +x Tianshu_*.AppImage` and run; requires glibc ≥ 2.35 (Ubuntu 22.04+ / Debian 12+ and other mainstream distros); X11 recommended (Wayland untested). Known limitation: voice input is unavailable on Linux for now (no community whisper build — falls back to browser speech); desktop auto-update works on Linux too.
 
-**B. One-line installer (recommended)** — checks Node ≥ 24 → installs `tianshu-tui` globally (npmmirror registry by default; override via `NPM_CONFIG_REGISTRY`) → launches `rivet`; idempotent, safe to re-run:
+**B. One-line installer (recommended)** — checks Node ≥ 24 → installs `tianshu-harness` globally (npmmirror registry by default; override via `NPM_CONFIG_REGISTRY`) → launches `tianshu`; idempotent, safe to re-run:
 
 ```bash
 # macOS / Linux (bash)
-bash <(curl -fsSL https://raw.githubusercontent.com/huiliyi37/Tianshu-Tui/main/scripts/install-tui.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/huiliyi37/Tianshu-harness/main/scripts/install-tui.sh)
 # install without launching:
-bash <(curl -fsSL https://raw.githubusercontent.com/huiliyi37/Tianshu-Tui/main/scripts/install-tui.sh) --no-launch
+bash <(curl -fsSL https://raw.githubusercontent.com/huiliyi37/Tianshu-harness/main/scripts/install-tui.sh) --no-launch
 
 # Windows (PowerShell)
-powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/huiliyi37/Tianshu-Tui/main/scripts/install-tui.ps1 | iex"
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/huiliyi37/Tianshu-harness/main/scripts/install-tui.ps1 | iex"
 # install without launching (after cloning the repo):
 powershell -ExecutionPolicy Bypass -File scripts\install-tui.ps1 -NoLaunch
 ```
 
-**C. npm manual install (for the CLI)** — published as `tianshu-tui`, no local build needed, with auto update checks on startup:
+**C. npm manual install (for the CLI)** — published as `tianshu-harness`, no local build needed, with auto update checks on startup:
 
 ```bash
-npm install -g tianshu-tui
-rivet
+npm install -g tianshu-harness
+tianshu
 ```
+
+> **Migrating from the old `tianshu-tui` package**: the old package owns the `rivet` bin link, so a direct install fails with `EEXIST` — uninstall first: `npm uninstall -g tianshu-tui && npm install -g tianshu-harness` (the one-line installer handles this automatically).
 
 **D. Build from source**:
 
 ```bash
-git clone https://github.com/huiliyi37/Tianshu-Tui.git
-cd Tianshu-Tui
+git clone https://github.com/huiliyi37/Tianshu-harness.git
+cd Tianshu-harness
 npm install
 npm run build      # produces dist/cli/entry.js
 npm start          # or: node dist/cli/entry.js
@@ -194,12 +197,12 @@ npm start          # or: node dist/cli/entry.js
 
 ### 3. Configure an API Key
 
-**No manual step needed for installed builds** — the first launch walks you through it: the desktop app opens a connection wizard, and the CLI auto-runs a setup wizard when no key is found. Just paste your DeepSeek key. Change it anytime: Settings → Provider on desktop, `rivet config` on the CLI.
+**No manual step needed for installed builds** — the first launch walks you through it: the desktop app opens a connection wizard, and the CLI auto-runs a setup wizard when no key is found. Just paste your DeepSeek key. Change it anytime: Settings → Provider on desktop, `tianshu config` on the CLI.
 
 **Manual configuration** is only for developers running from source (or pre-seeding a setup):
 
 ```bash
-rivet config set-key deepseek sk-xxx   # key goes to secrets.json (0600); config.json keeps only a keyRef
+tianshu config set-key deepseek sk-xxx   # key goes to secrets.json (0600); config.json keeps only a keyRef
 export DEEPSEEK_API_KEY=sk-xxx         # or: environment variable (current shell only)
 ```
 
@@ -209,18 +212,49 @@ export DEEPSEEK_API_KEY=sk-xxx         # or: environment variable (current shell
 ### 4. Launch
 
 ```bash
-rivet            # or: npm start / node dist/cli/entry.js
+tianshu            # or: npm start / node dist/cli/entry.js
 ```
 
 You should see the TUI with a `〉` prompt. Type your request and press Enter.
 
+### Your first task
+
+Start with a **read-only** pass so it can learn your project (nothing gets modified):
+
+```
+Read this project and tell me its structure, where the entry points are, and one thing most worth improving
+```
+
+Once you trust its reading, give it a **multi-step task**:
+
+```
+Fix the first failing test in this project and explain the root cause
+```
+
+From there it greps, reads files, edits code and runs tests on its own — every step shows up as a tool call, nothing is just claimed. The default approval tier is **Auto**: low-risk actions run directly, high-risk ones stop and ask (see [Approval & Permissions](#approval--permissions)).
+
+### What to look at afterwards
+
+**① Delivery report** — when the run wraps up, Tianshu calls `deliver_task` and prints a delivery report: gate state (GREEN / YELLOW / RED), which files changed, which verifications ran, and a per-item completion audit. "Done" requires evidence; a finish without evidence gets blocked by the gate.
+
+**② Cockpit** — type `/cockpit` to open it (also reachable from the `Ctrl+P` command palette):
+
+| Panel | What it shows |
+|-------|---------------|
+| `/cockpit verify` | Delivery verification: verified / unverified / failed / blocked, which commands ran, blast radius |
+| `/cockpit advisory` | Runtime advisory ledger: rendered / adopted / ignored, plus per-key adoption rate and lift |
+| `/cockpit model` | Cache hit rate, input/output tokens, per-turn cost |
+| `/cockpit safety` | Risk level and doom-loop detection |
+
+No argument gives the summary view; `/cockpit off` closes it.
+
 ### Headless mode (script integration)
 
 ```bash
-rivet -p "explain src/agent/loop.ts"       # one-shot prompt, text output, no TUI
-rivet -p "list all TODO comments" --json   # JSON output for scripting
-rivet --stream-json -p "refactor this module"   # NDJSON event stream: text_delta/tool_use/tool_result/turn_complete… (best for CI; output is auto-redacted)
-rivet --goal "fix all type errors" --budget 50  # headless goal autonomy, max 50 turns (default 100)
+tianshu -p "explain src/agent/loop.ts"       # one-shot prompt, text output, no TUI
+tianshu -p "list all TODO comments" --json   # JSON output for scripting
+tianshu --stream-json -p "refactor this module"   # NDJSON event stream: text_delta/tool_use/tool_result/turn_complete… (best for CI; output is auto-redacted)
+tianshu --goal "fix all type errors" --budget 50  # headless goal autonomy, max 50 turns (default 100)
 ```
 
 ### Command-line flags
@@ -238,18 +272,18 @@ rivet --goal "fix all type errors" --budget 50  # headless goal autonomy, max 50
 | `--resume <id\|prefix>` `-r <id\|prefix>` | Resume a specific session (short prefix OK) |
 | `--resume` `-r` (bare) | Open the session picker after startup |
 | `--new` | Force a brand-new session |
-| `--list` · `rivet sessions` | Print the session list and exit |
+| `--list` · `tianshu sessions` | Print the session list and exit |
 | `--dangerously-skip-permissions` | One-session Unattended (skip all approvals; write sandbox stays on) |
 | `--screen-reader` | Screen-reader mode (dynamic segments not rendered; periodic redraw halted) |
 | `--skip-welcome` | Skip the welcome screen |
 | `--stream-events <path>` | Mirror this run as NDJSON `SessionEvent`s to a file |
 
-Subcommands: `rivet config` (interactive config), `rivet serve` (sidecar HTTP/SSE server), `rivet sessions` (list sessions), `rivet logs` (log locations), `rivet browser status` / `rivet browser install [--no-mirror]` (chromium health check and one-shot install for `browser_debug`; mirrors by default).
+Subcommands: `tianshu config` (interactive config), `tianshu serve` (sidecar HTTP/SSE server), `tianshu sessions` (list sessions), `tianshu logs` (log locations), `tianshu browser status` / `tianshu browser install [--no-mirror]` (chromium health check and one-shot install for `browser_debug`; mirrors by default).
 
 ### Auto-Update
 
 When installed via npm, Tianshu checks for newer versions at startup (once per 24h)
-and shows a banner. `/update` runs `npm install -g tianshu-tui@latest` and restarts.
+and shows a banner. `/update` runs `npm install -g tianshu-harness@latest` and restarts.
 Source installs use `git pull && npm install && npm run build`. Suppress the check
 with `RIVET_NO_UPDATE_CHECK=1`.
 
@@ -325,7 +359,7 @@ Tianshu ships 50 built-in tools, assembled in preset tiers (resolution priority:
 | **taiyi** | 16 | Minimal evaluation tier — high-frequency core + delivery loop, without orchestration/browser/network/vision heavyweights; auto-applies when the taiyi star domain is pinned (explicit config always wins) |
 
 ```bash
-RIVET_TOOL_PRESET=full rivet          # use full for this session
+RIVET_TOOL_PRESET=full tianshu          # use full for this session
 ```
 
 ```json
@@ -397,9 +431,9 @@ Long sessions accumulate context; past a point, starting fresh is cheaper than p
 - **State restore** — side panel, todos, and the active plan all come back
 
 ```bash
-rivet --continue                 # resume the most recent session for this cwd
-rivet --resume abc123            # resume a specific session (short prefix OK)
-rivet --resume                   # open the session picker after startup
+tianshu --continue                 # resume the most recent session for this cwd
+tianshu --resume abc123            # resume a specific session (short prefix OK)
+tianshu --resume                   # open the session picker after startup
 ```
 
 ### Council (Multi-Perspective Review)
@@ -457,7 +491,7 @@ Reusable workflow playbooks. `visual-acceptance` (frontend/UI change acceptance:
 
 Create a custom skill by dropping a `.md` file with YAML frontmatter (`name`, `description`, `triggers`) into `.rivet/skills/`.
 
-> `writing-plans` / `executing-plans` are now built-in native flows (planning follows the system prompt's `<plan-mode>` discipline, execution the `<plan-executing>` discipline) — no skill files needed. `agent-harness-testing` / `cognitive-alignment` / `research-spec` left the default distribution and are archived in [`docs/skills/optional/`](docs/skills/optional/) — copy them into `.rivet/skills/` to enable.
+> `writing-plans` / `executing-plans` are now built-in native flows (planning follows the system prompt's `<plan-mode>` discipline, execution the `<plan-executing>` discipline) — no skill files needed. `agent-harness-testing` / `research-spec` left the default distribution and are archived in [`docs/skills/optional/`](docs/skills/optional/) — copy them into `.rivet/skills/` to enable.
 
 ### Cross-Session Memory
 
@@ -487,10 +521,10 @@ Key switches:
 Connect external tool servers — documentation search, databases, APIs — directly into the agent's tool pipeline. MCP servers auto-discover at startup; their tools appear as `mcp__<serverId>__<toolName>`.
 
 ```bash
-rivet config mcp add-stdio <server-id> npx -y <package> [args...]   # local process
-rivet config mcp add-sse <server-id> http://localhost:3001/sse      # remote/network
-rivet config mcp add-preset context7                                # popular preset
-rivet config mcp list                                               # list + status
+tianshu config mcp add-stdio <server-id> npx -y <package> [args...]   # local process
+tianshu config mcp add-sse <server-id> http://localhost:3001/sse      # remote/network
+tianshu config mcp add-preset context7                                # popular preset
+tianshu config mcp list                                               # list + status
 ```
 
 Inside a session: `/mcp` (status) and `/debug mcp` (diagnostics). MCP tools respect the same approval mode as built-in tools.
@@ -581,7 +615,7 @@ The desktop app builds a visual interaction layer on top of the TUI's full capab
 
 Turn your phone/tablet into a second screen for Tianshu — sessions run on the computer while you watch progress and approve actions from your phone:
 
-- **Enable**: Desktop **Settings → Network → Remote Access** (shows the LAN URL, access token, and a scan-to-connect QR code); or from the CLI side, start `rivet serve` with `RIVET_SERVE_HOST=0.0.0.0` (plus `--mobile-dir` pointing at the desktop build output) to serve `/mobile` on the same port.
+- **Enable**: Desktop **Settings → Network → Remote Access** (shows the LAN URL, access token, and a scan-to-connect QR code); or from the CLI side, start `tianshu serve` with `RIVET_SERVE_HOST=0.0.0.0` (plus `--mobile-dir` pointing at the desktop build output) to serve `/mobile` on the same port.
 - **Connect**: open `http://<computer-LAN-IP>:3100/mobile` in your phone browser — scanning the QR auto-fills the token (the URL is then immediately cleaned to avoid leaking it); manual token entry also works.
 - **What you can do**: session list (sessions with pending approvals pinned on top) → read-only live timeline for a session (same folding / auto-reconnect semantics as the desktop) → approval / plan / question cards + abort button. Sending messages is intentionally out of scope.
 - **Security**: trusted LAN or tunnel only (Tailscale/SSH); in LAN mode the bearer token is the sole credential — treat it like a password; never port-forward to the public internet.
@@ -634,9 +668,9 @@ Registration steps and parameters are covered under “Image generation” in [M
 Switch providers inside a session with `/model <name>`.
 
 ```bash
-rivet config                          # interactive setup (TTY)
-rivet config setup codex --default    # Codex uses OAuth (browser login on first run)
-rivet config show
+tianshu config                          # interactive setup (TTY)
+tianshu config setup codex --default    # Codex uses OAuth (browser login on first run)
+tianshu config show
 ```
 
 Or edit `config.json` directly (only overrides needed, defaults are deep-merged). Location: `~/.rivet/config.json` for the CLI (`%LOCALAPPDATA%\.rivet` on Windows); for the desktop app check Settings → Storage (portable builds use `TianshuData\.rivet` next to the exe):
@@ -709,8 +743,8 @@ Quick reference:
 ```
 
 ```bash
-rivet --dangerously-skip-permissions      # one-session Unattended
-rivet config set-approval auto-safe       # persist the default tier
+tianshu --dangerously-skip-permissions      # one-session Unattended
+tianshu config set-approval auto-safe       # persist the default tier
 ```
 
 - Rules come in `[config]` (persisted) and `[session]` (current session) layers; `deny` always wins.
@@ -1010,13 +1044,27 @@ Write only the fields you want to override; defaults are deep-merged. Full schem
 
 ## 🤝 Community & Support
 
-- **Usage questions / discussions** → [GitHub Discussions](https://github.com/huiliyi37/Tianshu-Tui/discussions)
-- **Bug reports / feature requests** → [GitHub Issues](https://github.com/huiliyi37/Tianshu-Tui/issues)
-- **Security vulnerabilities** → [Report privately](https://github.com/huiliyi37/Tianshu-Tui/security/advisories/new) (do not open a public issue)
+- **Usage questions / discussions** → [GitHub Discussions](https://github.com/huiliyi37/Tianshu-harness/discussions)
+- **Discord community** → [Join the Tianshu Harness Discord](https://discord.gg/XjWTATCHB)
+- **Bug reports / feature requests** → [GitHub Issues](https://github.com/huiliyi37/Tianshu-harness/issues)
+- **Security vulnerabilities** → [Report privately](https://github.com/huiliyi37/Tianshu-harness/security/advisories/new) (do not open a public issue)
 - **Contributing** → See [CONTRIBUTING.md](CONTRIBUTING.md)
-- **Support guide** → See [SUPPORT.md](SUPPORT.md)
+- **Support guide** → See SUPPORT.md
+- **WeChat group** → 「天枢 harness 交流群」 — scan the QR code below to join (QR codes expire every 7 days; leave a note in Discussions once expired):
+
+<img src="docs/brand/assets/wechat-group-qr.png" width="280" alt="Tianshu Harness WeChat group QR code">
 
 > Note: a maintainer needs to enable Discussions in `Settings → General → Discussions` first.
+
+## ⭐ Star History
+
+<a href="https://star-history.com/#huiliyi37/tianshu-harness&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=huiliyi37/tianshu-harness&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=huiliyi37/tianshu-harness&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=huiliyi37/tianshu-harness&type=Date" width="700" />
+  </picture>
+</a>
 
 ## ☕ Support
 
@@ -1024,7 +1072,7 @@ If Tianshu has been useful and you'd like to say thanks, you can. It stays a cof
 
 - **China mainland** — WeChat Pay (scan the QR code below)
 
-<img src="docs/brand/assets/wechat-pay.jpg" width="240" alt="WeChat Pay">
+<img src="docs/brand/assets/wechat-donate.png" width="240" alt="WeChat Pay">
 
 ## ✨ Contributors
 
@@ -1032,9 +1080,9 @@ Thank you to everyone who has contributed to Tianshu (ordered by first contribut
 
 | Contributor | Contributions |
 |-------------|---------------|
-| [@banxia](https://github.com/banxia) | Project creator · Core development |
+| [@huiliyi37](https://github.com/huiliyi37) | Project creator · Core development |
 
-Full list (17 external contributors / 89 PRs) → CONTRIBUTORS.md.
+Full list (22 external contributors / 145 PRs) → CONTRIBUTORS.md.
 
 External PRs land via a "port" flow; authorship is credited with `Co-authored-by`
 trailers (auto-recorded by scripts/credit-contributors.sh) — contributor wall (full list in CONTRIBUTORS.md):
@@ -1057,6 +1105,11 @@ trailers (auto-recorded by scripts/credit-contributors.sh) — contributor wall 
 <a href="https://github.com/nzz0991999-ai"><img src="https://github.com/nzz0991999-ai.png?size=100" width="50" height="50" alt="nzz0991999-ai" title="nzz0991999-ai" /></a>
 <a href="https://github.com/L4XB"><img src="https://github.com/L4XB.png?size=100" width="50" height="50" alt="L4XB" title="L4XB" /></a>
 <a href="https://github.com/Wanming08"><img src="https://github.com/Wanming08.png?size=100" width="50" height="50" alt="Wanming08" title="Wanming08" /></a>
+<a href="https://github.com/lei454577-web"><img src="https://github.com/lei454577-web.png?size=100" width="50" height="50" alt="lei454577-web" title="lei454577-web" /></a>
+<a href="https://github.com/jian-in"><img src="https://github.com/jian-in.png?size=100" width="50" height="50" alt="jian-in" title="jian-in" /></a>
+<a href="https://github.com/sky-mirrors"><img src="https://github.com/sky-mirrors.png?size=100" width="50" height="50" alt="sky-mirrors" title="sky-mirrors" /></a>
+<a href="https://github.com/moyan3691"><img src="https://github.com/moyan3691.png?size=100" width="50" height="50" alt="moyan3691" title="moyan3691" /></a>
+<a href="https://github.com/EarthxxRhythm"><img src="https://github.com/EarthxxRhythm.png?size=100" width="50" height="50" alt="EarthxxRhythm" title="EarthxxRhythm" /></a>
 </p>
 
 > Contributions are welcome — see CONTRIBUTING.md.

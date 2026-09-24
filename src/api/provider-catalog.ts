@@ -61,7 +61,7 @@ export interface ProviderWireConfig {
  * define (absent in dev/test builds). UA rides outside the request body, so it
  * cannot perturb the prefix cache.
  */
-export const TIANSHU_USER_AGENT = `tianshu-tui/${process.env.RIVET_VERSION ?? 'dev'}`
+export const TIANSHU_USER_AGENT = `tianshu-harness/${process.env.RIVET_VERSION ?? 'dev'}`
 
 // ─── Catalog entry ───────────────────────────────────────────
 
@@ -169,6 +169,18 @@ const CATALOG_META: Record<string, CatalogMeta> = {
       'Ephemeral cache (5 min TTL)',
     ],
   },
+  grok: {
+    label: 'Grok (xAI)',
+    // Chat Completions 侧：max_tokens 已弃用 → max_completion_tokens（未设默认 128k 可见输出）；
+    // x-grok-conv-id 把同一会话钉到同一台服务器，缓存命中率才稳（官方明确建议）。
+    wire: { useMaxCompletionTokens: true, sessionHeader: 'x-grok-conv-id' },
+    notes: [
+      'grok-4.6: 500K context, text+image input, $2/$6 per 1M (cached $0.50)',
+      'Reasoning: reasoning_effort low|medium|high(default)|xhigh; cannot be disabled (off → low)',
+      'Prompt cache: exact-prefix; route with x-grok-conv-id, cached_tokens billed at reduced rate',
+      'presence/frequency penalty and stop are rejected on reasoning models',
+    ],
+  },
   codex: {
     label: 'Codex',
     notes: [
@@ -217,6 +229,16 @@ const CATALOG_META: Record<string, CatalogMeta> = {
       'Thinking block: {type: enabled} + reasoning_effort（Qwen3-max 支持）',
       '模型能力分裂：Qwen-plus/turbo 不支持 thinking → 用 models[].capabilities override',
       '不支持 cache_control breakpoint（非 Anthropic 协议）',
+    ],
+  },
+  stepfun: {
+    label: '阶跃星辰 (StepFun)',
+    notes: [
+      '官方开放平台：OpenAI 兼容端点（api.stepfun.com/v1），另有 /v1/messages 的 Anthropic 协议端点',
+      'Thinking: reasoning_effort 三档 low/medium/high（无 max —— 项目的 max 自动降 high）',
+      '服务端隐式 exact-prefix 提示缓存（缓存命中 0.35 元 / 1M tokens）',
+      '原生多模态：文本 + 图片 + 视频输入',
+      '官方按量计费，非订阅制',
     ],
   },
   openrouter: {

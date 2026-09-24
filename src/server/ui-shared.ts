@@ -88,3 +88,22 @@ export {
   type PermissionLang,
   type PermissionTier,
 } from '../agent/approval-vocabulary.js'
+
+// 星籍（账号的星域身份）：官网两字母域码 ↔ 内核星域 id、称号、展示视图。
+// 零依赖叶子——中文名/星符由调用方用 STAR_DOMAINS 经 domainLookupFrom() 注入，
+// 桌面端不复刻第二份文案。
+export {
+  STELLAR_DOMAIN_CODES,
+  STELLAR_TITLE_LABELS,
+  buildStellarIdentityView,
+  domainCodeForId,
+  domainIdForCode,
+  domainLookupFrom,
+  formatStellarIdForDisplay,
+  stellarTitleLabel,
+  type StellarDomainCode,
+  type StellarDomainInfo,
+  type StellarDomainLookup,
+  type StellarIdentityLike,
+  type StellarIdentityView,
+} from '../agent/stellar-identity.js'

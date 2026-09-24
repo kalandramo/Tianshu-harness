@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { parseCliArgs, runHeadless } from '../headless.js'
 import { GoalTracker, buildGoalModePrompt } from '../agent/goal-tracker.js'
 import type { AgentCallbacks } from '../agent/loop-types.js'
+import type { SessionEvent } from '../server/protocol.js'
 
 describe('headless CLI parsing', () => {
   it('recognizes -p prompt input', () => {
@@ -227,4 +228,189 @@ describe('runHeadless goal-mode wiring', () => {
       createAgent: () => ({ run: async () => {} }),
     })
     assert.ok(jsonResult.json, '--json 模式 payload 不受影响')
+  })
+
+  // --stream-events 在无头下必须真的镜像出事件（issue：`-p` 模式下 sink 只在 TUI
+  // 装配路径被接进 sinks，无头分支压根到不了那行——文件 0 字节且无任何告警）。
+  // 这一组锁的是「接线已存在且与输出格式解耦」，不是文件写入细节（那是 sink 自己的测试）。
+  describe('runHeadless --stream-events 接线', () => {
+    it('非 stream-json 下也把 run 镜像进 sink，且 stdout 行为不变', async () => {
+      const events: SessionEvent[] = []
+      const result = await runHeadless({
+        prompt: 'hello',
+        json: false,
+        streamJson: false,
+        eventSink: e => events.push(e),
+        createAgent: () => ({
+          run: async (_p: string, cb: AgentCallbacks) => {
+            cb.onToolUse('t1', 'read_file', { path: 'a.ts' })
+            cb.onToolResult('t1', 'read_file', 'file body', false)
+            cb.onTextDelta('answer')
+            cb.onTurnComplete({ input_tokens: 5, output_tokens: 2 }, 1, true)
+          },
+        }),
+      })
+
+      // 接线不得改变原有 stdout 契约。
+      assert.equal(result.stdout, 'answer')
+      assert.equal(result.exitCode, 0)
+
+      const types = events.map(e => e.type)
+      assert.ok(types.includes('tool_use'), 'tool_use 必须进事件流')
+      assert.ok(types.includes('tool_result'), 'tool_result 必须进事件流')
+      assert.ok(types.includes('turn_complete'), 'turn_complete 必须进事件流')
+      assert.equal(events[0]!.seq, 1)
+      assert.deepEqual(
+        events.map(e => e.seq),
+        events.map((_, i) => i + 1),
+        'seq 必须单调递增无空洞——消费者按它做断点续读',
+      )
+    })
+
+    it('run 结束时仍压着的尾段文本也必须落进 sink（tap 合并缓冲 → 关闭前 flush）', async () => {
+      const events: SessionEvent[] = []
+      await runHeadless({
+        prompt: 'hello',
+        json: false,
+        streamJson: false,
+        eventSink: e => events.push(e),
+        // 只发 delta、不发任何后续非 delta 事件：tap 会把文本合并到 4000 字符才落盘，
+        // 不收尾 flush 的话这一段就永久留在缓冲里（丢的正好是 run 的最后一段输出）。
+        createAgent: () => ({
+          run: async (_p: string, cb: AgentCallbacks) => {
+            cb.onTextDelta('tail segment')
+          },
+        }),
+      })
+
+      const text = events.filter(e => e.type === 'text_delta')
+      assert.equal(text.length, 1, '尾段文本必须被 flush 成一条 text_delta')
+      assert.equal(text[0]!.data.text, 'tail segment')
+    })
+
+    it('phase / delegation 在非 stream-json 下也进事件流（事件面与 TUI 同宽）', async () => {
+      const events: SessionEvent[] = []
+      await runHeadless({
+        prompt: 'hello',
+        json: false,
+        streamJson: false,
+        eventSink: e => events.push(e),
+        createAgent: () => ({
+          run: async (_p: string, cb: AgentCallbacks) => {
+            cb.onPhaseChange?.('tool', { tool: 'read_file' })
+            cb.onDelegationActivity?.({
+              workOrderId: 'wo1',
+              parentToolId: 't1',
+              status: 'running',
+              profile: 'code_scout',
+              toolUseCount: 1,
+            })
+            cb.onTurnComplete({ input_tokens: 5, output_tokens: 2 }, 1, true)
+          },
+        }),
+      })
+
+      assert.ok(events.some(e => e.type === 'phase'), 'phase 不得因未开 --stream-json 而从事件流消失')
+      const delegation = events.find(e => e.type === 'delegation')
+      assert.ok(delegation, 'delegation 不得因未开 --stream-json 而从事件流消失')
+      assert.equal(delegation!.data.workerId, 'wo1')
+    })
+
+    it('sink 落盘内容与 stdout 同口径脱敏', async () => {
+      const events: SessionEvent[] = []
+      await runHeadless({
+        prompt: 'hello',
+        json: false,
+        streamJson: false,
+        eventSink: e => events.push(e),
+        createAgent: () => ({
+          run: async (_p: string, cb: AgentCallbacks) => {
+            cb.onTextDelta('got Authorization: Bearer sk-ant-def456 back')
+            cb.onToolResult('t1', 'bash', 'token=sk-secret-xyz', false)
+          },
+        }),
+      })
+
+      const dumped = JSON.stringify(events)
+      assert.ok(!dumped.includes('sk-ant-def456'), 'text_delta 不得把密钥写进事件文件')
+      assert.ok(!dumped.includes('sk-secret-xyz'), 'tool_result 不得把密钥写进事件文件')
+    })
+
+    it('sink 抛错不拖垮 run（事件流是诊断通道）', async () => {
+      const result = await runHeadless({
+        prompt: 'hello',
+        json: false,
+        streamJson: false,
+        eventSink: () => { throw new Error('disk full') },
+        createAgent: () => ({
+          run: async (_p: string, cb: AgentCallbacks) => {
+            cb.onTextDelta('answer')
+            cb.onTurnComplete({ input_tokens: 1 }, 1, true)
+          },
+        }),
+      })
+      assert.equal(result.exitCode, 0)
+      assert.equal(result.stdout, 'answer')
+    })
+
+    // tap 只在 inner **定义了**回调时才投影 SessionEvent（event-tap.ts 里那几个
+    // 可选回调都是条件挂载）。所以「无头回调集少了某个键」在类型与行为上都无感，
+    // 只在事件文件里表现为静默少一类。这两条把该契约钉住：先钉回调面，再钉事件面。
+    it('回调面覆盖 TUI 侧会投影给 tap 的可选回调（缺定义 = 事件流静默少一类）', async () => {
+      let captured: AgentCallbacks | undefined
+      await runHeadless({
+        prompt: 'hello',
+        json: false,
+        streamJson: false,
+        createAgent: () => ({
+          run: async (_p: string, cb: AgentCallbacks) => { captured = cb },
+        }),
+      })
+
+      // 对照面 = src/tui/engine/bridge.ts 里 wrapCallbacksWithTuiApp 定义、且 tap 会包装
+      // 的那批（onSteerDrain 不在内：它有返回值，tap 刻意不观测）。
+      const required = [
+        'onTextDelta', 'onThinkingDelta', 'onToolUse', 'onToolResult', 'onTurnComplete',
+        'onError', 'onAbort', 'onApprovalRequired',
+        'onCheckpoint', 'onPhaseChange', 'onDomainDrift', 'onIntentNote', 'onDelegationActivity',
+      ] as const
+      const cb = captured as AgentCallbacks | undefined
+      assert.ok(cb, 'agent.run 必须收到回调集')
+      for (const key of required) {
+        assert.equal(
+          typeof cb[key], 'function',
+          `${key} 未定义——tap 不会投影它对应的事件，--stream-events 的文件会静默少一类记录`,
+        )
+      }
+    })
+
+    it('checkpoint / domain_drift / intent_note 实际落进事件流', async () => {
+      const events: SessionEvent[] = []
+      await runHeadless({
+        prompt: 'hello',
+        json: false,
+        streamJson: false,
+        eventSink: e => events.push(e),
+        createAgent: () => ({
+          run: async (_p: string, cb: AgentCallbacks) => {
+            cb.onCheckpoint?.('deadbeef')
+            cb.onDomainDrift?.({
+              recommendedId: 'pojun',
+              recommendedName: '破军',
+              currentId: 'tianshu',
+              currentName: '天枢',
+              matchedKeywords: ['refactor'],
+            })
+            cb.onIntentNote?.({ summary: '方向：先收敛测试', confidence: 0.7 })
+            cb.onTurnComplete({ input_tokens: 1 }, 1, true)
+          },
+        }),
+      })
+
+      const types = events.map(e => e.type)
+      assert.ok(types.includes('checkpoint'), 'checkpoint 必须进事件流')
+      assert.ok(types.includes('domain_drift'), 'domain_drift 必须进事件流')
+      assert.ok(types.includes('intent_note'), 'intent_note 必须进事件流')
+      assert.equal(events.find(e => e.type === 'checkpoint')?.data.hash, 'deadbeef')
+    })
   })

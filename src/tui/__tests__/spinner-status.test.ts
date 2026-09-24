@@ -218,3 +218,60 @@ describe('formatJobAwaitWait', () => {
   })
 })
 
+
+describe('formatSpinnerStatus：activityLabel 如实化（analyzing 相位不冒充思考）', () => {
+  it('设置 activityLabel 时取代动词池轮换', () => {
+    const out = formatSpinnerStatus({ tick: 0, phase: 'analyzing', elapsedMs: 65_000, activityLabel: 'Run(npm test)' }, theme)!
+    assert.ok(out.includes('Run(npm test)'), out)
+    assert.ok(!out.includes('思索中') && !out.includes('琢磨中'), out)
+    assert.ok(out.includes('1m 5s'), out)
+  })
+
+  it('未设置时保持动词池（回归）', () => {
+    const out = formatSpinnerStatus({ tick: 0, phase: 'analyzing', elapsedMs: 65_000 }, theme)!
+    assert.ok(out.includes('…'), out)
+  })
+
+  it('approvalWait 优先级仍高于一切', () => {
+    const out = formatSpinnerStatus({ tick: 0, phase: 'analyzing', elapsedMs: 5_000, activityLabel: 'Run(x)', approvalWait: { toolName: 'bash', waitMs: 3_000 } }, theme)!
+    assert.ok(out.includes('等待审批 bash'), out)
+    assert.ok(!out.includes('Run(x)'), out)
+  })
+})
+
+describe('formatSpinnerStatus：activityLabel 宽度适配（耗时不被长标签挤掉）', () => {
+  const longLabel = `mcp·verylongserver:some_tool(${'x'.repeat(50)})`
+
+  it('窄终端下长 activityLabel 被裁剪，耗时仍在行内', () => {
+    const out = formatSpinnerStatus(
+      { tick: 0, phase: 'analyzing', elapsedMs: 65_000, columns: 40, activityLabel: longLabel },
+      theme,
+    )!
+    const plain = stripAnsi(out)
+    assert.ok(plain.includes('1m 5s'), `耗时被挤掉: ${plain}`)
+    assert.ok(plain.includes('…'), `长标签应先裁剪: ${plain}`)
+    // 80 列终端下原样显示会超宽 → clampLine 从尾部截掉耗时，这一行是根修
+    const out80 = formatSpinnerStatus(
+      { tick: 0, phase: 'analyzing', elapsedMs: 65_000, columns: 80, activityLabel: longLabel },
+      theme,
+    )!
+    assert.ok(stripAnsi(out80).includes('1m 5s'), stripAnsi(out80))
+  })
+
+  it('未给 columns 时保持原样（旧调用兼容）', () => {
+    const out = formatSpinnerStatus(
+      { tick: 0, phase: 'analyzing', elapsedMs: 65_000, activityLabel: 'Run(npm test)' },
+      theme,
+    )!
+    assert.equal(stripAnsi(out).includes('Run(npm test)'), true)
+    assert.equal(stripAnsi(out).includes('…'), false)
+  })
+
+  it('窄终端下短标签不裁剪（不制造无谓省略号）', () => {
+    const out = formatSpinnerStatus(
+      { tick: 0, phase: 'analyzing', elapsedMs: 65_000, columns: 80, activityLabel: 'Run(npm test)' },
+      theme,
+    )!
+    assert.ok(stripAnsi(out).includes('Run(npm test)'), stripAnsi(out))
+  })
+})

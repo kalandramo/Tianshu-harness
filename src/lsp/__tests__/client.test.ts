@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { filterDiagnosticsForEdit } from '../client.js'
+import { filterDiagnosticsForEdit, shouldRunDiagnostics } from '../client.js'
 import type { LspDiagnostic } from '../manager.js'
 
 function diag(line0: number, severity: 1 | 2, message = 'boom'): LspDiagnostic {
@@ -66,4 +66,25 @@ test('filterDiagnosticsForEdit: ignores info/hint severities', () => {
   const r = filterDiagnosticsForEdit([info], [{ start: 10, end: 10 }])
   assert.equal(r.modelText, '')
   assert.equal(r.uiText, '')
+})
+
+test('shouldRunDiagnostics: only write_file/edit_file', () => {
+  assert.equal(shouldRunDiagnostics('bash', 'a.py'), false)
+  assert.equal(shouldRunDiagnostics('read_file', 'a.py'), false)
+  assert.equal(shouldRunDiagnostics('edit_file', 'a.py'), true)
+  assert.equal(shouldRunDiagnostics('write_file', 'a.py'), true)
+})
+
+test('shouldRunDiagnostics: 非 JS/TS 的已注册语言同样触发', () => {
+  // 原先硬编码 /\.(ts|tsx|js|jsx)$/，多语言 registry 装好 server 也收不到诊断。
+  for (const f of ['main.py', 'main.go', 'main.rs', 'Main.java', 'Program.cs', 'Main.kt', 'app.rb']) {
+    assert.equal(shouldRunDiagnostics('edit_file', f), true, `${f} 应触发诊断`)
+  }
+})
+
+test('shouldRunDiagnostics: 未注册扩展名不触发（不为无 server 的语言白跑探测）', () => {
+  assert.equal(shouldRunDiagnostics('edit_file', 'README.md'), false)
+  assert.equal(shouldRunDiagnostics('edit_file', 'package.json'), false)
+  assert.equal(shouldRunDiagnostics('edit_file', 'notes.txt'), false)
+  assert.equal(shouldRunDiagnostics('edit_file', undefined), false)
 })

@@ -72,7 +72,10 @@ describe('import_resource', () => {
       try {
         mkdirSync(join(root, 'inner'), { recursive: true })
         try {
-          symlinkSync('/etc', join(root, 'inner', 'link'))
+          // 显式声明 'dir'（与 glob.test.ts 的循环链接守卫同款）：Windows 上目录
+          // 符号链接必须给类型，不给时 Node 按 'file' 建，失败码未必落在下面捕获的
+          // EPERM 上，守卫会漏。
+          symlinkSync('/etc', join(root, 'inner', 'link'), 'dir')
         } catch (err) {
           // Windows 无管理员/开发者模式时目录符号链接创建 EPERM——环境权限问题，
           // 非被测逻辑缺陷（issue #189 同族守卫，与 glob.test.ts 同款）。

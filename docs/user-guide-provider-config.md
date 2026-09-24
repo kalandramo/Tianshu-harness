@@ -413,8 +413,40 @@ curl https://opencode.ai/zen/go/v1/messages \
 
 - `protocol: 'openai'` → `OpenAIClient` → 请求 `/v1/chat/completions`
 - `protocol: 'anthropic'` → `AnthropicClient` → 请求 `/v1/messages`
+- `protocol: 'openai-responses'` → `ResponsesClient` → 请求 `/v1/responses`（OpenAI Responses API；用于只提供该版式的官方 / 中转端点，issue #239）
 
 预设 `opencode-go-anthropic` 显式写了 `protocol: "anthropic"`。手工配置时把 `name` 设为 `"anthropic"` 同样有效（schema 对名为 anthropic 的条目默认 protocol 为 anthropic），但显式 `protocol` 字段更不容易误配。
+
+Responses 协议接入示例（API Key 端点）：
+
+```json
+{
+  "provider": {
+    "providers": {
+      "my-responses": {
+        "name": "my-responses",
+        "apiKeyEnv": "MY_RESPONSES_KEY",
+        "baseUrl": "https://api.openai.com/v1",
+        "protocol": "openai-responses",
+        "capabilities": {
+          "cacheControl": false,
+          "stripParams": [],
+          "toolJsonBug": false,
+          "prefixCache": "none",
+          "prefixCompletion": false
+        },
+        "thinking": "enabled",
+        "maxTokens": 128000,
+        "models": [
+          { "id": "gpt-5.6-sol", "contextWindow": 400000, "maxTokens": 128000, "reasoningEffort": "high" }
+        ]
+      }
+    }
+  }
+}
+```
+
+`baseUrl` 可粘贴完整 `/v1/responses` 地址（入库前自动归一化）；模型档位写在 `models[].reasoningEffort`，会映射为请求体的 `reasoning.effort`。
 
 ---
 
@@ -470,6 +502,38 @@ rivet config login codex   # 打开浏览器完成 OAuth 授权（TUI 会话内�
 3. Token 自动保存到 `~/.rivet/auth/codex.json`
 4. 每 55 分钟自动刷新 Token
 
+### Grok (xAI)
+
+**推荐场景**：需要长上下文（500K）+ 强推理 + 图片输入，且希望按任务调推理深度的场景。
+
+```bash
+rivet config setup grok --key-env XAI_API_KEY
+# 或在 TUI / 桌面端「添加供应商」里选 Grok，粘贴 console.x.ai 的 API Key
+```
+
+| 项 | 值 |
+|----|----|
+| Base URL | `https://api.x.ai/v1`（OpenAI Chat Completions 兼容） |
+| 环境变量 | `XAI_API_KEY` |
+| 模型 | `grok-4.6`：500K 上下文，文本+图片输入，最大可见输出 128K |
+| 定价 | 输入 $2 / 输出 $6 每 1M（缓存命中 $0.50；≥200K prompt 时官方费率翻倍） |
+| 推理档 | `reasoning_effort`：`low` / `medium` / `high`（默认）/ `xhigh` |
+
+推理档位映射（天枢内部 `off|low|medium|high|max` → xAI）：
+
+- `low/medium/high` 原样透传；
+- `max` → `xhigh`（xAI 的最高档词汇）；
+- `off` → `low`：**xAI 明确推理不可关闭**，`off` 只能落到最低档；界面仍可选，但请求发的是 `low`。
+
+前缀缓存：xAI 从 messages 头部做 exact-prefix 缓存，天枢会自动带上 `x-grok-conv-id`（会话 id）
+把同一会话粘到同一台服务器，并把 `prompt_tokens_details.cached_tokens` 计入缓存命中账本。
+
+注意事项：
+
+- `presence_penalty` / `frequency_penalty` / `stop` 在 xAI 推理模型上会被拒绝（400），天枢已默认剥离；
+- `max_tokens` 在 xAI 已弃用，请求统一走 `max_completion_tokens`（未设置时官方默认 128K）；
+- 图片输入直接可用（`supportsVision: true`），可作主会话模型或识图桥的备选。
+
 ---
 
 ## 重试与速率限制
@@ -488,6 +552,7 @@ rivet config login codex   # 打开浏览器完成 OAuth 授权（TUI 会话内�
 | `stream_parse` | SSE 解析失败 | 2 | 1000ms |
 | `unknown` | 兜底 | 2 | 2000ms |
 | `image_strip` | 413 / 图片处理失败 | 1（只剥离一次） | 0 |
+| `tls_intercept` | TLS 证书校验失败（`UNABLE_TO_VERIFY_LEAF_SIGNATURE` / `SELF_SIGNED_CERT_IN_CHAIN` 等）：本机检出加密连接扫描根证书 → 本地中间人；未检出 → 多为服务端证书链不完整 | 0（本地中间人，同一张证书重试必然复现）/ 1（未检出，给服务端半截链一次自愈机会） | 2000ms |
 | `auth_error` / `client_error` / `context_overflow` | 401/403/404/其他 4xx | 0（不重试） | — |
 
 未配置时的等待 = 上表固定值 + 0–50% 抖动；服务端返回 `Retry-After` 响应头时以服务端为准
@@ -548,6 +613,36 @@ worker 是独立进程、各有自己的桶，跨进程限速不在覆盖范围�
 
 > 历史提示：在 `retry` 块出现之前，`maxRetries` 会被类别默认值（如 429 的 5）向下夹取——
 > 把它从 10 调到 20 对 429 并不生效。该问题已修复。
+
+## 请求体体积护栏（`maxBodyBytes`）
+
+**默认关闭**：天枢不在发送前限制请求体大小，也不为此做额外量体（零成本直通）。端点真实上限差异很大——官方 DeepSeek 等约 4MB，第三方中转（nginx `client_max_body_size` 默认 1MB）可能更小——替你猜一个值并不合适。
+
+上游对超限请求的处理是**按字节截断 body**：切进一个 `\uXXXX` 转义就返回
+`Failed to parse the request body as JSON … unexpected end of hex escape` 400，或者直接 413。
+遇到这类报错时，天枢的文案会提示你来配置本项。
+
+启用后（`provider.providers.<name>.maxBodyBytes`，单位字节；当前接线于 OpenAI 兼容的
+chat/completions 客户端，anthropic / responses 协议暂未接入）：
+
+| 触发点 | 行为 |
+|---|---|
+| 达到上限的 50% | 状态行 / 桌面提示「接近传输上限」，建议 `/compact` |
+| 超过上限 | 先截断**历史 tool 输出**（保头 2k + 保尾 1k + 体里可见标注）；system 与最近 6 条不动 |
+| 截完仍超限 | 抛可行动错误，点名最大来源（并在体积分散时说明分散情况） |
+
+```json
+{
+  "provider": {
+    "providers": {
+      "deepseek": { "maxBodyBytes": 4194304 }
+    }
+  }
+}
+```
+
+不知道填多少时，可先用 4194304（4MB，保守参考值）起步。清空该字段 = 恢复不限制；
+TUI `/connect` 的「高级设置」里也有这一项（桌面端配置文件同路径）。
 
 ---
 
@@ -634,7 +729,7 @@ rm ~/.rivet/config.json ~/.rivet/secrets.json ~/.rivet/provider-keys.json
 rivet config providers  # 应该只显示内置 Provider
 ```
 
-三个文件缺一不可：`config.json` 是 provider / 模型 / `keyRef` 指针；`secrets.json` 是 `keyRef → 明文密钥`（0600 权限）；`provider-keys.json` 是多 key 池（每个 key 的模型归属与凭据槽）。**只删 `config.json` 会留下密钥材料**——下次重新 `--connect` 同名 provider 时可能命中旧密钥，表现为「刚配的新 key 却被忽略」。
+三个文件缺一不可：`config.json` 是 provider / 模型 / `keyRef` 指针；`secrets.json` 是 `keyRef → 明文密钥`（0600 权限）——**搜索后端的 key（Bocha / Brave / Tavily）也在这里**（keyRef 命名 `search:<backend>`，桌面端「设置 Key」写入后 config.json 只留 `search.<backend>KeyRef` 指针；旧的明文 `*ApiKey` 在首次读取时自动迁入）；`provider-keys.json` 是多 key 池（每个 key 的模型归属与凭据槽）。**只删 `config.json` 会留下密钥材料**——下次重新 `--connect` 同名 provider 时可能命中旧密钥，表现为「刚配的新 key 却被忽略」。
 
 同理，**备份或迁移到新机器时这三个文件要一起带走**；只备份 `config.json` 的典型症状是「配置都在，但每个 provider 都 401」（指针带过去了，明文没带）。多 key 池为什么单独成文件、为什么不放在 `config.json` 里，见 [故障排查 · API key / 认证失败](guides/troubleshooting.md#3-api-key--认证失败)。
 

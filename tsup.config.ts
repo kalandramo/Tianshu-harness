@@ -22,6 +22,10 @@ const FORCE_BUNDLED = [
   'diff',
   'undici',
   'zod',
+  // zod 的伴生纯 JS 库（worker 收尾轮 schema 转换）：必须内联。2026-09-18 它被
+  // 声明进 dependencies（幽灵依赖收口）后 tsup 按「deps 默认 external」不再内联，
+  // dist 裸导入过不了 assert-runtime-imports——声明合规与打包形态要同时满足。
+  'zod-to-json-schema',
   '@modelcontextprotocol/sdk',
   'turndown',
   'pixelmatch',

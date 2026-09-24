@@ -8,10 +8,13 @@ import type { ProviderProfile } from './provider-profile.js'
 import { fetchWithTimeout } from './fetch-timeout.js'
 import { withStructuredRetry } from './retry-engine.js'
 import { parseRetryAfterMs } from './error-classifier.js'
+import { resolveWireEffort } from './provider.js'
 import { ReasoningRepetitionGuard } from './reasoning-repetition.js'
 import { normalizeBaseUrl } from './endpoint-map.js'
-import { sanitizeMessageContent } from '../utils/sanitize.js'
+import { sanitizeMessageContent, countContentChars, FULL_SANITIZE_CHARS, MAX_JSON_BODY_BYTES } from '../utils/sanitize.js'
+import { enforceRequestBodyLimit } from './request-body-guard.js'
 import { stableStringify } from './stable-json.js'
+import { RequestInvariantMonitor } from './request-invariant.js'
 import { wireAbortToReaderCancel, wrapBodyTimeoutError } from './abort-reader.js'
 import { debugLog } from '../utils/debug.js'
 import { repairInvalidJsonEscapes } from './json-escape-repair.js'
@@ -191,6 +194,9 @@ export interface OpenAIClientConfig {
    * 不受影响，谁先到谁生效。
    */
   requestTimeoutMs?: number
+  /** 发送前请求体体积护栏上限（字节）。undefined = 不限制（默认，零开销不量体）。
+   *  配置后超限先截断历史 tool 输出，削完仍超限抛可行动错误。 */
+  maxBodyBytes?: number
   /** Max retry attempts for retryable API errors. undefined = 分类器 per-category
    *  默认（显式值不再被向下夹取）；0 = 禁用重试。thinking 模式仍受内置节流
    *  （slow-thinking 2 次 / 其余 1 次），显式配置覆盖之。 */
@@ -389,6 +395,14 @@ export class OpenAIClient implements StreamClient {
   private prevWireToolsSig: string | null = null
   /** Latest wire divergence (consume-once via consumeWireDivergence). */
   private lastWireDivergence: WireDivergence | null = null
+
+  /**
+   * 请求重建不变式（强制）：同一个 request.messages 数组在同一 client 上两次
+   * 派发之间必须字节一致。刻意**按 client 实例**持有——换成进程单例会让
+   * FallbackStreamClient 的 provider 故障转移（换 client 即换 system 后缀、
+   * 换缓存命名空间）被误判为违规，把一次优雅降级变成硬错误。
+   */
+  private readonly requestInvariant = new RequestInvariantMonitor()
   /** undici ProxyAgent for config.proxy (undefined = no per-provider proxy). */
   private readonly proxyDispatcher: ProxyAgent | undefined
 
@@ -417,6 +431,9 @@ export class OpenAIClient implements StreamClient {
   // context windows. We track the sanitized count and only apply the
   // safety-net sanitize to newly appended messages.
   private _sanitizedCount: number
+  /** body 护栏上报去重：-1 = 还没报过；true = 逼近上限已提醒过（每会话一次）。 */
+  private bodyDegradeNotifiedCount = -1
+  private bodyNearLimitNotified = false
 
   setReasoningEffort(effort: string): void {
     // OpenAI uses reasoning_effort in request body — store for next request
@@ -427,20 +444,30 @@ export class OpenAIClient implements StreamClient {
     this.config = { ...this.config, thinking: mode }
   }
 
-  async stream(
-    request: OaiChatRequest,
-    callbacks: StreamCallbacks,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    this.lastRequestMessages = request.messages
-    // reasoning_content stripping rules:
-    // - Preserved-thinking protocol (capability-declared, e.g. DeepSeek/MiMo):
-    //   keep for tool-call turns, strip for pure-text
-    // - Independent reasoning (e.g. GLM — no preservedThinkingProtocol): always strip
-    // - Thinking disabled: always strip
+  /**
+   * 会话历史 → wire messages。reasoning_content 的保留/剥离规则：
+   * - preserved-thinking 协议（capability 声明，如 DeepSeek/MiMo）：工具轮保留，纯文本轮剥离
+   * - 独立推理（如 GLM，无 preservedThinkingProtocol）：一律剥离
+   * - thinking 关闭：一律剥离
+   *
+   * `opts.preserveReasoning` 是一次性覆盖（issue #258）：当网关明确回 400
+   * 「reasoning_content must be passed back」时，重试必须把思考内容原样发回，
+   * 否则同一个请求再发一次还是同样的 400。覆盖只作用于本次 attempt，成功后由
+   * stream() 把 `preservedThinkingProtocol` 粘到实例上（后续轮次不再重试）。
+   */
+  private mapWireMessages(
+    messages: OaiMessage[],
+    opts?: {
+      preserveReasoning?: boolean
+      /** 该历史数组已派发过 → 忽略粘性的 preservedThinkingProtocol，保持原字节。 */
+      suppressStickyPreserve?: boolean
+    },
+  ): OaiMessage[] {
+    const stickyPreserved = Boolean(this.config.preservedThinkingProtocol)
+      && opts?.suppressStickyPreserve !== true
     const isPreservedThinking = this.config.thinking === 'enabled'
-      && Boolean(this.config.preservedThinkingProtocol)
-    const messages = request.messages.map(m => {
+      && (stickyPreserved || opts?.preserveReasoning === true)
+    return messages.map(m => {
       if (m.role !== 'assistant') return m
       const hasToolCalls = Array.isArray((m as any).tool_calls) && (m as any).tool_calls.length > 0
       // DeepSeek preserved-thinking: tool-call turns must echo reasoning_content.
@@ -459,6 +486,10 @@ export class OpenAIClient implements StreamClient {
         if (transform) return transform(m, this.config.model, this.config.wireContext)
         return m
       }
+      // 被迫保留（preserveReasoning 覆盖）时，纯文本轮也保留——网关要求的是
+      // 「历史里的思考内容原样回传」，只保工具轮会在下一个纯文本 assistant 轮
+      // 再次触发同一个 400。
+      if (opts?.preserveReasoning === true && isPreservedThinking) return m
       const { reasoning_content: _, ...rest } = m
       // DeepSeek requires assistant messages to have `content` or `tool_calls`.
       // After stripping reasoning_content, ensure `content` exists.
@@ -467,6 +498,22 @@ export class OpenAIClient implements StreamClient {
       }
       return rest
     }).map(normalizeOaiMessage)
+  }
+
+  async stream(
+    request: OaiChatRequest,
+    callbacks: StreamCallbacks,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    this.lastRequestMessages = request.messages
+    // 已派发过的历史数组必须保持原字节（request invariant 硬门禁，2026-07-06 事故类）：
+    // 粘性 preservedThinkingProtocol（reasoning_echo 自愈）只作用于此后的**新**数组，
+    // 否则「侧路复用主请求 / 故障转移重放同一 request」会看到不同的字节。
+    // 判断必须早于 observe()（observe 会登记本次派发，之后恒真）。
+    const reentrantDispatch = this.requestInvariant.hasObserved(request)
+    const messages = this.mapWireMessages(request.messages, {
+      suppressStickyPreserve: reentrantDispatch,
+    })
 
     const body: Record<string, unknown> = {
       // 空 model 回退到 client 绑定值——侧路调用（essence-gate / vision bridge）
@@ -545,23 +592,29 @@ export class OpenAIClient implements StreamClient {
         // Only for providers that accept reasoning_effort alongside the thinking block.
         // Providers with in-block effort encoding (budget_tokens / adaptive) don't need
         // a separate reasoning_effort field.
-        if (this.config.effortFormat === 'reasoning_effort'
-          && this.config.reasoningEffort
-          && this.config.reasoningEffort !== 'off') {
-          body.reasoning_effort = this.config.reasoningEffort
+        if (this.config.effortFormat === 'reasoning_effort') {
+          // 档位映射（含 `off` 的省略语义）统一走 resolveWireEffort：旧代码只在
+          // 这里单独判 `!== 'off'`，下面两个写入点漏判——issue #258 的
+          // `reasoning_effort: off` 就是从那里漏出去的。
+          const wireEffort = resolveWireEffort(this.config.reasoningEffort, this.config.effortCap)
+          if (wireEffort) body.reasoning_effort = wireEffort
         }
       } else if (this.config.effortFormat !== 'none') {
-        body.reasoning_effort = this.config.reasoningEffort ?? 'medium'
+        // 未配档位 → 网关默认 medium；显式 `off` 且 provider 未给映射 → 不发该字段
+        //（`off` 不是任何端点的合法枚举值，直发即 400）。
+        const wireEffort = this.config.reasoningEffort === undefined
+          ? 'medium'
+          : resolveWireEffort(this.config.reasoningEffort, this.config.effortCap)
+        if (wireEffort) body.reasoning_effort = wireEffort
       }
     }
-    if (request.reasoning_effort && this.config.effortFormat !== 'none') {
-      body.reasoning_effort = request.reasoning_effort
-    }
-
-    // Effort cap: clamp effort values to provider-supported maximums.
-    if (this.config.effortCap && typeof body.reasoning_effort === 'string') {
-      const capped = this.config.effortCap[body.reasoning_effort]
-      if (capped) body.reasoning_effort = capped
+    if (this.config.effortFormat !== 'none' && request.reasoning_effort) {
+      // 请求级档位是**更具体**的意图（auto-reasoning 逐轮决定走这条），必须能覆盖
+      // 上面写入的 provider 默认档——包括「显式 off 表示本轮不要该字段」这种清空
+      // 语义。否则 off 会被上面刚写进去的 'medium' 掩盖，等于降档失效。
+      const wireEffort = resolveWireEffort(request.reasoning_effort, this.config.effortCap)
+      if (wireEffort) body.reasoning_effort = wireEffort
+      else delete body.reasoning_effort
     }
 
     // Apply stable system suffix (Chinese thinking instruction) — computed once
@@ -585,9 +638,14 @@ export class OpenAIClient implements StreamClient {
     // request. Historical messages were already sanitized at entry points
     // (addUserMessage/addAssistantBlocks/addToolResults). This avoids O(n)
     // overhead that grows linearly with conversation length.
+    //
+    // 大体积请求（>FULL_SANITIZE_CHARS）一律全量清洗：增量路径会漏掉「历史段被原地
+    // 改写」与「client 实例跨数组复用」两处窗口，而漏过的一个控制字符在 wire 上就是
+    // `\u00XX` 转义——正是上游按字节截断 body 时的切口（maxBodyBytes 护栏只是兜底且默认关闭，源头也得
+    // 干净）。全量扫描与本次必做的 JSON.stringify 同阶，1M 字符以上已可忽略。
     const msgArray = body.messages as Array<Record<string, unknown>>
-    if (msgArray.length <= this._sanitizedCount) {
-      // Compaction or message replacement: reset and full sanitize
+    if (msgArray.length <= this._sanitizedCount || countContentChars(msgArray) > FULL_SANITIZE_CHARS) {
+      // Compaction / message replacement / 大体积请求: reset and full sanitize
       this._sanitizedCount = 0
     }
     const newMessages = msgArray.slice(this._sanitizedCount)
@@ -607,9 +665,15 @@ export class OpenAIClient implements StreamClient {
     // remaining client-side suspects are these transforms. Joined with
     // cacheRead regressions in the cache-log this separates send-layer byte
     // churn from provider-side rendering/落盘 behavior.
+    // 请求重建不变式：断言这一份最终上线字节与「同一个 request 对象上次派发」一致。
+    // 刻意对**所有**请求生效（不止 prefixProbe 的主轮）——侧路复用主请求的
+    // messages 数组、故障转移重放同一 request，这两条路径原先完全没有守护，
+    // 而 2026-07-06 的原地双追加事故正是发生在它们的形状上。
+    this.requestInvariant.observe(request, msgArray, body.tools as unknown[] | undefined)
+
     if (request.prefixProbe) this.recordWireDivergence(msgArray, body.tools as unknown[] | undefined)
 
-    await this.sendStream(body, callbacks, signal)
+    await this.sendStream(body, callbacks, signal, request.messages)
   }
 
   /** Compare this request's final wire bytes with the previous main-turn
@@ -673,6 +737,12 @@ export class OpenAIClient implements StreamClient {
     body: Record<string, unknown>,
     callbacks: StreamCallbacks,
     signal?: AbortSignal,
+    /**
+     * 未剥离的原始历史。`body.messages` 是已按 preserved-thinking 规则剥离过的
+     * 副本——reasoning_echo 自愈（issue #258）必须从原始数组重建，否则剥掉的
+     * 思考内容回不来。缺省 = 该调用方没提供，自愈分支直接跳过（不猜）。
+     */
+    sourceMessages?: OaiMessage[],
   ): Promise<void> {
     // reasoningRef survives retry attempts within this sendStream call.
     // When a mid-stream failure occurs (e.g. idle timeout, connection reset),
@@ -687,6 +757,12 @@ export class OpenAIClient implements StreamClient {
     // 分类器据此改判 context_overflow（不可重试），不会再发第三次。
     let stripRequested = false
     let imagesStripped = false
+
+    // reasoning_echo 恢复状态（issue #258）：网关回 400「reasoning_content must be
+    // passed back」时，本次请求重发一次**保留思考内容**的历史；成功后把
+    // preservedThinkingProtocol 粘到实例上，后续轮次不再吃这一发。
+    let preserveReasoningRequested = false
+    let preserveReasoningApplied = false
 
     // Size-scaled first-byte budget (B): estimate prompt size once (stable across
     // retries; the per-retry reasoning re-injection is negligible) and derive a
@@ -725,6 +801,16 @@ export class OpenAIClient implements StreamClient {
       // 后续轮次仍保图（用户下一句「这张图里…」还能对上）。stripOaiImageParts
       // 是纯函数，无图可剥时返回原引用，下面按引用比较走原路径。
       let wireMessages = body.messages as OaiMessage[]
+      // 保留思考内容重发（上一次失败被判 reasoning_echo）：从**原始** request.messages
+      // 重建（body.messages 已经是剥离后的历史，剥掉的信息回不来）。与剥图同理，
+      // 只改本次 attempt 的 wire 副本，不动 request.messages / body。
+      if (preserveReasoningRequested && !preserveReasoningApplied && sourceMessages) {
+        wireMessages = this.mapWireMessages(sourceMessages, { preserveReasoning: true })
+        preserveReasoningApplied = true
+        // wire 形态被改了（历史里多出 reasoning_content，前缀字节随之变化）——
+        // 静默改形态是本仓最贵的 bug 形状，必须让调用方有机会说出来。
+        callbacks.onReasoningEchoRecovered?.()
+      }
       if (stripRequested && !imagesStripped) {
         const stripped = stripOaiImageParts(wireMessages)
         if (stripped.removedCount > 0) {
@@ -767,6 +853,30 @@ export class OpenAIClient implements StreamClient {
         if (signal.aborted) lifecycle.abort()
         else signal.addEventListener('abort', () => lifecycle.abort(), { once: true })
       }
+      // 请求体体积护栏（可选）：provider 网关超限时会**按字节截断 body**，切进一个
+      // `\uXXXX` 转义就报 "unexpected end of hex escape" HTTP 400——用户只看到一句
+      // 英文 serde 报错，会话从此发不出去。护栏只截 wire 副本（入参不动）、且确定性
+      // （同输入同字节，降级后前缀仍稳定，不会每轮碎缓存）。
+      // 未配置 maxBodyBytes 时不启用（不量体、零额外成本）；上游报错文案会引导配置。
+      const guard = enforceRequestBodyLimit(effectiveBody, { limitBytes: this.config.maxBodyBytes })
+      // 降级/逼近上限必须可见（同 issue #94 的剥图教训：wire 层降级静默 = 用户读成
+      // 「模型变笨了」）。降级只在"降级集合变化"时上报一次——截断是确定性的，同一段
+      // 历史每轮都被同样地截，逐轮上报只会把状态行刷成噪音。
+      if (guard.degraded.length > 0) {
+        if (guard.degraded.length !== this.bodyDegradeNotifiedCount) {
+          this.bodyDegradeNotifiedCount = guard.degraded.length
+          callbacks.onBodyGuard?.({
+            kind: 'degraded',
+            bytes: guard.bytes,
+            limitBytes: guard.limitBytes,
+            degradedCount: guard.degraded.length,
+            removedBytes: guard.degraded.reduce((n, d) => n + d.removedBytes, 0),
+          })
+        }
+      } else if (guard.nearLimit && !this.bodyNearLimitNotified) {
+        this.bodyNearLimitNotified = true
+        callbacks.onBodyGuard?.({ kind: 'near-limit', bytes: guard.nearLimit.bytes, limitBytes: guard.nearLimit.limitBytes })
+      }
       // 客户端限速（未配置 rateLimit 时零开销）：同 provider 的所有 client 实例共享一只桶。
       await acquireRateLimitSlot(this.config.providerName ?? this.config.baseUrl, this.config.retry?.rateLimit, lifecycle.signal)
       const response = await fetchWithTimeout(`${normalizeBaseUrl(this.config.baseUrl)}/chat/completions`, {
@@ -780,7 +890,7 @@ export class OpenAIClient implements StreamClient {
             ? { [this.config.sessionHeader ?? 'X-Request-Session']: this.config.sessionId }
             : {}),
         },
-        body: JSON.stringify(effectiveBody),
+        body: JSON.stringify(guard.body),
         signal: lifecycle.signal,
       }, fetchTimeout, this.proxyDispatcher)
 
@@ -851,8 +961,29 @@ export class OpenAIClient implements StreamClient {
         if (info.classified.category === 'image_strip') {
           stripRequested = true
         }
+        // reasoning_echo 分类 = 网关要求回传 reasoning_content：下一次 attempt
+        // 用保留思考内容的历史重发（重建点见 fn 内的 wireMessages）。
+        if (info.classified.category === 'reasoning_echo') {
+          preserveReasoningRequested = true
+        }
       },
     })
+
+    // 自愈成功 → 把「该端点需要回传思考内容」粘到实例上（本实例 = 该 provider +
+    // 模型），后续轮次不再白吃一次 400 + 重试。只在**成功之后**落：重试同样失败
+    // 时保持剥离语义，不把未经证实的假设固化。
+    //
+    // 已派发过的历史数组不受粘性影响（mapWireMessages 的 suppressStickyPreserve）：
+    // 那些数组再次派发必须字节一致，否则撞 request invariant 硬门禁。生产里每轮
+    // 都是新数组，所以粘性对「下一轮」照常生效。
+    //
+    // 注意 systemSuffix 不跟着翻转：它在构造期按 preservedThinkingProtocol 拼进
+    // system，中途追加会改前缀字节（缓存断点）。保守做法＝本轮起只改历史里的
+    // reasoning_content，system 保持字节稳定。
+    if (preserveReasoningRequested && !this.config.preservedThinkingProtocol) {
+      this.config = { ...this.config, preservedThinkingProtocol: true }
+      debugLog('[openai-client] reasoning_echo 自愈：已为该 provider 打开 preservedThinkingProtocol（后续轮次不再重试）')
+    }
   }
 
   /** Parse SSE stream from a reader — exposed for testing */
@@ -1595,6 +1726,20 @@ export interface ApiErrorProviderContext {
  */
 function apiErrorHint(code: string, message: string, provider?: ApiErrorProviderContext): string {
   const probe = `${code} ${typeof message === 'string' ? message : ''}`
+  // 请求体被判为非法 JSON（provider 网关的 serde 报错原样透传，如
+  // "Failed to parse the request body as JSON: messages[N].content unexpected end
+  // of hex escape"）：这是**我们发出去的体**在上游被按字节切断，不是模型、不是
+  // 密钥、也不是余额问题。用户看到的只是一句英文解析错误——给结论 + 出路。
+  if (/parse the request body|unexpected end of hex escape|as JSON:|invalid json/i.test(probe)) {
+    const knob = provider?.providerName
+      ? `provider.providers.${provider.providerName}.maxBodyBytes`
+      : 'provider.providers.<name>.maxBodyBytes'
+    return (
+      '\n提示：请求体被上游判为非法 JSON（多为对话体量超限被按字节截断）。用 /compact 压缩本会话或新开会话继续；' +
+      '若 baseUrl 走第三方中转，中转常有更小的 body 上限。发送前体积护栏默认关闭——可在该 provider 配置里设 ' +
+      `${knob}（字节，如 ${MAX_JSON_BODY_BYTES}）启用：超限时自动截断历史工具输出，避免这类 400。`
+    )
+  }
   if (!/insufficient[ _-]?(balance|quota)|余额不足|额度不足/i.test(probe)) return ''
 
   const where = `${provider?.providerName ?? ''} ${provider?.baseUrl ?? ''}`.toLowerCase()

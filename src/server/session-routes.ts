@@ -11,6 +11,9 @@
  *   GET    /sessions/:id                               one record
  *   POST   /sessions/:id/prompt                        start a run
  *   POST   /sessions/:id/steer                         queue mid-run guidance (T3)
+ *   POST   /sessions/:id/fork                          copy the conversation into a new session (P1-1)
+ *   POST   /sessions/:id/snapshot/export               build a redacted shareable snapshot (P1-4)
+ *   POST   /sessions/:id/snapshot/import               validate a local snapshot file (P1-4)
  *   POST   /sessions/:id/abort                         abort
  *   GET    /sessions/:id/events?since=N                replay tail (B3)
  *   GET    /sessions/:id/files?q=&limit=                @file mention picker (D2)
@@ -36,6 +39,7 @@ import { allowedCorsOrigin } from './cors.js'
 import type { SseConnectionRegistry } from './sse-registry.js'
 import { SseStream } from './sse-stream.js'
 import type { RuntimeSessionManager } from './session-manager.js'
+import { buildSessionSnapshot, isImportableSnapshot } from './session-snapshot.js'
 import type { Artifact } from '../artifact/types.js'
 import type { SessionRegistry } from '../agent/session-registry.js'
 import type { ApprovalMode } from '../agent/loop-types.js'
@@ -48,12 +52,19 @@ import { isSessionWorkspaceMode, type SessionWorkspaceMode } from './workspace.j
 import { computeUsageCost, findModelPricing } from '../utils/pricing.js'
 import { getRollbackPreview, rollbackToCheckpoint, makeOwnershipGuard } from '../agent/checkpoint.js'
 import { listProjectFiles, rankFiles, listDirEntries } from './file-list.js'
+import {
+  MAX_DOCUMENTS,
+  MAX_DOCUMENT_BYTES,
+  MAX_IMAGES,
+  MAX_IMAGE_BYTES,
+} from './attachment-limits.js'
 import { listPrs, getPrDetail, isGhAvailable, getPrDiff, submitPrReview, listPrChecks, getCheckRunLog, mergePr, type PrReviewInput } from './gh-cli.js'
 import { pushFixToPrBranch } from './pr-fix-push.js'
 import { resolveAppPromptInput } from '../tui/slash-commands.js'
 import { getPaletteCommands } from '../tui/command-palette.js'
 import { RECOMMENDED_MAX_SKILLS } from '../skills/skill-loader.js'
 import { validatePath } from '../tools/path-validate.js'
+import { convertOfficeToPdf, ConverterUnavailableError, OFFICE_CONVERTIBLE_EXTS } from './file-preview.js'
 import { readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { extname, relative, join, isAbsolute } from 'node:path'
@@ -71,6 +82,7 @@ import { classifyModelSpecMiss } from './serve.js'
 import { withAuth } from './route-auth.js'
 import { buildStorageCleanupHandler } from './storage-cleanup-route.js'
 import { buildScratchRoutes } from './scratch-cleanup.js'
+import { isSafeFileName } from '../utils/safe-path.js'
 
 export type ArtifactKind = 'plan' | 'task-list' | 'walkthrough' | 'diff' | 'screenshot' | 'test-result' | 'markdown' | 'html'
 
@@ -90,18 +102,12 @@ type SessionRouteDependencies = {
   sseRegistry?: SseConnectionRegistry
 }
 
-/** Vision upload guards — provider-safe formats and a per-image byte ceiling. */
-const MAX_IMAGES = 4
-/** Document attachment guards (word/excel/pdf — extracted server-side). */
-const MAX_DOCUMENTS = 4
-const MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
+/** Vision／文档附件上限（MAX_IMAGES / MAX_DOCUMENTS / MAX_IMAGE_BYTES /
+ *  MAX_DOCUMENT_BYTES）统一由 attachment-limits.ts 提供——队列归并的配额
+ *  治理读同一来源。 */
 
 /** Cap on a single CI check log payload returned to the desktop (tail-kept). */
 const MAX_CHECK_LOG_CHARS = 200_000
-/** Per-image decoded byte cap — 与 TUI（image-attach.ts）、桌面端压缩出口
- *  （image-compress.ts MAX_OUTPUT_BYTES）、read_file 工具统一 10MB；
- *  DeepSeek 官方 base64 内联上限 32MiB，10MB 在安全区内。 */
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const ACCEPTED_IMAGE_DATA_URL = /^data:image\/(png|jpeg|webp|gif);base64,.+$/i
 
 /** Decoded byte size of a `data:...;base64,<payload>` URL (without decoding it). */
@@ -273,6 +279,21 @@ function planSummary(p: PlanDocument) {
 const REPLAY_SLICE_EVENTS = 200
 const REPLAY_SLICE_MS = 4
 
+/** ?raw=1 二进制预览的 MIME 白名单（file-content 路由）。文档三件套 +
+ *  常见图片（FileExplorer 点图片此前也是 utf-8 乱码）。svg 只经 <img>
+ *  上下文渲染（script 不执行），不允许直接浏览。 */
+const RAW_PREVIEW_MIME: Record<string, string> = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+}
+
 async function sendReplayTimeSliced(
   res: import('node:http').ServerResponse,
   sse: SseStream,
@@ -304,6 +325,9 @@ async function sendReplayTimeSliced(
     }
   }
 }
+
+/** 导入快照的体积上限：快照是纯文本对话（无工具面），5MB 已远超正常分享件。 */
+const MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
 
 export function buildSessionRoutes(
   manager: RuntimeSessionManager,
@@ -551,7 +575,9 @@ export function buildSessionRoutes(
 
     // Plan read — full markdown content for one plan.
     'GET /sessions/:id/plans/:slug': withAuth(async (_body, params) => {
-      const plan = await manager.readPlan(params!.id!, decodeSlug(params!.slug!))
+      const slug = decodeSlug(params!.slug!)
+      if (!isSafeFileName(slug)) return { status: 400, body: { error: 'Invalid plan slug' } }
+      const plan = await manager.readPlan(params!.id!, slug)
       if (plan === undefined) return { status: 404, body: { error: 'Session not found' } }
       if (!plan) return { status: 404, body: { error: 'Plan not found' } }
       return { status: 200, body: { plan } }
@@ -560,11 +586,13 @@ export function buildSessionRoutes(
     // Plan edit — replace a submitted plan's markdown before approval
     // (desktop review → tweak → Build loop; Cursor 3.0 parity).
     'PUT /sessions/:id/plans/:slug': withAuth(async (body, params) => {
+      const slug = decodeSlug(params!.slug!)
+      if (!isSafeFileName(slug)) return { status: 400, body: { error: 'Invalid plan slug' } }
       const data = (body ?? {}) as { content?: string }
       if (typeof data.content !== 'string') {
         return { status: 400, body: { error: 'Missing "content" string' } }
       }
-      const outcome = await manager.updatePlan(params!.id!, decodeSlug(params!.slug!), data.content)
+      const outcome = await manager.updatePlan(params!.id!, slug, data.content)
       if (!outcome.ok) {
         const status =
           outcome.code === 'session-missing' || outcome.code === 'plan-not-found' ? 404
@@ -582,7 +610,9 @@ export function buildSessionRoutes(
       const selectedApproach = typeof data.selectedApproach === 'string' && data.selectedApproach.trim()
         ? data.selectedApproach.trim()
         : undefined
-      const outcome = await manager.approvePlan(params!.id!, decodeSlug(params!.slug!), selectedApproach)
+      const slug = decodeSlug(params!.slug!)
+      if (!isSafeFileName(slug)) return { status: 400, body: { error: 'Invalid plan slug' } }
+      const outcome = await manager.approvePlan(params!.id!, slug, selectedApproach)
       if (!outcome.ok) {
         const status =
           outcome.code === 'session-missing' || outcome.code === 'plan-not-found' ? 404
@@ -596,7 +626,9 @@ export function buildSessionRoutes(
     // Reject — mark a plan rejected (kept on disk) with optional revision feedback.
     'POST /sessions/:id/plans/:slug/reject': withAuth(async (body, params) => {
       const data = (body ?? {}) as { comment?: string }
-      const ok = await manager.rejectPlan(params!.id!, decodeSlug(params!.slug!), data.comment)
+      const slug = decodeSlug(params!.slug!)
+      if (!isSafeFileName(slug)) return { status: 400, body: { error: 'Invalid plan slug' } }
+      const ok = await manager.rejectPlan(params!.id!, slug, data.comment)
       if (!ok) return { status: 404, body: { error: 'Session or plan not found' } }
       return { status: 200, body: { ok: true } }
     }, apiToken),
@@ -731,6 +763,9 @@ export function buildSessionRoutes(
       if (names.length === 0) {
         return { status: 400, body: { error: 'Missing or invalid "names" (non-empty string array)' } }
       }
+      if (names.some((n) => !isSafeFileName(n))) {
+        return { status: 400, body: { error: 'Invalid skill name in "names"' } }
+      }
       const result = manager.installSkills(params!.id!, names)
       if (!result) return { status: 404, body: { error: 'Session not found' } }
       return { status: 200, body: result }
@@ -755,6 +790,7 @@ export function buildSessionRoutes(
       }
       const scope = data.scope === 'global' ? 'global' : 'project'
       const skillName = decodeRouteParam(params!.name!)!
+      if (!isSafeFileName(skillName)) return { status: 400, body: { error: 'Invalid skill name' } }
       try {
         const result = manager.writeSkill(params!.id!, skillName, data.content, scope)
         if (!result) return { status: 404, body: { error: 'Session not found' } }
@@ -768,6 +804,7 @@ export function buildSessionRoutes(
     // built-in / plugin / global skills the project panel can't remove.
     'DELETE /sessions/:id/skills/:name': withAuth((_body, params) => {
       const skillName = decodeRouteParam(params!.name!)!
+      if (!isSafeFileName(skillName)) return { status: 400, body: { error: 'Invalid skill name' } }
       const result = manager.uninstallSkill(params!.id!, skillName)
       if (result === undefined) return { status: 404, body: { error: 'Session not found' } }
       if (!result.removed) return { status: 409, body: { error: 'Cannot remove built-in/plugin/global skill from the project panel' } }
@@ -991,23 +1028,51 @@ export function buildSessionRoutes(
     // desktop knows to use /prompt instead. Bearer-gated.
     // Phase 2 — body 也可为 { laneId }：把 queue lane 里仍 queued 的条目升级为
     // steer（立即参与本轮 mid-turn 注入）。
+    // #238 — 插话通道只注入文本（SteerBuffer → tool_result），图片/文档没有注入
+    // 路径：body 带附件即 400，含附件的 lane 条目升级即 409——与前端禁用「立即
+    // 引导」同门，不让附件在升级路径上静默消失。
     'POST /sessions/:id/steer': withAuth((body, params) => {
-      const data = (body ?? {}) as { text?: string; laneId?: string }
+      const data = (body ?? {}) as { text?: string; laneId?: string; images?: unknown; documents?: unknown }
       const laneId = typeof data.laneId === 'string' && data.laneId.trim() ? data.laneId.trim() : undefined
       const text = typeof data.text === 'string' && data.text.trim() ? data.text.trim() : undefined
       if (!laneId && !text) {
         return { status: 400, body: { error: 'Missing or empty "text" field (or provide "laneId" to upgrade a queued entry)' } }
       }
+      // 只拒真带附件的请求：空数组（images: []）等价于"无附件"，不该被 fail-closed
+      // 文案误导（R4，2026-09-21 独立反证审查）。
+      const hasAttachments =
+        (Array.isArray(data.images) && data.images.length > 0) ||
+        (Array.isArray(data.documents) && data.documents.length > 0)
+      if (hasAttachments) {
+        return {
+          status: 400,
+          body: {
+            error: 'Attachments cannot be injected mid-run; queue the message instead — queued attachments are sent with the next turn',
+            code: 'attachments_not_steerable',
+          },
+        }
+      }
       const result = laneId
         ? manager.steer(params!.id!, { laneId })
         : manager.steer(params!.id!, text!)
       if (result === 'not_found') return { status: 404, body: { error: 'Session not found' } }
-      if (result === 'lane_not_found') return { status: 404, body: { error: 'Queue lane entry not found' } }
+      if (result === 'lane_not_found') {
+        return { status: 404, body: { error: 'Queue lane entry not found', code: 'lane_not_found' } }
+      }
       if (result === 'idle') {
-        return { status: 409, body: { error: 'Session is not running; use /prompt to start a turn' } }
+        return { status: 409, body: { error: 'Session is not running; use /prompt to start a turn', code: 'idle' } }
       }
       if (result === 'lane_not_queued') {
-        return { status: 409, body: { error: 'Queue lane entry is no longer queued (steered/retracted/merged)' } }
+        return { status: 409, body: { error: 'Queue lane entry is no longer queued (steered/retracted/merged)', code: 'lane_not_queued' } }
+      }
+      if (result === 'lane_has_attachments') {
+        return {
+          status: 409,
+          body: {
+            error: 'Queue lane entry carries attachments and cannot be steered mid-run; it will be sent with the next turn',
+            code: 'lane_has_attachments',
+          },
+        }
       }
       return { status: 200, body: { queued: true } }
     }, apiToken),
@@ -1015,15 +1080,54 @@ export function buildSessionRoutes(
     // Phase 2 queue lane — busy 期间排队跟进消息（不注入本轮）：下次 prompt 时
     // 归并进消息前部，或经 /steer { laneId } 升级、/queue/retract 撤回。
     // 与 /steer 同门槛：idle → 409。Bearer-gated。
-    'POST /sessions/:id/queue': withAuth((body, params) => {
-      const data = (body ?? {}) as { text?: string }
+    // #238 — 排队消息与 /prompt 同构地携带附件：图片按 MAX_IMAGES/字节上限校验后
+    // 存在 lane 条目上，文档走同一条 extractDocumentsToText 管线抽取成正文（run 是
+    // 同步入口，归并路径不能 await，故抽取必须发生在入队时）。排队总量也受单轮
+    // 上限约束——超限在此显式 400，不留到归并时静默截断。
+    'POST /sessions/:id/queue': withAuth(async (body, params) => {
+      const data = (body ?? {}) as { text?: string; images?: unknown; documents?: unknown }
       if (!data.text || typeof data.text !== 'string' || !data.text.trim()) {
         return { status: 400, body: { error: 'Missing or empty "text" field' } }
       }
-      const result = manager.queue(params!.id!, data.text.trim())
+      const imagesCheck = validateImagesPayload(data.images)
+      if (imagesCheck.error) {
+        return { status: 400, body: { error: imagesCheck.error } }
+      }
+      const docsCheck = validateDocumentsPayload(data.documents)
+      if (docsCheck.error) {
+        return { status: 400, body: { error: docsCheck.error } }
+      }
+      const id = params!.id!
+      const images = imagesCheck.images
+      const documents = docsCheck.documents
+      // 文档抽取必须发生在入队前（run 是同步入口，归并路径不能 await）——而它同时
+      // 是配额判定的 TOCTOU 窗口，故权威判定放在 manager.queue（同步块）里；此处
+      // 不做前置校验，避免"路由放行、manager 拒绝"两套语义。
+      let attachmentText: string | undefined
+      if (documents && documents.length > 0) {
+        attachmentText = (await extractDocumentsToText(documents)) ?? undefined
+      }
+      const result = manager.queue(id, data.text.trim(), {
+        ...(images?.length ? { images } : {}),
+        ...(attachmentText ? { attachmentText } : {}),
+        ...(documents?.length ? { documentNames: documents.map((d) => d.name) } : {}),
+      })
       if (result === 'not_found') return { status: 404, body: { error: 'Session not found' } }
       if (result === 'idle') {
-        return { status: 409, body: { error: 'Session is not running; use /prompt to start a turn' } }
+        return { status: 409, body: { error: 'Session is not running; use /prompt to start a turn', code: 'idle' } }
+      }
+      if (result === 'image_budget' || result === 'document_budget') {
+        // 文案在失败路径现算：配额是 lane 当前占用，失败瞬间读一次即够。
+        const usage = manager.queuedAttachmentUsage(id) ?? { images: 0, documents: 0 }
+        return result === 'image_budget'
+          ? {
+              status: 400,
+              body: { error: `排队中已有 ${usage.images} 张图片，单轮上限 ${MAX_IMAGES}`, code: 'queue_image_budget' },
+            }
+          : {
+              status: 400,
+              body: { error: `排队中已有 ${usage.documents} 个文档，单轮上限 ${MAX_DOCUMENTS}`, code: 'queue_document_budget' },
+            }
       }
       return { status: 200, body: { queued: true, laneId: result.laneId } }
     }, apiToken),
@@ -1079,7 +1183,9 @@ export function buildSessionRoutes(
     // Worker log — 失败钻取(W2):活动流 + 终态结果 + 转录尾部。
     // ?full=1 拉完整转录(不截 50 条尾部,正文上限放宽,工具帧带参数摘要)。
     'GET /sessions/:id/workers/:workerId/log': withAuth(async (_body, params) => {
-      const log = await manager.getWorkerLog(params!.id!, decodeURIComponent(params!.workerId!), {
+      const workerId = decodeURIComponent(params!.workerId!)
+      if (!isSafeFileName(workerId)) return { status: 400, body: { error: 'Invalid worker id' } }
+      const log = await manager.getWorkerLog(params!.id!, workerId, {
         full: params?.full === '1',
       })
       if (!log) return { status: 404, body: { error: 'Session not found' } }
@@ -1138,7 +1244,12 @@ export function buildSessionRoutes(
       const modelTotals = new Map<string, { model: string; provider?: string; inputTokens: number; outputTokens: number; totalTokens: number; cost: number; count: number }>()
       const providerTotals = new Map<string, { provider: string; inputTokens: number; outputTokens: number; totalTokens: number; cost: number; count: number }>()
 
-      // Main session turn-level usage (turn_complete events).
+      // Main session usage — turn_complete 的 usage 是 `session.getTotalUsage()` 的
+      // **累计快照**（不是单轮增量），所以这里必须取「最后一条」而不是求和：
+      // 求和等于把每个 turn 的累计值再加一遍，长会话能放大近 20 倍（2026-09-23
+      // 实测 2026092226d3821a1ce6：求和 62,685,972 vs 末值 3,327,234，而权威账本
+      // meta.tokenUsage.prompt = 3,325,173 与 cache-log 主请求累计逐字节吻合）。
+      // 逐字段取「最后一个非零值」：累计量单调不减，缺字段的畸形帧不该把已有值清零。
       let mainInput = 0
       let mainOutput = 0
       let mainCacheRead = 0
@@ -1150,11 +1261,11 @@ export function buildSessionRoutes(
         if (ev.type === 'turn_complete') {
           const data = ev.data as { usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number; reasoning_tokens?: number } }
           if (data.usage) {
-            mainInput += data.usage.input_tokens ?? 0
-            mainOutput += data.usage.output_tokens ?? 0
-            mainCacheRead += data.usage.cache_read_input_tokens ?? 0
-            mainCacheWrite += data.usage.cache_creation_input_tokens ?? 0
-            mainReasoning += data.usage.reasoning_tokens ?? 0
+            mainInput = data.usage.input_tokens ?? mainInput
+            mainOutput = data.usage.output_tokens ?? mainOutput
+            mainCacheRead = data.usage.cache_read_input_tokens ?? mainCacheRead
+            mainCacheWrite = data.usage.cache_creation_input_tokens ?? mainCacheWrite
+            mainReasoning = data.usage.reasoning_tokens ?? mainReasoning
           }
           continue
         }
@@ -1204,7 +1315,27 @@ export function buildSessionRoutes(
         const reasoningTokens = usage?.reasoning_tokens ?? 0
         const totalTokens = usage?.total_tokens ?? inputTokens + outputTokens
 
+        // 同一 worker 的 usage 是**累计快照**（coordinator 的 dispatchUsage：跨轮
+        // priorUsage 回种后的净增累计，见 coordinator.ts「usage-ledger 对齐」段），
+        // 因此逐字段取「最后一个非零值」而不是相加——同一批 token 在多次 activity
+        // 事件里重复上报时，相加会按事件数把它记 N 次（主会话那侧同族问题的实测
+        // 放大倍数：19×）。cost 由该快照派生，同样取末值。
         const existing = workers.get(workerId)
+        const prevInput = existing?.inputTokens ?? 0
+        const prevOutput = existing?.outputTokens ?? 0
+        const prevCacheRead = existing?.cacheReadTokens ?? 0
+        const prevCacheWrite = existing?.cacheWriteTokens ?? 0
+        const prevReasoning = existing?.reasoningTokens ?? 0
+        const prevTotal = existing?.totalTokens ?? 0
+        const prevCost = existing?.cost ?? 0
+        const nextInput = inputTokens || prevInput
+        const nextOutput = outputTokens || prevOutput
+        const nextCacheRead = cacheReadTokens || prevCacheRead
+        const nextCacheWrite = cacheWriteTokens || prevCacheWrite
+        const nextReasoning = reasoningTokens || prevReasoning
+        const nextTotal = totalTokens || prevTotal
+        const nextCost = costBreakdown.total || prevCost
+
         const worker = {
           workerId,
           parentId: data.parentId ?? existing?.parentId,
@@ -1214,32 +1345,39 @@ export function buildSessionRoutes(
           provider: provider ?? existing?.provider,
           objective: data.objective ?? existing?.objective,
           elapsedMs: data.elapsedMs ?? existing?.elapsedMs,
-          inputTokens: (existing?.inputTokens ?? 0) + inputTokens,
-          outputTokens: (existing?.outputTokens ?? 0) + outputTokens,
-          cacheReadTokens: (existing?.cacheReadTokens ?? 0) + cacheReadTokens,
-          cacheWriteTokens: (existing?.cacheWriteTokens ?? 0) + cacheWriteTokens,
-          reasoningTokens: (existing?.reasoningTokens ?? 0) + reasoningTokens,
-          totalTokens: (existing?.totalTokens ?? 0) + totalTokens,
-          cost: (existing?.cost ?? 0) + costBreakdown.total,
+          inputTokens: nextInput,
+          outputTokens: nextOutput,
+          cacheReadTokens: nextCacheRead,
+          cacheWriteTokens: nextCacheWrite,
+          reasoningTokens: nextReasoning,
+          totalTokens: nextTotal,
+          cost: nextCost,
         }
         workers.set(workerId, worker)
 
+        // 聚合层用「本次事件带来的增量」累加，保证与 per-worker 末值口径一致
+        // （直接累加原始快照 = 把同一个累计值反复计入）。
+        const dInput = nextInput - prevInput
+        const dOutput = nextOutput - prevOutput
+        const dTotal = nextTotal - prevTotal
+        const dCost = nextCost - prevCost
+
         if (model) {
           const mt = modelTotals.get(model) ?? { model, provider, inputTokens: 0, outputTokens: 0, totalTokens: 0, cost: 0, count: 0 }
-          mt.inputTokens += inputTokens
-          mt.outputTokens += outputTokens
-          mt.totalTokens += totalTokens
-          mt.cost += costBreakdown.total
+          mt.inputTokens += dInput
+          mt.outputTokens += dOutput
+          mt.totalTokens += dTotal
+          mt.cost += dCost
           mt.count += 1
           if (provider && !mt.provider) mt.provider = provider
           modelTotals.set(model, mt)
         }
         if (provider) {
           const pt = providerTotals.get(provider) ?? { provider, inputTokens: 0, outputTokens: 0, totalTokens: 0, cost: 0, count: 0 }
-          pt.inputTokens += inputTokens
-          pt.outputTokens += outputTokens
-          pt.totalTokens += totalTokens
-          pt.cost += costBreakdown.total
+          pt.inputTokens += dInput
+          pt.outputTokens += dOutput
+          pt.totalTokens += dTotal
+          pt.cost += dCost
           pt.count += 1
           providerTotals.set(provider, pt)
         }
@@ -1330,7 +1468,11 @@ export function buildSessionRoutes(
     // P2-2 — file content viewer. Reads a file within the session cwd, returns
     // content + language hint. Path is sandboxed via validatePath. Optional
     // ?start=1&end=50 line range to avoid transferring huge files. Bearer-gated.
-    'GET /sessions/:id/file-content': withAuth(async (_body, params) => {
+    // ?raw=1 — binary takeover for office/image preview: same validatePath
+    // sandbox, but serves raw bytes with a real Content-Type (mirrors the
+    // images route below) instead of utf-8 text. Binary cap aligns with the
+    // attachment MAX_DOCUMENT_BYTES (8MB); the text path keeps its 512KB cap.
+    'GET /sessions/:id/file-content': withAuth(async (_body, params, headers, res) => {
       const rec = manager.getSession(params!.id!)
       if (!rec) return { status: 404, body: { error: 'Session not found' } }
       const relPath = typeof params?.path === 'string' ? params.path : ''
@@ -1350,6 +1492,26 @@ export function buildSessionRoutes(
         return { status: 404, body: { error: 'File not found' } }
       }
       if (!stat.isFile()) return { status: 400, body: { error: 'Not a file' } }
+
+      if (params?.raw === '1') {
+        if (!res) return { status: 500, body: { error: 'Response stream is unavailable' } }
+        const rawExt = extname(absPath).slice(1).toLowerCase()
+        const mime = RAW_PREVIEW_MIME[rawExt]
+        if (!mime) return { status: 415, body: { error: `No raw preview for .${rawExt}` } }
+        if (stat.size > MAX_DOCUMENT_BYTES) return { status: 413, body: { error: 'File too large (>8MB)' } }
+        const bytes = readFileSync(absPath)
+        const origin = allowedCorsOrigin(headers ?? {})
+        res.writeHead(200, {
+          'Content-Type': mime,
+          'Content-Length': bytes.length,
+          // 文件内容可随磁盘变化，不 immutable；no-cache 让重开预览总是重取。
+          'Cache-Control': 'private, no-cache',
+          ...(origin ? { 'Access-Control-Allow-Origin': origin } : {}),
+        })
+        res.end(bytes)
+        return { status: 200, handled: true }
+      }
+
       // Cap at 512KB to avoid sending huge files over IPC
       if (stat.size > 512 * 1024) return { status: 413, body: { error: 'File too large (>512KB)' } }
 
@@ -1377,6 +1539,56 @@ export function buildSessionRoutes(
           startLine: start,
           endLine: end,
         },
+      }
+    }, apiToken),
+
+    // Office preview — convert pptx/ppt/odp to PDF bytes via headless soffice
+    // (desktop sidebar PPTX preview, rendered by pdf.js there). Same
+    // validatePath sandbox + binary takeover as file-content?raw=1. Results are
+    // cached (mtime+size keyed) since a soffice run costs 3-15s. 422
+    // converter_unavailable when LibreOffice isn't installed — the frontend
+    // falls back to an "open externally" affordance. Bearer-gated.
+    'GET /sessions/:id/file-preview/pdf': withAuth(async (_body, params, headers, res) => {
+      if (!res) return { status: 500, body: { error: 'Response stream is unavailable' } }
+      const rec = manager.getSession(params!.id!)
+      if (!rec) return { status: 404, body: { error: 'Session not found' } }
+      const relPath = typeof params?.path === 'string' ? params.path : ''
+      if (!relPath) return { status: 400, body: { error: 'Missing "path" query param' } }
+
+      let absPath: string
+      try {
+        absPath = validatePath(rec.cwd, relPath, 'read')
+      } catch {
+        return { status: 403, body: { error: 'Path outside session cwd' } }
+      }
+      const convExt = extname(absPath).slice(1).toLowerCase()
+      if (!OFFICE_CONVERTIBLE_EXTS.has(convExt)) {
+        return { status: 415, body: { error: `Not office-convertible: .${convExt}` } }
+      }
+      try {
+        const stat = statSync(absPath)
+        if (!stat.isFile()) return { status: 400, body: { error: 'Not a file' } }
+        if (stat.size > MAX_DOCUMENT_BYTES) return { status: 413, body: { error: 'File too large (>8MB)' } }
+      } catch {
+        return { status: 404, body: { error: 'File not found' } }
+      }
+
+      try {
+        const bytes = await convertOfficeToPdf(absPath)
+        const origin = allowedCorsOrigin(headers ?? {})
+        res.writeHead(200, {
+          'Content-Type': 'application/pdf',
+          'Content-Length': bytes.length,
+          'Cache-Control': 'private, no-cache',
+          ...(origin ? { 'Access-Control-Allow-Origin': origin } : {}),
+        })
+        res.end(bytes)
+        return { status: 200, handled: true }
+      } catch (err) {
+        if (err instanceof ConverterUnavailableError) {
+          return { status: 422, body: { error: 'converter_unavailable', message: err.message } }
+        }
+        return { status: 422, body: { error: 'conversion_failed', message: (err as Error).message } }
       }
     }, apiToken),
 
@@ -1855,6 +2067,99 @@ export function buildSessionRoutes(
       return { status: 200, body: { ok: true, ...manager.getSession(params!.id!) } }
     }, apiToken),
 
+    // ── P1-1 fork: copy the conversation into a NEW session (source untouched) ──
+    // 与 rewind 的区别：rewind 截断原会话；fork 从切点复制出一个新会话（事件流
+    // 前缀 + OAI 转录前缀 + 血缘字段），桌面端 ForkDialog 消费它。源会话日志不动。
+    'POST /sessions/:id/fork': withAuth(async (body, params) => {
+      const data = (body ?? {}) as {
+        messageIndex?: number
+        destination?: string
+        title?: string
+        source?: string
+      }
+      // messageIndex 省略 = header fork（切到最新 user 事件）；给了就必须是非负整数。
+      if (
+        data.messageIndex !== undefined &&
+        (typeof data.messageIndex !== 'number' || !Number.isInteger(data.messageIndex) || data.messageIndex < 0)
+      ) {
+        return { status: 400, body: { error: 'Invalid "messageIndex"' } }
+      }
+      if (
+        data.destination !== undefined &&
+        data.destination !== 'local' &&
+        data.destination !== 'same-worktree' &&
+        data.destination !== 'new-worktree'
+      ) {
+        return { status: 400, body: { error: 'Invalid "destination" (local | same-worktree | new-worktree)' } }
+      }
+      if (data.title !== undefined && typeof data.title !== 'string') {
+        return { status: 400, body: { error: 'Invalid "title" (string expected)' } }
+      }
+      const result = await manager.forkSession(params!.id!, {
+        ...(data.messageIndex !== undefined ? { messageIndex: data.messageIndex } : {}),
+        ...(data.destination !== undefined ? { destination: data.destination } : {}),
+        ...(data.title !== undefined ? { title: data.title } : {}),
+        ...(data.source === 'header' || data.source === 'message' ? { source: data.source } : {}),
+      })
+      if (result.ok) return { status: 200, body: { session: result.record } }
+      switch (result.reason) {
+        case 'not_found':
+          return { status: 404, body: { error: 'Session not found' } }
+        case 'running':
+          return { status: 409, body: { error: 'Session is running — stop it before forking' } }
+        case 'invalid_message_index':
+          return { status: 400, body: { error: 'messageIndex does not point at a user message' } }
+        case 'same_worktree_unavailable':
+          return { status: 409, body: { error: 'Source session has no worktree to fork into' } }
+        case 'worktree_failed':
+          return { status: 409, body: { error: 'Failed to create worktree for fork', detail: result.detail } }
+      }
+    }, apiToken),
+
+    // ── P1-4: redacted read-only snapshot export/import（回流自 3.14alpha）──
+    // 分享用快照：脱敏 + 无工具面（不含工具参数/命令/输出/原始文件）+ 可被对方
+    // 导入回灌。与桌面既有的「导出会话」（保真备份、不脱敏）是**两条路**，别合并。
+    'POST /sessions/:id/snapshot/export': withAuth(async (body, params) => {
+      const id = params!.id!
+      const record = manager.getSession(id)
+      if (!record) return { status: 404, body: { error: 'Session not found' } }
+      const data = (body ?? {}) as { includeReasoning?: boolean; includeFileChanges?: boolean }
+      const events = manager.getEvents(id, 0)?.events ?? []
+      const { snapshot, findings } = await buildSessionSnapshot(record, events, {
+        includeReasoning: data.includeReasoning === true,
+        includeFileChanges: data.includeFileChanges === true,
+      })
+      return { status: 200, body: { snapshot, findings } }
+    }, apiToken),
+
+    'POST /sessions/:id/snapshot/import': withAuth((body, params) => {
+      const record = manager.getSession(params!.id!)
+      if (!record) return { status: 404, body: { error: 'Session not found' } }
+      const { path } = (body ?? {}) as { path?: unknown }
+      if (typeof path !== 'string' || !path.trim()) {
+        return { status: 400, body: { error: 'Missing "path"' } }
+      }
+      // 只读校验：确认是文件、体积可控、是合法 JSON、版本与形状对得上（形状覆盖
+      // 消费端真正会读的字段，见 isImportableSnapshot）——四条都过了才把内容交回
+      // 前端预览。快照导入**不改会话状态**（回灌由用户在 composer 里显式发出），
+      // 所以这里没有任何写路径。
+      let stat: ReturnType<typeof statSync>
+      try { stat = statSync(path) } catch { return { status: 400, body: { error: 'Snapshot file not found or unreadable' } } }
+      if (!stat.isFile() || stat.size > MAX_SNAPSHOT_BYTES) {
+        return { status: 400, body: { error: 'Snapshot file invalid or too large' } }
+      }
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(readFileSync(path, 'utf8'))
+      } catch {
+        return { status: 400, body: { error: 'Snapshot file is not valid JSON' } }
+      }
+      if (!isImportableSnapshot(parsed)) {
+        return { status: 400, body: { error: 'Unsupported snapshot version or shape' } }
+      }
+      return { status: 200, body: { snapshot: parsed } }
+    }, apiToken),
+
     // ── Precise rewind: preview the agent-edited files a per-message code
     // rewind would restore/delete (from FileHistory). available=false lets the
     // caller fall back to the coarse checkpoint rollback. ──
@@ -2152,6 +2457,7 @@ export function buildSessionRoutes(
       if (!data.groupId || typeof data.groupId !== 'string') {
         return { status: 400, body: { error: 'Missing or invalid groupId' } }
       }
+      if (!isSafeFileName(data.groupId)) return { status: 400, body: { error: 'Invalid groupId' } }
       const cp = loadCheckpoint(rec.cwd, data.groupId)
       if (!cp) return { status: 404, body: { error: `Checkpoint ${data.groupId} not found` } }
       const resume = buildResumeFromCheckpoint(cp)

@@ -60,7 +60,7 @@ describe('--version install root 解析', () => {
   test('跳过无 version 的 dist/package.json，继续向上拿真实版本', () => {
     const root = mkdtempSync(join(tmpdir(), 'rivet-version-'))
     try {
-      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tianshu-tui', version: '9.9.9' }))
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tianshu-harness', version: '9.9.9' }))
       mkdirSync(join(root, 'dist', 'cli'), { recursive: true })
       writeFileSync(join(root, 'dist', 'package.json'), JSON.stringify({ type: 'module' }))
       const script = join(root, 'dist', 'cli', 'entry.js')
@@ -68,13 +68,13 @@ describe('--version install root 解析', () => {
 
       assert.equal(findInstallRoot(script), realpathSync(root))
       assert.equal(readInstallVersion(findInstallRoot(script)!), '9.9.9')
-      assert.equal(formatVersionLine(script), 'tianshu-tui v9.9.9\n')
+      assert.equal(formatVersionLine(script), 'tianshu-harness v9.9.9\n')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })
 
-  test('找不到版本时输出 unknown（形状保持 tianshu-tui v…）', () => {
+  test('找不到版本时输出 unknown（形状保持 tianshu-harness v…）', () => {
     const root = mkdtempSync(join(tmpdir(), 'rivet-version-none-'))
     try {
       const script = join(root, 'nested', 'entry.js')
@@ -82,7 +82,23 @@ describe('--version install root 解析', () => {
       writeFileSync(script, '')
       // 祖先目录没有 package.json（tmpdir 直下建；即使有，也不会带 version 字段）
       assert.equal(findInstallRoot(script), null)
-      assert.equal(formatVersionLine(script), 'tianshu-tui vunknown\n')
+      assert.equal(formatVersionLine(script), 'tianshu-harness vunknown\n')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('改名过渡期：旧名 tianshu-tui 的安装目录仍被识别（版本可读、行首用新名）', () => {
+    const root = mkdtempSync(join(tmpdir(), 'rivet-version-legacy-'))
+    try {
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tianshu-tui', version: '3.22.0' }))
+      mkdirSync(join(root, 'dist', 'cli'), { recursive: true })
+      const script = join(root, 'dist', 'cli', 'entry.js')
+      writeFileSync(script, '')
+
+      assert.equal(findInstallRoot(script), realpathSync(root), '旧名安装的声明必须仍被认作本包')
+      assert.equal(readInstallVersion(findInstallRoot(script)!), '3.22.0')
+      assert.equal(formatVersionLine(script), 'tianshu-harness v3.22.0\n')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

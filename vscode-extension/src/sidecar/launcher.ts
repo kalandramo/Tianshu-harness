@@ -75,7 +75,7 @@ async function waitHealthy(
       const code = (spawnErr as NodeJS.ErrnoException).code
       if (code === 'ENOENT') {
         throw new SidecarLaunchError(
-          '未找到 rivet CLI。请先安装（npm i -g tianshu-tui），或在设置 tianshu.cliPath 中指定路径。',
+          '未找到 rivet CLI。请先安装（npm i -g tianshu-harness），或在设置 tianshu.cliPath 中指定路径。',
           'cli-not-found',
         )
       }

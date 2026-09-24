@@ -14,22 +14,11 @@
 import type { ProviderConfig } from '../config/schema.js'
 import type { WorkerProfile } from './work-order.js'
 import type { ModelCapabilityCard } from '../model/capability.js'
-import { findAliasEntryExact } from '../api/model-aliases.js'
-
-/**
- * 模型引用是否命中 provider 下的某条目：按 id 直配，或经 matcher 同义表把
- * preset 短名（v4-flash / glm-53 / cc-opus 等）归一后再比一次。
- *
- * config 的 `model.alias` 字段 2026-09 起废弃（不再声明、不落盘），但「用户在
- * review 配置里手写短名」这层容错不该跟着丢——同义表的单一来源是
- * src/api/model-aliases.ts 的 MODEL_SYNONYMS。表里没有的名字仍 fail-closed，
- * 不做模糊匹配（不悄悄路由到别的模型）。
- */
-function modelMatchesRef(modelId: string, ref: string): boolean {
-  if (modelId === ref) return true
-  const canonical = findAliasEntryExact(ref)?.canonicalId
-  return canonical !== undefined && modelId === canonical
-}
+// 模型引用判据收在 api/model-aliases.ts 的 modelRefMatches（精确优先，再经同义表把
+// preset 短名 v4-flash / glm-53 / cc-opus 等归一次之）。config 的 `model.alias` 字段
+// 2026-09 起废弃（不再声明、不落盘），但「用户在 review 配置里手写短名」这层容错不该
+// 跟着丢；表里没有的名字仍 fail-closed，不做模糊匹配（不悄悄路由到别的模型）。
+import { modelRefMatches } from '../api/model-aliases.js'
 
 /** A resolved override: the provider config + model id to use for this profile. */
 export interface ResolvedReviewOverride {
@@ -62,7 +51,7 @@ export function resolveReviewOverride(
   if (!providerConfig) return undefined
 
   const modelExists = providerConfig.models.some(
-    m => modelMatchesRef(m.id, override.model),
+    m => modelRefMatches(m.id, override.model),
   )
   if (!modelExists) return undefined
 
@@ -91,7 +80,7 @@ export function buildReviewOverrideCard(
   providerConfig: ProviderConfig,
 ): ModelCapabilityCard {
   const model = providerConfig.models.find(
-    m => modelMatchesRef(m.id, modelId),
+    m => modelRefMatches(m.id, modelId),
   )
   const contextWindow = model?.contextWindow ?? 128_000
 

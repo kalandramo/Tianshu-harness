@@ -4,9 +4,9 @@
  * Wraps the single-server `createLspManager` and routes each request to the
  * language server matching the file's extension, lazily spawning + initializing
  * each server on first use. This gives polyglot go-to-definition / diagnostics
- * (pyright / gopls / rust-analyzer / clangd / jdtls / typescript-language-server)
- * behind the existing single `LspManager` interface, so the late-bound
- * `getLspManager()` getter and all call sites are unchanged.
+ * (the full LSP_SERVERS registry in server-registry.ts) behind the existing
+ * single `LspManager` interface, so the late-bound `getLspManager()` getter and
+ * all call sites are unchanged.
  */
 
 import type { ChildProcess } from 'node:child_process'
@@ -21,6 +21,7 @@ import {
   serverForFile,
   availableServers,
   defaultWhich,
+  languageIdForFile,
   type LspServerDef,
   type WhichFn,
 } from './server-registry.js'
@@ -103,7 +104,14 @@ export function createMultiLspManager(cwd: string, opts: MultiLspOptions = {}): 
   const ensure = async (def: LspServerDef, waitMs = initializeTimeoutMs): Promise<LspManager | null> => {
     let entry = managers.get(def.id)
     if (!entry) {
-      const mgr = createLspManager(() => spawnFor(def, cwd), cwd)
+      const mgr = createLspManager(
+        () => spawnFor(def, cwd),
+        cwd,
+        {},
+        // languageId 由 def 决定（并按扩展名细化）——不传时 manager 会回落到
+        // TS/JS 家族解析，把 .py/.go/.java 全都标成 'javascript'。
+        fp => languageIdForFile(def, fp),
+      )
       const ready = new Promise<boolean>((resolve) => {
         let settled = false
         const hardTimer = setTimeout(() => {
