@@ -5671,6 +5671,102 @@ bash 单流上限是 **8MB**，且单行不触发行数截断。探针定位后�
 授权与 bash 越界授权，是安全面能力）；若优先补认知深度，则按下方
 「volatile 块与动态 appendix」推进（那是缓存命中率的真正杠杆）。
 
+## 第五十刀：审批硬闸门接线（2026-09-24）
+
+**任务来源**：上一轮我推荐「`request_path_access` + 审批层」，理由写的是
+「Go 侧 `grep -l Approval` **零命中**」。**该判断是错的**——用 `-l` 只列
+文件名，漏看了实际内容。核实后发现 Go 侧审批**骨架已在**：
+
+- `Config.ApprovalMode`（`loop.go:47`，由 `main.go:162` 注入，默认 `auto-safe`）
+- `Tool.RequiresApproval` 接口（`registry.go:33`）+ **6 个实现**
+  （bash / write_file / edit_file / hash_edit / apply_patch / git commit）
+- `Registry.NeedsApproval`（`registry.go:302`）
+
+**所以真正的缺口不是「缺审批层」，而是「有声明、无执行」**。
+
+### 缺陷：审批声明零消费者
+
+穷尽 grep 交叉验证：
+
+| 事实 | 证据 |
+|---|---|
+| `Registry.NeedsApproval` **全仓零调用者** | `grep -rn 'NeedsApproval' go/` 只有 `registry.go:301-302`（定义行） |
+| 6 个 `RequiresApproval` 实现只被 `registry.go:307` 调用 | 而 307 是 `NeedsApproval` 的内部实现——**链条断在这里** |
+| bash 的 `Execute` 不自查 `isDestructiveCommand` | 该函数仅出现在 `RequiresApproval`（`bash.go:86`）里 |
+| `DestructiveReason` 注释写「供审批提示」 | `bash.go:128`——**而审批提示不存在** |
+
+**后果**：默认档 `auto-safe` 下，`rm -rf`、`git reset --hard` 这类破坏性
+命令的工具级「硬闸门」返回 `true` 但无人消费，**会静默执行**。
+
+### 落地
+
+| 文件 | 内容 |
+|---|---|
+| `tools/registry.go` | 新增 `HardGate` 可选接口 + `Registry.RequiresHardGate` |
+| `tools/bash.go` | `RequiresApproval` **修正偏差**（见下）；新增 `RequiresHardGate` |
+| `agent/loop.go` | `executeTool` 在 `registry.Execute` 前接入硬闸门 + 拒绝文案 |
+| `agent/approval_gate_wiring_test.go` | 接线测试 3 例（拦截 / 不误拦 / 档位不豁免） |
+| `tools/bash_test.go` | 修正锁定旧语义的断言（见下） |
+
+### 称量：为什么不接 `NeedsApproval`（首版踩的坑）
+
+**首版直接消费 `NeedsApproval` → 6 个既有测试转红**（`TestStateWiring` 的
+`write_file 后应标记 modifiedByMe` 等）。根因是两个语义被混为一谈：
+
+- `RequiresApproval` 是**档位驱动**的——写工具在非放开档恒返回 `true`。
+  TS 侧这类返回值由 `tool-pipeline` 的完整决策树消费（档位 × 风险分级 ×
+  pathGrant × allowlist × headless 中和），**不是直接拒绝**。
+- Go 侧**没有**该决策树，也没有审批提示往返通道（`onApprovalRequired`
+  对应物零命中）。直接消费会拦下所有写操作——`write_file` 在默认档下
+  完全不可用。
+
+故提取 `HardGate` 接口表达「**任何档位都不能绕过**」，门控只作用于它。
+这是无提示通道时唯一能安全闭合的子集。
+
+### 附带修正：`bash.RequiresApproval` 的移植偏差
+
+原实现是 `p.ApprovalMode != "dangerously-skip-permissions"`——**普通命令在
+非放开档也返回 true**。与 TS 不等价：`bash.ts:1128-1150` 只在命中危险模式
+（`matchesDangerousBash` / `INJECTION_PATTERNS` / 敏感 git add）时返回 true，
+普通 `ls`/`echo` 返回 **false**（普通命令的审批由风险分级决定，不由工具
+签名决定）。
+
+旧写法之所以没暴露问题，正因为返回值无消费者；接线后会拦下所有普通
+命令，故一并修正。`bash_test.go` 中锁定旧语义的断言随之反转。
+
+### 验证
+
+- `gofmt -l` 零违规 · `go build ./...` exit=0 · `go vet ./...` exit=0
+- `go test ./... -count=1` **全绿**（含首版误拦的 6 个测试）
+- **用户级验收 4/4 met**：
+  1. auto-safe 档 + `rm -rf /tmp/...` → 请求体含拒绝文案（命令未执行）
+  2. auto-safe 档 + `echo` → 正常执行（**不误拦**，输出出现在请求体）
+  3. `dangerously-skip-permissions` 档 + `git reset --hard` → **仍被拦**
+     （硬闸门不受档位影响）
+  4. **变异反证**：把门控调用改为 `if false` → 1、3 转红而 2 仍绿
+     （证明判别力方向正确，非恒真断言）
+
+### 遗留
+
+- **完整的档位门控未接**：`auto-safe` 档的「高风险才问」语义依赖
+  `assessToolRisk`（`approval-risk.ts` 500+ 行，含 sensorium / MCP policy /
+  claims 输入）与**审批提示往返通道**——两者 Go 侧均无。当前只闭合了
+  「无条件硬闸门」这一子集。
+- **写工具的档位语义仍是简化的**：Go 侧 `ApprovalMode != "dangerously-skip-
+  permissions"` 与 TS 的 `() => true` + pipeline 中和不等价。接线完整门控时
+  需一并订正。
+- `git commit` 的 `RequiresApproval` 同样无消费者（未纳入本轮 scope——TS 侧
+  它由风险分级中和为 medium，直接接会误拦常规提交流）。
+
+### 下一步
+
+**若继续审批线**：做 `assessToolRisk` 的纯函数子集（`bashCommandMayWrite` /
+`isDestructiveGitAction` / `requiresUnconditionalApproval` 等，无 sensorium
+依赖），把门控从「硬闸门」扩展到「档位 × 风险」。
+
+**若换方向**：按下方「volatile 块与动态 appendix」推进——那是缓存命中率的
+真正杠杆（见「建议的第一刀」节）。
+
 ### 下一步（第四十八刀遗留段，2026-09-23）
 
 **本刀再次印证：动手前必须核实消费端**——上一轮的建议（做 config 校验层）
