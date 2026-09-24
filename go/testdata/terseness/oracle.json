@@ -1,0 +1,1147 @@
+{
+  "meta": {
+    "source": "src/prompt/volatile.ts",
+    "generatedBy": "go/testdata/terseness/gen-oracle.ts",
+    "note": "terse 输出风格判定逐值对账：resolveTersenessFlags / renderTersenessNudge"
+  },
+  "resolve": [
+    {
+      "name": "unset__ctx-none",
+      "envName": "unset",
+      "envValue": null,
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "unset__ctx-enabled",
+      "envName": "unset",
+      "envValue": null,
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "unset__ctx-escalate",
+      "envName": "unset",
+      "envValue": null,
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "unset__ctx-both",
+      "envName": "unset",
+      "envValue": null,
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "unset__ctx-enabled-false",
+      "envName": "unset",
+      "envValue": null,
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "unset__ctx-escalate-false",
+      "envName": "unset",
+      "envValue": null,
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "empty__ctx-none",
+      "envName": "empty",
+      "envValue": "",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "empty__ctx-enabled",
+      "envName": "empty",
+      "envValue": "",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "empty__ctx-escalate",
+      "envName": "empty",
+      "envValue": "",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "empty__ctx-both",
+      "envName": "empty",
+      "envValue": "",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "empty__ctx-enabled-false",
+      "envName": "empty",
+      "envValue": "",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "empty__ctx-escalate-false",
+      "envName": "empty",
+      "envValue": "",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "zero__ctx-none",
+      "envName": "zero",
+      "envValue": "0",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "zero__ctx-enabled",
+      "envName": "zero",
+      "envValue": "0",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "zero__ctx-escalate",
+      "envName": "zero",
+      "envValue": "0",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "zero__ctx-both",
+      "envName": "zero",
+      "envValue": "0",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "zero__ctx-enabled-false",
+      "envName": "zero",
+      "envValue": "0",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "zero__ctx-escalate-false",
+      "envName": "zero",
+      "envValue": "0",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "false__ctx-none",
+      "envName": "false",
+      "envValue": "false",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "false__ctx-enabled",
+      "envName": "false",
+      "envValue": "false",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "false__ctx-escalate",
+      "envName": "false",
+      "envValue": "false",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "false__ctx-both",
+      "envName": "false",
+      "envValue": "false",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "false__ctx-enabled-false",
+      "envName": "false",
+      "envValue": "false",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "false__ctx-escalate-false",
+      "envName": "false",
+      "envValue": "false",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "off__ctx-none",
+      "envName": "off",
+      "envValue": "off",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "off__ctx-enabled",
+      "envName": "off",
+      "envValue": "off",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "off__ctx-escalate",
+      "envName": "off",
+      "envValue": "off",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "off__ctx-both",
+      "envName": "off",
+      "envValue": "off",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "off__ctx-enabled-false",
+      "envName": "off",
+      "envValue": "off",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "off__ctx-escalate-false",
+      "envName": "off",
+      "envValue": "off",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "no__ctx-none",
+      "envName": "no",
+      "envValue": "no",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "no__ctx-enabled",
+      "envName": "no",
+      "envValue": "no",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "no__ctx-escalate",
+      "envName": "no",
+      "envValue": "no",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "no__ctx-both",
+      "envName": "no",
+      "envValue": "no",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "no__ctx-enabled-false",
+      "envName": "no",
+      "envValue": "no",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "no__ctx-escalate-false",
+      "envName": "no",
+      "envValue": "no",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "one__ctx-none",
+      "envName": "one",
+      "envValue": "1",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "one__ctx-enabled",
+      "envName": "one",
+      "envValue": "1",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "one__ctx-escalate",
+      "envName": "one",
+      "envValue": "1",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "one__ctx-both",
+      "envName": "one",
+      "envValue": "1",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "one__ctx-enabled-false",
+      "envName": "one",
+      "envValue": "1",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "one__ctx-escalate-false",
+      "envName": "one",
+      "envValue": "1",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "true__ctx-none",
+      "envName": "true",
+      "envValue": "true",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "true__ctx-enabled",
+      "envName": "true",
+      "envValue": "true",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "true__ctx-escalate",
+      "envName": "true",
+      "envValue": "true",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "true__ctx-both",
+      "envName": "true",
+      "envValue": "true",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "true__ctx-enabled-false",
+      "envName": "true",
+      "envValue": "true",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "true__ctx-escalate-false",
+      "envName": "true",
+      "envValue": "true",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "on__ctx-none",
+      "envName": "on",
+      "envValue": "on",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "on__ctx-enabled",
+      "envName": "on",
+      "envValue": "on",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "on__ctx-escalate",
+      "envName": "on",
+      "envValue": "on",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "on__ctx-both",
+      "envName": "on",
+      "envValue": "on",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "on__ctx-enabled-false",
+      "envName": "on",
+      "envValue": "on",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "on__ctx-escalate-false",
+      "envName": "on",
+      "envValue": "on",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "yes__ctx-none",
+      "envName": "yes",
+      "envValue": "yes",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "yes__ctx-enabled",
+      "envName": "yes",
+      "envValue": "yes",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "yes__ctx-escalate",
+      "envName": "yes",
+      "envValue": "yes",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "yes__ctx-both",
+      "envName": "yes",
+      "envValue": "yes",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "yes__ctx-enabled-false",
+      "envName": "yes",
+      "envValue": "yes",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "yes__ctx-escalate-false",
+      "envName": "yes",
+      "envValue": "yes",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "TRUE-upper__ctx-none",
+      "envName": "TRUE-upper",
+      "envValue": "TRUE",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "TRUE-upper__ctx-enabled",
+      "envName": "TRUE-upper",
+      "envValue": "TRUE",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "TRUE-upper__ctx-escalate",
+      "envName": "TRUE-upper",
+      "envValue": "TRUE",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "TRUE-upper__ctx-both",
+      "envName": "TRUE-upper",
+      "envValue": "TRUE",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "TRUE-upper__ctx-enabled-false",
+      "envName": "TRUE-upper",
+      "envValue": "TRUE",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "TRUE-upper__ctx-escalate-false",
+      "envName": "TRUE-upper",
+      "envValue": "TRUE",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "False-mixed__ctx-none",
+      "envName": "False-mixed",
+      "envValue": "False",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "False-mixed__ctx-enabled",
+      "envName": "False-mixed",
+      "envValue": "False",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "False-mixed__ctx-escalate",
+      "envName": "False-mixed",
+      "envValue": "False",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "False-mixed__ctx-both",
+      "envName": "False-mixed",
+      "envValue": "False",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "False-mixed__ctx-enabled-false",
+      "envName": "False-mixed",
+      "envValue": "False",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "False-mixed__ctx-escalate-false",
+      "envName": "False-mixed",
+      "envValue": "False",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "padded-on__ctx-none",
+      "envName": "padded-on",
+      "envValue": "  on  ",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "padded-on__ctx-enabled",
+      "envName": "padded-on",
+      "envValue": "  on  ",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "padded-on__ctx-escalate",
+      "envName": "padded-on",
+      "envValue": "  on  ",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "padded-on__ctx-both",
+      "envName": "padded-on",
+      "envValue": "  on  ",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "padded-on__ctx-enabled-false",
+      "envName": "padded-on",
+      "envValue": "  on  ",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "padded-on__ctx-escalate-false",
+      "envName": "padded-on",
+      "envValue": "  on  ",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "padded-zero__ctx-none",
+      "envName": "padded-zero",
+      "envValue": " 0 ",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "padded-zero__ctx-enabled",
+      "envName": "padded-zero",
+      "envValue": " 0 ",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "padded-zero__ctx-escalate",
+      "envName": "padded-zero",
+      "envValue": " 0 ",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "padded-zero__ctx-both",
+      "envName": "padded-zero",
+      "envValue": " 0 ",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "padded-zero__ctx-enabled-false",
+      "envName": "padded-zero",
+      "envValue": " 0 ",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "padded-zero__ctx-escalate-false",
+      "envName": "padded-zero",
+      "envValue": " 0 ",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "unknown-maybe__ctx-none",
+      "envName": "unknown-maybe",
+      "envValue": "maybe",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "unknown-maybe__ctx-enabled",
+      "envName": "unknown-maybe",
+      "envValue": "maybe",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "unknown-maybe__ctx-escalate",
+      "envName": "unknown-maybe",
+      "envValue": "maybe",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "unknown-maybe__ctx-both",
+      "envName": "unknown-maybe",
+      "envValue": "maybe",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "unknown-maybe__ctx-enabled-false",
+      "envName": "unknown-maybe",
+      "envValue": "maybe",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "unknown-maybe__ctx-escalate-false",
+      "envName": "unknown-maybe",
+      "envValue": "maybe",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "unknown-2__ctx-none",
+      "envName": "unknown-2",
+      "envValue": "2",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "unknown-2__ctx-enabled",
+      "envName": "unknown-2",
+      "envValue": "2",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "unknown-2__ctx-escalate",
+      "envName": "unknown-2",
+      "envValue": "2",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "unknown-2__ctx-both",
+      "envName": "unknown-2",
+      "envValue": "2",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "unknown-2__ctx-enabled-false",
+      "envName": "unknown-2",
+      "envValue": "2",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "unknown-2__ctx-escalate-false",
+      "envName": "unknown-2",
+      "envValue": "2",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "unknown-yep__ctx-none",
+      "envName": "unknown-yep",
+      "envValue": "yep",
+      "ctxName": "ctx-none",
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "unknown-yep__ctx-enabled",
+      "envName": "unknown-yep",
+      "envValue": "yep",
+      "ctxName": "ctx-enabled",
+      "enabled": true,
+      "result": {
+        "enabled": true,
+        "escalate": false
+      }
+    },
+    {
+      "name": "unknown-yep__ctx-escalate",
+      "envName": "unknown-yep",
+      "envValue": "yep",
+      "ctxName": "ctx-escalate",
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "unknown-yep__ctx-both",
+      "envName": "unknown-yep",
+      "envValue": "yep",
+      "ctxName": "ctx-both",
+      "enabled": true,
+      "escalate": true,
+      "result": {
+        "enabled": true,
+        "escalate": true
+      }
+    },
+    {
+      "name": "unknown-yep__ctx-enabled-false",
+      "envName": "unknown-yep",
+      "envValue": "yep",
+      "ctxName": "ctx-enabled-false",
+      "enabled": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    },
+    {
+      "name": "unknown-yep__ctx-escalate-false",
+      "envName": "unknown-yep",
+      "envValue": "yep",
+      "ctxName": "ctx-escalate-false",
+      "escalate": false,
+      "result": {
+        "enabled": false,
+        "escalate": false
+      }
+    }
+  ],
+  "nudge": [
+    {
+      "name": "no-escalate",
+      "escalate": false,
+      "output": "<output-style>文字要精炼。跳过开场白、自我陈述和收尾总结。不要复述已展示的代码、文件内容或上下文——引用即可。直接给答案或动作。 本指令只约束输出文字——绝不因此削减验证、测试、取证或交付报告的严谨度。</output-style>"
+    },
+    {
+      "name": "escalate",
+      "escalate": true,
+      "output": "<output-style>文字要精炼。跳过开场白、自我陈述和收尾总结。不要复述已展示的代码、文件内容或上下文——引用即可。直接给答案或动作。 你似乎在重复工作或打转——本轮尤其简洁：一段短文，不复述上下文。 本指令只约束输出文字——绝不因此削减验证、测试、取证或交付报告的严谨度。</output-style>"
+    },
+    {
+      "name": "default-arg",
+      "output": "<output-style>文字要精炼。跳过开场白、自我陈述和收尾总结。不要复述已展示的代码、文件内容或上下文——引用即可。直接给答案或动作。 本指令只约束输出文字——绝不因此削减验证、测试、取证或交付报告的严谨度。</output-style>"
+    }
+  ]
+}
