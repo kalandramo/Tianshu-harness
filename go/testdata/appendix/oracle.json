@@ -1,0 +1,179 @@
+{
+  "meta": {
+    "source": "src/prompt/volatile.ts",
+    "generatedBy": "go/testdata/appendix/gen-oracle.ts",
+    "note": "纯函数子集逐值对账：renderPlanMethodologyAdvisory / renderPermissionNote / renderPlanExecutingBlock / appendixBlockName"
+  },
+  "methodology": [
+    {
+      "name": "undefined-methodology",
+      "methodology": null,
+      "reason": null,
+      "planMode": false,
+      "output": null
+    },
+    {
+      "name": "lightweight-no-reason",
+      "methodology": "lightweight",
+      "reason": null,
+      "planMode": false,
+      "output": "<plan-methodology route=\"lightweight\">推荐使用轻量版计划模板（5阶段），路径: docs/superpowers/plans/2026-06-14-plan-methodology-lightweight.md。本任务 scope 内聚，单模块边界内变更，轻量版足以覆盖。至少画一张架构或数据流图（Mermaid），哪怕只画核心 3-5 个节点。开工前先用 todo 列出有序步骤（即为执行计划基线）。</plan-methodology>"
+    },
+    {
+      "name": "lightweight-with-reason",
+      "methodology": "lightweight",
+      "reason": "任务 scope 内聚",
+      "planMode": false,
+      "output": "<plan-methodology route=\"lightweight\">推荐使用轻量版计划模板（5阶段），路径: docs/superpowers/plans/2026-06-14-plan-methodology-lightweight.md。本任务 scope 内聚，单模块边界内变更，轻量版足以覆盖。至少画一张架构或数据流图（Mermaid），哪怕只画核心 3-5 个节点。开工前先用 todo 列出有序步骤（即为执行计划基线）。</plan-methodology>"
+    },
+    {
+      "name": "full-no-reason",
+      "methodology": "full",
+      "reason": null,
+      "planMode": false,
+      "output": "<plan-methodology route=\"full\">推荐使用基础计划模板（writing-plans 已内置为原生 <plan-mode> 流程），路径: docs/superpowers/plans/2026-06-28-plan-methodology-base.md。这是所有计划的默认基础：零上下文假设、任务粒度 2-5 分钟、禁止占位符、TDD、探针先行、瑶光反证、频繁提交。强制要求：① 至少一张 Mermaid 图（架构/数据流/状态图）；② 每个任务 RED→GREEN；③ 复杂实现前先打 30 秒探针；④ 用真实输入复现原问题再验修复，不取信声称取 exit code；⑤ 计划含「瑶光反证」章节（submit 门禁）——设计定稿后回读关键断言到 file:line、bugfix 先跑 run_tests 拿 RED 复现、跑不了的派 adversarial_verifier，复现不了的降级为待验证假设；⑥ 大计划（checkbox 任务 >8 或引用文件 >15）必须显式分波——`### Wave N` 标题 + 每波验证命令（submit 门禁）。如果任务涉及安全/权限/沙箱/多 enforcement gate，在基础模板之上追加安全附录（安全不变量、触发路径清单、双门对齐数据流图）。开工前先用 todo 列出有序步骤（即为执行计划基线）。</plan-methodology>"
+    },
+    {
+      "name": "full-with-reason",
+      "methodology": "full",
+      "reason": "跨多模块",
+      "planMode": false,
+      "output": "<plan-methodology route=\"full\">推荐使用基础计划模板（writing-plans 已内置为原生 <plan-mode> 流程），路径: docs/superpowers/plans/2026-06-28-plan-methodology-base.md。这是所有计划的默认基础：零上下文假设、任务粒度 2-5 分钟、禁止占位符、TDD、探针先行、瑶光反证、频繁提交。强制要求：① 至少一张 Mermaid 图（架构/数据流/状态图）；② 每个任务 RED→GREEN；③ 复杂实现前先打 30 秒探针；④ 用真实输入复现原问题再验修复，不取信声称取 exit code；⑤ 计划含「瑶光反证」章节（submit 门禁）——设计定稿后回读关键断言到 file:line、bugfix 先跑 run_tests 拿 RED 复现、跑不了的派 adversarial_verifier，复现不了的降级为待验证假设；⑥ 大计划（checkbox 任务 >8 或引用文件 >15）必须显式分波——`### Wave N` 标题 + 每波验证命令（submit 门禁）。如果任务涉及安全/权限/沙箱/多 enforcement gate，在基础模板之上追加安全附录（安全不变量、触发路径清单、双门对齐数据流图）。开工前先用 todo 列出有序步骤（即为执行计划基线）。\n路由理由: 跨多模块</plan-methodology>"
+    },
+    {
+      "name": "planMode-no-reason",
+      "methodology": "full",
+      "reason": null,
+      "planMode": true,
+      "output": "<plan-methodology route=\"full\" mode=\"design-doc\">Plan Mode 产出完整设计文档（写入活动计划文件），不是逐步 bash/commit 菜谱。章节要求：① 需求提炼（用户原话提炼目标与非目标，H1 之后，submit 门禁）；② 问题与根因；③ 至少一张 Mermaid 架构/数据流图；④ 方案取舍表（有决策时）；⑤ 文件:行锚点 + 提议 diff/伪代码；⑥ 验证清单（测什么/看什么，不写逐步 shell 块）；⑦ 「瑶光反证」——关键断言 + file:line 或 run_tests 证据摘要，复现不了的标待验证假设；⑧ 重构类须含「回归清单」；⑨ 大计划（任务 >8 或引用文件 >15）须显式分波——`### Wave N` 标题 + 每波验证命令（submit 门禁）。逐步命令与 git commit 留给批准后的执行阶段。</plan-methodology>"
+    },
+    {
+      "name": "planMode-with-reason",
+      "methodology": "full",
+      "reason": "设计阶段",
+      "planMode": true,
+      "output": "<plan-methodology route=\"full\" mode=\"design-doc\">Plan Mode 产出完整设计文档（写入活动计划文件），不是逐步 bash/commit 菜谱。章节要求：① 需求提炼（用户原话提炼目标与非目标，H1 之后，submit 门禁）；② 问题与根因；③ 至少一张 Mermaid 架构/数据流图；④ 方案取舍表（有决策时）；⑤ 文件:行锚点 + 提议 diff/伪代码；⑥ 验证清单（测什么/看什么，不写逐步 shell 块）；⑦ 「瑶光反证」——关键断言 + file:line 或 run_tests 证据摘要，复现不了的标待验证假设；⑧ 重构类须含「回归清单」；⑨ 大计划（任务 >8 或引用文件 >15）须显式分波——`### Wave N` 标题 + 每波验证命令（submit 门禁）。逐步命令与 git commit 留给批准后的执行阶段。\n路由理由: 设计阶段</plan-methodology>"
+    },
+    {
+      "name": "planMode-lightweight",
+      "methodology": "lightweight",
+      "reason": null,
+      "planMode": true,
+      "output": "<plan-methodology route=\"full\" mode=\"design-doc\">Plan Mode 产出完整设计文档（写入活动计划文件），不是逐步 bash/commit 菜谱。章节要求：① 需求提炼（用户原话提炼目标与非目标，H1 之后，submit 门禁）；② 问题与根因；③ 至少一张 Mermaid 架构/数据流图；④ 方案取舍表（有决策时）；⑤ 文件:行锚点 + 提议 diff/伪代码；⑥ 验证清单（测什么/看什么，不写逐步 shell 块）；⑦ 「瑶光反证」——关键断言 + file:line 或 run_tests 证据摘要，复现不了的标待验证假设；⑧ 重构类须含「回归清单」；⑨ 大计划（任务 >8 或引用文件 >15）须显式分波——`### Wave N` 标题 + 每波验证命令（submit 门禁）。逐步命令与 git commit 留给批准后的执行阶段。</plan-methodology>"
+    },
+    {
+      "name": "planMode-undefined",
+      "methodology": null,
+      "reason": null,
+      "planMode": true,
+      "output": null
+    }
+  ],
+  "permissionNote": [
+    {
+      "mode": "dangerously-skip-permissions",
+      "output": "<permission-note>当前权限档：全自动（免审批）。工具调用不再需要用户批准——不要停下来等授权。工作区外路径的读写会在首次触达时自动授予本会话访问权（无需调用 request_path_access，也不要先申请再动手）。仍会拦截的只有已配置的 deny 规则与危险命令确认。</permission-note>"
+    },
+    {
+      "mode": "auto-safe",
+      "output": ""
+    },
+    {
+      "mode": "manual",
+      "output": ""
+    },
+    {
+      "mode": "auto-accept",
+      "output": ""
+    },
+    {
+      "mode": "suggest",
+      "output": ""
+    },
+    {
+      "mode": "",
+      "output": ""
+    },
+    {
+      "mode": null,
+      "output": ""
+    }
+  ],
+  "planExecuting": {
+    "output": "<plan-executing>\n已批准计划进入执行期。执行纪律（原 executing-plans 技能已内置为原生流程，直接照此执行）：\n1. **执行前三查** — 批判性审查计划：步骤间依赖顺序有无颠倒；验证条件是否明确可跑（\"确认可用\"不算，\"run_tests 全绿\"才算）；有无隐含环境假设（Node 版本、数据库连接、API Key）。\n2. **逐波执行** — 按 Wave 顺序推进，每波结束跑该波验证命令再进下一波；每完成一个逻辑单元用 deliver_task 提交，不攒批。\n3. **测试失败三分** — 实现 bug / 测试 bug / 计划误三条不同路径：改实现 / 改测试并记录理由 / 停下修订计划再继续，不混为一谈。\n4. **阶段检查点** — 跨阶段计划（诊断→修复→验证）或 context 使用率 >60% 时暂停输出 handoff 摘要（进度、已完成项、待执行项、计划文档路径）交接，防单 session 注意力衰减。\n5. **偏离即记录** — 与计划不一致的临时决策记入执行报告，不静默改道。\n6. **完成报告四要素** — 完成的任务 / 验证结果（数字，来自本轮工具输出）/ 偏离计划的地方 / 遗留项。\n</plan-executing>"
+  },
+  "blockName": [
+    {
+      "input": "<git-status>[main] clean</git-status>",
+      "output": "git-status"
+    },
+    {
+      "input": "<progress ctx=\"10%\">x</progress>",
+      "output": "progress"
+    },
+    {
+      "input": "<context-update seq=\"1\">x</context-update>",
+      "output": "context-update"
+    },
+    {
+      "input": "<星域-advisory level=\"warning\">x</星域-advisory>",
+      "output": "星域-advisory"
+    },
+    {
+      "input": "<self-closing/>",
+      "output": "self-closing"
+    },
+    {
+      "input": "<self-closing />",
+      "output": "self-closing"
+    },
+    {
+      "input": "no tag at all",
+      "output": "anon:13"
+    },
+    {
+      "input": "",
+      "output": "anon:0"
+    },
+    {
+      "input": "<>",
+      "output": "anon:2"
+    },
+    {
+      "input": "< with-space>x",
+      "output": "anon:14"
+    },
+    {
+      "input": "<tag",
+      "output": "tag"
+    },
+    {
+      "input": "<a>",
+      "output": "a"
+    },
+    {
+      "input": "  <indented>x",
+      "output": "anon:13"
+    },
+    {
+      "input": "<ns:tag>x",
+      "output": "ns:tag"
+    },
+    {
+      "input": "<tag-with-dash>x",
+      "output": "tag-with-dash"
+    },
+    {
+      "input": "中文无标签",
+      "output": "anon:5"
+    },
+    {
+      "input": "emoji🎯x",
+      "output": "anon:8"
+    },
+    {
+      "input": "a😀b",
+      "output": "anon:4"
+    }
+  ]
+}
