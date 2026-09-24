@@ -46,10 +46,16 @@ const lossyAdvisoryContent = "【天枢】有损观测：上一个工具输出�
 // **session-scoped 状态**（对账 TS 的闭包变量）：`lastFiredTurn` 记上次触发的
 // 轮次（每轮至多 1 条）。故构造一次、跨轮复用。
 //
-// **与 TS 的差异（一处）**：TS 用 `ctx.snapshot.turn === lastFiredTurn` 判冷却，
-// Go 侧同样用快照的 `Turn`。但 Go 的快照 `Turn` 是 **run 局部序号**（
-// `buildRuntimeSnapshot(turn)` 传的是循环变量），而 TS 的 snapshot.turn 语义
-// 相同——故行为等价。
+// **与 TS 的差异（已消除）**：TS 用 `ctx.snapshot.turn === lastFiredTurn` 判冷却，
+// Go 侧同样用快照的 `Turn`。快照 `Turn` 由 `buildRuntimeSnapshot` 填 **session
+// turn**（`l.SessionTurn()`，对账 loop-factory.ts:516 的
+// `turn: self.session.getTurnCount()`）——**单 Run 内恒定、跨 Run 推进**。
+//
+// **首版曾误填 run 局部序号**（`buildRuntimeSnapshot(turn)` 传循环变量），
+// 并错误地注释为「语义相同、行为等价」。二者**不等价**：run 局部序号每个 Run
+// 从 0 重启，会让新 Run 的首轮与上一 Run 的首轮撞键，lossy advisory 被跨 Run
+// 误抑制。由对抗验证抓到——快照填 session turn 是唯一的正确解（TS 即如此），
+// 已修正，本注释同步订正。
 func NewLossyObservationHook(bus AdvisorySink) RuntimeHook {
 	lastFiredTurn := -1
 

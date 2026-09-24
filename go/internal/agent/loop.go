@@ -495,7 +495,7 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 		// ── preTurn hook ──
 		//
 		// 在调模型**之前**——hook 可注入消息 / 调整感知。
-		l.runHookPhase(ctx, PhasePreTurn, turn, nil)
+		l.runHookPhase(ctx, PhasePreTurn, nil)
 
 		// ── 调模型（流式）──
 		collector := &turnCollector{}
@@ -583,7 +583,7 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 				ResultContent: result.Content,
 			}
 			l.recordToolForHooks(toolEvent)
-			l.runHookPhase(ctx, PhasePostTool, turn, toolEvent)
+			l.runHookPhase(ctx, PhasePostTool, toolEvent)
 
 			// ── readback 行为观察（核销的证据源）──
 			//
@@ -606,6 +606,25 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 			if l.OnToolResult != nil {
 				l.OnToolResult(toolEvent, turn)
 			}
+
+			// ── lossy 观测守卫（纠正性内联标记）──
+			//
+			// 对账 TS `tool-execution.ts:600-611`（`executeBatch` 里对
+			// `toolResults` 的循环）——**在结果回灌历史之前**，若内容
+			// 同时带结构化有损标记与负向断言，前置注入
+			// `[⚠ VERIFICATION_REQUIRED]`，让模型读到时就带上「必须独立
+			// 交叉验证」的约束。
+			//
+			// **位置有意义**：必须在 `appendAndPersist` 之前（否则标记
+			// 只进了事件流、没进历史，模型看不到）；也必须在 `emit` 之后
+			// （TS 的 UI 事件发的是工具原始输出，标记是给模型的）。
+			//
+			// **与 lossy-observation hook 的分工**：hook 是预防性 advisory
+			// （任何有损输出都提醒）；本守卫是纠正性内联标记（仅当有损
+			// **且**含负向断言）。两者共用 `lossy-markers.go` 的标记表。
+			//
+			// **幂等**：`GuardLossyToolResult` 自带去重（已含标记则原样返回）。
+			result.Content = GuardLossyToolResult(result.Content)
 
 			l.appendAndPersist(wire.NewOrderedMap().
 				Set("role", "tool").
@@ -702,7 +721,7 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 		// ── postTurn hook ──
 		//
 		// 轮末——hook 在此做跨轮判断（如"改了 TS 但没 typecheck"）。
-		l.runHookPhase(ctx, PhasePostTurn, turn, nil)
+		l.runHookPhase(ctx, PhasePostTurn, nil)
 
 		// ── readback 核销评估 ──
 		//

@@ -40,9 +40,16 @@ func loadLossyOracle(t *testing.T) lossyOracle {
 
 // goProducedMarkers 是 **Go 侧真实产生**的标记所对应的 oracle 正例标签。
 //
-// **为什么需要这张表**：TS 的 15 条标记里有 8 条对应的子系统在 Go 侧未移植
+// **为什么需要这张表**：TS 的 15 条标记里，多数对应的子系统在 Go 侧未移植
 // （storm 折叠 / 分层摘要 / per-message-budget / 过期轮次压缩）——Go **不产生**
 // 那些标记。移植它们会让 hook 永不触发（死模式）。
+//
+// **stdout/stderr-truncated 曾在此表内（虚假绿灯）**：这两条标记只有 TS 产生
+// （src/tools/bash.ts:637,640 的 per-stream 脚注）。Go 的 bash 工具把 stdout 与
+// stderr **统一**成一条 `[output truncated: ...]`（internal/tools/bash.go:226-236），
+// 从不产出 `[stdout truncated:` / `[stderr truncated:`。把它们标为「Go 真实产生」
+// 会让对账测试断言一个**生产上永不出现**的内容——测试绿而实现是死模式。
+// 由对抗验证抓到，已从本表移除（并同步删除 lossy_markers.go 的模式）。
 //
 // 本测试只断言 Go 侧**确实产生**的标记被判为 lossy。将来移植相应子系统时，
 // 把标签加进本表（并同步 lossy_markers.go 的模式）即可。
@@ -50,8 +57,6 @@ var goProducedMarkers = map[string]bool{
 	"collapsed-header":        true,
 	"collapsed-readfile":      true,
 	"output-truncated-footer": true,
-	"stdout-truncated":        true,
-	"stderr-truncated":        true,
 	"partial-view":            true,
 	"microcompacted":          true,
 }

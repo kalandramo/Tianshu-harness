@@ -184,7 +184,7 @@ func TestHookSnapshotTaskLevelSurvivesWindow(t *testing.T) {
 	}
 
 	// 窗口已滚出，但任务级标志仍在
-	snap := l.buildRuntimeSnapshot(1)
+	snap := l.buildRuntimeSnapshot()
 	if !snap.TouchedTSFiles {
 		t.Error("touchedTSFiles 是任务级——不应因窗口滚出而失效")
 	}

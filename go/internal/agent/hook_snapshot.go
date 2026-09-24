@@ -162,10 +162,18 @@ func toolTarget(input map[string]any) string {
 // 对账 TS 的 buildRuntimeSnapshot。**当前只填 Go 侧已有数据的字段**——
 // sensorium / strategy / vigor / season 等认知状态依赖尚未移植的模块，
 // 留待后续（nil 时 hook 应自行跳过相关判断）。
-func (l *Loop) buildRuntimeSnapshot(turn int) *RuntimeHookSnapshot {
+//
+// **Turn 必须是 session turn，不是 run 局部序号**——TS 侧
+// `buildRuntimeSnapshot` 填的是 `turn: self.session.getTurnCount()`
+// （loop-factory.ts:516），即「历史里 user 消息的条数」：**单 Run 内恒定、
+// 跨 Run 推进**。Go 首版误填了 run 局部循环变量（`for turn := 0; ...`），
+// 它与 session turn 不等价——run 局部序号每个 Run 从 0 重启，会让以
+// `Snapshot.Turn` 为冷却键的 hook（lossy-observation / reasoning-spiral）
+// 在**新 Run 的同序号轮**被误抑制。由对抗验证抓到，改回 session turn。
+func (l *Loop) buildRuntimeSnapshot() *RuntimeHookSnapshot {
 	return &RuntimeHookSnapshot{
 		Cwd:               l.cfg.Cwd,
-		Turn:              turn,
+		Turn:              l.SessionTurn(),
 		RecentToolHistory: append([]ToolHistoryEntry(nil), l.hookState.recentToolHistory...),
 		TouchedTSFiles:    l.hookState.touchedTSFiles,
 		SawTypecheck:      l.hookState.sawTypecheck,
@@ -195,12 +203,12 @@ func (l *Loop) recordTurnOutcome(thinkingLen int, hadTools bool) {
 }
 
 // runHookPhase 执行某个 hook 阶段（Hooks 为 nil 时 no-op）。
-func (l *Loop) runHookPhase(ctx context.Context, phase RuntimeHookPhase, turn int, tool *RuntimeToolEvent) {
+func (l *Loop) runHookPhase(ctx context.Context, phase RuntimeHookPhase, tool *RuntimeToolEvent) {
 	if l.Hooks == nil {
 		return
 	}
 	hctx := &RuntimeHookContext{
-		Snapshot: l.buildRuntimeSnapshot(turn),
+		Snapshot: l.buildRuntimeSnapshot(),
 		Effects:  l.Effects,
 	}
 	switch phase {

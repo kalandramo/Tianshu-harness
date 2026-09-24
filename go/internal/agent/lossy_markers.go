@@ -18,10 +18,9 @@
 //
 // ## scope 收窄（明示，重要）
 //
-// TS 的 `LOSSY_CONTENT_MARKERS` 有 **14 条**；Go 侧**只移植真实产生的那些**。
+// TS 的 `LOSSY_CONTENT_MARKERS` 有 **15 条**；Go 侧**只移植真实产生的那些**。
 //
-// 核实（第四十三刀）——以下 TS 标记在 Go 侧**零命中**，因为其产生子系统
-// 未移植：
+// 核实——以下 TS 标记在 Go 侧**零命中**：
 //
 //	[storm-collapsed:     storm 折叠（src/compact/storm*.ts）未移植
 //	[tiered-summary:      分层摘要器未移植
@@ -30,6 +29,9 @@
 //	[truncated: N tokens  同上
 //	lines omitted (context pressure / per-call budget  同上（Go 有 turn read budget 变体）
 //	<stale-compacted      过期轮次压缩未移植
+//	[stdout truncated:    Go 的 bash 工具**不产生**——它把 stdout/stderr 两条流
+//	[stderr truncated:    统一成一条 `[output truncated: ...]`（internal/tools/bash.go:226-236）。
+//	                      per-stream 标记只有 TS 产生（src/tools/bash.ts:637,640）。
 //
 // **移植未产生的标记会让 hook 永不触发**（死模式），违反「锚定真实标记」
 // 的纪律。这些标记随各自子系统移植时一并加入——届时本表的 oracle 测试
@@ -45,12 +47,10 @@ var lossyContentMarkers = []*regexp.Regexp{
 	// src/compact/context_collapse.go:153,155,191,249,307,317,425,448
 	// —— 语义折叠摘要头，形如 `[collapsed grep: 14 matches in ...]`
 	regexp.MustCompile(`^\[collapsed `),
-	// src/tools/modeloutput.go:122,147 —— 头尾截断脚注
+	// src/tools/modeloutput.go:122,147 与 src/tools/bash.go:232 —— 统一截断脚注
 	// 形如 `[output truncated: last 100 of 5000 lines shown — ...]`
+	// 与 `[output truncated: 单流上限 N 字节。...]`
 	regexp.MustCompile(`\[output truncated:`),
-	// src/tools/bash.go:232 —— 单流上限截断
-	regexp.MustCompile(`\[stdout truncated:`),
-	regexp.MustCompile(`\[stderr truncated:`),
 	// src/tools/read_file.go —— "── PARTIAL view of <file> (N lines, M chars) ──"
 	regexp.MustCompile(`PARTIAL view of `),
 	// src/compact/micro.go:35 —— micro-compact 截断桩
