@@ -44,6 +44,14 @@ func loadSalienceOracle(t *testing.T) *salienceOracle {
 	if err := json.Unmarshal(data, &o); err != nil {
 		t.Fatalf("解析 oracle 失败：%v", err)
 	}
+	// 断言 oracle 来自预期的源文件——防止误用别的 oracle（防御性：
+	// 若有人拷错文件，此处立刻红，而非等到逐值对账时才发现语义不符）。
+	if o.Meta.Source != "src/prompt/volatile.ts" {
+		t.Fatalf("oracle 源不符：got=%q want=src/prompt/volatile.ts（用错 oracle 文件？）", o.Meta.Source)
+	}
+	if o.Meta.GeneratedBy != "go/testdata/salience/gen-oracle.ts" {
+		t.Fatalf("oracle 生成器不符：got=%q", o.Meta.GeneratedBy)
+	}
 	if len(o.Salience) == 0 || len(o.TopK) == 0 {
 		t.Fatalf("oracle 为空：salience=%d topK=%d", len(o.Salience), len(o.TopK))
 	}
