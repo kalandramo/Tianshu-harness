@@ -169,6 +169,12 @@ func loadConfig(model, baseURL, approval string, maxTurns int, systemPrompt stri
 			// 读取失败/文件不存在 → nil（不误拦）。配置问题不该中断启动：
 			// 与 `LoadPermissionsOrNil` 的 fail-closed 语义一致。
 			Permissions: config.LoadPermissionsOrNil(),
+			// terse 输出风格：`RIVET_TERSE=1` 时注入 `<output-style>` 指令
+			// （对账 TS 的 `resolveTersenessFlags` + `renderTersenessNudge`）。
+			//
+			// 传原始取值而非 bool——解析（optOut/optIn/未识别值三态）交给
+			// `prompt.ResolveTersenessFlags`，避免两处各写一套。
+			TerseEnv: os.Getenv("RIVET_TERSE"),
 		},
 		Client: client.Config{
 			BaseURL:  baseURL,

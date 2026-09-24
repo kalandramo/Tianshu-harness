@@ -47,6 +47,15 @@ type AppendixContext struct {
 	// 消费方：`RenderPermissionNote` —— 仅 `dangerously-skip-permissions`
 	// 时产出 `<permission-note>`，其余档返回空串（保证那些 turn 字节稳定）。
 	ApprovalMode string
+
+	// TerseEnv 是 `RIVET_TERSE` 环境变量的原始取值（空串 = 未设）。
+	//
+	// 消费方：`ResolveTersenessFlags` —— 决定是否产出 `<output-style>` 块。
+	//
+	// **为什么传原始字符串而非 bool**：TS 的判定是**三态**（optOut / optIn /
+	// 未识别值），把解析放在 `ResolveTersenessFlags` 里而非装配层，避免
+	// 两处各写一套解析逻辑（第五十七刀已有 110 个 oracle 用例覆盖该函数）。
+	TerseEnv string
 }
 
 // BuildDynamicAppendix 装配动态 appendix（user message 尾部的增量块）。
@@ -74,6 +83,29 @@ func BuildDynamicAppendix(ctx AppendixContext) string {
 		parts = append(parts, note)
 	}
 
+	// ── <output-style>（terse 输出风格）──
+	// 对账 TS `volatile.ts:838-843`：
+	//
+	//	const { enabled, escalate } = resolveTersenessFlags(ctx)
+	//	if (enabled) { push(renderTersenessNudge(escalate)) }
+	//
+	// **★ escalate 的已知降级**：TS 侧 `escalate` 来自 `ctx.tersenessEscalate`
+	// （doom-loop 轮次自动开启）。**Go 侧无 doom-loop 会话状态载体**
+	// （只有 `AssessToolRisk` 的字符串级 `doomLoopLevel` 参数，非会话态），
+	// 故此处**恒传 false**——即 terse 的 opt-in 部分完整生效，escalate
+	// 部分待 doom-loop 状态就位后接入。
+	//
+	// **这是显式降级，不是遗漏**：与 TS 的差异是「少一段 escalate 文案」，
+	// 不影响 opt-in 行为。
+	terseEnv := map[string]string{}
+	if ctx.TerseEnv != "" {
+		terseEnv["RIVET_TERSE"] = ctx.TerseEnv
+	}
+	flags := prompt.ResolveTersenessFlags(prompt.TersenessContext{}, terseEnv)
+	if flags.Enabled {
+		parts = append(parts, prompt.RenderTersenessNudge(false))
+	}
+
 	if len(parts) == 0 {
 		return ""
 	}
@@ -91,6 +123,7 @@ func BuildDynamicAppendix(ctx AppendixContext) string {
 func (l *Loop) appendDynamicAppendix(content string) string {
 	appendix := BuildDynamicAppendix(AppendixContext{
 		ApprovalMode: l.cfg.ApprovalMode,
+		TerseEnv:     l.cfg.TerseEnv,
 	})
 	if appendix == "" {
 		return content

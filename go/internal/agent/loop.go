@@ -60,6 +60,15 @@ type Config struct {
 	// dangerously-skip-permissions」。它在决策链的**最前面**，优先于
 	// 硬闸门与路径授权。
 	Permissions *PermissionConfig
+	// TerseEnv 是 `RIVET_TERSE` 环境变量的原始取值（空串 = 未设）。
+	//
+	// 消费方：`BuildDynamicAppendix` → `ResolveTersenessFlags` —— 决定是否
+	// 注入 `<output-style>`（terse 输出风格指令）。
+	//
+	// **为什么经 Config 注入而非直接读 os.Getenv**：与 `Permissions` 同一
+	// 模式——依赖由装配层注入，使测试可隔离（测试不需要污染真实环境变量）。
+	// 生产路径在 `cmd/tianshu/main.go` 用 `os.Getenv("RIVET_TERSE")` 填充。
+	TerseEnv string
 	// SessionID 用于缓存路由亲和。
 	SessionID string
 	// StarDomain 是当前星域名（用于 advisory 预算与措辞适配）。
