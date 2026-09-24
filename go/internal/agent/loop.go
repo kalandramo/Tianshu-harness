@@ -47,6 +47,19 @@ type Config struct {
 	Cwd string
 	// ApprovalMode 是审批档位。
 	ApprovalMode string
+	// Permissions 是用户配置的权限面（allow / deny 规则）。
+	//
+	// 对账 TS `config.permissions`。**nil = 无配置**（等价于空规则集）。
+	//
+	// **为什么经 Config 注入而非读配置文件**：Go 侧没有通用配置读取面
+	// （只有 `.rivet-config.json` 的 verify 声明），与既有模式一致——
+	// 依赖由装配层注入，使测试可隔离。
+	//
+	// **deny 的语义**（对账 TS `tool-pipeline.ts:1126`）：deny 规则覆盖
+	// allow 规则**与审批档位**——「Deny rules always win, even in
+	// dangerously-skip-permissions」。它在决策链的**最前面**，优先于
+	// 硬闸门与路径授权。
+	Permissions *PermissionConfig
 	// SessionID 用于缓存路由亲和。
 	SessionID string
 	// StarDomain 是当前星域名（用于 advisory 预算与措辞适配）。
@@ -814,6 +827,27 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 	}
 
 	started := time.Now()
+
+	// ── 用户 deny 规则门（第五十二刀接线）──
+	//
+	// 对账 TS `tool-pipeline.ts:1126-1143` 的 deny 分支。**Go 侧此前完全没有
+	// 这一环**：`Config` 无 `Permissions` 字段、无判定函数，用户配置里写的
+	// `permissions.deny` 被**静默忽略**——用户设的硬边界不生效。
+	//
+	// **为什么必须放在决策链最前（关键）**：TS 把它放在所有检查之前，注释
+	// 写明「Deny rules always win, even in dangerously-skip-permissions」。
+	// 它是**覆盖一切**的门——优先于 `unconditionalApproval`、硬闸门、路径
+	// 授权。放到后面就会被 `skip` 档或 pathGrant 分支绕过，等于边界失效。
+	//
+	// **与第五十刀/第五十一刀的同类性**：那两刀修的是「安全机制存在但没接线」
+	// （`NeedsApproval` 零调用者 / 出界路径无门控）；本刀修的是「安全机制
+	// 根本不存在」——同一族缺陷的第三种形态。
+	//
+	// **行为**：命中即拒，返回模型可见的「指令性非重试拒绝」——要点是
+	// **换路而非重试**（重试只会撞同一道门，浪费 turn 预算）。
+	if l.cfg.Permissions != nil && IsToolDenied(tc.name, p.Input, l.cfg.Permissions.Deny) {
+		return contract.Result{Content: DeniedRuleReason(tc.name), IsError: true}
+	}
 
 	// ── 审批硬闸门（第五十刀接线）──
 	//
