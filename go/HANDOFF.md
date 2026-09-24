@@ -6123,6 +6123,121 @@ schema 校验 + 迁移逻辑。`HANDOFF.md:3017` 待办项**仍不勾选**。本
 **若换方向**：按下方「volatile 块与动态 appendix」推进——缓存命中率的
 真正杠杆（见「建议的第一刀」节）。
 
+## 第五十四刀：动态 appendix 地基（2026-09-24）
+
+**任务来源**：按上刀建议「换方向」——推进 volatile 块与动态 appendix。
+
+### ★ 称量修正：本 HANDOFF 的建议已过期（重要）
+
+动手前核实，**推翻了「建议的第一刀」节的两处断言**：
+
+| HANDOFF 原话 | 核实结果 |
+|---|---|
+| 「建议接 volatile 块与动态 appendix」 | `BuildStableVolatileBlock` **已有生产消费路径**（`full.go:131` ← `BuildFullSystemPrompt` ← `main.go:152`）——照字面开工会**重做已完成的工作** |
+| 「volatile 层依赖会话状态，需先有 session 状态容器」 | 只对 `buildDynamicAppendixParts` 成立；`assignSalience` / `selectTopKBlocks` 是**纯函数**（零 IO、零会话状态） |
+
+**方法**：TS 侧 9 个导出符号逐个 grep 核实（`buildStableVolatileBlock` /
+`assignSalience` / `selectTopKBlocks` / `buildDynamicAppendixParts` /
+`buildDynamicAppendix` / `buildLatestTurnVolatileBlock` / `buildVolatileBlock` /
+`buildConsolidatedBlock` / `appendixBlockName`），8 个在 Go 侧**零命中**。
+
+**修正后的真实缺口**：stable 块已完整移植，**动态 appendix 家族零移植**。
+`assignSalience` / `selectTopKBlocks` 是该家族的**地基**（`buildDynamicAppendixParts`
+内部调 `selectTopKBlocks`）。
+
+**教训**：HANDOFF 的「建议的第一刀」会随实现推进而过期——**引用前必须核实
+其断言是否仍成立**。这是本项目第二次踩到（第一次是 `internal/session`）。
+
+### 落地
+
+- `salience.go`（236 行）：`SalientBlock` / `AssignSalience` /
+  `SelectTopKBlocks` + 35 条规则表
+- `salience_test.go`（346 行）：26 子用例
+- `testdata/salience/gen-oracle.ts` + `oracle.json`：oracle 生成器
+
+### ★ 本刀最关键的风险：排序稳定性
+
+TS 用 `[...blocks].sort((a,b) => b.salience - a.salience)`，JS 的
+`Array.sort` 在 V8 是**稳定排序**（同 salience 保序）；Go 的 `sort.Slice`
+**不稳定**（pdqsort）。顺序变化 → appendix 字节变化 → **打断前缀缓存**
+（本刀目标正是缓存命中率）。故用 `sort.SliceStable`。
+
+**变异反证暴露了测试判别力不足（本刀最重要的过程发现）**：
+
+首轮把 `SliceStable` 换成 `Slice` → 测试**全绿**。根因：全等值输入下
+pdqsort 恰好不换位。**变异不红不等于实现正确，可能是测试没判别力**。
+
+用探针定位判别力输入（200 块 + `i%37==0` 处插 0.9 高分）：
+
+| 排序 | 同档逆序对数 |
+|---|---|
+| `sort.Slice` | **6**（乱序） |
+| `sort.SliceStable` | **0**（保序） |
+
+据此新增 `★散布高分块` 用例，**重做变异反证：转红**，报错精确指出
+`"c167"(orig=167) 在第 8 位 "c3"(orig=3) 之后`。
+
+**处置原则**：变异不红时**改测试，不改判据**——判据（用 SliceStable）
+是对的，是测试没能力验证它。
+
+### 验证
+
+oracle 从**真实 TS 实现**生成（非手抄——35 条规则手抄必漏）：
+- **37 个 salience 用例**：9 个档位 + 边界（前导空白 / 大小写 /
+  `<progress>` vs `<progress ` / 默认值）
+- **16 个 topK 用例**：预算边界（exact-fit / one-char-short / zero）、
+  blockCap 截断（4012 / 2012）、continue 语义、source 元数据透传
+
+`TestSelectTopKBlocksSemantics` 7 子用例单独钉住易错语义：至少保留一块
+（预算 0）、超预算是 `continue` 非 `break`、blockCap 下限 2000、
+overhead 第 2 块起 +2。
+
+**oracle 来源断言**（`loadSalienceOracle`）：断言 `meta.source` 与
+`meta.generatedBy` 为预期值——防止拷错 oracle 时逐值对账给出假绿。
+已做变异反证（篡改 source → 转红）。
+
+TDD：先写测试确认 RED（10 个 undefined），再实现至 GREEN。
+
+gofmt 干净 · go build ./... exit=0 · go vet exit=0 ·
+go test ./... -count=1 全绿 · 探针已清理
+
+### 过程发现
+
+`rep` / `itoa` 与 `projinst_test.go` 同名冲突（**同包测试文件共享命名空间**）
+——改用 `strings.Repeat` / `strconv.Itoa`。这是本包第二次遇到，后续写测试
+辅助函数前应先 grep 包内是否已存在。
+
+首次 `preserve-source-metadata` 失败，根因是 **oracle 缺数据**（只导出了
+`inputOrder` / `inputContents`，漏了 `inputSources`）→ 补 oracle 生成器，
+**而非弱化测试**。
+
+### 遗留
+
+动态 appendix 的**其余部分仍未移植**：
+`buildDynamicAppendixParts` / `buildDynamicAppendix` /
+`buildLatestTurnVolatileBlock` / `buildVolatileBlock` /
+`buildConsolidatedBlock` / `appendixBlockName`。
+
+本刀交付的是它们的**地基**——`buildDynamicAppendixParts` 内部调
+`selectTopKBlocks`，接线后即可用。
+
+**`buildDynamicAppendixParts` 的前置**：需会话状态（toolHistory /
+taskProgress / decisions 等 per-turn 字段）。这是它那一层的硬前置，
+不在本刀 scope。
+
+### 下一步
+
+**建议的第一刀**：`buildDynamicAppendixParts` 的**纯函数子集**——
+先做不依赖会话状态的块渲染（`renderPermissionNote` /
+`renderPlanMethodologyAdvisory` / `renderPlanExecutingBlock` 等），
+把 `appendixBlockName`（子块名提取，用于跨轮 diff）一并做掉。这些与
+`selectTopKBlocks` 同层，可独立闭合。
+
+**完整 `buildDynamicAppendix`** 需等会话状态就位——先核实 `internal/session`
+的现有能力（**勿再采信本节的过期估价**，见上方「称量修正」）。
+
+**审批线剩余**：审批提示往返通道（需先定 stdin 争用架构，建议单独立项）。
+
 ### 下一步（第四十八刀遗留段，2026-09-23）
 
 **本刀再次印证：动手前必须核实消费端**——上一轮的建议（做 config 校验层）
