@@ -6238,6 +6238,112 @@ taskProgress / decisions 等 per-turn 字段）。这是它那一层的硬前置
 
 **审批线剩余**：审批提示往返通道（需先定 stdin 争用架构，建议单独立项）。
 
+## 第五十五刀：动态 appendix 纯函数子集（2026-09-24）
+
+**任务来源**：按第五十四刀的建议——做 `buildDynamicAppendixParts` 的纯函数子集。
+
+### 落地
+
+对账 TS `src/prompt/volatile.ts` 的四个函数：
+
+| TS | 行 | 说明 |
+|---|---|---|
+| `renderPlanMethodologyAdvisory` | 47 | 计划方法学建议（轻量/完整 × planMode） |
+| `renderPermissionNote` | 88 | 权限提示（仅 skip 档产出） |
+| `renderPlanExecutingBlock` | 167 | Plan Mode 执行中提示（553 字符） |
+| `appendixBlockName` | 584 | 子块名提取（跨轮 diff 用） |
+
+- `appendix.go`（246 行）+ `appendix_test.go`（183 行，50 子用例）
+- `testdata/appendix/gen-oracle.ts` + `oracle.json`
+
+### ★ oracle 揭示的三条易错语义
+
+若凭读源码推断，这三条都会写错：
+
+**1. `planMode` 优先于 methodology**：`planMode=true` 时无论 methodology
+是什么都返回**同一份** design-doc 模板。oracle 用例 `planMode-lightweight`
+实测返回 full 档模板（419 字符）——按 methodology 分派就会错。
+
+**2. `!methodology` 先判**：`planMode=true` + methodology 空 → 仍返回 nil
+（oracle 用例 `planMode-undefined` 实测 NULL）。
+
+**3. lightweight 不追加理由**：TS 特判 `methodology === 'lightweight'`，
+即使传 reason 也不追加（oracle 用例 `lightweight-with-reason` 实测无
+「路由理由」）。只有 full 档追加。
+
+### ★ `anon:` 长度语义：UTF-16 code unit（本刀最隐蔽的坑）
+
+TS 用 `content.length`（JS 的 UTF-16 code unit 数）。Go 的 `len()`（byte）
+与 `len([]rune())`（rune）**都错**。
+
+**首次 oracle 用例全是纯 ASCII**——三种语义无法区分（都等于字符数）。
+补多字节判别用例后才判定：
+
+| 输入 | byte | rune | UTF-16 | TS 实际 |
+|---|---|---|---|---|
+| `中文无标签` | 15 | 5 | 5 | **5** |
+| emoji+标记 | 10 | 7 | **8** | **8** ← 只有 UTF-16 匹配 |
+| `a😀b` | 6 | 3 | **4** | **4** ← 只有 UTF-16 匹配 |
+
+**这是纯 ASCII 用例永远发现不了的差异**——与第五十四刀「散布高分块」同一
+教训：**测试输入的判别力决定测试的价值**。
+
+### 验证
+
+50 子用例全绿：methodology 9 组合、permissionNote 7 模式、planExecuting
+553 字符逐字节、blockName 18 输入（含非 ASCII / 无闭合 / 前导空白 /
+命名空间标签）。
+
+**变异反证两组**：
+1. 交换 `planMode` 优先级 → 3 个 planMode 用例转红
+2. UTF-16 长度改 rune 数 → **2 个 emoji 用例转红**
+   （`got="anon:7" want="anon:8"`）——纯 ASCII 用例下此变异会**假绿**
+
+（首个 UTF-16 变异因 import 未使用而编译失败，**不算数**——编译失败的红
+不是断言失败的红。改用可编译变异重做。）
+
+TDD：RED（7 个 undefined）→ GREEN。
+
+gofmt 干净 · go build ./... exit=0 · go vet ./... exit=0 ·
+go test ./... -count=1 全绿
+
+### 过程发现
+
+`appendixBlockName` 的正则 `/^<([^\s/>]+)/` 有几处非直觉行为（oracle 钉住）：
+`<tag`（无闭合）→ `tag`；`  <indented>`（前导空白）→ `anon:13`（`^` 不
+trim）；`<ns:tag>` → `ns:tag`（冒号非分隔符）。
+
+**交付门禁 YELLOW 的交叉验证**：门禁两次报 `generatedBy` 字段「0 读取方」。
+核实后确认**是误报**——测试里确有断言（`appendix_test.go:50-51`），门禁的
+静态检查只扫生产路径，`.ts` 生成器不在其分析范围。**未修**（修了反而破坏
+oracle 来源防护）。**教训**：门禁信号也需交叉验证，不盲信。
+
+### 显式偏差
+
+`isASCIISpace` 只处理 ASCII 空白，而 JS 的 `\s` 还匹配 Unicode 空白
+（`\u00a0` / `\u2028` 等）。当前 oracle 用例只覆盖 ASCII 空格；已在代码
+注释中标注此偏差。**触发条件**：标签名用 Unicode 空白分隔（实际不存在）。
+
+### 遗留
+
+动态 appendix 仍未移植：`buildDynamicAppendixParts` / `buildDynamicAppendix` /
+`buildLatestTurnVolatileBlock` / `buildVolatileBlock` /
+`buildConsolidatedBlock` / `renderPlanModeBlock` / `renderAskModeBlock` /
+`renderPlanExitReminder`。
+
+### 下一步
+
+**建议的第一刀**：`renderPlanModeBlock` / `renderAskModeBlock` /
+`renderPlanExitReminder` 三个固定文案块——它们**无参或只依赖一个
+planMode 状态**，与 `renderPlanExecutingBlock` 同族（纯字符串常量）。
+**前置核实**：Go 侧是否有 planMode 状态载体（`internal/agent` 里的
+plan 状态字段）——**先 grep 核实，勿凭本节估价**。
+
+**完整 `buildDynamicAppendix`** 需会话状态（toolHistory / taskProgress /
+decisions 等 per-turn 字段）。这是它那一层的硬前置。
+
+**审批线剩余**：审批提示往返通道（需先定 stdin 争用架构，建议单独立项）。
+
 ### 下一步（第四十八刀遗留段，2026-09-23）
 
 **本刀再次印证：动手前必须核实消费端**——上一轮的建议（做 config 校验层）
