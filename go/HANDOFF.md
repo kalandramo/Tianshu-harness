@@ -6585,6 +6585,116 @@ go test ./... -count=1 全绿
 
 **下次动手前仍需 grep 核实**，勿凭本节估价。
 
+## 第五十八刀：动态 appendix 装配点（2026-09-24）
+
+**任务来源**：把已移植的 appendix 纯函数接入生产路径。
+
+### ★ 称量：纠正了一个架构方向（本刀最重要）
+
+任务原意是「接入 `BuildFullSystemPrompt`」。**核实后提出异议并改道**。
+
+**证据一：TS 侧的归属**。三个函数（`renderPlanModeBlock` /
+`renderAskModeBlock` / `renderTersenessNudge`）**全部**在
+`volatile.ts:825/834/842` 被调用，而那是 `buildDynamicAppendixParts` 内部
+——**没有一个**属于 frozen 前缀。
+
+**证据二：Go 侧的架构说明**（`prompt/full.go:90-105`）：
+
+> TS 侧 frozen 块是 **trailer-merge 到 user message**（`engine.ts:659`），
+> 不是拼进 system prompt…Go 拼在 system prompt 内——同样稳定可缓存，
+> 但 **volatile 变化会打断整个前缀**
+
+**若按原意接入 system prompt 的代价**：这些函数的输入
+（planMode/askMode/terseness/approvalMode）**会话中途翻转** → 用户切换模式
+即打断整个前缀缓存（DeepSeek 侧全价重算）。本项目三大支柱之一是
+「前缀缓存工程，长会话稳态命中率 95-99%」。
+
+**改道**：注入 **user message 尾部**（`loop.go:502`），符合 TS 语义。
+
+### 落地
+
+- `dynamic_appendix.go`（99 行）：`AppendixContext`（**最小字段集**）+
+  `BuildDynamicAppendix` + `Loop.appendDynamicAppendix`
+- `loop.go:502`：`Run` 里注入 user message 尾部
+- `appendix_wiring_test.go`：7 子用例
+
+**★ 字段最小化原则**：TS 的 `VolatileContext` 有 20+ 字段，绝大多数在 Go 侧
+**无载体**（`toolHistory` / `planModeState` / `worktreeReality` /
+`playbookLessons` / `taskProgress` / `decisions` …）。
+
+**不虚构字段**——没有载体的状态不设字段，避免产出永远为空的死代码。
+`AppendixContext` 当前只有 `ApprovalMode` 一个字段（因为只有它有载体）。
+
+### 验证
+
+**7 子用例全绿**：
+- skip 档 → 含 `<permission-note>`
+- auto-safe / manual 档 → **不含**（字节稳定，对账 TS 注释「Returns '' for
+  every mode that still asks, so those turns stay byte-identical」）
+- ★ appendix 进 **user 消息**而非 system（架构约束，显式设 SystemPrompt 验证）
+
+**变异反证**：`appendDynamicAppendix` 恒返回原内容 → 2 子用例转红
+（「appendix 未接线？」）。已恢复，复跑转绿。
+
+**★ 用户级验收（真实 CLI + mock 端点，非推断）**：
+
+| 场景 | 请求体 | 含 `<permission-note>` |
+|---|---|---|
+| skip 档 | 31702 字节 | **True** |
+| auto-safe 档 | 31535 字节 | **False** |
+
+两场景**结果相反**，字节差 167 恰为 permission-note 文案长度——证明是真实
+端到端行为，非 mock 假象。
+
+TDD：RED（undefined）→ GREEN。
+
+gofmt 干净 · go build ./... exit=0 · go vet ./... exit=0 ·
+go test ./... -count=1 全绿 · 探针与临时产物已清理
+
+### ★ 过程发现：测试 bug 两次（探针定位）
+
+**首次 `★appendix进user消息而非system` 失败**：根因是 `newTestLoop` **不设
+`SystemPrompt`**，请求体里**根本没有 system 消息**——我的断言假设错了。
+**改用探针**（打印真实请求体的 messages 结构）确认后修正：显式设
+`SystemPrompt: "SENTINEL-SYSTEM-PROMPT"` + 位置断言。
+
+**第二次失败**：我用「截到下一个 `"role"`」切段，但 `"role"` 出现在 content
+**之前**（`{"role":"user","content":"..."}`），段被截成空。改用位置比较。
+
+**两次都是测试缺陷而非实现缺陷**。**探针（打印真实结构）是定位关键**——
+若只靠推断，会误判为「实现有问题」而改错方向。
+
+### 遗留
+
+appendix 家族**其余块仍未接入**：`RenderPlanModeBlock` /
+`RenderAskModeBlock` / `RenderTersenessNudge` / `RenderPlanExitReminder` /
+`RenderPlanExecutingBlock`。
+
+**接入前置**：它们的输入（planMode / askMode / terseness 状态）**在 Go 侧
+无载体**。需先建对应状态源：
+
+| 块 | 需要的状态源 |
+|---|---|
+| `RenderPlanModeBlock` | plan 模式状态机 + 活动计划文件路径 |
+| `RenderAskModeBlock` | ask 模式状态 |
+| `RenderTersenessNudge` | `ResolveTersenessFlags`（已移植）+ 配置读取 |
+
+`AppendixContext` 已留好扩展点，字段就位即可增量接入。
+
+### 下一步
+
+**建议的第一刀**：`RenderTersenessNudge` 的接入——它的判定函数
+（`ResolveTersenessFlags`）**已移植**（第五十七刀），只差一个**配置读取面**
+（`RIVET_TERSE` 环境变量在 Go 侧可直接读 `os.Getenv`）。
+
+**成本**：`AppendixContext` 加一个字段 + `BuildDynamicAppendix` 加一个分支
++ `main.go` 读取 env 传入。**约 30 行**。
+
+**收益**：terse 输出风格立即可用（用户可观察：`RIVET_TERSE=1` 后模型回复
+更精炼）。
+
+**其余块**（plan/ask 模式）需先建模式状态机——成本高得多，建议单独立项。
+
 ### 下一步（第四十八刀遗留段，2026-09-23）
 
 **本刀再次印证：动手前必须核实消费端**——上一轮的建议（做 config 校验层）
