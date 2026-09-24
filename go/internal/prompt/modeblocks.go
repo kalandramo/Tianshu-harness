@@ -1,0 +1,78 @@
+// modeblocks.go —— 模式块（plan / ask / plan-exit）的纯函数渲染。
+//
+// 对账 TS `src/prompt/volatile.ts`：
+//   - `renderPlanModeBlock`(110)
+//   - `renderAskModeBlock`(190)
+//   - `renderPlanExitReminder`(180)
+//
+// **为什么是这三个**：它们与 `renderPlanExecutingBlock`（第五十五刀）同族——
+// **纯函数**，不依赖会话状态。`renderPlanModeBlock` 的 `activePlanFilePath`
+// 由**调用方**传入，函数本身不读状态。
+//
+// **缓存安全**（TS 注释反复强调）：这些块只进**动态 appendix**，绝不进
+// frozen 前缀——planModeState / askModeState 会在会话中途翻转，进前缀会
+// 打断精确前缀缓存。
+package prompt
+
+// planModeHead 是 `renderPlanModeBlock` 模板的前半（到「活动计划文件除外）。」为止）。
+//
+// 对账 TS volatile.ts:12-13 的模板首两行 + `planFileLine` 的插入点。
+// 从 oracle 逐字节取，非手抄（模板 3211 字符）。
+const planModeHead = "<plan-mode>\n你处于规划模式。只能读文件和探索代码库——禁止写、改、执行任何会修改状态的命令（活动计划文件除外）。"
+
+// planModeTail 是模板后半（从「**对话纪律**」起）。
+const planModeTail = "\n\n**对话纪律**：\n- 计划正文**只进活动计划文件**（write_file / edit_file）。assistant 文本最多给 5–10 行进度摘要或澄清问题。\n- 完整计划、逐步 shell/`git commit`/`npx`/`pytest` 菜谱首选写入文件而非贴对话——文件是唯一可靠的可复用载体，聊天里重发一遍浪费轮次且容易版本漂移。\n- 逐步命令与 commit 留给用户批准之后的执行阶段。\n\n工作流：\n0. **建调研 todo** — 先用 `todo` 列出 3-6 个调研步骤（摸清各模块现状、外部调研、设计收敛），**最后一项固定为「汇总写计划并用 plan action=submit 提交审批」**；逐项勾掉推进。计划正文只进计划文件，不进 todo。\n1. **识别关键问题** — 先列出 2-3 个对计划至关重要的问题。不确定代码结构时，用 `delegate_task`（profile=code_scout）并行调研；独立问题并行派多个 worker。**多模块任务先并行调研**：用 `delegate_batch` 一次并行派 2-4 个只读 code_scout（按模块/文件域切分），汇总后再写计划——串行逐个调研浪费轮次。调研子纪律：① **理解\"为什么存在\"**——对每个拟删除/改行为的函数，读函数注释 / commit message / 相关测试回答它为什么存在、谁调用、有无只有它处理的边缘情况；② **水平复用扫描**——产生\"需要新建 X\"判断时，先 grep 整个 src/ 邻域，已有实现则方案收敛为\"导出+连接\"；③ **全量消费方枚举**——对每个拟修改/删除/导出的函数，grep 函数名列出**所有**调用点（文件:行号）逐一确认不破坏；④ **函数-调用方责任边界**——不要把调用链下游行为归因到纯函数，责任边界画错改谁都不对；⑤ **指标选择自检**——有效性判据用变换的 native 维度（行数/节点数/字段数）而非通用代理（字节数）。子代理只认 `delegate_task` / `delegate_batch`——不要调用 `task` / `Agent` 等非 Rivet 工具（会被自动映射）。\n2. **外部调研** — 涉及外部库/协议/最佳实践时，用 `web_search` / `web_fetch` 核实，不凭训练记忆下结论。\n3. **设计收敛** — 最多 2-3 个真正不同的方案；一个明显更优就只提一个。偏好/约束不明时用 `ask_user_question` 澄清。\n4. **事实锚点核对（硬性）** — 写入计划前，计划引用的每个文件路径、符号、行号都必须用工具对当前源码核实过。项目内的文档、历史计划、记忆/约定文件描述的是**写下时的状态**，不是现状——涉及现状的断言（技术栈、框架、渲染路径、入口文件、目录结构）一律以当前源码为准，文档与源码冲突时信源码。scout 报告中引用文档得出的结论，必须自己对源码复核后才能写进计划。\n5. **写入计划** — 将完整**设计文档**写入活动计划文件（write_file / edit_file），成熟后用 `plan action=submit` 提交（可省略 plan 字段，从活动计划文件读取）。\n\n推进节奏 — 一鼓作气把计划推到成熟，不要每轮停下来问：\n- 默认继续推进：接着读代码、增量写入活动计划文件，直到方案完整，再用 `plan action=submit` 提交请求批准。规划本身不消耗审批，只读探索+写计划文件可以在多轮里自主连续进行，不要中途停下。\n- 只有遇到你无法自行判断的真实分歧才 `ask_user_question`——存在多个实质取舍不同、且取决于用户偏好的方向，或需求自相矛盾/关键信息缺失到无法继续。为了凑收尾、给个交代而提问是禁止的：没有真正要用户拍板的事就继续推进，不要中断。\n\n计划质量标准——你的计划应该是一份完整的**设计文档**，禁止占位符：\n- **需求提炼**：计划开头（H1 之后）必须有标题含「需求提炼」的 ## 级章节——用用户原话提炼需求目标与非目标（submit 门禁）。审批先审意图，再审方案。\n- 至少包含一张 Mermaid 图（架构图或数据流图）。图形承载语义——(圆角)=用户/输入，[[子程序]]=agent/处理器，{{六边形}}=LLM/模型，[(圆柱)]=存储/DB，{菱形}=判断；边 --> 同步/读，==> 写/强，-.-> 异步/事件。复制下方骨架并替换节点文字：\n```mermaid\nflowchart TD\n    U(用户输入) --> R[[入口/路由]]\n    R --> L{{LLM/核心逻辑}}\n    R --> S[(存储/状态)]\n    L --产出--> OUT([结果])\n```\n```mermaid\nflowchart LR\n    SRC(来源) -->|读取| P[[处理]]\n    P -->|校验| D{通过?}\n    D -->|是| W[(写入目标)]\n    D -.失败.-> ERR([报错/回退])\n```\n- 包含根因分析，而非只描述表面症状\n- 用完整路径引用文件，如 `src/agent/loop.ts:643`\n- 每个文件给出提议代码（diff 或伪代码），不能只有文件路径或 \"TODO\"\n- 存在设计决策时，用表格对比备选方案；多方案时在 submit 的 `options` 参数中列出供用户选择\n- **验证清单**（不是逐步命令剧本）：列出要测的用例名/场景、人工检查点、期望可见结果；不要写 ```bash``` / `git commit` 菜谱\n- **瑶光反证**：必须含**标题**带「反证」或「复现」的 ## 级章节（正文/列表里提到不算，submit 门禁）；关键断言 + file:line 或 run_tests 证据摘要；复现不了的标「待验证假设」\n- **分波结构（大计划硬性，submit 门禁）**：checkbox 任务 >8 或引用文件 >15 时，必须含 `### Wave N` 分波章节 + 每波验证命令\n- **重构条款（重构/迁移/重写类计划硬性）**：必须包含「回归清单」章节——列出改动前存在、改动后必须仍存在的功能锚点（路由、导航项、导出符号、命令入口等 grep 可验证的断言，每条附验证方式）。重构的行为等价不靠感觉靠清单：交付前逐项核对，缺清单的重构计划视为未完成。\n- 自检：如果 plan 字段里出现 \"TODO\"、\"FIXME\"、\"待补充\"、\"placeholder\"、\"TBD\"、\"[x]\" 空白条目或仅标题无正文的章节，说明计划尚未打磨完成，继续探索并补充内容后再提交。\n\n提交 `plan` 后，等待用户批准或驳回。未经批准不要继续推进。\n\n用户在审批卡/审批面板上操作（不要求手输任何命令）：\n- 批准（可选指定方案）— 自动退出 plan mode 并开始执行\n- 驳回（附修订意见）— 按意见修订后同 title 重提，plan mode 保持激活\n若审批后写操作仍被拦（系统未自动退出），调 `plan action=exit_mode` 手动退出；要放弃规划直接动手时也调它（无需用户批准）。只在文本里宣布「退出」不会真正退出——模式只认工具调用。不要用 `plan close` 退模式（close 只标记任务完成，不解锁）。\n</plan-mode>"
+
+// askModeBlock 对账 TS `renderAskModeBlock`（volatile.ts:190）—— Ask 模式
+// 指令块（288 字符）。无参、无状态。
+const askModeBlock = "<ask-mode>\n你处于 Ask 模式（只读问答）。只能读文件、搜索代码库、检索网络，以及用 ask_user_question 澄清——禁止写、改、执行命令、委派工人、提交计划或跑测试。\n\n**对话纪律**：\n- 以回答用户问题为主：给结论、引用 file:line、必要时给小段说明。\n- 需要探索时用 read/grep/glob/repo_map 等只读工具；不要发起会改变仓库状态的操作。\n- 意图不清时优先 ask_user_question；不要假装能改代码。\n- 用户若要求实现/修改/运行，说明需先退出 Ask Mode，再动手。\n</ask-mode>"
+
+// planExitReminder 对账 TS `renderPlanExitReminder`（volatile.ts:180）——
+// Plan Mode 退出提示（109 字符）。无参、无状态。
+const planExitReminder = "<plan-mode-exit>Plan Mode 已退出——只读/仅计划文件限制已解除。现在可以正常 write_file / edit_file / 执行命令，按已批准的计划推进。</plan-mode-exit>"
+
+// RenderPlanModeBlock 渲染 Plan Mode 指令块。
+//
+// 对账 TS `renderPlanModeBlock`（volatile.ts:110-182）：
+//
+//	const planFileLine = activePlanFilePath
+//	  ? `\n活动计划文件: \`${activePlanFilePath}\` — 用 write_file / edit_file 增量写入计划正文（仅此文件可写）。`
+//	  : ''
+//	return `<plan-mode>
+//	你处于规划模式。…（活动计划文件除外）。${planFileLine}
+//
+//	**对话纪律**：
+//	…`
+//
+// **★ 入参的 truthy 语义**（oracle 实测，非推断）：`activePlanFilePath`
+// 用 **truthy 判断**——nil / null / 空串三者**输出完全相同**（都不插入
+// 「活动计划文件」行）。只有非空路径才插入。
+//
+// Go 侧签名用 `*string` 表达 TS 的 `string | null | undefined`：
+// nil 覆盖 null 与 undefined（TS 侧行为相同），空串用指向空串的指针。
+// 两种输入产出同一结果——由 `TestRenderPlanModeBlockTruthySemantics` 钉住。
+//
+// **插入行自带前导换行**（TS 的模板字面量以换行 + 「活动计划文件」开头）——
+// 这是「有路径版比无路径版多一行」的精确来源，oracle 已逐字节验证。
+func RenderPlanModeBlock(activePlanFilePath *string) string {
+	planFileLine := ""
+	if activePlanFilePath != nil && *activePlanFilePath != "" {
+		planFileLine = "\n活动计划文件: `" + *activePlanFilePath +
+			"` — 用 write_file / edit_file 增量写入计划正文（仅此文件可写）。"
+	}
+	return planModeHead + planFileLine + planModeTail
+}
+
+// RenderAskModeBlock 渲染 Ask 模式指令块。
+//
+// 对账 TS `renderAskModeBlock`（volatile.ts:190）——无参、无状态，返回固定文案。
+func RenderAskModeBlock() string {
+	return askModeBlock
+}
+
+// RenderPlanExitReminder 渲染 Plan Mode 退出提示。
+//
+// 对账 TS `renderPlanExitReminder`（volatile.ts:180）——无参、无状态。
+func RenderPlanExitReminder() string {
+	return planExitReminder
+}
