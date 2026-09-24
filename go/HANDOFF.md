@@ -5886,6 +5886,129 @@ go test ./... -count=1 全绿
 
 **若换方向**：按下方「volatile 块与动态 appendix」推进——缓存命中率的真正杠杆。
 
+## 第五十二刀：用户 deny 规则门（2026-09-24）
+
+**任务来源**：第五十一刀遗留的「`permissions` 子系统未接」。但动手前的称量
+推翻了 HANDOFF 给的优先级——见下方「称量修正」。
+
+### 称量修正：为什么先做 deny 而非提示通道
+
+HANDOFF 第五十一刀列了两个候选（① 提示通道 ② permissions 子系统）。用代码
+事实称量三条路后，选了三者之外的第三条：
+
+| 候选 | TS 侧规模 | Go 侧前置 | 缺口性质 |
+|---|---|---|---|
+| ① 审批提示通道 | `onApprovalRequired` + 5 处注入点 | **零** | 架构级新建 |
+| ② permissions 子系统 | `permissions.ts` ~230 行 | **零** | 移植 + 接线 |
+| ③ **deny 规则** | 决策树**第一优先级** | **零** | **安全缺口** |
+
+**选 ③ 的理由（三层）**：
+
+1. **优先级最高**：TS `tool-pipeline.ts:1126` 把 deny 放在最前，注释写明
+   「Deny rules always win, even in dangerously-skip-permissions」——
+   它是**覆盖一切**的门，优先于 `unconditionalApproval` / 硬闸门 / 路径授权。
+   Go 侧跳过它 = 把用户的硬边界降级为不存在。
+2. **成本最低**：`isToolDenied` 只是 `isToolAllowed` 的别名，核心是
+   `patternMatches` + `paramsMatch`（~20 行）。不需要 `splitShellSegments`
+   （那是 bash allowlist 才要的）。
+3. **它同时是 ② 的前半**：做完 deny，`permissions` 就有了入口结构。
+
+**① 暂缓的理由**：Go CLI 是 `bufio.Scanner(os.Stdin)` 的**同步 REPL**
+（`main.go:87`），模型调工具时主循环正阻塞在 `loop.Run()`。要建提示通道，
+得先解决「工具执行中途如何向 stdin 提问而不与主输入流打架」——这是
+**架构决策**，不是移植工作，成本远超前两项。
+
+### 缺陷形态：第三种
+
+本刀修的是「安全机制存在但没接线」缺陷族的**第三种形态**：
+
+| 刀 | 形态 |
+|---|---|
+| 第五十刀 | 机制存在（`NeedsApproval`），**零调用者** |
+| 第五十一刀 | 机制缺失（出界路径无门控），补上 |
+| **第五十二刀** | 机制**根本不存在**（deny 无实现），且用户显式配置无路径生效 |
+
+### 落地
+
+- `permissions.go`（194 行）：`PermissionAllowRule` / `PermissionConfig` +
+  `PatternMatches` / `ParamsMatch` / `IsToolAllowed` / `IsToolDenied` +
+  `DeniedRuleReason`
+- `loop.go:848`：deny 门接在**硬闸门之前**（决策链最前）
+- `permissions_test.go`（231 行）：oracle 对账 TS `permissions.test.ts`，16 子用例
+- `permission_wiring_test.go`（144 行）：端到端接线，7 子用例
+
+### 关键实现决策
+
+**不用 `regexp.QuoteMeta`**：TS 的转义集 `[.+?^${}()|[\]\\]` **不含 `*`**
+（`*` 要留给通配符替换），而 QuoteMeta **会**转义 `*`——用它就杀死通配语义。
+手写 TS 转义集。测试 `星号本身仍是通配符` 钉住这一点。
+
+**RE2 兼容性（与第五十一刀对比）**：`wildcardExclude` 是 negated character
+class + 量词，**无 lookaround**，Go RE2 原生支持——探针实测通过后删除探针。
+第五十一刀的 6 条 lookaround 模式全败，本刀无此问题。
+
+**`PatternMatches` 返回 false 而非 panic**：模式来自**用户配置**，配置错误
+不该崩掉 agent 运行时。fail-closed 方向正确（不匹配 = 不授权）。与 TS 的
+`new RegExp` 抛异常是**显式差异**，已在测试中记录。
+
+**`IsToolDenied` 保持为 `IsToolAllowed` 的别名**（TS 逐字节如此）：匹配逻辑
+相同，差异只在调用方语义解读。不合并名字以保持调用点自解释性——
+`IsToolDenied(...)` 读起来明确是「是否被禁」。
+
+### 验证（验收面 4 met / 1 blocked）
+
+端到端实测（真实 loop + mock 端点 + 捕获请求体）：
+
+| 场景 | 结果 |
+|---|---|
+| auto-safe + 命中 deny | 被拦 |
+| auto-safe + 未命中 | 放行（不误拦） |
+| **skip 档 + 命中 deny** | **被拦**（deny 优先于档位） |
+| **deny 同时命中硬闸门** | 返回 deny 文案（证明顺序正确） |
+| **skip 档 + deny + 出界写** | **被拦**（deny 优先于路径授权） |
+| 工具名通配 deny | 生效，且不影响其他工具 |
+| nil Permissions | 安全跳过 |
+
+**变异反证（两组）**：
+1. 摘掉 `loop.go:848` deny 门 → **5 子测试转红**，含全部四条核心语义。
+   其中「deny 优先于路径授权」转红尤其重要——它证明**没有 deny 门时 skip
+   档的「首触即授」确实会绕过它**（真实绕过路径，非假想）。
+2. `wildcardExclude` 改为 `[^!]`（允许 shell 操作符）→ 4 条安全用例转红。
+
+gofmt 干净 · go build ./... exit=0 · go vet ./... exit=0 ·
+go test ./... -count=1 全绿
+
+### 遗留（blocked，本刀最重要的发现）
+
+**验收面第 5 条 blocked**：真实用户在 `~/.rivet/config.json` 写
+`permissions.deny` → CLI 启动后该工具被拦——**当前物理上不可执行**：
+
+- CLI **无** permissions 输入面（8 个 flag 里无此项）
+- Go 侧**完全不读** `~/.rivet/config.json`（grep 零命中；只读项目级
+  `.rivet-config.json` 的 verify 声明）
+
+即本刀交付的是「判定层 + **消费端**」，**生产者缺失**——`Config.Permissions`
+只能由代码/测试注入。**这是第五十刀「有生产者但无消费者」的镜像**。
+
+用户级端到端生效需先移植 **`internal/config`**——见下方待办清单
+「多层配置（默认 → `~/.rivet` → 项目）」，该项仍**未勾选**。
+
+**本刀仍是净收益**：机制从「不存在」到「存在且被消费、可测试、有变异反证」，
+且无回归。但**不要误以为用户配的 deny 已经生效**。
+
+### 下一步
+
+**建议的第一刀**：最小配置读取——只读 `~/.rivet/config.json` 的
+`agent.permissions`（allow/deny），不做完整三层合并。让本刀真正端到端可用。
+范围约 80-120 行 + 测试；解析失败 fail-closed（退回 nil，不 panic）；
+测试需用参数注入路径避免读开发者真实 home。
+
+**完整 `internal/config`**（默认 → `~/.rivet` → 项目 + schema 校验）是独立
+大工程，HANDOFF.md:3017 已列为待办，不该塞进审批线。
+
+**若继续审批线**：建审批提示往返通道（需先解决同步 REPL 的 stdin 争用，
+属架构决策）。
+
 ### 下一步（第四十八刀遗留段，2026-09-23）
 
 **本刀再次印证：动手前必须核实消费端**——上一轮的建议（做 config 校验层）
