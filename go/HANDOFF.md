@@ -6446,6 +6446,120 @@ taskProgress / decisions 等 per-turn 字段）。
 
 **审批线剩余**：审批提示往返通道（需先定 stdin 争用架构，建议单独立项）。
 
+## 第五十七刀：terse 输出风格（2026-09-24）
+
+**任务来源**：按第五十六刀的建议「推进 `buildDynamicAppendixParts`（含前置评估）」。
+
+### ★ 前置评估结论：不该现在做它
+
+第五十六刀本节要求「动手前必须做两件事」。**本刀照做，结论是否定的**。
+
+实测 `buildDynamicAppendixParts`（TS `volatile.ts:601`）读取：
+
+- **20+ 个 ctx 字段**：`toolHistory` / `planModeState` / `worktreeReality` /
+  `playbookLessons` / `taskProgress` / `decisions` / `mentionContextBlock` /
+  `skillAdvisoryBlock` / `zenLean` / `planTraceAppendix` / …
+- **8 个未移植函数**：`renderProgressBlock` / `renderTersenessNudge` /
+  `summarizeGitStatus` / `resolveTersenessFlags` / `renderPlanModeBlock`（已移植）
+  / `renderAskModeBlock`（已移植）/ `renderPlanExitReminder`（已移植）/
+  `renderPermissionNote`（已移植）
+
+Go 侧载体核实：`renderProgressBlock` / `summarizeGitStatus` / terseness 家族
+**全部零命中**。`hook_snapshot.go` 虽有 382 行 + 部分 turn 状态
+（`SessionTurn` / `LastTurnHadTools`），但**远不覆盖** 20+ 字段。
+
+**结论**：它不是一刀，是一个**模块群**——需先建 20+ 字段的会话状态容器。
+
+**改做**：这条依赖链里**唯一零会话状态依赖**的一环——terseness 两函数
+（纯函数），为后续铺路。
+
+### ★ 修正一次正则误报（重要，影响决策）
+
+初次用贪婪正则 `re.search(r'export function NAME\(', s)` + 找下一个
+`export function` 作为结束边界，量取函数规模，得到：
+
+| 函数 | 贪婪正则结果 | 括号配对精确结果 |
+|---|---|---|
+| `resolveTersenessFlags` | **202 行** | **8 行** |
+| `renderAskModeBlock` | 1043 字符 / 26 行 | 348 字符 / 10 行 |
+
+**贪婪正则跨函数匹配是假数据来源**。若采信 202 行，会判定「先做它等于
+半途而废」而放弃本刀——**假数据直接改变决策**。
+
+**方法**：用括号配对（`{` / `}` 计数到 depth 0）精确提取函数体。
+**教训**：量取代码规模时不要用「找下一个 `export function`」当边界——
+TS 的函数体里可能有嵌套函数定义。
+
+### 落地
+
+- `terseness.go`（113 行）：`TersenessContext` / `TersenessFlags` /
+  `ResolveTersenessFlags` / `RenderTersenessNudge`
+- `terseness_test.go`：110 子用例
+- `testdata/terseness/gen-oracle.ts` + `oracle.json`
+
+### ★ 关键语义：optOut 早返回
+
+`RIVET_TERSE=0`（或 `false`/`off`/`no`）时**连 escalate 也被压制**——返回
+`{false, false}` 而非 `{true, true}`。即**环境变量的显式关闭优先于 ctx 的
+升级信号**。
+
+oracle 用例 `zero__ctx-escalate` / `zero__ctx-both` 实测均为
+`{false, false}`。**这不是冗余代码**——变异反证：去掉早返回 → 多用例转红
+（`zero__ctx-escalate` → `got={enabled:true escalate:true} want={false,false}`）。
+
+### 其他语义
+
+- **三态逻辑**：optOut（4 字面量）/ optIn（4 字面量 + `ctx.Enabled`）/
+  **未识别值**（`maybe` / `2` / 空 / 缺键 → enabled 只看 ctx）
+- **大小写与空白**：TS 做 `trim().toLowerCase()`，`' TRUE '` 是 optIn
+- **nudge 末句是防漂移关键**：「本指令只约束输出文字——绝不因此削减验证、
+  测试、取证或交付报告的严谨度」——防止模型把「精炼」误读为「跳过验证」
+  （CVM 的核心防线之一，移掉会引入服从性漂移）
+
+### 验证
+
+**110 子用例全绿**：102 个 oracle 矩阵（17 个 env 取值 × 6 个 ctx 组合）、
+5 个语义用例、3 个 nudge 用例。
+
+变异反证：去掉 optOut 早返回 → 多用例转红。
+
+TDD：RED（undefined）→ GREEN。
+
+gofmt 干净 · go build ./... exit=0 · go vet ./... exit=0 ·
+go test ./... -count=1 全绿
+
+### 过程发现
+
+**测试辅助函数重复定义——本包第三次**：我自写 `hasPrefixStr` /
+`hasSuffixStr` / `tailOfStr`，实际标准库（`strings.HasPrefix` /
+`strings.HasSuffix`）与既有 `tailOf`（`salience_test.go`）都已可用。
+**写测试辅助函数前必须先 grep 包内**（`grep -rn "func <name>" internal/prompt/`）。
+
+**Python 替换脚本的 assert 失败会静默跳过后续写入**：`assert old in s`
+抛异常后，后面的 `io.open(...).write()` 不执行——表现为「以为改了实际没改」。
+**改用 edit_file 做精确替换**（失败会明确报错）。
+
+### 门禁 YELLOW 的模式（第三次，建议后续会话直接跳过核实）
+
+交付门禁连续三刀报「字段 0 读取方」：`generatedBy`（三次）、`isUndefined`、
+`ctxName`。**每次核实都是误报**——这些字段在**测试**里都有消费者
+（oracle 来源断言 / fixture 分支判断 / 错误消息），而门禁静态检查只扫
+**生产路径**，`.ts` 生成器不在其分析范围。
+
+**后续会话可直接跳过这类核实**（除非字段名陌生）。**不要修**——修了会
+破坏 oracle 来源防护。
+
+### 遗留与下一步
+
+`buildDynamicAppendixParts` **仍不建议直接做**——前置是模块群。建议路径：
+
+1. **先做其余零状态子块**：`renderProgressBlock` 的**纯渲染部分**（需
+   `taskProgress`/`decisions`/`sessionState` 三个字段——比主函数轻得多）
+2. **或先评估建最小会话状态容器的成本**（20+ 字段，需明确字段来源）
+3. **或换到别的模块**——`internal/prompt` 的纯函数已基本移植完
+
+**下次动手前仍需 grep 核实**，勿凭本节估价。
+
 ### 下一步（第四十八刀遗留段，2026-09-23）
 
 **本刀再次印证：动手前必须核实消费端**——上一轮的建议（做 config 校验层）
