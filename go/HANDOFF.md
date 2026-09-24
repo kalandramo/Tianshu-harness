@@ -6695,6 +6695,116 @@ appendix 家族**其余块仍未接入**：`RenderPlanModeBlock` /
 
 **其余块**（plan/ask 模式）需先建模式状态机——成本高得多，建议单独立项。
 
+## 第五十九刀：terse 输出风格接线（2026-09-24）
+
+**任务来源**：按第五十八刀的建议——接 `RenderTersenessNudge`。
+
+### 落地
+
+| 文件 | 改动 |
+|---|---|
+| `dynamic_appendix.go` | `AppendixContext.TerseEnv` + terseness 分支 |
+| `loop.go` | `Config.TerseEnv` 字段（经装配层注入，测试可隔离） |
+| `cmd/tianshu/main.go` | `TerseEnv: os.Getenv("RIVET_TERSE")`（**生产者**） |
+| `terseness_wiring_test.go` | 9 子用例 |
+
+**成本**：实际约 40 行（第五十八刀估价 30 行，接近）。
+
+### ★ 已知降级：escalate 恒为 false
+
+TS 侧（`volatile.ts:838-843`）：
+
+```ts
+const { enabled: tersenessEnabled, escalate: tersenessEscalate } = resolveTersenessFlags(ctx)
+if (tersenessEnabled) { push(renderTersenessNudge(tersenessEscalate)) }
+```
+
+`escalate` 来自 `ctx.tersenessEscalate`——**doom-loop 轮次自动开启**
+（TS 注释：「Escalate: doom-loop turns auto-enable (unless RIVET_TERSE=0)」）。
+
+**Go 侧无 doom-loop 会话状态载体**：grep 确认只有 `AssessToolRisk` 的
+**字符串级 `doomLoopLevel` 参数**（函数入参，非会话态）。
+
+故本刀**恒传 false**——terse 的 **opt-in 部分完整生效**，escalate 部分待
+doom-loop 状态就位后接入。
+
+**这是显式降级，不是遗漏**：差异仅为「少一段 escalate 文案」
+（「你似乎在重复工作或打转——本轮尤其简洁」），不影响 opt-in 行为。
+测试 `★escalate降级为false` 钉住（断言输出不含该文案）。
+
+### 验证
+
+**9 子用例全绿**：
+- `RIVET_TERSE=1` → 含 `<output-style>`
+- 未设 / `0` / `false` / `off` / `no` / `maybe` → 不含（字节稳定）
+- optIn 四取值（`1`/`true`/`on`/`yes`）
+- ★ escalate 降级
+- permission-note 与 terse 共存且顺序正确（permission-note 在前，对账 TS 的
+  push 顺序）
+
+**变异反证**：摘掉 terseness 分支 → **4 子用例转红**（「terse 未接线？」）。
+已恢复，复跑转绿。
+
+**★ 用户级验收（真实 CLI + mock 端点，三场景）**：
+
+| 场景 | 请求体 | 含 `<output-style>` |
+|---|---|---|
+| `RIVET_TERSE=1` | 31662 字节 | **True** |
+| `RIVET_TERSE=0` | 31535 字节 | **False** |
+| 未设 | 31535 字节 | **False** |
+
+字节差 **127** 恰为 terse nudge 文案长度（未 escalate 版）——证明是真实
+端到端行为，非 mock 假象。
+
+TDD：RED（unknown field TerseEnv）→ GREEN。
+
+gofmt 干净 · go build ./... exit=0 · go vet ./... exit=0 ·
+go test ./... -count=1 全绿 · 临时产物已清理
+
+### 设计说明：为什么传原始字符串而非 bool
+
+`TerseEnv` 传 `RIVET_TERSE` 的**原始取值**（`string`），解析（optOut / optIn /
+未识别值**三态**）交给 `ResolveTersenessFlags`——避免装配层与判定层各写一套
+解析逻辑。第五十七刀已有 102 个 oracle 用例覆盖该函数的三态行为。
+
+**若传 bool**：装配层需自己实现三态解析，与 `ResolveTersenessFlags` 的
+oracle 覆盖脱钩——两处逻辑漂移的风险。
+
+### 遗留
+
+appendix 家族仍未接入：
+
+| 块 | 前置 |
+|---|---|
+| `RenderPlanModeBlock` | plan 模式状态机 + 活动计划文件路径 |
+| `RenderAskModeBlock` | ask 模式状态 |
+| `RenderPlanExitReminder` | plan 模式状态机 |
+| `RenderPlanExecutingBlock` | plan 模式状态机 |
+| terse 的 `escalate` | doom-loop 会话状态 |
+
+**`AppendixContext` 已留好扩展点**，字段就位即可增量接入。
+
+### 下一步
+
+**建议的第一刀**：**评估**是否建「最小会话状态容器」——它是 plan/ask 块与
+escalate 的**共同前置**。
+
+**为什么先评估而非直接做**：`buildDynamicAppendixParts` 需要 20+ 字段
+（第五十七刀已评估），但 plan/ask 块只需**2-3 个**（planModeState /
+askModeState / activePlanFilePath）。**范围小得多**，值得先量成本。
+
+**评估要点**：
+1. TS 侧这些状态从哪来（`loop.ts` 的哪些字段）？
+2. Go 侧 `Loop` 是否已有对应载体（`hook_snapshot.go` 有部分 turn 状态）？
+3. 若无，最小容器需多少字段？
+
+**若评估通过**（成本可控）→ 建容器 + 接 plan/ask 块。
+**若成本过高** → 转向其他独立可闭合的面（`internal/prompt` 的纯函数已基本
+移植完，可考虑别的模块）。
+
+**勿凭本节估价**——第五十七刀的教训是「贪婪正则给出假数据差点改变决策」，
+动手前必须用工具核实。
+
 ### 下一步（第四十八刀遗留段，2026-09-23）
 
 **本刀再次印证：动手前必须核实消费端**——上一轮的建议（做 config 校验层）
