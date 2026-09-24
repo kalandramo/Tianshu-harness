@@ -498,9 +498,12 @@ func (l *Loop) SessionTurn() int {
 
 // Run 执行一轮用户交互，直到模型给出终答或触及预算。
 func (l *Loop) Run(ctx context.Context, userMessage string) error {
+	// 动态 appendix（permission-note 等）注入 **user message 尾部**——
+	// 不进 system prompt（那是 frozen 前缀，中途翻转会打断缓存）。
+	// 详见 `dynamic_appendix.go` 的架构约束说明。
 	l.appendAndPersist(wire.NewOrderedMap().
 		Set("role", "user").
-		Set("content", userMessage))
+		Set("content", l.appendDynamicAppendix(userMessage)))
 
 	maxTurns := l.cfg.MaxTurns
 	if maxTurns <= 0 {
