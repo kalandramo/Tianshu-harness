@@ -40,6 +40,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 )
 
 // GrantMode 是授权模式（对账 TS `GrantMode`）。
@@ -65,6 +67,18 @@ type PathGrant struct {
 	// 工作区），无作用域的交互式授权会让工作区 A 的批准静默授权工作区 B
 	// 的写操作。空串 = 进程级（配置/依赖缓存类，由用户或工具级授予）。
 	Scope string
+}
+
+// grantModeFromPathsafe 把 pathsafe 的访问模式转为授权模式。
+//
+// **为什么需要转换**：两个包的 Mode 是独立类型（`pathsafe.Mode` 用 iota 枚举，
+// `GrantMode` 用字符串常量——后者对账 TS 的 `'read' | 'write'` 字面量类型）。
+// 合并成一个会破坏各自的对账锚（TS 侧本就是两套）。
+func grantModeFromPathsafe(m pathsafe.Mode) GrantMode {
+	if m == pathsafe.ModeWrite {
+		return GrantWrite
+	}
+	return GrantRead
 }
 
 // caseInsensitiveFS 报告当前平台文件系统是否大小写不敏感。

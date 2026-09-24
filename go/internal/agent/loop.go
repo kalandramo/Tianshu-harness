@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/client"
 	"github.com/kalandramo/tianshu/go/internal/compact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
+	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"github.com/kalandramo/tianshu/go/internal/session"
 	"github.com/kalandramo/tianshu/go/internal/skills"
@@ -146,6 +148,16 @@ type Loop struct {
 	// 对账 TS 侧 loop.ts 的 runtimeHooks。nil 时跳过全部 hook 调用——
 	// hook 是增强而非必需（headless 一次性跑或测试场景不装）。
 	Hooks *Pipeline
+	// pathGrants 是会话级路径授权存储（越界文件读写的运行时授权）。
+	//
+	// 对账 TS 的模块级 `_grants`（`path-grants.ts:59`）。**为什么挂在 Loop
+	// 而非包级**：TS 是单进程单会话假设下的包级数组，但 sidecar 在一个进程里
+	// 承载多会话——包级会让 A 工作区的授权泄漏给 B。Go 侧用实例级存储 +
+	// scope 字段双保险。
+	//
+	// **消费者**：`executeTool` 的 `pathGrantNeed` 分支（skip 档授予 / 其他档拦）。
+	// nil 时不授予也不拦（最小可跑路径——但出界写仍被 pathsafe 拦在工作区外）。
+	pathGrants *pathGrantStore
 	// hookState 是跨轮累积的 hook 快照状态。
 	//
 	// **为什么需要**：部分快照字段是**任务级**而非窗口级（如 TouchedTSFiles
@@ -257,6 +269,10 @@ func New(cfg Config, cl *client.Client, reg *tools.Registry) *Loop {
 	// 看到 0，与「上一轮思考 0 字符」无法区分——虽然 0 < 3000 阈值不会误触发，
 	// 但语义已错（快照声称「有上一轮数据」）。见 hookSnapshotState 的注释。
 	l.hookState.lastThinkingLength = -1
+	// 会话级路径授权存储（越界读写的运行时授权）。
+	//
+	// 对账 TS 的包级 `_grants`——Go 侧实例化以避免 sidecar 多会话串授权。
+	l.pathGrants = newPathGrantStore()
 	if cfg.SessionID != "" {
 		l.State = session.New(cfg.SessionID)
 		// 会话持久化：落盘到 <cwd>/.rivet/sessions/<id>.jsonl。
@@ -845,6 +861,59 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 			"不要重复发出同一调用——它会再次撞上同一道门，白白消耗轮次预算。\n" +
 			"请改用其他方式完成任务，或停下来向用户说明哪一步需要授权。"
 		return contract.Result{Content: msg, IsError: true}
+	}
+
+	// ── 越界路径授权门（第五十一刀 Wave 2c 接线）──
+	//
+	// 对账 TS `tool-pipeline.ts:1240-1249` 的 `pathGrantNeed` 分支。**Go 侧
+	// 此前完全没有这一环**：文件工具出界读写时，`pathsafe.Validate` 会判
+	// 越界并拒绝——但那是**工具内部**的拒绝，模型只看到一句泛泛的失败，
+	// 且 skip 档下用户承诺的「零审批打断」无法兑现（每次都撞同一道墙）。
+	//
+	// **TS 的两种处理**（本分支逐条对账）：
+	//
+	//   - **skip 档**（`dangerously-skip-permissions`）→ 出界路径**首触即授**
+	//     （`grantPath(dirname(p), mode, {cwd})`）。TS 注释：「完全读写档：
+	//     零审批打扰承诺——出界路径首触即授（会话级，不出会话）」。
+	//   - **其他档** → 弹审批（`onApprovalRequired`）；Go 侧**无提示通道**，
+	//     故降级为「指令性非重试拒绝」——与第五十刀硬闸门同款形态。
+	//
+	// **为什么授予 `dirname(p)` 而非 p**：TS 传 `dirname(pathGrantNeed.paths)`。
+	// 授权粒度是**目录子树**（`IsWriteGranted` 按段边界判包含），授予文件本身
+	// 会让同目录的兄弟文件仍被拦——那违背「零打断」的初衷。
+	//
+	// **scope 隔离**：授予时传 `l.cfg.Cwd`——授权绑定本会话工作区，
+	// 不泄漏给同进程的其他会话（sidecar 场景）。
+	if l.pathGrants != nil {
+		if need := OutOfWorkspaceFilePaths(l.cfg.Cwd, tc.name, tc.input, l.pathGrants); need != nil {
+			if l.cfg.ApprovalMode == "dangerously-skip-permissions" {
+				// skip 档：首触即授（会话级）。
+				for _, p := range need.Paths {
+					l.pathGrants.GrantPath(filepath.Dir(p), grantModeFromPathsafe(need.Mode), l.cfg.Cwd)
+				}
+				// 授予后继续执行——工具内部的 pathsafe 查询会看到新授权。
+			} else {
+				// 其他档：无提示通道 → 指令性非重试拒绝。
+				modeLabel := "读"
+				if need.Mode == pathsafe.ModeWrite {
+					modeLabel = "写"
+				}
+				msg := "工具 \"" + tc.name + "\" 的目标路径在工作区之外（" + modeLabel +
+					"），" + approvalBlockedMarker + "。\n"
+				msg += "越界路径："
+				for i, p := range need.Paths {
+					if i > 0 {
+						msg += "、"
+					}
+					msg += p
+				}
+				msg += "\n这是**工作区边界**约束，agent 无法自行放宽。\n" +
+					"不要重复发出同一调用——它会再次撞上同一道门。\n" +
+					"请改用工作区内的路径，或停下来向用户说明需要访问哪个目录。\n" +
+					"（若用户已显式选择完全访问档 `dangerously-skip-permissions`，出界路径将首触即授。）"
+				return contract.Result{Content: msg, IsError: true}
+			}
+		}
 	}
 
 	result, err := l.registry.Execute(ctx, tc.name, p)
