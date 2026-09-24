@@ -1490,5 +1490,626 @@
       ],
       "suggestedAction": "Show risk context and proceed only in auto-safe/manual modes."
     }
+  ],
+  "resolve": [
+    {
+      "cwd": "D:/repo",
+      "p": "src/a.ts",
+      "resolved": "D:\\repo\\src\\a.ts",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo",
+      "p": "/etc/passwd",
+      "resolved": "D:\\etc\\passwd",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "D:/repo",
+      "p": "/x",
+      "resolved": "D:\\x",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "D:/repo",
+      "p": "../../etc/x",
+      "resolved": "D:\\etc\\x",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo",
+      "p": "../../../..",
+      "resolved": "D:\\",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo",
+      "p": "~/Desktop/x",
+      "resolved": "D:\\repo\\~\\Desktop\\x",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo",
+      "p": "D:/x/y",
+      "resolved": "D:\\x\\y",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "D:/repo",
+      "p": "C:/y",
+      "resolved": "C:\\y",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "D:/repo",
+      "p": "d:/lower",
+      "resolved": "d:\\lower",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "D:/repo",
+      "p": ".",
+      "resolved": "D:\\repo",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo",
+      "p": "..",
+      "resolved": "D:\\",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo",
+      "p": "./a/../b",
+      "resolved": "D:\\repo\\b",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo",
+      "p": "",
+      "resolved": "D:\\repo",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo",
+      "p": "a//b",
+      "resolved": "D:\\repo\\a\\b",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo",
+      "p": "\\\\server\\share\\x",
+      "resolved": "\\\\server\\share\\x",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "D:/repo/sub",
+      "p": "src/a.ts",
+      "resolved": "D:\\repo\\sub\\src\\a.ts",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo/sub",
+      "p": "/etc/passwd",
+      "resolved": "D:\\etc\\passwd",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "D:/repo/sub",
+      "p": "/x",
+      "resolved": "D:\\x",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "D:/repo/sub",
+      "p": "../../etc/x",
+      "resolved": "D:\\etc\\x",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo/sub",
+      "p": "../../../..",
+      "resolved": "D:\\",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo/sub",
+      "p": "~/Desktop/x",
+      "resolved": "D:\\repo\\sub\\~\\Desktop\\x",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo/sub",
+      "p": "D:/x/y",
+      "resolved": "D:\\x\\y",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "D:/repo/sub",
+      "p": "C:/y",
+      "resolved": "C:\\y",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "D:/repo/sub",
+      "p": "d:/lower",
+      "resolved": "d:\\lower",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "D:/repo/sub",
+      "p": ".",
+      "resolved": "D:\\repo\\sub",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo/sub",
+      "p": "..",
+      "resolved": "D:\\repo",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo/sub",
+      "p": "./a/../b",
+      "resolved": "D:\\repo\\sub\\b",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo/sub",
+      "p": "",
+      "resolved": "D:\\repo\\sub",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo/sub",
+      "p": "a//b",
+      "resolved": "D:\\repo\\sub\\a\\b",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "D:/repo/sub",
+      "p": "\\\\server\\share\\x",
+      "resolved": "\\\\server\\share\\x",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "C:/x",
+      "p": "src/a.ts",
+      "resolved": "C:\\x\\src\\a.ts",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "C:/x",
+      "p": "/etc/passwd",
+      "resolved": "C:\\etc\\passwd",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "C:/x",
+      "p": "/x",
+      "resolved": "C:\\x",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "C:/x",
+      "p": "../../etc/x",
+      "resolved": "C:\\etc\\x",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "C:/x",
+      "p": "../../../..",
+      "resolved": "C:\\",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "C:/x",
+      "p": "~/Desktop/x",
+      "resolved": "C:\\x\\~\\Desktop\\x",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "C:/x",
+      "p": "D:/x/y",
+      "resolved": "D:\\x\\y",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "C:/x",
+      "p": "C:/y",
+      "resolved": "C:\\y",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "C:/x",
+      "p": "d:/lower",
+      "resolved": "d:\\lower",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "C:/x",
+      "p": ".",
+      "resolved": "C:\\x",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "C:/x",
+      "p": "..",
+      "resolved": "C:\\",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "C:/x",
+      "p": "./a/../b",
+      "resolved": "C:\\x\\b",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "C:/x",
+      "p": "",
+      "resolved": "C:\\x",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "C:/x",
+      "p": "a//b",
+      "resolved": "C:\\x\\a\\b",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "C:/x",
+      "p": "\\\\server\\share\\x",
+      "resolved": "\\\\server\\share\\x",
+      "isAbsolute": true
+    }
+  ],
+  "resolvePosix": [
+    {
+      "cwd": "/repo",
+      "p": "src/a.ts",
+      "resolved": "/repo/src/a.ts",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo",
+      "p": "/etc/passwd",
+      "resolved": "/etc/passwd",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "/repo",
+      "p": "/x",
+      "resolved": "/x",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "/repo",
+      "p": "../../etc/x",
+      "resolved": "/etc/x",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo",
+      "p": "../../../..",
+      "resolved": "/",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo",
+      "p": "~/Desktop/x",
+      "resolved": "/repo/~/Desktop/x",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo",
+      "p": "D:/x/y",
+      "resolved": "/repo/D:/x/y",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo",
+      "p": "C:/y",
+      "resolved": "/repo/C:/y",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo",
+      "p": "d:/lower",
+      "resolved": "/repo/d:/lower",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo",
+      "p": ".",
+      "resolved": "/repo",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo",
+      "p": "..",
+      "resolved": "/",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo",
+      "p": "./a/../b",
+      "resolved": "/repo/b",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo",
+      "p": "",
+      "resolved": "/repo",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo",
+      "p": "a//b",
+      "resolved": "/repo/a/b",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo",
+      "p": "\\\\server\\share\\x",
+      "resolved": "/repo/\\\\server\\share\\x",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo/sub",
+      "p": "src/a.ts",
+      "resolved": "/repo/sub/src/a.ts",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo/sub",
+      "p": "/etc/passwd",
+      "resolved": "/etc/passwd",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "/repo/sub",
+      "p": "/x",
+      "resolved": "/x",
+      "isAbsolute": true
+    },
+    {
+      "cwd": "/repo/sub",
+      "p": "../../etc/x",
+      "resolved": "/etc/x",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo/sub",
+      "p": "../../../..",
+      "resolved": "/",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo/sub",
+      "p": "~/Desktop/x",
+      "resolved": "/repo/sub/~/Desktop/x",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo/sub",
+      "p": "D:/x/y",
+      "resolved": "/repo/sub/D:/x/y",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo/sub",
+      "p": "C:/y",
+      "resolved": "/repo/sub/C:/y",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo/sub",
+      "p": "d:/lower",
+      "resolved": "/repo/sub/d:/lower",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo/sub",
+      "p": ".",
+      "resolved": "/repo/sub",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo/sub",
+      "p": "..",
+      "resolved": "/repo",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo/sub",
+      "p": "./a/../b",
+      "resolved": "/repo/sub/b",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo/sub",
+      "p": "",
+      "resolved": "/repo/sub",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo/sub",
+      "p": "a//b",
+      "resolved": "/repo/sub/a/b",
+      "isAbsolute": false
+    },
+    {
+      "cwd": "/repo/sub",
+      "p": "\\\\server\\share\\x",
+      "resolved": "/repo/sub/\\\\server\\share\\x",
+      "isAbsolute": false
+    }
+  ],
+  "pathGrant": [
+    {
+      "cwd": "D:/repo",
+      "toolName": "read_file",
+      "input": {
+        "file_path": "src/a.ts"
+      },
+      "result": null
+    },
+    {
+      "cwd": "D:/repo",
+      "toolName": "write_file",
+      "input": {
+        "file_path": "/etc/passwd"
+      },
+      "result": {
+        "mode": "write",
+        "paths": [
+          "D:\\etc\\passwd"
+        ]
+      }
+    },
+    {
+      "cwd": "D:/repo",
+      "toolName": "write_file",
+      "input": {
+        "file_path": "../../etc/x"
+      },
+      "result": {
+        "mode": "write",
+        "paths": [
+          "D:\\etc\\x"
+        ]
+      }
+    },
+    {
+      "cwd": "D:/repo",
+      "toolName": "write_file",
+      "input": {
+        "file_path": "~/Desktop/x"
+      },
+      "result": null
+    },
+    {
+      "cwd": "D:/repo",
+      "toolName": "write_file",
+      "input": {
+        "file_path": "D:/x/y"
+      },
+      "result": {
+        "mode": "write",
+        "paths": [
+          "D:\\x\\y"
+        ]
+      }
+    },
+    {
+      "cwd": "D:/repo",
+      "toolName": "edit_file",
+      "input": {
+        "file_path": "src/b.ts"
+      },
+      "result": null
+    },
+    {
+      "cwd": "D:/repo",
+      "toolName": "hash_edit",
+      "input": {
+        "file_path": "C:/y"
+      },
+      "result": {
+        "mode": "write",
+        "paths": [
+          "C:\\y"
+        ]
+      }
+    },
+    {
+      "cwd": "D:/repo",
+      "toolName": "read_file",
+      "input": {
+        "file_paths": [
+          "src/a.ts",
+          "/etc/passwd"
+        ]
+      },
+      "result": {
+        "mode": "read",
+        "paths": [
+          "D:\\etc\\passwd"
+        ]
+      }
+    },
+    {
+      "cwd": "D:/repo",
+      "toolName": "read_file",
+      "input": {
+        "file_paths": [
+          "src/a.ts",
+          "src/b.ts"
+        ]
+      },
+      "result": null
+    },
+    {
+      "cwd": "D:/repo",
+      "toolName": "export_file",
+      "input": {
+        "destination_path": "/tmp/out.svg"
+      },
+      "result": {
+        "mode": "write",
+        "paths": [
+          "D:\\tmp\\out.svg"
+        ]
+      }
+    },
+    {
+      "cwd": "D:/repo",
+      "toolName": "export_file",
+      "input": {
+        "destination_path": "./out.svg",
+        "source_path": "/etc/x"
+      },
+      "result": {
+        "mode": "read",
+        "paths": [
+          "D:\\etc\\x"
+        ]
+      }
+    },
+    {
+      "cwd": "D:/repo",
+      "toolName": "open_path",
+      "input": {
+        "path": "/etc/hosts"
+      },
+      "result": {
+        "mode": "read",
+        "paths": [
+          "D:\\etc\\hosts"
+        ]
+      }
+    },
+    {
+      "cwd": "D:/repo",
+      "toolName": "open_path",
+      "input": {
+        "path": "src/a.ts"
+      },
+      "result": null
+    },
+    {
+      "cwd": "D:/repo",
+      "toolName": "unknown_tool",
+      "input": {
+        "file_path": "/etc/x"
+      },
+      "result": null
+    },
+    {
+      "cwd": "D:/repo",
+      "toolName": "read_file",
+      "input": {},
+      "result": null
+    }
   ]
 }

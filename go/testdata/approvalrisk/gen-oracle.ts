@@ -19,6 +19,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
+import { resolve as resolvePath, isAbsolute, win32, posix } from 'node:path'
 import {
   normalizeBashCommand,
   matchesDangerousBash,
@@ -33,6 +34,7 @@ import {
   requiresUnconditionalApproval,
   assessToolRisk,
 } from '../../../src/agent/approval-risk.js'
+import { outOfWorkspaceFilePaths } from '../../../src/agent/tool-pipeline.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -129,6 +131,47 @@ const commands: Array<{ label: string; cmd: string }> = [
   { label: 'benign-sudo-ls', cmd: 'sudo ls' },
 ]
 
+// ── Node path.resolve 语义矩阵的输入 ──
+//
+// cwd 用 Windows 形态（本项目主力平台）；path 覆盖全部关键语义分支。
+const resolveCwds = ['D:/repo', 'D:/repo/sub', 'C:/x']
+const resolvePaths = [
+  'src/a.ts',           // 相对——并入 cwd
+  '/etc/passwd',        // 根相对——**绝对段截断**（丢弃 cwd，用 cwd 驱动器）
+  '/x',
+  '../../etc/x',        // 上溯——不越过驱动器根
+  '../../../..',        // 爬出根——停在 D:\
+  '~/Desktop/x',        // `~` 不展开（Node 无此语义）
+  'D:/x/y',             // 同驱动器盘符
+  'C:/y',               // 换驱动器
+  'd:/lower',           // 小写盘符
+  '.',                  // 当前目录
+  '..',                 // 父目录
+  './a/../b',           // 内部上溯
+  '',                   // 空——返回 cwd
+  'a//b',               // 重复分隔符
+  '\\\\server\\share\\x', // UNC
+]
+
+const pathGrantCwds = ['D:/repo']
+const pathGrantCases: Array<{ toolName: string; input: Record<string, unknown> }> = [
+  { toolName: 'read_file', input: { file_path: 'src/a.ts' } },        // 区内 → null
+  { toolName: 'write_file', input: { file_path: '/etc/passwd' } },    // 越界（根相对）
+  { toolName: 'write_file', input: { file_path: '../../etc/x' } },    // 越界（上溯）
+  { toolName: 'write_file', input: { file_path: '~/Desktop/x' } },    // `~` 不展开（TS 行为）
+  { toolName: 'write_file', input: { file_path: 'D:/x/y' } },         // 越界（盘符）
+  { toolName: 'edit_file', input: { file_path: 'src/b.ts' } },        // 区内 → null
+  { toolName: 'hash_edit', input: { file_path: 'C:/y' } },            // 越界（换盘符）
+  { toolName: 'read_file', input: { file_paths: ['src/a.ts', '/etc/passwd'] } }, // 混合
+  { toolName: 'read_file', input: { file_paths: ['src/a.ts', 'src/b.ts'] } },    // 全区内
+  { toolName: 'export_file', input: { destination_path: '/tmp/out.svg' } },      // dest 越界
+  { toolName: 'export_file', input: { destination_path: './out.svg', source_path: '/etc/x' } }, // dest 区内 → 看 src
+  { toolName: 'open_path', input: { path: '/etc/hosts' } },           // 只读打开越界
+  { toolName: 'open_path', input: { path: 'src/a.ts' } },             // 区内 → null
+  { toolName: 'unknown_tool', input: { file_path: '/etc/x' } },       // 非文件工具 → null
+  { toolName: 'read_file', input: {} },                               // 无路径 → null
+]
+
 const out: Record<string, unknown> = {
   commands: commands.map(({ label, cmd }) => ({
     label,
@@ -214,6 +257,41 @@ const out: Record<string, unknown> = {
       toolName,
       input,
       ...assessToolRisk(toolName, input, level),
+    })),
+  ),
+  // ── Node path.resolve 语义矩阵（Go 复刻的对账基准）──
+  //
+  // 用 **win32 语义**导出（本项目主力平台）。Go 侧 `nodeResolve` 在 Windows
+  // 上必须逐值匹配；`isAbsolute` 同表导出（`/etc/passwd` 在 win32 下是
+  // **绝对**——这是 Go `filepath.IsAbs` 说 false 的那个坑）。
+  resolve: resolveCwds.flatMap((cwd) =>
+    resolvePaths.map((p) => ({
+      cwd,
+      p,
+      resolved: win32.resolve(cwd, p),
+      isAbsolute: win32.isAbsolute(p),
+    })),
+  ),
+  // posix 语义（非 Windows 平台的对照；Go 侧 resolvePosix 对账）
+  resolvePosix: ['/repo', '/repo/sub'].flatMap((cwd) =>
+    resolvePaths.map((p) => ({
+      cwd,
+      p,
+      resolved: posix.resolve(cwd, p),
+      isAbsolute: posix.isAbsolute(p),
+    })),
+  ),
+  // ── outOfWorkspaceFilePaths 对账 ──
+  //
+  // 覆盖：单/多路径参数、export_file 的 dest/src 优先、open_path、
+  // 越界/区内/上溯/`~`（TS 不展开）/盘符。
+  // cwd 用 Windows 形态——与 Go 侧测试的 cwd 保持一致。
+  pathGrant: pathGrantCwds.flatMap((cwd) =>
+    pathGrantCases.map(({ toolName, input }) => ({
+      cwd,
+      toolName,
+      input,
+      result: outOfWorkspaceFilePaths(cwd, toolName, input),
     })),
   ),
 }

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 )
 
 // approvalriskOracle 是 oracle.json 的结构。
@@ -51,6 +53,27 @@ type approvalriskOracle struct {
 		Level           string         `json:"level"`
 		SuggestedAction string         `json:"suggestedAction"`
 	} `json:"doomLoop"`
+	Resolve []struct {
+		Cwd        string `json:"cwd"`
+		P          string `json:"p"`
+		Resolved   string `json:"resolved"`
+		IsAbsolute bool   `json:"isAbsolute"`
+	} `json:"resolve"`
+	ResolvePosix []struct {
+		Cwd        string `json:"cwd"`
+		P          string `json:"p"`
+		Resolved   string `json:"resolved"`
+		IsAbsolute bool   `json:"isAbsolute"`
+	} `json:"resolvePosix"`
+	PathGrant []struct {
+		Cwd      string         `json:"cwd"`
+		ToolName string         `json:"toolName"`
+		Input    map[string]any `json:"input"`
+		Result   *struct {
+			Mode  string   `json:"mode"`
+			Paths []string `json:"paths"`
+		} `json:"result"`
+	} `json:"pathGrant"`
 }
 
 func loadApprovalriskOracle(t *testing.T) *approvalriskOracle {
@@ -175,5 +198,107 @@ func TestApprovalRiskDoomLoopParity(t *testing.T) {
 			t.Errorf("用例[%d] doomLoop=%s %s: suggestedAction\n  got  %q\n  want %q",
 				i, d.DoomLoopLevel, d.ToolName, got.SuggestedAction, d.SuggestedAction)
 		}
+	}
+}
+
+// TestNodeResolveWin32Parity —— 对账 Node `path.win32.resolve` 的 Go 复刻。
+//
+// 这是 `nodepath.go` 的正确性证明：Go 的 `filepath.Join`/`Clean` 与 Node
+// `path.resolve` 语义不同（绝对段截断 / 驱动器切换 / 不越过根），差异在
+// 安全路径上会致命。oracle 从真实 `win32.resolve` 导出。
+func TestNodeResolveWin32Parity(t *testing.T) {
+	o := loadApprovalriskOracle(t)
+	if len(o.Resolve) == 0 {
+		t.Fatal("oracle 的 resolve 矩阵为空——前置失败")
+	}
+
+	for _, c := range o.Resolve {
+		t.Run(c.Cwd+"__"+c.P, func(t *testing.T) {
+			// 只在本平台为 Windows 时对账 win32 语义（posix 平台的行为不同）。
+			if !isWindowsLike() {
+				t.Skip("非 Windows 平台——win32 语义对账跳过")
+			}
+			if got := isAbsWin32(c.P); got != c.IsAbsolute {
+				t.Errorf("isAbsWin32(%q) = %v, want %v", c.P, got, c.IsAbsolute)
+			}
+			got := resolveWin32(c.Cwd, c.P)
+			if got != c.Resolved {
+				t.Errorf("resolveWin32(%q, %q)\n  got  %q\n  want %q", c.Cwd, c.P, got, c.Resolved)
+			}
+		})
+	}
+}
+
+// TestNodeResolvePosixParity —— 对账 Node `path.posix.resolve` 的 Go 复刻。
+func TestNodeResolvePosixParity(t *testing.T) {
+	o := loadApprovalriskOracle(t)
+	if len(o.ResolvePosix) == 0 {
+		t.Fatal("oracle 的 resolvePosix 矩阵为空——前置失败")
+	}
+
+	for _, c := range o.ResolvePosix {
+		t.Run(c.Cwd+"__"+c.P, func(t *testing.T) {
+			if got := isAbsPosix(c.P); got != c.IsAbsolute {
+				t.Errorf("isAbsPosix(%q) = %v, want %v", c.P, got, c.IsAbsolute)
+			}
+			got := resolvePosix(c.Cwd, c.P)
+			if got != c.Resolved {
+				t.Errorf("resolvePosix(%q, %q)\n  got  %q\n  want %q", c.Cwd, c.P, got, c.Resolved)
+			}
+		})
+	}
+}
+
+// TestPathGrantParity —— 对账 OutOfWorkspaceFilePaths 与 TS `outOfWorkspaceFilePaths`。
+//
+// **这是路径授权层的正确性证明**。返回的 paths 是**授权标签**（桌面端
+// pathGrantHint 消费）——标签错位会让授权作用到错误路径。而 Go 的
+// filepath.Join 与 Node path.resolve 语义不同（绝对段截断 / 盘符基准），
+// 故必须逐值对账。
+//
+// **cwd 用 oracle 里的 `D:/repo`**：TS 与 Go 的路径校验都做 realpath，不存在的
+// cwd 会走「最近存在祖先」回退——两侧实现若一致，结果应一致；若不一致，
+// 本测试会暴露（那本身就是需要知道的差异）。
+func TestPathGrantParity(t *testing.T) {
+	o := loadApprovalriskOracle(t)
+	if len(o.PathGrant) == 0 {
+		t.Fatal("oracle 的 pathGrant 矩阵为空——前置失败")
+	}
+
+	for i, c := range o.PathGrant {
+		t.Run(c.ToolName+"_"+itoa(i), func(t *testing.T) {
+			got := OutOfWorkspaceFilePaths(c.Cwd, c.ToolName, c.Input, nil)
+
+			// 归一化比较：TS 的 null ↔ Go 的 nil；mode 用字符串比。
+			if c.Result == nil {
+				if got != nil {
+					t.Errorf("期望 nil，得到 mode=%v paths=%v", got.Mode, got.Paths)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("期望 %v，得到 nil", c.Result)
+			}
+			wantMode := "read"
+			if c.Result.Mode == "write" {
+				wantMode = "write"
+			}
+			gotMode := "read"
+			if got.Mode == pathsafe.ModeWrite {
+				gotMode = "write"
+			}
+			if gotMode != wantMode {
+				t.Errorf("mode = %q, want %q", gotMode, wantMode)
+			}
+			if len(got.Paths) != len(c.Result.Paths) {
+				t.Fatalf("paths 数量 = %d, want %d（got=%v want=%v）",
+					len(got.Paths), len(c.Result.Paths), got.Paths, c.Result.Paths)
+			}
+			for j := range got.Paths {
+				if got.Paths[j] != c.Result.Paths[j] {
+					t.Errorf("paths[%d]\n  got  %q\n  want %q", j, got.Paths[j], c.Result.Paths[j])
+				}
+			}
+		})
 	}
 }
