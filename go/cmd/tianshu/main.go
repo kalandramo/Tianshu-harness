@@ -30,6 +30,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/api"
 	"github.com/kalandramo/tianshu/go/internal/artifact"
 	"github.com/kalandramo/tianshu/go/internal/client"
+	"github.com/kalandramo/tianshu/go/internal/config"
 	ctxstore "github.com/kalandramo/tianshu/go/internal/context"
 	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"github.com/kalandramo/tianshu/go/internal/retry"
@@ -160,6 +161,14 @@ func loadConfig(model, baseURL, approval string, maxTurns int, systemPrompt stri
 			SystemPrompt: systemPrompt,
 			Cwd:          cwd,
 			ApprovalMode: approval,
+			// 用户全局配置的权限规则（`~/.rivet/config.json` 的
+			// `agent.permissions`）。**这是 deny 门的生产者**——第五十二刀
+			// 交付了判定层与消费端，但规则此前只能由代码/测试注入，
+			// 用户在配置文件里写的 deny 读不到（验收面 blocked）。
+			//
+			// 读取失败/文件不存在 → nil（不误拦）。配置问题不该中断启动：
+			// 与 `LoadPermissionsOrNil` 的 fail-closed 语义一致。
+			Permissions: config.LoadPermissionsOrNil(),
 		},
 		Client: client.Config{
 			BaseURL:  baseURL,
