@@ -5767,6 +5767,125 @@ bash 单流上限是 **8MB**，且单行不触发行数截断。探针定位后�
 **若换方向**：按下方「volatile 块与动态 appendix」推进——那是缓存命中率的
 真正杠杆（见「建议的第一刀」节）。
 
+## 第五十一刀：完整档位门控（2026-09-24，四波）
+
+**任务来源**：第五十刀遗留的「完整档位门控未接」。用户确认后按四波推进。
+
+### 实测称量（动手前的构成测量）
+
+TS `approval-risk.ts` **736 行**：9 张模式表 + 12 个判定函数 + `assessToolRisk`
+（272 行）。`tool-pipeline.ts` 的 `shouldAsk` 决策树需 5 个输入，Go 侧现状：
+
+| 输入 | Go 侧 |
+|---|---|
+| `needsApproval` / `unconditionalApproval` / `bashWriteRequiresApproval` | ✅ 已有 |
+| `pathGrantNeed` | ❌ 无（需 `outOfWorkspaceFilePaths` + 运行时授权） |
+| `allowlisted` | ❌ 无 `permissions` 子系统 |
+| `canAutoApprove` | ❌ 无 Sensorium |
+| `protectionMode` | ❌ `wedge_guard` 是批级终止判定，与 `doomLoopLevel` 三档语义不同 |
+
+### 四波交付
+
+| 波 | 提交 | 内容 |
+|---|---|---|
+| Wave 1 | `8d748c73` | `approval_patterns.go` + `approval_risk.go` + `approval_assess.go`（判定层） |
+| Wave 2a | `43c8530c` | `nodepath.go`（Node path.resolve 复刻）+ `approval_pathgrant.go` |
+| Wave 2b | `65ae8c06` | `pathgrants.go`（运行时授权存储） |
+| Wave 2c | `1b8a9c0d` | 接线 `pathGrantNeed` 到 `loop.go` |
+
+oracle 从**真实 TS 代码路径**导出（`go/testdata/approvalrisk/`），累计
+**197 个子用例**逐值对账，sha256 可复现。
+
+### Wave 1 的核心工程问题：RE2 不支持 lookaround
+
+TS 的 6 条危险模式用 lookahead/lookbehind，**Go RE2 全部编译失败**（探针实测
+5/5）。改为**结构化判定**（匹配主体 + 二次条件检查），非降级语义：
+
+| TS | Go |
+|---|---|
+| `\brm\b(?=...r)(?=...f)` | `rmRe` + 窗口内 `recurseRe`/`forceRe` |
+| `\bgit\s+stash\b(?!safe)` | `stashRe && !safeStashRe` |
+| `npm...\b(?=...-g)[^\n]*install` | 三条件合取 |
+
+**窗口约束是关键**：`rm -r build; ls -f` 不得误报（`ls -f` 在下一命令段）。
+由 oracle 用例 `rm-cross-sep-no-false-positive` 钉住；变异反证确认它真实必要。
+
+### Wave 2a 的发现：Go filepath ≠ Node path.resolve
+
+| 用例 | Go `filepath.Join` | Node `path.resolve` |
+|---|---|---|
+| `/repo` + `/etc/passwd` | `\repo\etc\passwd` | `D:\etc\passwd` ← 绝对段截断 |
+| `/repo` + `../../etc/x` | `\etc\x` | `D:\etc\x` ← 盘符基准 |
+| `/repo` + `../../../..` | `\..\..\` | `D:\` ← 不越过驱动器根 |
+
+差异在**授权标签**上致命——标签错位会让授权作用到错误路径。故 `nodepath.go`
+复刻 Node 语义（45 win32 + 30 posix 用例对账）。
+
+**测试抓到的两个真实缺陷**（先红后修）：
+1. 根相对路径未继承驱动器：`resolveWin32('D:/repo','/x')` 给 `\x` 应为 `D:\x`
+2. posix 误把 `\` 当分隔符：`\\server\share\x` 在 posix 下是普通相对路径
+
+### Wave 2b 的发现：TS `canonicalize` 有字符截断缺陷
+
+`src/tools/path-grants.ts:85` 的 `current.slice(parent.length + 1)` 在 `parent`
+以分隔符结尾时（`D:\`，长度 3）多切一字符：
+
+	D:/outside → "D:\utside"     D:/repoA → "D:\epoA"    ← 首字母被吞
+
+触发条件：路径不存在（realpath 抛错）且父目录是驱动器根。
+
+**用户选择 B 方案（不复刻缺陷）**。Go 用 `filepath.Base` 逐段拼接，不吞字符。
+**不构成越权**：`isPathUnder` 两侧同样截断，自洽——14 个查询用例（含 `-evil`
+段边界反例）与 TS 逐值一致，只有 3 个 snapshot 的 root 不同，测试**显式记录
+差异**（`t.Logf("与 TS 有意不同…")`）并断言 Go 侧无截断。
+
+### Wave 2c 的接线语义
+
+| 档位 | 出界路径行为 |
+|---|---|
+| `dangerously-skip-permissions` | **首触即授**（`GrantPath(dirname(p), mode, cwd)`） |
+| 其他档 | 无提示通道 → **指令性非重试拒绝** |
+
+**授予 `dirname(p)` 而非 p**（对账 TS）：授权粒度是目录子树。
+**scope 隔离**：授予时传 `cfg.Cwd`，不泄漏给同进程其他会话。
+
+### 验证（验收面 4/4 met）
+
+端到端实测（真实 loop + mock 端点 + 捕获请求体）：
+
+| 场景 | 被拦 |
+|---|---|
+| auto-safe + 出界 write | **true** |
+| skip + 出界 write | **false**（首触即授） |
+| auto-safe + 区内 write | false |
+| auto-safe + 出界 read | **true** |
+| auto-safe + 区内 read | false |
+
+**「档位差异生效」子测试断言两档结果相反**——接线前实测两者都是 false，
+这是最直接的生效证据。**变异反证**：接线改 `if false` → 3 子测试转红。
+
+gofmt 干净 · go build ./... exit=0 · go vet ./... exit=0 ·
+go test ./... -count=1 全绿
+
+### 遗留（显式声明的已知偏差）
+
+- **`allowlisted` / `canAutoApprove` 未接**（Go 侧无 permissions 子系统与
+  Sensorium）——auto-safe 档**比 TS 更严**（该放行的出界写也会拦）。
+  偏差方向是**安全侧**（多问而非漏问）。
+- **`protectionMode` 未接**：Go 的 `wedge_guard` 是批级终止判定，与 TS 的
+  `doomLoopLevel` 三档语义不同，强行映射会引入错误语义。
+- **审批提示往返通道仍未建**：`onApprovalRequired` 对应物不存在，故非 skip 档
+  走「拒绝」而非「弹审批」。建通道后可升级为真审批。
+- **TS 持久化能力未移植**（`persistGrants` / `loadPersistedGrants` 等）——
+  服务 config 装配与依赖缓存读取面。
+
+### 下一步
+
+**若继续审批线**：① 建审批提示往返通道（让非 skip 档走真审批而非拒绝）；
+② 补 `permissions` 子系统（`isToolAllowed` + `PermissionAllowRule`）。
+
+**若换方向**：按下方「volatile 块与动态 appendix」推进——缓存命中率的真正杠杆。
+
 ### 下一步（第四十八刀遗留段，2026-09-23）
 
 **本刀再次印证：动手前必须核实消费端**——上一轮的建议（做 config 校验层）
