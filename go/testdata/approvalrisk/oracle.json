@@ -2111,5 +2111,177 @@
       "input": {},
       "result": null
     }
+  ],
+  "pathGrants": [
+    {
+      "kind": "isPathUnder",
+      "root": "/a/b",
+      "child": "/a/b",
+      "result": true
+    },
+    {
+      "kind": "isPathUnder",
+      "root": "/a/b",
+      "child": "/a/b/c",
+      "result": true
+    },
+    {
+      "kind": "isPathUnder",
+      "root": "/a/b",
+      "child": "/a/b-evil",
+      "result": false
+    },
+    {
+      "kind": "isPathUnder",
+      "root": "/a/b",
+      "child": "/a",
+      "result": false
+    },
+    {
+      "kind": "isPathUnder",
+      "root": "/a/b/",
+      "child": "/a/b/c",
+      "result": true
+    },
+    {
+      "kind": "isPathUnder",
+      "root": "D:/x",
+      "child": "D:/x/y",
+      "result": true
+    },
+    {
+      "kind": "isPathUnder",
+      "root": "D:/x",
+      "child": "D:/x-evil",
+      "result": false
+    },
+    {
+      "kind": "reset"
+    },
+    {
+      "kind": "grant",
+      "root": "D:/outside",
+      "mode": "read",
+      "cwd": "D:/repoA"
+    },
+    {
+      "kind": "snapshot",
+      "label": "grant-read-then-query",
+      "grants": [
+        {
+          "root": "D:\\utside",
+          "mode": "read"
+        }
+      ]
+    },
+    {
+      "kind": "isReadGranted",
+      "path": "D:/outside/f.txt",
+      "cwd": "D:/repoA",
+      "result": true
+    },
+    {
+      "kind": "isWriteGranted",
+      "path": "D:/outside/f.txt",
+      "cwd": "D:/repoA",
+      "result": false
+    },
+    {
+      "kind": "isReadGranted",
+      "path": "D:/outside/f.txt",
+      "cwd": "D:/repoB",
+      "result": false
+    },
+    {
+      "kind": "reset"
+    },
+    {
+      "kind": "grant",
+      "root": "D:/outside",
+      "mode": "read",
+      "cwd": "D:/repoA"
+    },
+    {
+      "kind": "grant",
+      "root": "D:/outside",
+      "mode": "write",
+      "cwd": "D:/repoA"
+    },
+    {
+      "kind": "snapshot",
+      "label": "read-then-write",
+      "grants": [
+        {
+          "root": "D:\\utside",
+          "mode": "write"
+        }
+      ]
+    },
+    {
+      "kind": "isWriteGranted",
+      "path": "D:/outside/f.txt",
+      "cwd": "D:/repoA",
+      "result": true
+    },
+    {
+      "kind": "reset"
+    },
+    {
+      "kind": "grant",
+      "root": "D:/outside",
+      "mode": "write",
+      "cwd": "D:/repoA"
+    },
+    {
+      "kind": "grant",
+      "root": "D:/outside",
+      "mode": "read",
+      "cwd": "D:/repoA"
+    },
+    {
+      "kind": "snapshot",
+      "label": "write-then-read",
+      "grants": [
+        {
+          "root": "D:\\utside",
+          "mode": "write"
+        }
+      ]
+    },
+    {
+      "kind": "reset"
+    },
+    {
+      "kind": "grant",
+      "root": "D:/outside",
+      "mode": "write",
+      "cwd": "D:/repoA"
+    },
+    {
+      "kind": "isWriteGranted",
+      "path": "D:/outside-evil/f.txt",
+      "cwd": "D:/repoA",
+      "result": false
+    },
+    {
+      "kind": "isWriteGranted",
+      "path": "D:/outside/sub/f.txt",
+      "cwd": "D:/repoA",
+      "result": true
+    },
+    {
+      "kind": "reset"
+    },
+    {
+      "kind": "grant",
+      "root": "D:/shared",
+      "mode": "write"
+    },
+    {
+      "kind": "isWriteGranted",
+      "path": "D:/shared/f.txt",
+      "cwd": "D:/repoB",
+      "result": true
+    }
   ]
 }

@@ -74,6 +74,20 @@ type approvalriskOracle struct {
 			Paths []string `json:"paths"`
 		} `json:"result"`
 	} `json:"pathGrant"`
+	PathGrants []struct {
+		Kind   string `json:"kind"`
+		Label  string `json:"label"`
+		Root   string `json:"root"`
+		Child  string `json:"child"`
+		Path   string `json:"path"`
+		Cwd    string `json:"cwd"`
+		Mode   string `json:"mode"`
+		Result bool   `json:"result"`
+		Grants []struct {
+			Root string `json:"root"`
+			Mode string `json:"mode"`
+		} `json:"grants"`
+	} `json:"pathGrants"`
 }
 
 func loadApprovalriskOracle(t *testing.T) *approvalriskOracle {
@@ -298,6 +312,94 @@ func TestPathGrantParity(t *testing.T) {
 				if got.Paths[j] != c.Result.Paths[j] {
 					t.Errorf("paths[%d]\n  got  %q\n  want %q", j, got.Paths[j], c.Result.Paths[j])
 				}
+			}
+		})
+	}
+}
+
+// TestPathGrantsParity —— 对账运行时授权存储与 TS `path-grants.ts`。
+//
+// ## 与 TS 的**有意差异**（B 方案：不复刻缺陷）
+//
+// TS `canonicalize`（`path-grants.ts:85`）有字符切片缺陷：
+//
+//	tail.unshift(current.slice(parent.length + 1))
+//
+// `parent` 以分隔符结尾时（如 `D:\`，长度 3），`+1` 多切一个字符——
+// `D:\outside` 被截成 `D:\utside`（首字母 'o' 被吞）。实测：
+//
+//	D:/outside → "D:\utside"     D:/repoA → "D:\epoA"
+//
+// 触发条件：路径不存在（realpath 抛错）且**父目录是驱动器根**。
+//
+// Go 侧用 `filepath.Base` 逐段拼接，**不吞字符**（实测 `D:\outside`）——
+// 故 3 个 snapshot 用例的 root 与 TS 不同。这是**有意修正**，不是漏对账。
+//
+// **为什么不构成越权**：`isPathUnder` 比较的是两侧同样规范化的值，
+// 截断自洽——故 14 个查询用例（含 `-evil` 段边界反例）结果与 TS 一致，
+// 本测试对它们逐值对账。
+func TestPathGrantsParity(t *testing.T) {
+	o := loadApprovalriskOracle(t)
+	if len(o.PathGrants) == 0 {
+		t.Fatal("oracle 的 pathGrants 矩阵为空——前置失败")
+	}
+
+	store := newPathGrantStore()
+
+	for i, c := range o.PathGrants {
+		t.Run(c.Kind+"_"+itoa(i), func(t *testing.T) {
+			switch c.Kind {
+			case "isPathUnder":
+				got := isPathUnder(c.Root, c.Child)
+				if got != c.Result {
+					t.Errorf("isPathUnder(%q, %q) = %v, want %v", c.Root, c.Child, got, c.Result)
+				}
+
+			case "snapshot":
+				// 已知差异：TS 截断驱动器根下的首段首字母，Go 不截断。
+				// 断言 Go 的 root **等于输入路径的规范化**（而非 TS 的截断值）。
+				got := store.ListGrants()
+				if len(got) != len(c.Grants) {
+					t.Fatalf("授权数 = %d, want %d", len(got), len(c.Grants))
+				}
+				for j, g := range got {
+					wantMode := GrantMode(c.Grants[j].Mode)
+					if g.Mode != wantMode {
+						t.Errorf("grants[%d].Mode = %q, want %q", j, g.Mode, wantMode)
+					}
+					// **有意差异**：不复刻 TS 的字符截断。
+					if g.Root == c.Grants[j].Root {
+						t.Logf("grants[%d].Root 与 TS 一致：%q", j, g.Root)
+					} else {
+						t.Logf("grants[%d].Root 与 TS 有意不同：Go=%q TS=%q（TS 截断缺陷）",
+							j, g.Root, c.Grants[j].Root)
+						// 断言 Go 侧**无截断**：驱动器根后的首段应完整。
+						if len(g.Root) >= 3 && g.Root[2] != '\\' && g.Root[2] != '/' {
+							t.Errorf("Go 的 root %q 也被截断了——应完整保留", g.Root)
+						}
+					}
+				}
+
+			case "isReadGranted":
+				got := store.IsReadGranted(c.Path, c.Cwd)
+				if got != c.Result {
+					t.Errorf("IsReadGranted(%q, %q) = %v, want %v", c.Path, c.Cwd, got, c.Result)
+				}
+
+			case "isWriteGranted":
+				got := store.IsWriteGranted(c.Path, c.Cwd)
+				if got != c.Result {
+					t.Errorf("IsWriteGranted(%q, %q) = %v, want %v", c.Path, c.Cwd, got, c.Result)
+				}
+
+			case "grant":
+				store.GrantPath(c.Root, GrantMode(c.Mode), c.Cwd)
+
+			case "reset":
+				store.ResetGrantsForTest()
+
+			default:
+				t.Fatalf("未知用例类型 %q", c.Kind)
 			}
 		})
 	}

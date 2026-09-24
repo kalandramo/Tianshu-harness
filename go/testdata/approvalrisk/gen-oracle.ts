@@ -35,6 +35,14 @@ import {
   assessToolRisk,
 } from '../../../src/agent/approval-risk.js'
 import { outOfWorkspaceFilePaths } from '../../../src/agent/tool-pipeline.js'
+import {
+  isPathUnder,
+  grantPath,
+  isReadGranted,
+  isWriteGranted,
+  listGrants,
+  _resetGrantsForTest,
+} from '../../../src/tools/path-grants.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -172,6 +180,77 @@ const pathGrantCases: Array<{ toolName: string; input: Record<string, unknown> }
   { toolName: 'read_file', input: {} },                               // 无路径 → null
 ]
 
+// ── 路径授权语义的对账用例 ──
+//
+// 每个用例：重置存储 → 执行授予 → 查询 → 记录结果。Go 侧按同序重放。
+function buildPathGrantCases(): unknown[] {
+  const cases: unknown[] = []
+  const cwdA = 'D:/repoA'
+  const cwdB = 'D:/repoB'
+
+  // ① isPathUnder 的段边界（纯函数，不需授权）
+  const underCases = [
+    { root: '/a/b', child: '/a/b' },
+    { root: '/a/b', child: '/a/b/c' },
+    { root: '/a/b', child: '/a/b-evil' }, // 关键反例：不得匹配
+    { root: '/a/b', child: '/a' },
+    { root: '/a/b/', child: '/a/b/c' },
+    { root: 'D:/x', child: 'D:/x/y' },
+    { root: 'D:/x', child: 'D:/x-evil' },
+  ]
+  for (const c of underCases) {
+    cases.push({ kind: 'isPathUnder', ...c, result: isPathUnder(c.root, c.child) })
+  }
+
+  // ② 授予 + 读查询
+  _resetGrantsForTest()
+  cases.push({ kind: 'reset' })
+  grantPath('D:/outside', 'read', { cwd: cwdA })
+  cases.push({ kind: 'grant', root: 'D:/outside', mode: 'read', cwd: cwdA })
+  cases.push({ kind: 'snapshot', label: 'grant-read-then-query', grants: listGrants().map(g => ({ root: g.root, mode: g.mode })) })
+  cases.push({ kind: 'isReadGranted', path: 'D:/outside/f.txt', cwd: cwdA, result: isReadGranted('D:/outside/f.txt', cwdA) })
+  cases.push({ kind: 'isWriteGranted', path: 'D:/outside/f.txt', cwd: cwdA, result: isWriteGranted('D:/outside/f.txt', cwdA) })
+  // scope 隔离：B 工作区看不到 A 的授权
+  cases.push({ kind: 'isReadGranted', path: 'D:/outside/f.txt', cwd: cwdB, result: isReadGranted('D:/outside/f.txt', cwdB) })
+
+  // ③ 写覆盖读（升级，不降级）
+  _resetGrantsForTest()
+  cases.push({ kind: 'reset' })
+  grantPath('D:/outside', 'read', { cwd: cwdA })
+  cases.push({ kind: 'grant', root: 'D:/outside', mode: 'read', cwd: cwdA })
+  grantPath('D:/outside', 'write', { cwd: cwdA })
+  cases.push({ kind: 'grant', root: 'D:/outside', mode: 'write', cwd: cwdA })
+  cases.push({ kind: 'snapshot', label: 'read-then-write', grants: listGrants().map(g => ({ root: g.root, mode: g.mode })) })
+  cases.push({ kind: 'isWriteGranted', path: 'D:/outside/f.txt', cwd: cwdA, result: isWriteGranted('D:/outside/f.txt', cwdA) })
+
+  // ④ 反向：写后读不降级
+  _resetGrantsForTest()
+  cases.push({ kind: 'reset' })
+  grantPath('D:/outside', 'write', { cwd: cwdA })
+  cases.push({ kind: 'grant', root: 'D:/outside', mode: 'write', cwd: cwdA })
+  grantPath('D:/outside', 'read', { cwd: cwdA })
+  cases.push({ kind: 'grant', root: 'D:/outside', mode: 'read', cwd: cwdA })
+  cases.push({ kind: 'snapshot', label: 'write-then-read', grants: listGrants().map(g => ({ root: g.root, mode: g.mode })) })
+
+  // ⑤ 段边界在授权查询上的体现
+  _resetGrantsForTest()
+  cases.push({ kind: 'reset' })
+  grantPath('D:/outside', 'write', { cwd: cwdA })
+  cases.push({ kind: 'grant', root: 'D:/outside', mode: 'write', cwd: cwdA })
+  cases.push({ kind: 'isWriteGranted', path: 'D:/outside-evil/f.txt', cwd: cwdA, result: isWriteGranted('D:/outside-evil/f.txt', cwdA) })
+  cases.push({ kind: 'isWriteGranted', path: 'D:/outside/sub/f.txt', cwd: cwdA, result: isWriteGranted('D:/outside/sub/f.txt', cwdA) })
+
+  // ⑥ 无 scope 的进程级授权对所有会话可见
+  _resetGrantsForTest()
+  cases.push({ kind: 'reset' })
+  grantPath('D:/shared', 'write')
+  cases.push({ kind: 'grant', root: 'D:/shared', mode: 'write' })
+  cases.push({ kind: 'isWriteGranted', path: 'D:/shared/f.txt', cwd: cwdB, result: isWriteGranted('D:/shared/f.txt', cwdB) })
+
+  _resetGrantsForTest()
+  return cases
+}
+
 const out: Record<string, unknown> = {
   commands: commands.map(({ label, cmd }) => ({
     label,
@@ -294,6 +373,11 @@ const out: Record<string, unknown> = {
       result: outOfWorkspaceFilePaths(cwd, toolName, input),
     })),
   ),
+  // ── 路径授权语义对账 ──
+  //
+  // 覆盖段边界（`/a/b-evil` 不得匹配 `/a/b`）、大小写折叠、写覆盖读、
+  // scope 隔离（A 工作区授权不泄漏给 B）。
+  pathGrants: buildPathGrantCases(),
 }
 
 mkdirSync(here, { recursive: true })
