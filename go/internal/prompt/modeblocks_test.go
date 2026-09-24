@@ -68,16 +68,12 @@ func TestRenderPlanModeBlockParity(t *testing.T) {
 	for _, c := range o.PlanMode {
 		t.Run(c.Name, func(t *testing.T) {
 			// Go 侧签名用 *string 表达 TS 的 `string | null | undefined`：
-			// nil 覆盖 undefined 与 null 两种输入（TS 侧行为相同）。
+			//   - undefined / null → nil（TS 侧两者行为相同）
+			//   - empty-string → 指向 "" 的指针（**必须保留**，用于验证
+			//     truthy 语义：空串走「无路径」分支）
+			//   - 有值 → 指向该值的指针
 			var path *string
-			if c.Value != nil && !c.IsUndefined {
-				path = c.Value
-			}
-			// 注意：empty-string 用例的 Value 是 "" 而非 nil——
-			// 需保留以验证 truthy 语义。
-			if c.IsUndefined {
-				path = nil
-			} else if c.Value != nil {
+			if !c.IsUndefined && c.Value != nil {
 				v := *c.Value
 				path = &v
 			}
