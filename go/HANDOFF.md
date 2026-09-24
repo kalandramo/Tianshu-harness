@@ -6549,6 +6549,31 @@ go test ./... -count=1 全绿
 **后续会话可直接跳过这类核实**（除非字段名陌生）。**不要修**——修了会
 破坏 oracle 来源防护。
 
+### ★ 未接线披露（验收面 blocked，必须知晓）
+
+**本刀交付的两个函数零生产消费者**——`grep -rn 'ResolveTersenessFlags\|RenderTersenessNudge'`
+只命中定义与测试；未被 `BuildFullSystemPrompt` / `BuildStableVolatileBlock`
+调用。
+
+**用户级验收实测（真实 CLI + mock 端点，非推断）**：
+
+| 场景 | 请求体大小 | 含 `<output-style>` |
+|---|---|---|
+| `RIVET_TERSE=1` 真实跑 | 31535 字节 | **False** |
+| 对照：`--system "<output-style>PROBE</output-style>"` | 16063 字节 | **True** |
+
+**对照实验的作用**：它证明探针有效——否则无法区分「未接线」与「检测失效」。
+`REQ#3` 的 True 确认 mock 能识别该标记，故 `REQ#2` 的 False 是**真实的
+未接线**。
+
+**这意味着**：用户现在设 `RIVET_TERSE=1` **看不到任何变化**。与第五十二刀
+（deny 门有消费端无生产者）是**镜像形态**——本刀是「有实现无消费端」。
+
+**接线的前置**：`buildDynamicAppendixParts`（terse nudge 在它的块列表里）。
+即本刀交付的是**那块拼图**，等拼图板（appendix 装配）就位后才能生效。
+
+**不要误以为 terse 功能已可用。**
+
 ### 遗留与下一步
 
 `buildDynamicAppendixParts` **仍不建议直接做**——前置是模块群。建议路径：
