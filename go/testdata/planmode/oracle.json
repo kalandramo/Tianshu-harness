@@ -1,0 +1,464 @@
+{
+  "meta": {
+    "source": "src/agent/plan-mode.ts",
+    "generatedBy": "go/testdata/planmode/gen-oracle.ts",
+    "note": "plan-mode 纯函数子集逐值对账：checkPlanMode / canonicalizePathForCompare / formatActivePlanDraftReceipt"
+  },
+  "check": [
+    {
+      "name": "off-blocks-nothing-write",
+      "state": "off",
+      "toolName": "write_file",
+      "cwd": "/tmp/rivet-planmode-probe",
+      "targetFilePath": "src/foo.ts",
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "off-blocks-nothing-bash",
+      "state": "off",
+      "toolName": "bash",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "off-blocks-nothing-deliver",
+      "state": "off",
+      "toolName": "deliver_task",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "off-ignores-writecapable-flag",
+      "state": "off",
+      "toolName": "delegate_task",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": true,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "planning-allows-read_file",
+      "state": "planning",
+      "toolName": "read_file",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "planning-allows-grep",
+      "state": "planning",
+      "toolName": "grep",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "planning-allows-run_tests",
+      "state": "planning",
+      "toolName": "run_tests",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "planning-allows-delegate_batch",
+      "state": "planning",
+      "toolName": "delegate_batch",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "planning-allows-plan",
+      "state": "planning",
+      "toolName": "plan",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "planning-allows-todo",
+      "state": "planning",
+      "toolName": "todo",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "planning-blocks-bash",
+      "state": "planning",
+      "toolName": "bash",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": false,
+      "reasonMentionsPlanMode": true,
+      "hasReason": true
+    },
+    {
+      "name": "planning-blocks-git",
+      "state": "planning",
+      "toolName": "git",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": false,
+      "reasonMentionsPlanMode": true,
+      "hasReason": true
+    },
+    {
+      "name": "planning-blocks-apply_patch",
+      "state": "planning",
+      "toolName": "apply_patch",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": false,
+      "reasonMentionsPlanMode": true,
+      "hasReason": true
+    },
+    {
+      "name": "planning-blocks-deliver_task",
+      "state": "planning",
+      "toolName": "deliver_task",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": false,
+      "reasonMentionsPlanMode": true,
+      "hasReason": true
+    },
+    {
+      "name": "planning-blocks-unknown-tool",
+      "state": "planning",
+      "toolName": "nonexistent_tool",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": false,
+      "reasonMentionsPlanMode": true,
+      "hasReason": true
+    },
+    {
+      "name": "planning-blocks-write-other-file",
+      "state": "planning",
+      "toolName": "write_file",
+      "cwd": "/tmp/rivet-planmode-probe",
+      "targetFilePath": "src/foo.ts",
+      "activePlanFilePath": ".rivet/plans/draft-test.md",
+      "delegatesWriteCapableProfile": null,
+      "allowed": false,
+      "reasonMentionsPlanMode": true,
+      "hasReason": true
+    },
+    {
+      "name": "planning-allows-write-active-plan",
+      "state": "planning",
+      "toolName": "write_file",
+      "cwd": "/tmp/rivet-planmode-probe",
+      "targetFilePath": ".rivet/plans/draft-test.md",
+      "activePlanFilePath": ".rivet/plans/draft-test.md",
+      "delegatesWriteCapableProfile": null,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "planning-allows-edit-active-plan",
+      "state": "planning",
+      "toolName": "edit_file",
+      "cwd": "/tmp/rivet-planmode-probe",
+      "targetFilePath": ".rivet/plans/draft-test.md",
+      "activePlanFilePath": ".rivet/plans/draft-test.md",
+      "delegatesWriteCapableProfile": null,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "planning-allows-write-plan-backslash",
+      "state": "planning",
+      "toolName": "write_file",
+      "cwd": "/tmp/rivet-planmode-probe",
+      "targetFilePath": ".rivet\\plans\\draft-win.md",
+      "activePlanFilePath": ".rivet/plans/draft-win.md",
+      "delegatesWriteCapableProfile": null,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "planning-blocks-write-no-active-plan",
+      "state": "planning",
+      "toolName": "write_file",
+      "cwd": "/tmp/rivet-planmode-probe",
+      "targetFilePath": ".rivet/plans/draft-test.md",
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": false,
+      "reasonMentionsPlanMode": true,
+      "hasReason": true
+    },
+    {
+      "name": "planning-blocks-write-no-ctx",
+      "state": "planning",
+      "toolName": "write_file",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": false,
+      "reasonMentionsPlanMode": true,
+      "hasReason": true
+    },
+    {
+      "name": "planning-allows-write-scratch",
+      "state": "planning",
+      "toolName": "write_file",
+      "cwd": "/tmp/rivet-planmode-probe",
+      "targetFilePath": ".rivet/scratch/probe.py",
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "planning-allows-edit-scratch",
+      "state": "planning",
+      "toolName": "edit_file",
+      "cwd": "/tmp/rivet-planmode-probe",
+      "targetFilePath": ".rivet/scratch/sub/dir/probe.py",
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "planning-blocks-write-scratch-dir-itself",
+      "state": "planning",
+      "toolName": "write_file",
+      "cwd": "/tmp/rivet-planmode-probe",
+      "targetFilePath": ".rivet/scratch",
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": false,
+      "reasonMentionsPlanMode": true,
+      "hasReason": true
+    },
+    {
+      "name": "planning-blocks-scratch-traversal",
+      "state": "planning",
+      "toolName": "write_file",
+      "cwd": "/tmp/rivet-planmode-probe",
+      "targetFilePath": ".rivet/scratch/../../../etc/passwd",
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": false,
+      "reasonMentionsPlanMode": true,
+      "hasReason": true
+    },
+    {
+      "name": "planning-blocks-scratchpad-prefix",
+      "state": "planning",
+      "toolName": "write_file",
+      "cwd": "/tmp/rivet-planmode-probe",
+      "targetFilePath": ".rivet/scratchpad/x.py",
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": null,
+      "allowed": false,
+      "reasonMentionsPlanMode": true,
+      "hasReason": true
+    },
+    {
+      "name": "planning-blocks-bash-even-with-plan-path",
+      "state": "planning",
+      "toolName": "bash",
+      "cwd": "/tmp/rivet-planmode-probe",
+      "targetFilePath": ".rivet/plans/draft-test.md",
+      "activePlanFilePath": ".rivet/plans/draft-test.md",
+      "delegatesWriteCapableProfile": null,
+      "allowed": false,
+      "reasonMentionsPlanMode": true,
+      "hasReason": true
+    },
+    {
+      "name": "planning-blocks-writecapable-delegate_task",
+      "state": "planning",
+      "toolName": "delegate_task",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": true,
+      "allowed": false,
+      "reasonMentionsPlanMode": true,
+      "hasReason": true
+    },
+    {
+      "name": "planning-blocks-writecapable-delegate_batch",
+      "state": "planning",
+      "toolName": "delegate_batch",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": true,
+      "allowed": false,
+      "reasonMentionsPlanMode": true,
+      "hasReason": true
+    },
+    {
+      "name": "planning-allows-safe-delegate_task",
+      "state": "planning",
+      "toolName": "delegate_task",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": false,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    },
+    {
+      "name": "planning-read_file-unaffected-by-flag",
+      "state": "planning",
+      "toolName": "read_file",
+      "cwd": null,
+      "targetFilePath": null,
+      "activePlanFilePath": null,
+      "delegatesWriteCapableProfile": true,
+      "allowed": true,
+      "reasonMentionsPlanMode": false,
+      "hasReason": false
+    }
+  ],
+  "canonicalize": [
+    {
+      "input": "C:\\Proj\\.rivet\\plans\\draft-1.md",
+      "output": "c:/proj/.rivet/plans/draft-1.md"
+    },
+    {
+      "input": "c:/proj/.rivet/plans/draft-1.md",
+      "output": "c:/proj/.rivet/plans/draft-1.md"
+    },
+    {
+      "input": "/tmp/Plans/draft-1.md",
+      "output": "/tmp/Plans/draft-1.md"
+    },
+    {
+      "input": "/tmp/plans/draft-1.md",
+      "output": "/tmp/plans/draft-1.md"
+    },
+    {
+      "input": "C:/Proj/X.md",
+      "output": "c:/proj/x.md"
+    },
+    {
+      "input": "c:/proj/x.md",
+      "output": "c:/proj/x.md"
+    },
+    {
+      "input": "relative/path.md",
+      "output": "relative/path.md"
+    },
+    {
+      "input": "relative\\path.md",
+      "output": "relative/path.md"
+    },
+    {
+      "input": "D:\\a\\b",
+      "output": "d:/a/b"
+    },
+    {
+      "input": "d:/a/b",
+      "output": "d:/a/b"
+    },
+    {
+      "input": "/abs/path",
+      "output": "/abs/path"
+    },
+    {
+      "input": "",
+      "output": ""
+    },
+    {
+      "input": "C:\\",
+      "output": "c:/"
+    },
+    {
+      "input": "c:/",
+      "output": "c:/"
+    }
+  ],
+  "allowedTools": [
+    "ask_user_question",
+    "delegate_batch",
+    "delegate_task",
+    "diff",
+    "glob",
+    "grep",
+    "inspect_project",
+    "memory",
+    "plan",
+    "read_file",
+    "read_section",
+    "related_tests",
+    "repo_graph",
+    "repo_map",
+    "run_tests",
+    "todo",
+    "web_fetch",
+    "web_search"
+  ],
+  "draftReceipt": {
+    "hit": "已写入活动计划文件 `.rivet/plans/draft-1.md`（42 chars）——内容与你提交的一致；历史消息里显示为 \"[file written to …]\" 指针是正常截断（省 token），草稿内容完好，不要重写",
+    "missNamed": "已写入活动计划文件 `.rivet/plans/my-plan.md`（42 chars）——内容与你提交的一致；历史消息里显示为 \"[file written to …]\" 指针是正常截断（省 token），草稿内容完好，不要重写",
+    "missNull": null
+  }
+}
