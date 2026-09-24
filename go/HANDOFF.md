@@ -6344,6 +6344,108 @@ decisions 等 per-turn 字段）。这是它那一层的硬前置。
 
 **审批线剩余**：审批提示往返通道（需先定 stdin 争用架构，建议单独立项）。
 
+## 第五十六刀：模式块渲染（2026-09-24）
+
+**任务来源**：按第五十五刀的建议——做 `renderPlanModeBlock` /
+`renderAskModeBlock` / `renderPlanExitReminder`。
+
+### ★ 前置核实（按纪律先做，避免重蹈「建议过期」）
+
+第五十五刀本节写着「**前置核实**：Go 侧是否有 planMode 状态载体——先 grep
+核实，勿凭本节估价」。**本刀照做**：
+
+- **grep 实测：Go 侧无 planMode 状态载体**（命中的都是 `planModelLine`，
+  产出模型留痕，与 planMode 状态无关）
+- 但进一步核实发现：**三个函数都是纯函数**——`activePlanFilePath` 由
+  **调用方**传入，函数本身不读状态。故**无前置依赖**，可独立闭合
+
+**修正了第五十五刀的估价**：它把 `renderPlanModeBlock` 与另两个混为「同族
+固定文案块」，实际它**带参数**（虽然只用于拼一行文本）。
+
+### 落地
+
+| TS | 行 | 说明 |
+|---|---|---|
+| `renderPlanModeBlock` | 110 | Plan Mode 指令块（3211 字符 + 可选路径行） |
+| `renderAskModeBlock` | 190 | Ask 模式指令块（288 字符） |
+| `renderPlanExitReminder` | 180 | Plan Mode 退出提示（109 字符） |
+
+- `modeblocks.go` + `modeblocks_test.go`（8 子用例）
+- `testdata/modeblocks/gen-oracle.ts` + `oracle.json`
+
+### ★ oracle 揭示的 truthy 语义
+
+`activePlanFilePath` 用 **truthy 判断**——oracle 实测 `undefined` / `null` /
+`''` 三者输出**完全相同**（均 3211 字符，都不插入「活动计划文件」行）。
+只有非空路径才插入（3290 / 3298 字符）。
+
+Go 侧用 `*string` 表达 TS 的 `string | null | undefined`：nil 覆盖
+null/undefined（TS 侧行为相同），空串用指向 `""` 的指针。
+
+### ★ 单字符级对账：插入行自带前导换行
+
+TS 源码 `volatile.ts:9` 确认模板以 `` `\n活动计划文件: `` 开头——插入行
+**自带前导 `\n`**。
+
+**反推过程**：先得到 `before+after` 比无路径版**多一个 `\n`**（长度 3212
+vs 3211），再回 TS 源码确认结构——**而非猜测**。
+
+### 验证
+
+8 子用例全绿：planMode 5 入参（3211 / 3290 / 3298 字符长文本逐字节）、
+askMode 288 字符、planExit 109 字符。
+
+**变异反证两组**：
+1. 去掉 `!= ""`（truthy 判断）→ `empty-string` 与 `TruthySemantics` 转红
+   （`empty(7135)`——空串被误插入路径行）
+2. 去掉插入行前导换行 → `with-path` / `with-abs-path` 转红
+   ——**证明逐字节对账能捕捉单个字符的差异**
+
+TDD：RED（undefined）→ GREEN。
+
+gofmt 干净 · go build ./... exit=0 · go vet ./... exit=0 ·
+go test ./... -count=1 全绿 · 生成脚本已清理
+
+### 过程发现（工具链教训，重要）
+
+**heredoc 两次吞掉转义**：`python - <<'PYEOF'` 中嵌 `'\\'` / `"\\n"` 时，
+反斜杠被 shell 层处理掉，导致：
+- 第一次：Python `SyntaxError: unexpected character after line continuation`
+- 第二次：生成出**非法 Go 文件**（字符串未闭合，`vet` 报 8 个错误）
+
+改用 `write_file` 写生成脚本后正常。这与既有教训同源（「heredoc 破坏
+`'\\'` 转义」）。
+
+**结论**：需要精确转义的长文本生成，**一律走 write_file，不用 heredoc**。
+
+### 门禁 YELLOW 的核实（第二次）
+
+交付门禁报 `generatedBy` / `isUndefined` 两字段「0 读取方」。**核实后确认
+是误报**——两者在测试里都有消费者（`isUndefined` 用于 fixture 分支判断，
+`generatedBy` 用于 oracle 来源断言）。门禁静态检查只扫生产路径，`.ts`
+生成器不在其分析范围。**未修**（修了会破坏 oracle 来源防护）。
+
+### 遗留
+
+动态 appendix 仍未移植：`buildDynamicAppendixParts` /
+`buildDynamicAppendix` / `buildLatestTurnVolatileBlock` /
+`buildVolatileBlock` / `buildConsolidatedBlock`。
+
+### 下一步
+
+**`buildDynamicAppendixParts` 是硬骨头**——它需会话状态（toolHistory /
+taskProgress / decisions 等 per-turn 字段）。
+
+**动手前必须做两件事**（勿凭本节估价）：
+1. grep 核实 Go 侧是否已有这些字段的载体（`internal/session` 或
+   `internal/context`）
+2. 若载体不存在，先评估「建最小会话状态容器」的成本，再决定是否值得
+
+**替代路径**：若会话状态成本过高，可转向其他**独立可闭合**的面——
+例如 `internal/prompt` 里其他未移植的纯函数，或换到别的模块。
+
+**审批线剩余**：审批提示往返通道（需先定 stdin 争用架构，建议单独立项）。
+
 ### 下一步（第四十八刀遗留段，2026-09-23）
 
 **本刀再次印证：动手前必须核实消费端**——上一轮的建议（做 config 校验层）
