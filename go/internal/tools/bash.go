@@ -81,13 +81,29 @@ func (t *bashTool) Timeout(p *CallParams) time.Duration {
 // RequiresApproval：破坏性命令**必须**批准，不受会话档位影响（硬闸门）。
 //
 // 这是 fail-closed 的：宁可多问一次，也不静默执行不可逆操作。
+//
+// **第五十刀修正（对账 TS）**：本函数曾写成 `p.ApprovalMode != "dangerously-
+// skip-permissions"`——即**普通命令在非放开档也返回 true**。那与 TS 不等价：
+// TS 的 `bash.ts:1128-1150` 只在命中危险模式（`matchesDangerousBash` /
+// `INJECTION_PATTERNS` / 敏感 git add）时返回 true，普通 `ls`/`echo` 返回
+// **false**（普通命令的审批由 `assessToolRisk` 的风险分级在 auto-safe 档
+// 决定，不由工具签名决定）。
+//
+// 旧写法之所以没暴露问题，是因为 `RequiresApproval` 的返回值**从无消费者**
+// （见 `registry.go:302` 的 `NeedsApproval` 零调用者）。第五十刀接线后，
+// 旧写法会拦下所有普通命令——故一并修正。
 func (t *bashTool) RequiresApproval(p *CallParams) bool {
 	cmd := strArg(p.Input, "command")
-	if isDestructiveCommand(cmd) {
-		return true // 硬闸门：即使 dangerously-skip-permissions 也需确认
-	}
-	// 非破坏性命令按会话档位
-	return p.ApprovalMode != "dangerously-skip-permissions"
+	// 破坏性/不可逆命令：硬闸门，任何档位都要批准。
+	return isDestructiveCommand(cmd)
+}
+
+// RequiresHardGate 实现 `HardGate`——破坏性命令**无条件**需人工批准。
+//
+// 与 `RequiresApproval` 同判据（bash 的"需批准"本就是硬闸门语义），
+// 但由 loop 的门控显式消费：任何档位都不放行。
+func (t *bashTool) RequiresHardGate(p *CallParams) bool {
+	return isDestructiveCommand(strArg(p.Input, "command"))
 }
 
 // destructivePatterns 是破坏性/不可逆命令模式。

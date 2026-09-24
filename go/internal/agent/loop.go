@@ -748,6 +748,16 @@ func (l *Loop) Run(ctx context.Context, userMessage string) error {
 	return fmt.Errorf("已达最大轮数 %d——任务未完成（防无限循环）", maxTurns)
 }
 
+// approvalBlockedMarker 是审批拒绝文案的稳定标记。
+//
+// **为什么用标记而非裸文案**：它同时是 ① 模型可见的拒绝信号、
+// ② 接线测试的断言锚点。单独提取成常量，避免测试与实现漂移。
+//
+// 语义对账 TS `tool-pipeline.ts:1283` 的 deny 分支——「instructive,
+// non-retry denial」：这不是对改动本身的否决，而是「需人工批准，模型无法
+// 自行授予」；重复发同一调用只会再撞同一道门。
+const approvalBlockedMarker = "需人工批准（agent 无法自行授权）"
+
 // executeTool 执行单个工具调用。
 func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 	// 截断的调用必须拒绝执行——把半截参数喂给工具（尤其 bash）比失败更危险。
@@ -788,6 +798,55 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 	}
 
 	started := time.Now()
+
+	// ── 审批硬闸门（第五十刀接线）──
+	//
+	// 对账 TS `tool-pipeline.ts` 的审批门控（`shouldAsk` 决策树）。**Go 侧此前
+	// 完全没有这一环**：`tools.Registry.NeedsApproval` 零调用者，工具的
+	// `RequiresApproval` 实现（bash 破坏性命令 / git commit / 写工具）返回值
+	// **无人消费**——默认档 `auto-safe` 下 `rm -rf`、`git reset --hard` 会
+	// 静默执行，而工具层声明了「需批准」。
+	//
+	// **为什么用 `RequiresHardGate` 而非 `NeedsApproval`（关键）**：
+	//
+	//   - `NeedsApproval` 背后是**档位驱动**的 `RequiresApproval`——写工具在
+	//     非放开档恒返回 true。TS 侧这类返回值由完整决策树消费（档位 × 风险
+	//     分级 × pathGrant × allowlist × headless 中和），**不是直接拒绝**。
+	//     Go 侧无该决策树与提示通道，直接消费会拦下所有写操作（首版实测：
+	//     6 个既有测试转红，`write_file` 在默认档下完全不可用）。
+	//   - `RequiresHardGate` 表达「**任何档位都不能绕过**」——bash 的破坏性
+	//     命令即此类。这是无提示通道时唯一能安全闭合的子集。
+	//
+	// **scope（有意收窄）**：只接硬闸门。完整的档位门控待审批提示往返通道
+	// （`onApprovalRequired` 对应物）与 `assessToolRisk` 风险分级落地后接入。
+	//
+	// **行为**：命中时不执行工具，返回模型可见的「指令性非重试拒绝」
+	// （对账 TS `tool-pipeline.ts:1283` 的 deny 分支语义）——不是否决改动
+	// 本身，而是「需人工批准，模型无法自行授予」；重复发同一调用只会再撞
+	// 同一道门，故文案明确要求不要重试。
+	if l.registry.RequiresHardGate(tc.name, p) {
+		reason := ""
+		if tc.name == "bash" {
+			if cmd, ok := tc.input["command"].(string); ok {
+				reason = tools.DestructiveReason(cmd)
+			}
+		}
+		target := ""
+		if tc.name == "bash" {
+			if cmd, ok := tc.input["command"].(string); ok {
+				target = " (" + truncateRunes(cmd, 60) + ")"
+			}
+		}
+		msg := "工具 \"" + tc.name + "\"" + target + " " + approvalBlockedMarker + "。\n"
+		if reason != "" {
+			msg += "命中破坏性模式：" + reason + "。\n"
+		}
+		msg += "这是**不可逆操作**，agent 无法自行批准。\n" +
+			"不要重复发出同一调用——它会再次撞上同一道门，白白消耗轮次预算。\n" +
+			"请改用其他方式完成任务，或停下来向用户说明哪一步需要授权。"
+		return contract.Result{Content: msg, IsError: true}
+	}
+
 	result, err := l.registry.Execute(ctx, tc.name, p)
 	if err != nil {
 		result = contract.Result{

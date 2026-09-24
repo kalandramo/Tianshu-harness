@@ -57,10 +57,29 @@ func TestBenignCommandNoApprovalWhenOpen(t *testing.T) {
 			t.Errorf("非破坏性命令 %q 在放开档位下不应需批准", cmd)
 		}
 	}
-	// 但在 auto-safe 档位下需要
-	p := &CallParams{Input: map[string]any{"command": "echo hi"}, ApprovalMode: "auto-safe"}
-	if !tool.RequiresApproval(p) {
-		t.Error("auto-safe 档位下命令应需批准")
+	// **第五十刀修正（对账 TS）**：普通命令在 auto-safe 档下**也不需**工具级批准。
+	//
+	// 原断言写「auto-safe 档位下命令应需批准」——那是旧实现的档位驱动语义
+	// （`ApprovalMode != "dangerously-skip-permissions"`），与 TS 不等价。
+	// TS 的 `bash.ts:1128-1150` 只在命中危险模式时返回 true；普通命令的审批
+	// 由 `assessToolRisk` 的风险分级决定，不由工具签名决定。
+	//
+	// 若此处断言反了，接线后所有普通 bash 命令都会被拦——bash 在默认档
+	// （auto-safe）下将完全不可用。
+	for _, cmd := range benign {
+		p := &CallParams{Input: map[string]any{"command": cmd}, ApprovalMode: "auto-safe"}
+		if tool.RequiresApproval(p) {
+			t.Errorf("非破坏性命令 %q 在 auto-safe 档下也不应需工具级批准（对账 TS）", cmd)
+		}
+	}
+	// 而破坏性命令在**任何**档位都需批准（硬闸门）。
+	for _, cmd := range []string{"rm -rf /tmp/x", "git reset --hard"} {
+		for _, mode := range []string{"auto-safe", "manual", "dangerously-skip-permissions"} {
+			p := &CallParams{Input: map[string]any{"command": cmd}, ApprovalMode: mode}
+			if !tool.RequiresApproval(p) {
+				t.Errorf("破坏性命令 %q 在 %s 档必须需批准（硬闸门）", cmd, mode)
+			}
+		}
 	}
 }
 

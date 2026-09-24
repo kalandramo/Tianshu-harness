@@ -298,6 +298,42 @@ func (r *Registry) Execute(ctx context.Context, name string, p *CallParams) (con
 	return result, nil
 }
 
+// HardGate 是「任何档位都不能绕过」的硬闸门工具。
+//
+// **与 RequiresApproval 的区别（关键）**：
+//
+//   - `RequiresApproval` 表达「**按档位**可能需要批准」——它的返回值依赖
+//     `p.ApprovalMode`（如写工具：非放开档返回 true）。TS 侧这类返回值由
+//     `tool-pipeline` 的完整决策树消费（档位 × 风险分级 × pathGrant ×
+//     allowlist × headless 中和），**不是直接拒绝**。
+//   - `HardGate` 表达「**无条件**需人工批准」——与档位无关（如 bash 的
+//     破坏性命令、git commit）。这类调用在任何档位下都不该静默执行。
+//
+// **为什么单独提取**：Go 侧尚无审批提示往返通道（`onApprovalRequired` 无
+// 对应物），也没有 `assessToolRisk` 风险分级。直接消费 `RequiresApproval`
+// 会把写工具一并拦下（默认档下 `write_file` 将不可用）。故门控只作用于
+// `HardGate`——这是无提示通道时唯一能安全闭合的子集。
+//
+// 完整的档位门控待审批提示通道落地后接入。
+type HardGate interface {
+	RequiresHardGate(p *CallParams) bool
+}
+
+// RequiresHardGate 报告该次调用是否命中硬闸门。
+//
+// 未实现 `HardGate` 的工具恒返回 false（不参与硬闸门）。
+func (r *Registry) RequiresHardGate(name string, p *CallParams) bool {
+	t, ok := r.tools[name]
+	if !ok {
+		return false
+	}
+	hg, ok := t.(HardGate)
+	if !ok {
+		return false
+	}
+	return hg.RequiresHardGate(p)
+}
+
 // NeedsApproval 报告该次调用是否需要批准。
 func (r *Registry) NeedsApproval(name string, p *CallParams) bool {
 	t, ok := r.tools[name]
