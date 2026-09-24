@@ -334,7 +334,32 @@ func (r *Registry) RequiresHardGate(name string, p *CallParams) bool {
 	return hg.RequiresHardGate(p)
 }
 
-// NeedsApproval 报告该次调用是否需要批准。
+// NeedsApproval 报告该次调用是否需要批准（**按档位**语义）。
+//
+// 对账 TS `ToolRegistry.needsApproval`（`tool-pipeline.ts:1092` 有真实消费者）。
+//
+// ## 当前状态：零调用者（**有意**，非缺陷）
+//
+// 第五十刀核实：本函数在 Go 侧**无生产调用者**。这与「有声明、无执行」的
+// 缺陷不同——后者是无意遗漏（`RequiresApproval` 的返回值曾无人消费，导致
+// 破坏性命令静默执行），本函数则是**有意暂缓**：
+//
+//   - 它的返回值是**档位驱动**的（写工具在非放开档恒返回 true）。TS 侧由
+//     `tool-pipeline` 的完整决策树消费（档位 × 风险分级 × pathGrant ×
+//     allowlist × headless 中和），**不是直接拒绝**。
+//   - Go 侧缺该决策树、缺 `assessToolRisk` 风险分级、缺审批提示往返通道
+//     （`onApprovalRequired` 对应物）。直接消费会拦下所有写操作——`write_file`
+//     在默认档下将完全不可用（第五十刀首版实测：6 个既有测试转红）。
+//
+// ## 接线条件（勿在条件满足前接）
+//
+// 接入前必须先有：① `assessToolRisk` 的纯函数子集（风险分级）；
+// ② 审批提示往返通道（或 TS headless 语义的确定性解析）；
+// ③ 写工具的 `RequiresApproval` 语义订正（当前 `ApprovalMode != "..."` 与
+// TS 的 `() => true` + pipeline 中和不等价）。
+//
+// 当前生效的是 `RequiresHardGate`（无条件硬闸门）——那是无上述前置时唯一
+// 能安全闭合的子集。
 func (r *Registry) NeedsApproval(name string, p *CallParams) bool {
 	t, ok := r.tools[name]
 	if !ok {

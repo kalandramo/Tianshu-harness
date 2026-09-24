@@ -90,7 +90,7 @@ func (t *bashTool) Timeout(p *CallParams) time.Duration {
 // 决定，不由工具签名决定）。
 //
 // 旧写法之所以没暴露问题，是因为 `RequiresApproval` 的返回值**从无消费者**
-// （见 `registry.go:302` 的 `NeedsApproval` 零调用者）。第五十刀接线后，
+// （见 `registry.go` 的 `Registry.NeedsApproval` 零调用者）。第五十刀接线后，
 // 旧写法会拦下所有普通命令——故一并修正。
 func (t *bashTool) RequiresApproval(p *CallParams) bool {
 	cmd := strArg(p.Input, "command")
