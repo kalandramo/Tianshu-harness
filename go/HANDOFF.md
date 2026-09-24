@@ -5556,8 +5556,122 @@ Go 侧当前无 memo（每次重读），天然满足；该测试锁住语义，
 - `classifyDeclaredCommand` / `matchVerifyRoutes` 同样待消费端。
 - 全量测试仍有 `TestLossyHookCooldownAcrossRuns`（**并发会话的**）与
   `TestBashTimeoutKillsProcessGroup`（并发负载下的 flaky）失败，非本刀引入。
+  → **`TestLossyHookCooldownAcrossRuns` 已在第四十九刀修复**（见下）。
+
+## 第四十九刀：lossy 观测防线完善（2026-09-24）
+
+**两件事同属 lossy 防线，且共享 `loop.go`**（`runHookPhase` 签名改动与守卫
+调用点交织），故合成一个提交（`29e01731`）。
+
+### 一、fix：快照 `Turn` 改 session turn（修跨 Run 冷却误抑制）
+
+**缺陷**：快照 `Turn` 填的是 **run 局部序号**（`buildRuntimeSnapshot(turn)`
+传循环变量），而 TS 的 `snapshot.turn` 是 session turn
+（`loop-factory.ts:516` 的 `session.getTurnCount()`）——**单 Run 内恒定、
+跨 Run 推进**。二者不等价：run 局部序号每 Run 从 0 重启，新 Run 首轮与
+上一 Run 首轮撞键，冷却判定 `Snapshot.Turn == lastFiredTurn` 成立 →
+新 Run 的 lossy advisory 被**误抑制**，用户看不到本该出现的提醒。
+
+**修复**（4 文件）：
+- `hook_snapshot.go`：`buildRuntimeSnapshot` 去掉 turn 形参，改填
+  `l.SessionTurn()`；`runHookPhase` 同步去掉形参
+- `loop.go`：三处 `runHookPhase` 调用点同步改签名
+- `lossy_markers.go`：scope 收窄注释订正——把 `[stdout/stderr truncated:`
+  归入「Go 侧不产生」（bash 把两条流统一成一条 `[output truncated: ...]`，
+  `internal/tools/bash.go:226-236`）；TS 标记数 14→15 订正
+- `lossy_observation.go`：删掉「首版误填 run 局部序号但行为等价」的错误论断
+
+**回归测试的复现手法首版失效（值得记）**：
+
+首版用「同一大文件读两次」制造两次有损观测——**复现失败**。根因不在冷却键，
+而在 **read-ref 会话去重**：第二次读同一未变文件时，read_file 返回
+`[read-ref] big.txt 本会话已读且未变（1 行，200318 bytes）...`（298 字符），
+**不是有损输出**，`IsLossyObservation` 为 false，hook 正确地不触发。
+
+探针实测确认（`Turn=2` 但 `isLossy=false`）。改用**两个不同的大文件**后复现
+成立。**教训**：写复现测试前先确认夹具真能产出被测状态——否则红的是夹具不是缺陷。
+
+**判别力双向实测**：
+- 修复后（session turn）：Run1 Turn=1 / Run2 Turn=2，两次都触发 → **绿**
+- 变异（Turn 改回 `0`）：两次都是 0，Run2 被抑制 → **红**
+
+### 二、feat：negative-fact-detector（有损观测的纠正性内联守卫）
+
+对账 TS `src/agent/negative-fact-detector.ts`（77 行，2 导出）。
+
+| 文件 | 内容 |
+|---|---|
+| `negative_fact_detector.go` | `DetectNegativeFactInLossyResult` + `GuardLossyToolResult`，13 条负向模式逐条对账（含 `\b` 词边界） |
+| `negative_fact_detector_test.go` | 12 检测用例 + 13 条模式覆盖 + 词边界 + 3 个 guard 用例 |
+| `negative_fact_guard_wiring_test.go` | 端到端接线测试（正例 + 反面对照） |
+| `loop.go:627` | 在 `appendAndPersist` 前调用守卫 |
+
+**语义**：工具输出**同时**含结构化有损标记与负向断言（empty / not found /
+0 results 等）时，在模型读到之前**前置注入** `[⚠ VERIFICATION_REQUIRED]`。
+这是**纠正性**机制，与 `lossy-observation` hook（**预防性** advisory）构成
+TS 注释明确的一对协作。两者共用 `lossy-markers.go` 的标记表。
+
+**接线位置经对账确认**：TS 的守卫在 `tool-execution.ts:609`（`executeBatch`
+内），TS 注释明说顺序是「所有分类器/artifact 拦截/lossy guard 之后、存入
+历史之前」，「UI 回调已收到全文，保真不受影响」。Go 侧对应为
+`emit`（UI 用原文）→ guard → `appendAndPersist`。Go 侧**无 outputSanitize**
+（未移植），故 guard 是唯一后置改写点。
+
+**用例集有意收窄（重要）**：TS 的 10 个用例里 6 个用 `[storm-collapsed:` /
+`[tiered-summary:` / `[stdout truncated:` 标记——这些在 Go 侧**刻意不移植**
+（见 `lossy_markers.go` 文件头：Go 不产生它们，移植会让检测永不触发）。
+**首版照搬 TS 用例 → 6 红，根因是用例假设错而非实现错**，已按 Go 侧真实
+4 条标记（`[collapsed ` / `[output truncated:` / `PARTIAL view of ` /
+`<microcompacted `）重写。
+
+**接线测试首版假红（第二处夹具坑）**：用 30000 字符单行想触发截断——但
+bash 单流上限是 **8MB**，且单行不触发行数截断。探针定位后改用 `seq 1 300`
+（超 `modeloutput.go:37` 的 `modelMaxLines = 200`）才触发。
+
+### 验证
+
+- `gofmt -l` 零违规 · `go build ./...` exit=0 · `go vet ./...` exit=0
+- `go test ./internal/agent/ -count=1` ok
+- **用户级验收 3/3 met**：
+  1. 有损+负向断言 → 请求体含 `[⚠ VERIFICATION_REQUIRED]`（接线测试 PASS）
+  2. 无损正常输出 → 无标记（反面对照 PASS）
+  3. **变异反证**：摘掉接线 → 接线测试转红（证明覆盖生产装配路径，
+     不是恒真断言）
+
+### 遗留
+
+- **`go/.rivet/` 曾出现在 git status**——`.gitignore` 的 `.rivet/` 系列规则
+  都是**根锚定**的，不匹配子目录（同类漏洞此前已由 `desktop/.rivet/` 覆盖，
+  漏了 `go/`）。已在 `dc892c67` 补规则。
+- lossy 防线现有**三个组件**齐备：标记表（`lossy_markers.go`）、预防性 hook
+  （`lossy_observation.go`）、纠正性守卫（`negative_fact_detector.go`）。
+  TS 侧同族的 `negative-fact-detector` 与 `lossy-observation-hook` 已对齐。
 
 ### 下一步
+
+**先读本节，不要直接采信下方「建议的第一刀」**——那份候选表已滞后多刀
+（`related_tests`/`leave_mark` 第三十七刀、`ask_user_question` 第三十八刀、
+`skill` 第三十九刀均已完成）。
+
+**本刀核实（2026-09-24）**——对剩余候选逐个 grep 依赖面：
+
+| 候选 | 文档标注 | 实测依赖面 | 判定 |
+|---|---|---|---|
+| `request_path_access` | — | 依赖**审批往返**子系统；Go 侧 `grep -l Approval go/internal/` **零命中** | 需先移植审批层，非浅 |
+| `undo` | 「中」（称 checkpoint.go 已有部分） | 依赖 `FileHistory`（`src/agent/file-history.ts` 345 行 + persist 43 行）；Go 侧**完全不存在** | **文档低估**，实际为深 |
+| `job` / `monitor` | 「深」 | 依赖后台进程管理；Go 侧有 `proctree.go`(113 行) 地基 | 深，标注准确 |
+| `ast_grep` / `ast_edit` | 「深」 | 需 tree-sitter 绑定，Go 侧无 | 深，标注准确 |
+| `web_*` | 「超出内核」 | 网络层 | 超出内核 |
+
+**`internal/session` 的建议也已过期**——该包已有 10 个生产文件、2,641 行、
+28 个包外消费者，`loop.go` 直接使用（见上方「修正」节）。
+
+**结论**：剩余工具候选**没有一个真正的「浅依赖」**。若继续补工具广度，
+最可行的切入是 **`request_path_access` + 审批层**（它同时解锁批量/目录级
+授权与 bash 越界授权，是安全面能力）；若优先补认知深度，则按下方
+「volatile 块与动态 appendix」推进（那是缓存命中率的真正杠杆）。
+
+### 下一步（第四十八刀遗留段，2026-09-23）
 
 **本刀再次印证：动手前必须核实消费端**——上一轮的建议（做 config 校验层）
 经核实是「移植 5 个死符号」，而真正该做的是修一个已存在的安全缺口。
