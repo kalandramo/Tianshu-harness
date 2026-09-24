@@ -6009,6 +6009,120 @@ go test ./... -count=1 全绿
 **若继续审批线**：建审批提示往返通道（需先解决同步 REPL 的 stdin 争用，
 属架构决策）。
 
+## 第五十三刀：用户配置读取（2026-09-24）
+
+**任务来源**：第五十二刀遗留的「生产者缺失」——本刀闭合该链路。
+
+### 缺陷形态：第五十刀的镜像
+
+第五十二刀交付了 deny 规则的**判定层 + 消费端**，但**生产者缺失**：
+`Config.Permissions` 只能由代码/测试注入，用户在 `~/.rivet/config.json`
+里写的 deny 规则**读不到**（验收面第 5 条 blocked）。
+
+| 刀 | 形态 |
+|---|---|
+| 第五十刀 | 有生产者（`RequiresApproval`），**无消费者** |
+| 第五十一刀 | 机制缺失（出界路径无门控），补上 |
+| 第五十二刀 | 机制**根本不存在**（deny 无实现） |
+| **第五十三刀** | 有消费者（deny 门），**无生产者**（配置读取缺失） |
+
+### 称量修正：scope 比预估更完整
+
+动手前核实 TS 结构，**推翻了「只读用户层是最小子集」的假设**：
+
+`src/config/workspace-schema.ts` **不含 permissions**（零命中）——permissions
+只存在于**用户全局层**（`schema.ts:555` 挂在 `agent` 下）。故本包只读用户层
+即**语义完整**，不是"最小子集"。原估算的「不做三层合并 = 有语义偏差」是错的。
+
+### 落地
+
+- `internal/config/permissions.go`（190 行，**新建包**）：
+  `DefaultRivetHome` / `RivetHome` / `UserConfigPath` / `LoadPermissions` /
+  `LoadPermissionsOrNil`
+- `cmd/tianshu/main.go:171`：`Permissions: config.LoadPermissionsOrNil()`
+- `internal/config/permissions_test.go`（226 行）：13 子用例
+
+### 对账 TS 的三个关键点
+
+**1. Windows 路径**（`paths.ts:27-32`）：TS 在 win32 用
+`%LOCALAPPDATA%\.rivet`，**不是** `~/.rivet`。若 Go 侧统一用 home，Windows
+用户配置永远读不到。本机（win32）实测钉住。
+
+**2. 嵌套层级**（`schema.ts:555`）：permissions 在 `agent.permissions`，
+**不是顶层**。测试 `★嵌套位置必须是agent.permissions` 用顶层 permissions
+作反例钉住——写错层级配置永远读不到。
+
+**3. 三级优先**（`paths.ts:40-63`）：`RIVET_CONFIG_PATH` > `RIVET_HOME` >
+平台默认，逐字对账。
+
+### 用户级验收（第五十二刀 blocked 那条，现 met）
+
+**真实二进制 + 真实配置文件 + mock 端点**，双向对照：
+
+| 场景 | 结果 |
+|---|---|
+| A：配置含 `deny: [{tool:bash, params:{command:"echo*"}}]` | **被拦**——返回逐字对账 TS 的 deny 文案 |
+| B：无配置文件 | **放行**——`[echo hello] exit=0`，真实执行 |
+
+两场景结果**相反**，证明配置读取真实生效，不是"一律拦下"的假象。
+
+**变异反证**：把 `Permissions` 改为返回 nil（摘除配置读取）→ 同一配置、
+同一命令 → `[echo hello] exit=0`（真实执行），deny 文案消失。**变异体行为
+与场景 B 一致**，证明配置读取是唯一使 deny 生效的环节。
+
+（首个变异体因 import 未使用而编译失败，**不算数**——编译失败的红不是断言
+失败的红。改用可编译变异重做。）
+
+**测试基建教训**：mock 端点必须返回 `text/event-stream`（SSE）——Go 侧
+client 拒绝普通 JSON 响应。首次尝试用普通 JSON 失败，报「content-type 是
+application/json（不是 SSE 流）」。另外 Git Bash 的 `/tmp` 与 Windows 原生
+Python 看到的路径不同（前者映射到 `%LOCALAPPDATA%\Temp`），跨进程传路径时
+要留意。
+
+### 验证
+
+`TestUserConfigPathParity` 4 + `TestLoadPermissionsDeny` 3 +
+`TestLoadPermissionsFailClosed` 4 = 13 子用例全绿。fail-closed 覆盖：文件
+不存在→nil、非法 JSON→error 不 panic、无 permissions 字段→nil、空 deny
+数组→非 nil 空规则。
+
+TDD：先写测试确认 RED（10 个 undefined 符号），再实现至 GREEN。
+
+gofmt 干净 · go build ./... exit=0 · go vet ./... exit=0 ·
+go test ./... -count=1 全绿 · 探针与临时产物已清理
+
+### 设计偏差（显式声明）
+
+**省略 TS 的 UX 提示**：TS 在 `RIVET_HOME` 指向新位置但无 config.json 时，
+向 stderr 打「旧配置还在默认位置」的提示（`paths.ts:48-60`）。那是**桌面端
+引导迁移**的 UX 辅助，Go CLI 无对应场景，省略。不影响路径解析语义——
+返回值与 TS 逐字节一致。
+
+**错误处理粒度**：TS 用 zod 校验，permissions 类型不符会导致**整个配置
+加载失败**；本包只让 permissions 部分失效（其他配置面不受影响）。差异理由
+是 scope——本包只读 permissions，不该因它影响其他配置。
+
+### 遗留
+
+**`internal/config` 完整形态仍未做**：默认 → `~/.rivet` → 项目三层合并 +
+schema 校验 + 迁移逻辑。`HANDOFF.md:3017` 待办项**仍不勾选**。本包是
+**permissions 专用子集**，**不声称代表完整配置层**——后续刀若需要其他
+配置面（如 `search` / `workers` / `mcp`），仍需各自实现读取。
+
+**审批线剩余**：审批提示往返通道。前置是解决同步 REPL 的 stdin 争用
+（`main.go:87` 的 `bufio.Scanner(os.Stdin)` 与工具执行中途提问的冲突）——
+属**架构决策**，不是移植工作。
+
+### 下一步
+
+**审批线的自然收尾**：deny + 路径授权 + 硬闸门三门已就位，且 deny 现已
+端到端可用。剩余缺口是「非 skip 档的越界/破坏性操作走**拒绝**而非**真审批**」
+——因为无提示通道。这需要先定架构（stdin 争用方案），建议**单独立项**，
+不在本线继续堆。
+
+**若换方向**：按下方「volatile 块与动态 appendix」推进——缓存命中率的
+真正杠杆（见「建议的第一刀」节）。
+
 ### 下一步（第四十八刀遗留段，2026-09-23）
 
 **本刀再次印证：动手前必须核实消费端**——上一轮的建议（做 config 校验层）
