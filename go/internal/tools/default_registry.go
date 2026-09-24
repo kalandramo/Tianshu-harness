@@ -17,7 +17,9 @@ type Options struct {
 // NewDefaultRegistry 装配默认工具集。
 //
 // 对账 src/tools/default-registry.ts 的 kernel 层。Go 版先实现内核子集——
-// 完整 44 个工具是分波目标，此处只收「读写检索执行」四类的基础工具。
+// 完整 51 个工具（TS full preset 基线，`tool-preset.test.ts:100` 的
+// totalCount('full') 断言；桌面端有调度器时 +3 = 54）是分波目标，
+// 此处只收「读写检索执行」四类的基础工具。
 //
 // 装配顺序不影响行为（Definitions() 按名升序输出，保证请求体字节稳定），
 // 但保持与 TS 相近的分组便于对账。
