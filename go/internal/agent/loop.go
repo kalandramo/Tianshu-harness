@@ -989,6 +989,34 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 		}
 	}
 
+	// ── bash 写命令审批门（第六十三刀接线）──
+	//
+	// 对账 TS `tool-pipeline.ts:1163-1172` 的 `bashWriteRequiresApproval` 分支。
+	// **Go 侧此前完全没有这一环**：`RequiresBashWriteApproval`
+	// （`approval_risk.go:372`）零调用者。
+	//
+	// **缺口实测**（第六十三刀）：`mkdir foo` 在 **manual 档**下——
+	// 硬闸门 false（非破坏性）、档位门 false（bash 的 `RequiresApproval`
+	// 已订正为 `isDestructiveCommand`）→ **静默执行**。TS 侧同一命令被
+	// `bashWriteRequiresApproval` 拦下。
+	//
+	// **为什么硬闸门不能覆盖它**（曾误判为「已覆盖」）：硬闸门用
+	// `isDestructiveCommand`（`rm -rf` / `git reset --hard`），本门用
+	// `BashCommandMayWrite`（`mkdir|touch|cp` / `>file`，risky 含
+	// `rm|mv|chmod|dd`）——两个命令集**只有部分交集**，`mkdir` 不在硬闸门内。
+	//
+	// **顺序**：在 pathGrant 门**之后**（对账 TS 三元链：`pathGrantNeed` →
+	// `bashWriteRequiresApproval`），在 `Execute` 之前。
+	if bashWriteNeedsApproval(tc.name, tc.input, l.cfg.ApprovalMode, allowRulesOf(l.cfg)) {
+		cmd, _ := tc.input["command"].(string)
+		msg := "工具 \"" + tc.name + "\" (" + truncateRunes(cmd, 60) + ") " + approvalBlockedMarker + "。\n"
+		msg += "该命令会写入文件系统，需人工批准。\n" +
+			"这是**需人工批准的操作**，agent 无法自行授予。\n" +
+			"不要重复发出同一调用——它会再次撞上同一道门，白白消耗轮次预算。\n" +
+			"请改用其他方式完成任务，或停下来向用户说明哪一步需要授权。"
+		return contract.Result{Content: msg, IsError: true}
+	}
+
 	result, err := l.registry.Execute(ctx, tc.name, p)
 	if err != nil {
 		result = contract.Result{

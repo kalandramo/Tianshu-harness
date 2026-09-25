@@ -120,3 +120,103 @@ func TestCLIEndToEndAutoSafeAllowsWrite(t *testing.T) {
 		t.Errorf("文件内容应为 hi，实得 %q", string(data))
 	}
 }
+
+// TestCLIEndToEndManualBlocksBashWrite —— manual 档下 bash 写命令在真实 CLI 被拦。
+//
+// 覆盖单测覆盖不到的一环：**档位真的从 CLI flag 传到 bash 写审批门**。
+// 上一刀（第六十二刀）的 e2e 只验了文件工具（write_file），本刀补 bash 路径——
+// 两条路径的门不同（档位门 vs bash 写门），必须各验一次。
+func TestCLIEndToEndManualBlocksBashWrite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("需要构建二进制，short 模式跳过")
+	}
+
+	root := t.TempDir()
+	var bodies []string
+	var calls int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt64(&calls, 1)
+		body, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(body))
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch n {
+		case 1:
+			fmt.Fprint(w, sseToolCallArgs("c1", "bash", map[string]any{
+				"command": "mkdir cli-gate-probe-dir",
+			}))
+		default:
+			fmt.Fprint(w, sseText("完成"))
+		}
+	}))
+	defer srv.Close()
+
+	bin := buildCLIBinary(t, "tianshu-bashgate-manual-test")
+	cmd := exec.Command(bin,
+		"-p", "建个目录",
+		"--base-url", srv.URL,
+		"--model", "test-model",
+		"--approval", "manual",
+	)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "DEEPSEEK_API_KEY=test-key")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("CLI 输出：%s", out)
+		t.Fatalf("CLI 运行失败：%v", err)
+	}
+
+	if len(bodies) < 2 {
+		t.Fatalf("应至少 2 个请求，实得 %d\nCLI 输出：%s", len(bodies), out)
+	}
+	// 观察 1：拒绝文案回灌。
+	if !strings.Contains(bodies[1], "需人工批准") {
+		t.Errorf("manual 档下 bash mkdir 应被拦且文案回灌，第二轮请求片段：%.800s", bodies[1])
+	}
+	// 观察 2：**目录真未创建**（拦截真生效）。
+	if _, err := os.Stat(filepath.Join(root, "cli-gate-probe-dir")); err == nil {
+		t.Error("**目录被创建了**——manual 档下 bash 写审批门未生效")
+	}
+}
+
+// TestCLIEndToEndAutoSafeAllowsBashWrite —— auto-safe 档（默认）下 bash 写命令正常执行。
+//
+// **本刀最重要的回归**：若把 `safeWriteInNoSandbox` 的档位依赖漏掉
+// （即安全写对所有档都放行/都拦），默认档下 `mkdir` 要么被误拦、要么
+// 在 manual 档漏过。这里验默认档放行。
+func TestCLIEndToEndAutoSafeAllowsBashWrite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("需要构建二进制，short 模式跳过")
+	}
+
+	root := t.TempDir()
+	var calls int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt64(&calls, 1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch n {
+		case 1:
+			fmt.Fprint(w, sseToolCallArgs("c1", "bash", map[string]any{
+				"command": "mkdir cli-autosafe-probe-dir",
+			}))
+		default:
+			fmt.Fprint(w, sseText("完成"))
+		}
+	}))
+	defer srv.Close()
+
+	bin := buildCLIBinary(t, "tianshu-bashgate-autosafe-test")
+	// 不传 --approval → 默认 auto-safe。
+	cmd := exec.Command(bin, "-p", "建个目录", "--base-url", srv.URL, "--model", "test-model")
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "DEEPSEEK_API_KEY=test-key")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("CLI 输出：%s", out)
+		t.Fatalf("CLI 运行失败：%v", err)
+	}
+
+	// 观察：目录**真被创建**（默认档不该拦安全写）。
+	if _, err := os.Stat(filepath.Join(root, "cli-autosafe-probe-dir")); err != nil {
+		t.Fatalf("auto-safe 档下 `mkdir` 应被执行，实得错误：%v\nCLI 输出：%s", err, out)
+	}
+}

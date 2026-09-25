@@ -40,9 +40,9 @@
 //	                                                          （computer_use /
 //	                                                          request_path_access）
 //	                                                          Go 侧未移植 → 暂不接
-//	bashWriteRequiresApproval requiresBashWriteApproval      ⚠️ 已移植；bash 破坏性
-//	                                                          命令已由 RequiresHardGate
-//	                                                          覆盖（loop.go，先于本门）
+//	bashWriteRequiresApproval requiresBashWriteApproval      ✅ 第六十三刀接线
+//	                                                          （`bashWriteNeedsApproval`
+//	                                                          + loop.go 门）
 //	protectionMode            doomLoop + destructiveGit      ❌ 无 doom-loop 会话态
 //	allowlisted               isToolAllowed(allowRules)      ❌ 无 allowRules 装配
 //	canAutoApprove            sensorium 置信度               ❌ 无 sensorium
@@ -121,6 +121,63 @@ func decideApprovalGate(p *tools.CallParams, needsApproval, isHighRisk bool) app
 	}
 	// 未知档位（TS 的 `: false` 兜底）——不拦，保持既有行为。
 	return approvalGateDecision{Block: false}
+}
+
+// allowRulesOf 取出会话的 allow 规则（nil-safe）。
+//
+// `IsToolAllowed` 对空规则返回 false（fail-closed）——故 nil 与空切片等价，
+// 无需区分。对账 TS 的 `deps.config.permissions?.allow ?? []`。
+func allowRulesOf(cfg Config) []PermissionAllowRule {
+	if cfg.Permissions == nil {
+		return nil
+	}
+	return cfg.Permissions.Allow
+}
+
+// bashWriteNeedsApproval 对账 TS 的复合条件 `bashWriteRequiresApproval`。
+//
+// TS（`tool-pipeline.ts:1163-1167`）：
+//
+//	bashWriteRequiresApproval = requiresBashWriteApproval(tu.name, tu.input)
+//	  && !allowlisted && !bashAllowlisted
+//	  && !safeWriteInNoSandbox
+//	  && noSandbox
+//
+// **Go 侧代入**（两处恒值，理由见下）：
+//   - `noSandbox` 恒 **true**：Go 侧无内核沙箱（`isSandboxActive` 零命中）。
+//   - `bashAllowlisted` 恒 **false**：`isBashCommandAllowlisted` 未移植
+//     （依赖 `splitShellSegments`，是 `permissions.go` 的显式非目标）。
+//
+// 故化简为：
+//
+//	RequiresBashWriteApproval && !allowlisted && !safeWriteInAutoSafe
+//
+// **`safeWriteInNoSandbox` 的档位依赖不可省**：它含
+// `approvalMode === 'auto-safe'`——即「安全写（mkdir/touch/cp/echo>file，
+// 且写目标在工作区内）只在 auto-safe 档自动放行」。manual 档下同一命令
+// **仍要拦**。漏掉这个档位判断，会让 manual 档的写命令静默通过。
+//
+// **`HasOutOfWorkspaceWriteTarget` 是第二道闸（不可省）**：bash 的写目标
+// 不经文件工具的路径校验，`echo key >> ~/.ssh/authorized_keys` 若不在此
+// 拦下，会在 auto-safe 档零提示执行。
+//
+// 与硬闸门的关系：本函数管的**写**命令（`mkdir`/`cp`/`echo >`/`chmod`/
+// `rm`（无 -rf））与硬闸门管的**破坏**命令（`rm -rf`/`git reset --hard`）
+// 只有部分交集——`mkdir` 不在硬闸门内，故本门是独立的补强，不是重复。
+func bashWriteNeedsApproval(toolName string, input map[string]any, approvalMode string, allowRules []PermissionAllowRule) bool {
+	if !RequiresBashWriteApproval(toolName, input) {
+		return false
+	}
+	// TS: `!allowlisted` —— 用户显式 allow 规则可豁免。
+	if IsToolAllowed(toolName, input, allowRules) {
+		return false
+	}
+	// TS: `!safeWriteInNoSandbox` —— 仅 auto-safe 档豁免安全写。
+	cmd, _ := input["command"].(string)
+	if approvalMode == "auto-safe" && IsSafeWriteOnly(cmd) && !HasOutOfWorkspaceWriteTarget(cmd) {
+		return false
+	}
+	return true
 }
 
 // isHighRiskCall 报告该次调用是否被评估为高风险。
