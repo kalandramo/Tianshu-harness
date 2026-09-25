@@ -173,10 +173,20 @@ func (g *StaticGrantChecker) IsWriteGranted(path, cwd string) bool {
 // hasPathPrefix 判定 path 是否位于 prefixes 中某个目录之下（**按段边界**）。
 //
 // 不能简单用 `strings.HasPrefix`：`/a/b-evil` 会匹配 `/a/b`——fail-open。
+//
+// **两侧都做符号链接规范化**（`canonicalPath`）。原因：`pathsafe.Validate` 在
+// 授权判定时传入的是 **realpath 后**的路径（见 pathsafe.go 顶部不变量 2），而
+// 本 checker 持有的 prefix 是 `RawOutputDir()` 的**原始形态**。macOS 上
+// `os.TempDir()` 返回 `/var/folders/...`，realpath 后是
+// `/private/var/folders/...`——不规范化 prefix 会让**已授予的合法授权静默
+// 失效**（探针实测：grant 后 `read_file` 仍报 "Path outside project directory"）。
+//
+// 目录不存在时 `EvalSymlinks` 返回 error，回退到 `filepath.Clean` 值——授权
+// 目录在判定时通常已存在（落盘先于授权使用），且回退不改变原有段边界语义。
 func hasPathPrefix(path string, prefixes []string) bool {
-	clean := filepath.Clean(path)
+	clean := canonicalPath(path)
 	for _, p := range prefixes {
-		root := filepath.Clean(p)
+		root := canonicalPath(p)
 		if clean == root {
 			return true
 		}
@@ -191,6 +201,38 @@ func hasPathPrefix(path string, prefixes []string) bool {
 		return true
 	}
 	return false
+}
+
+// canonicalPath 返回路径的符号链接规范形；目标不存在时解析「最近的存在祖先」
+// 再接回不存在的尾部。
+//
+// 用于让授权判定与 `pathsafe.Validate` 的 realpath 空间对齐（见 hasPathPrefix）。
+//
+// **必须解析存在祖先而非只对整串 EvalSymlinks**：授权判定常针对**尚不存在**
+// 的文件（`raw.raw` 尚未落盘、或待写入的新文件）。只对整串 EvalSymlinks 会因
+// 「文件不存在」失败而回退到未解析形态，而 prefix（目录，已存在）却被解析了
+// ——两侧进入不同路径空间，段边界比较失败（探针实测的失败模式）。
+//
+// 与 `pathsafe.resolveNearestExisting` 同法（但无需 floor：授权路径的解析
+// 不涉及「项目根」概念）。
+func canonicalPath(p string) string {
+	clean := filepath.Clean(p)
+	if r, err := filepath.EvalSymlinks(clean); err == nil {
+		return r
+	}
+	var segments []string
+	cur := clean
+	for {
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return clean // 到文件系统根仍未找到存在祖先
+		}
+		segments = append([]string{filepath.Base(cur)}, segments...)
+		cur = parent
+		if r, err := filepath.EvalSymlinks(cur); err == nil {
+			return filepath.Join(append([]string{r}, segments...)...)
+		}
+	}
 }
 
 // ResetRawPersistStateForTests 重置落盘计数（测试用，避免跨测试污染）。
