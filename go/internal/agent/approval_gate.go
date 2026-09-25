@@ -74,13 +74,10 @@
 //	                                                          → **分支实际不可达**
 //	protectionMode            doomLoop + destructiveGit      ❌ 无 doom-loop 会话态
 //	                                                          （`DoomLoop` 零生产文件）
-//	allowlisted               isToolAllowed(allowRules)      ⚠️ 部分：`IsToolAllowed` +
-//	                                                          `allowRulesOf` 已有，
-//	                                                          但**只在 `bashWriteNeedsApproval`
-//	                                                          内部消费**（豁免 bash 写门）。
-//	                                                          TS 里它是**全工具面**的
-//	                                                          独立分支 → 其余工具的
-//	                                                          allow 规则**未生效**
+//	allowlisted               isToolAllowed(allowRules)      ✅ 第六十四刀接线
+//	                                                          （档位门内豁免，全工具面）
+//	                                                          注：`bashWriteNeedsApproval`
+//	                                                          内另有一处豁免（bash 写门）
 //	bashAllowlisted           isBashCommandAllowlisted       ❌ 未移植（同 bashDenied）
 //	canAutoApprove            sensorium 置信度               ❌ 无 sensorium
 //	                                                          （仅注释/字符串表）

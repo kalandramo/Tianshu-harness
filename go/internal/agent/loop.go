@@ -922,18 +922,29 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 	// **与硬闸门的互补**：硬闸门只覆盖 bash 破坏性命令（`HardGate` 接口）；
 	// 本门覆盖「档位驱动的写工具审批」——两者覆盖不同的工具面。
 	if decision := decideApprovalGate(p, l.registry.NeedsApproval(tc.name, p), isHighRiskCall(tc)); decision.Block {
-		target := ""
-		if tc.name == "bash" {
-			if cmd, ok := tc.input["command"].(string); ok {
-				target = " (" + truncateRunes(cmd, 60) + ")"
+		// **allowlist 豁免（第六十四刀补全）**：TS 三元链里 `allowlisted ? false`
+		// 是**全工具面**的独立分支（`tool-pipeline.ts:1226`），位于
+		// `bashWriteRequiresApproval` 之后、档位分支之前。Go 侧此前只把它
+		// 消费在 `bashWriteNeedsApproval` 内部（豁免 bash 写门），其余工具
+		// 在 manual 档下即使命中 allow 规则仍被拦。
+		//
+		// **为什么在档位门内做豁免而非另立一门**：TS 的语义是「命中 allow
+		// 规则 → 不拦（shouldAsk=false）」，效果等同于「跳过档位分支」。
+		// 硬闸门/deny 门在更前，不受影响（allow 不能豁免它们）。
+		if !IsToolAllowed(tc.name, tc.input, allowRulesOf(l.cfg)) {
+			target := ""
+			if tc.name == "bash" {
+				if cmd, ok := tc.input["command"].(string); ok {
+					target = " (" + truncateRunes(cmd, 60) + ")"
+				}
 			}
+			msg := "工具 \"" + tc.name + "\"" + target + " " + approvalBlockedMarker + "。\n"
+			msg += decision.Reason + "。\n" +
+				"这是**需人工批准的操作**，agent 无法自行授予。\n" +
+				"不要重复发出同一调用——它会再次撞上同一道门，白白消耗轮次预算。\n" +
+				"请改用其他方式完成任务，或停下来向用户说明哪一步需要授权。"
+			return contract.Result{Content: msg, IsError: true}
 		}
-		msg := "工具 \"" + tc.name + "\"" + target + " " + approvalBlockedMarker + "。\n"
-		msg += decision.Reason + "。\n" +
-			"这是**需人工批准的操作**，agent 无法自行授予。\n" +
-			"不要重复发出同一调用——它会再次撞上同一道门，白白消耗轮次预算。\n" +
-			"请改用其他方式完成任务，或停下来向用户说明哪一步需要授权。"
-		return contract.Result{Content: msg, IsError: true}
 	}
 
 	// ── 越界路径授权门（第五十一刀 Wave 2c 接线）──
@@ -1007,7 +1018,18 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 	//
 	// **顺序**：在 pathGrant 门**之后**（对账 TS 三元链：`pathGrantNeed` →
 	// `bashWriteRequiresApproval`），在 `Execute` 之前。
-	if bashWriteNeedsApproval(tc.name, tc.input, l.cfg.ApprovalMode, allowRulesOf(l.cfg)) {
+	//
+	// **skip 档短路（第六十四刀修回归）**：TS 的三元链把
+	// `skipAllApproval ? false` 放在 `pathGrantNeed` **之前**——即「完全访问档
+	// 零审批打扰承诺」优先于本门。Go 侧 `decideApprovalGate` 内部虽有 skip
+	// 短路，但它 return 后流程**继续走到本门** → skip 档下 bash 写命令全被拦
+	// （提交后审查发现，headless 下无人可批 → 死锁）。
+	// 此处显式短路，对账 TS 的优先级。
+	//
+	// **硬闸门不受此影响**：它在更前（`RequiresHardGate`）、且不读档位——
+	// 破坏性命令在 skip 档下仍被拦（有测试钉住）。
+	if l.cfg.ApprovalMode != "dangerously-skip-permissions" &&
+		bashWriteNeedsApproval(tc.name, tc.input, l.cfg.ApprovalMode, allowRulesOf(l.cfg)) {
 		cmd, _ := tc.input["command"].(string)
 		msg := "工具 \"" + tc.name + "\" (" + truncateRunes(cmd, 60) + ") " + approvalBlockedMarker + "。\n"
 		msg += "该命令会写入文件系统，需人工批准。\n" +

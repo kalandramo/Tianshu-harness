@@ -220,3 +220,52 @@ func TestCLIEndToEndAutoSafeAllowsBashWrite(t *testing.T) {
 		t.Fatalf("auto-safe 档下 `mkdir` 应被执行，实得错误：%v\nCLI 输出：%s", err, out)
 	}
 }
+
+// TestCLIEndToEndSkipModeAllowsBashWrite —— skip 档下 bash 写命令在真实 CLI 执行。
+//
+// 覆盖提交后审查发现的回归（第六十四刀）：`bashWriteNeedsApproval` 未复刻
+// TS 外层三元的 `skipAllApproval` 短路 → skip 档下所有 bash 写命令被拦。
+// 单测（loop 层）已覆盖，此处补**真实 CLI 二进制**——验证档位真从 flag
+// 传到 bash 写门，且 headless 下不因无人可批而死锁。
+func TestCLIEndToEndSkipModeAllowsBashWrite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("需要构建二进制，short 模式跳过")
+	}
+
+	root := t.TempDir()
+	var calls int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt64(&calls, 1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch n {
+		case 1:
+			fmt.Fprint(w, sseToolCallArgs("c1", "bash", map[string]any{
+				"command": "mkdir cli-skip-probe-dir",
+			}))
+		default:
+			fmt.Fprint(w, sseText("完成"))
+		}
+	}))
+	defer srv.Close()
+
+	bin := buildCLIBinary(t, "tianshu-bashgate-skip-test")
+	cmd := exec.Command(bin,
+		"-p", "建个目录",
+		"--base-url", srv.URL,
+		"--model", "test-model",
+		"--approval", "dangerously-skip-permissions",
+	)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "DEEPSEEK_API_KEY=test-key")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("CLI 输出：%s", out)
+		t.Fatalf("CLI 运行失败：%v", err)
+	}
+
+	// 观察：目录**真被创建**（skip 档 = 完全访问，零审批打扰）。
+	if _, err := os.Stat(filepath.Join(root, "cli-skip-probe-dir")); err != nil {
+		t.Fatalf("**skip 档下 bash 写命令被拦**（目录未创建：%v）——违反「完全访问档"+
+			"零审批打扰承诺」，headless 下无人可批会死锁\nCLI 输出：%s", err, out)
+	}
+}
