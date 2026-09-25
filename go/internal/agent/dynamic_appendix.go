@@ -12,7 +12,7 @@
 // **★ 架构约束（关键，不可违反）**：appendix 必须注入 **user message 尾部**，
 // **绝不能**进 system prompt。
 //
-// 理由（见 `prompt/full.go:90-105` 的架构说明）：
+// 理由（见 `prompt/full.go` 的 `BuildFullSystemPrompt` 架构说明）：
 //   - TS 侧 frozen 块是 **trailer-merge 到 user message**（`engine.ts:659`），
 //     system prompt **完全冻结**、历史消息尾部也可增量缓存
 //   - Go 侧 frozen 块拼在 **system prompt 内**（既有架构选择）——它**同样

@@ -8,28 +8,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/platform"
 )
 
-// DetectShellKind 探测宿主的 shell 族。
-//
-// 对账 TS 的 `getShellCommand().kind`（volatile.ts:1077）。
-//
-// Windows 上用 platform.HostShellCommand() 真实探测（Git Bash → PowerShell →
-// cmd，含 RIVET_USE_POWERSHELL 覆盖）——探测逻辑与 oracle 对账在
-// internal/platform 完成，本函数只做「宿主平台名 → 是否走探测」的分派。
-//
-// **hostPlatform 参数保留**（而非直接用 runtime.GOOS）：让 shell-note 的渲染
-// 可测——测试可喂 "win32" 而不依赖真实宿主。真实调用处传 DetectHostEnv() 的
-// Platform（已映射为 Node 命名）。
-func DetectShellKind(hostPlatform string) string {
-	if hostPlatform != "win32" {
-		// Unix：TS 的 resolveShellCommand 返回 kind "sh"。
-		return "sh"
-	}
-	// Windows：真实探测。返回 "bash" / "powershell" / "cmd"，
-	// 供 WindowsShellNote 选对应文案。
-	return string(platform.HostShellCommand().Kind)
-}
-
-// DetectHostEnv 探测宿主环境信息，供 `<environment>` 行使用。
+// DetectHostEnv 探测宿主环境信息，供 `<environment>` 行与 shell-note 使用。
 //
 // 关键：**Go 与 Node 的命名与来源都不同**，必须映射/对齐才能字节等价：
 //   - 平台名：Go 的 runtime.GOOS 是 "windows"，Node 的 process.platform 是 "win32"
@@ -48,6 +27,13 @@ func DetectHostEnv() HostEnv {
 		Platform:  nodePlatformName(runtime.GOOS),
 		OSType:    hostOSType(),
 		OSRelease: hostOSRelease(),
+		// shell 族：真实探测（Git Bash → PowerShell → cmd，含
+		// RIVET_USE_POWERSHELL 覆盖）。探测逻辑与 oracle 对账在
+		// internal/platform（纯函数 ResolveShellCommand），此处只取 Kind。
+		//
+		// 对账 TS 的 `windowsShellNote(getShellCommand().kind)`（volatile.ts:1081）
+		// ——TS 也在此处读真实探测，没有「目标 shell」概念。
+		ShellKind: string(platform.HostShellCommand().Kind),
 	}
 }
 
@@ -125,8 +111,9 @@ func BuildFullSystemPrompt(ctx Context, cwd string, host HostEnv) string {
 		// verify-commands：对账 TS 的 renderDeclaredVerify(cwd)。
 		// 同 RuntimeEnv，**必须在这里调**——BuildStableVolatileBlock 只插位置。
 		DeclaredVerify: DetectDeclaredVerifyBlock(cwd),
-		// shell 族：决定是否注入 <shell-note>（非 Windows 恒为 "sh" → 不注入）。
-		ShellKind: DetectShellKind(host.Platform),
+		// shell 族：随 host 注入（host.ShellKind）——决定是否注入 <shell-note>
+		// （非 Windows 恒为 "sh" → 不注入）。**注入化**让 win32 渲染可测
+		// （见 HostEnv.ShellKind 注释）。
 	}
 	frozen := BuildStableVolatileBlock(vctx, host)
 	if frozen == "" {

@@ -5,7 +5,7 @@
 //
 // **为什么这两个是附录家族的切入点**：TS 侧 volatile 层分两半——
 //   - **stable 块**（frozen 前缀）：`buildStableVolatileBlock`，Go 侧已移植
-//     且有生产消费路径（`full.go:131` ← `BuildFullSystemPrompt`）
+//     且有生产消费路径（`BuildFullSystemPrompt` ← `BuildStableVolatileBlock`）
 //   - **动态 appendix**：`buildDynamicAppendixParts` → `buildDynamicAppendix`
 //     → `buildLatestTurnVolatileBlock`，Go 侧**零移植**
 //

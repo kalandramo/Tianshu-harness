@@ -22,7 +22,7 @@ import (
 //
 // **架构约束（关键）**：appendix 必须注入 **user message 尾部**，**不能**进
 // system prompt——后者是 frozen 前缀，`approvalMode` 中途翻转会打断前缀缓存
-// （`full.go:90-105` 的架构说明）。
+// （`prompt/full.go` 的 `BuildFullSystemPrompt` 架构说明）。
 func TestDynamicAppendixWiring(t *testing.T) {
 	// 判据：Run 之后，模型收到的请求体里是否含 <permission-note>。
 	run := func(t *testing.T, mode string) (body string) {

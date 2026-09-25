@@ -21,7 +21,7 @@ var DefaultFrozenBlockCaps = FrozenBlockCaps{
 	CodebaseIndex:       4000,
 }
 
-// HostEnv 是宿主环境信息——`<environment>` 行的输入。
+// HostEnv 是宿主环境信息——`<environment>` 行与 shell-note 的输入。
 //
 // 参数化而非直接读 os：这让 frozen 块可对账（golden 记录宿主值，Go 侧注入
 // 同一组值）。生产调用方传真实宿主值。
@@ -32,6 +32,13 @@ type HostEnv struct {
 	OSType string
 	// OSRelease 对应 Node 的 os.release()（如 "25.6.0"）。
 	OSRelease string
+	// ShellKind 是宿主的 shell 族（"bash" / "powershell" / "cmd" / "sh"）。
+	//
+	// **为什么是宿主属性而非独立 ctx 字段**：它由宿主环境决定（与
+	// OSType/OSRelease 同源——都来自 platform 探测），且**注入化后可测**
+	// win32 渲染（此前 `DetectShellKind` 内部偷读 runtime.GOOS，导致
+	// 非 Windows 上 win32 分支永不可达）。空串或 "sh" 不产生 <shell-note>。
+	ShellKind string
 }
 
 // ActiveDomain 是当前星域（session 常量，进 frozen 前缀）。
@@ -77,9 +84,6 @@ type VolatileContext struct {
 	// 与 host.Platform 不同时产生 <platform-note>；等于 "win32" 时产生
 	// <path-style-note>。
 	TargetPlatform string
-	// ShellKind 是解析出的 shell 族（"bash" / "powershell" / "cmd" / "sh"）。
-	// 空串或 "sh" 不产生 <shell-note>（对账 TS 的 windowsShellNote）。
-	ShellKind string
 	// BlockCaps 覆盖默认 caps（对齐 TS 的 `{...FROZEN_BLOCK_CAPS, ...ctx.blockCaps}`）。
 	BlockCaps map[string]int
 }
@@ -148,7 +152,7 @@ func BuildStableVolatileBlock(ctx VolatileContext, host HostEnv) string {
 	if targetPlatform == "win32" {
 		ordered = append(ordered, pathStyleNote)
 	}
-	if note := WindowsShellNote(ctx.ShellKind); note != "" {
+	if note := WindowsShellNote(host.ShellKind); note != "" {
 		ordered = append(ordered, note)
 	}
 

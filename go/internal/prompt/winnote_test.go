@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/kalandramo/tianshu/go/internal/platform"
 )
 
 // winnoteOracle 是 TS 侧真实 windowsShellNote 的产出 + 两条 note 模板。
@@ -109,11 +111,10 @@ func TestPlatformNotesInBlock(t *testing.T) {
 		t.Errorf("目标 win32 时应含 path-style-note，实际 %q", trunc2(got3, 300))
 	}
 
-	// 场景 4：shell kind 非空 → 有 shell-note
+	// 场景 4：shell kind 非空（宿主属性）→ 有 shell-note
 	got4 := BuildStableVolatileBlock(VolatileContext{
-		Cwd:       "/fixture",
-		ShellKind: "powershell",
-	}, host)
+		Cwd: "/fixture",
+	}, HostEnv{Platform: "win32", OSType: "Windows_NT", OSRelease: "10.0", ShellKind: "powershell"})
 	if !contains(got4, "<shell-note>") {
 		t.Errorf("ShellKind 非空时应含 shell-note，实际 %q", trunc2(got4, 300))
 	}
@@ -124,11 +125,10 @@ func TestPlatformNotesInBlock(t *testing.T) {
 
 // TestPlatformNoteOrder —— 三个 note 的顺序（对账 volatile.ts:1064-1080）。
 func TestPlatformNoteOrder(t *testing.T) {
-	host := HostEnv{Platform: "darwin", OSType: "Darwin", OSRelease: "25.6.0"}
+	host := HostEnv{Platform: "darwin", OSType: "Darwin", OSRelease: "25.6.0", ShellKind: "bash"}
 	got := BuildStableVolatileBlock(VolatileContext{
 		Cwd:            "/fixture",
 		TargetPlatform: "win32",
-		ShellKind:      "bash",
 		RuntimeEnv:     "<runtime-env>\nx\n</runtime-env>",
 	}, host)
 
@@ -179,40 +179,46 @@ func TestEnvironmentHostAttribute(t *testing.T) {
 	}
 }
 
-// TestDetectShellKind —— 宿主 shell 族探测（非 Windows 恒为 sh）。
+// TestDetectHostEnvShellKind —— DetectHostEnv 填充的 ShellKind 与真实探测一致。
 //
-// **未移植 Windows 分支**（有意，见 DetectShellKind 注释）：探测 Git Bash /
-// pwsh 需真实 Windows 环境才能验证。此处只锁定非 Windows 行为 + Windows 的
-// 保守返回（空串，不注入可能错误的指引）。
-func TestDetectShellKind(t *testing.T) {
-	// 非 Windows **参数**：恒返回 "sh"，与宿主无关——这是纯参数分派，可确定性断言。
-	for _, p := range []string{"darwin", "linux", "freebsd"} {
-		if got := DetectShellKind(p); got != "sh" {
-			t.Errorf("非 Windows 平台应返回 sh，%s 得到 %q", p, got)
+// 对账 TS 的 `getShellCommand().kind`（volatile.ts:1081）。此前该值由
+// `DetectShellKind(host.Platform)` 产出，内部偷读 runtime.GOOS，使 win32 渲染
+// 不可测；现改为 HostEnv 的注入字段（见 HostEnv.ShellKind 注释）。
+//
+// 本测试锁**生产路径的一致性**：DetectHostEnv 的 ShellKind 必须等于
+// platform 层真实探测的 Kind（不硬编码断言具体值——它依赖本机环境：
+// 装了 Git Bash 的 Windows 就是 "bash"）。
+func TestDetectHostEnvShellKind(t *testing.T) {
+	env := DetectHostEnv()
+	want := string(platform.HostShellCommand().Kind)
+	if env.ShellKind != want {
+		t.Errorf("DetectHostEnv().ShellKind = %q, want %q（须与 platform.HostShellCommand().Kind 一致）",
+			env.ShellKind, want)
+	}
+	// 非 Windows 宿主恒为 "sh"（platform.ResolveShellCommand 的 Unix 分支）。
+	if runtime.GOOS != "windows" && env.ShellKind != "sh" {
+		t.Errorf("非 Windows 宿主 ShellKind 应为 sh，得到 %q", env.ShellKind)
+	}
+}
+
+// TestWin32ShellKindRendersNote —— **win32 渲染端到端**（此前不可测）。
+//
+// 这是注入化的核心收益：喂 `HostEnv{Platform:"win32", ShellKind:"bash"}` 即可
+// 在任意平台验证 win32 的 shell-note 渲染，无需真实 Windows 宿主。
+// 此前 `DetectShellKind` 偷读 runtime.GOOS，非 Windows 上 win32 分支永不可达。
+func TestWin32ShellKindRendersNote(t *testing.T) {
+	dir := t.TempDir()
+	for _, kind := range []string{"bash", "powershell", "cmd"} {
+		host := HostEnv{Platform: "win32", OSType: "Windows_NT", OSRelease: "10.0.22631", ShellKind: kind}
+		got := BuildFullSystemPrompt(Context{}, dir, host)
+		if !contains(got, "<shell-note>") {
+			t.Errorf("win32 + ShellKind=%q 应注入 shell-note，实际 %q", kind, trunc2(got, 300))
 		}
 	}
-	// Windows 分支：`DetectShellKind("win32")` 内部调 **真实宿主探测**
-	// （`platform.HostShellCommand()`），其 `isWindowsHost()` 读 `runtime.GOOS`
-	// ——故**参数 "win32" 只在真实 Windows 宿主上才产出 Windows shell 族**，
-	// 在 macOS/Linux 上无论传什么参数都返回 "sh"（探测走非 Windows 路径）。
-	//
-	// 因此该断言**必须门控到真实 Windows 宿主**，否则在任何非 Windows 开发机
-	// 与 CI（ubuntu）上必红。探测逻辑本身的对账在 internal/platform（30 个
-	// oracle 用例，纯函数 `ResolveShellCommand`），此处只锁契约。
-	//
-	// **已知设计张力（非本测试引入）**：`DetectShellKind` 的文档称 hostPlatform
-	// 参数「让 shell-note 的渲染可测——测试可喂 "win32" 而不依赖真实宿主」，但
-	// 实现调 `HostShellCommand()` 读真实宿主，参数对探测分支实际无效。修它需
-	// 给 prompt 层注入探测依赖（扩大 API 面），暂记于此。
-	if runtime.GOOS != "windows" {
-		t.Skip("win32 分支需真实 Windows 宿主（探测读 runtime.GOOS）；非 Windows 上恒返回 sh")
-	}
-	got := DetectShellKind("win32")
-	switch got {
-	case "bash", "powershell", "cmd":
-		// 合法
-	default:
-		t.Errorf("Windows 应返回真实探测到的 shell 族（bash/powershell/cmd），得到 %q", got)
+	// 对照：Unix shell 族不注入（对账 WindowsShellNote 的 default 分支）。
+	hostSh := HostEnv{Platform: "darwin", OSType: "Darwin", OSRelease: "25.6.0", ShellKind: "sh"}
+	if got := BuildFullSystemPrompt(Context{}, dir, hostSh); contains(got, "<shell-note>") {
+		t.Errorf("ShellKind=sh 不应注入 shell-note，实际 %q", trunc2(got, 300))
 	}
 }
 
