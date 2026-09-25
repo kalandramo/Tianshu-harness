@@ -60,6 +60,13 @@ func NewDefaultRegistry(opts Options) *Registry {
 	r.Register(Diff())
 	// git：结构化操作（status/diff_summary/commit/log/log_graph/stash/stash_pop）。
 	r.Register(Git())
+	// git_scout：**只读** git 史实侦察（9 个查询 action，无写动作）。
+	//
+	// 对账 TS `GIT_SCOUT_TOOL`（default-registry.ts:129，preset !== 'taiyi'
+	// 时注册）。**为什么与 git 并存**：`git` 含写动作，readonly profile
+	// （code_scout 等）拿不到它——侦察 worker 因此无法做 git 史实取证。
+	// git_scout 是纯查询子集，`RequiresApproval: false`，可安全交给 readonly。
+	r.Register(GitScout())
 
 	// ── 执行 ──
 	r.Register(Bash(cwd))
