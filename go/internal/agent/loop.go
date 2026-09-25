@@ -909,6 +909,33 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 		return contract.Result{Content: msg, IsError: true}
 	}
 
+	// ── 档位审批门（第六十二刀接线）──
+	//
+	// 对账 TS `tool-pipeline.ts:1213-1232` 的 `shouldAsk` 档位分支。**Go 侧
+	// 此前完全没有这一环**：`Registry.NeedsApproval` 零调用者，4 个写工具
+	// 在 **manual 档**下 `needsApproval=true` 却无人消费 → 写操作**静默执行**
+	// （fail-open：用户选最严档期望逐次确认，实际无人把关）。
+	//
+	// **顺序**：在硬闸门**之后**（硬闸门是「任何档位都不能绕过」，优先级更高），
+	// 在越界路径门**之前**（对账 TS 的三元链顺序：skip → pathGrant → ... → 档位）。
+	//
+	// **与硬闸门的互补**：硬闸门只覆盖 bash 破坏性命令（`HardGate` 接口）；
+	// 本门覆盖「档位驱动的写工具审批」——两者覆盖不同的工具面。
+	if decision := decideApprovalGate(p, l.registry.NeedsApproval(tc.name, p), isHighRiskCall(tc)); decision.Block {
+		target := ""
+		if tc.name == "bash" {
+			if cmd, ok := tc.input["command"].(string); ok {
+				target = " (" + truncateRunes(cmd, 60) + ")"
+			}
+		}
+		msg := "工具 \"" + tc.name + "\"" + target + " " + approvalBlockedMarker + "。\n"
+		msg += decision.Reason + "。\n" +
+			"这是**需人工批准的操作**，agent 无法自行授予。\n" +
+			"不要重复发出同一调用——它会再次撞上同一道门，白白消耗轮次预算。\n" +
+			"请改用其他方式完成任务，或停下来向用户说明哪一步需要授权。"
+		return contract.Result{Content: msg, IsError: true}
+	}
+
 	// ── 越界路径授权门（第五十一刀 Wave 2c 接线）──
 	//
 	// 对账 TS `tool-pipeline.ts:1240-1249` 的 `pathGrantNeed` 分支。**Go 侧
