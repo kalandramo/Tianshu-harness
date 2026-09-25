@@ -220,18 +220,37 @@ func TestApprovalRiskDoomLoopParity(t *testing.T) {
 // 这是 `nodepath.go` 的正确性证明：Go 的 `filepath.Join`/`Clean` 与 Node
 // `path.resolve` 语义不同（绝对段截断 / 驱动器切换 / 不越过根），差异在
 // 安全路径上会致命。oracle 从真实 `win32.resolve` 导出。
+// TestNodeResolveWin32Parity —— 对账 Node `path.win32.resolve` 的 Go 复刻。
+//
+// **不门控到 Windows 宿主**：`resolveWin32` / `isAbsWin32` 是**纯函数**——直接
+// 接收显式参数，不读宿主平台（与 `nodeResolve` 不同，后者经 `isWindowsLike()`
+// 分派）。故 win32 语义在任意平台可确定性地对账。
+//
+// 此前该测试门控到 Windows，而 CI 的 go 门禁只在 ubuntu 上跑（ci.yml 的 go job
+// 是 ubuntu-latest），导致 win32 语义在 CI 上**零覆盖**——这是不必要的覆盖损失。
+//
+// **前置条件（有断言守卫）**：`resolveWin32` 仅在「无绝对参数」时才读
+// `os.Getwd()`（baseIdx < 0 分支）。oracle 的用例 cwd 均为带盘符的绝对路径
+// （`D:/repo` / `C:/x` / `D:/repo/sub`），故不触发该分支、结果可复现。下面的
+// 前置断言会拦住未来新增「相对 cwd」用例引入的不确定性。
 func TestNodeResolveWin32Parity(t *testing.T) {
 	o := loadApprovalriskOracle(t)
 	if len(o.Resolve) == 0 {
 		t.Fatal("oracle 的 resolve 矩阵为空——前置失败")
 	}
 
+	// 守卫：每个用例的 cwd 必须是带盘符的绝对路径。否则 resolveWin32 会落到
+	// `os.Getwd()` 分支，结果随运行环境变化——那是对账不可复现的信号，应显式
+	// 失败而非静默假绿（HANDOFF 记录的「golden 复现性」教训）。
+	for _, c := range o.Resolve {
+		if !isAbsWin32(c.Cwd) {
+			t.Fatalf("oracle 用例 cwd=%q 非绝对盘符路径——resolveWin32 会读 os.Getwd()，"+
+				"对账不可复现。请修正 oracle 生成器用绝对 cwd。", c.Cwd)
+		}
+	}
+
 	for _, c := range o.Resolve {
 		t.Run(c.Cwd+"__"+c.P, func(t *testing.T) {
-			// 只在本平台为 Windows 时对账 win32 语义（posix 平台的行为不同）。
-			if !isWindowsLike() {
-				t.Skip("非 Windows 平台——win32 语义对账跳过")
-			}
 			if got := isAbsWin32(c.P); got != c.IsAbsolute {
 				t.Errorf("isAbsWin32(%q) = %v, want %v", c.P, got, c.IsAbsolute)
 			}

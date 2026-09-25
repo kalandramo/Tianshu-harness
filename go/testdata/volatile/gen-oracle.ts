@@ -215,6 +215,29 @@ for (const c of cases) {
 // TestRuntimeEnvBlockInjectionPosition），块内容本身由 runtimeenv_test.go
 // 的 oracle 用例覆盖（21 个）。这里只记录这个分歧，不造假的 oracle 用例。
 
+// **shell-note 无法在此对账**（架构分歧，有意为之）：
+//
+// TS 侧 shell-note 由 `windowsShellNote(getShellCommand().kind)` 产生——
+// kind 来自**进程级真实探测**（PATH 上有没有 Git Bash / pwsh），不是 ctx 字段。
+// Go 侧为让 win32 渲染可测，把它做成注入字段 `host.ShellKind`（见
+// HostEnv.ShellKind 注释）。
+//
+// 后果：本 oracle 的 host 只记录 platform/osType/osRelease，**不含 shellKind**
+// ——故所有用例里 host.ShellKind 恒为空串、shell-note 永不出现，含 shell-note
+// 时的整块 <context> 字节从未在此对账。这与 runtime-env / verify-commands
+// 同源（探测值不可注入）。
+//
+// 覆盖分工（缺口已闭合，非遗漏）：
+//   - shell-note **文案本身**：winnote/oracle.json 的 shellNotes 逐分支逐字节
+//     对账（bash/powershell/cmd/sh/unknown-kind 五分支，真跑 TS 函数）
+//   - **链路传递**（host.ShellKind → BuildStableVolatileBlock → WindowsShellNote）：
+//     Go-only 测试 TestWin32ShellKindRendersNote 逐 kind 断言专属文案
+//   - **顺序**（shell-note 在 path-style-note 之后、runtime-env 之前）：
+//     TestPlatformNoteOrder
+//
+// 不造假的 oracle 用例（生成机的 shell 恰好是 bash/powershell/cmd 才会产出
+// shell-note，那会让 golden 依赖生成环境——正是 HANDOFF 记录的假绿模式）。
+
 // 记录宿主的 platform/os —— Go 侧对账时需产出同一行
 const platform = process.platform
 const osType = (await import('node:os')).type()

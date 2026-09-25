@@ -124,6 +124,13 @@ func TestPlatformNotesInBlock(t *testing.T) {
 }
 
 // TestPlatformNoteOrder —— 三个 note 的顺序（对账 volatile.ts:1064-1080）。
+//
+// **夹具说明**：此处 `Platform:"darwin"` + `ShellKind:"bash"` 是**刻意的组合**
+// （Unix 宿主实际不会探测出 Git Bash）——目的是让三种 note（platform / path-style
+// / shell）同时出现，从而验证它们的相对顺序。HostEnv 是数据容器，不强制
+// Platform↔ShellKind 的一致性；生产路径由 DetectHostEnv 同源填充保证
+// （见 full.go 的 DetectHostEnv，ShellKind 取自 platform.HostShellCommand()）。
+// 若加一致性约束，本测试将无法构造「三 note 齐全」的场景——那是**削弱**而非加固。
 func TestPlatformNoteOrder(t *testing.T) {
 	host := HostEnv{Platform: "darwin", OSType: "Darwin", OSRelease: "25.6.0", ShellKind: "bash"}
 	got := BuildStableVolatileBlock(VolatileContext{
@@ -208,11 +215,24 @@ func TestDetectHostEnvShellKind(t *testing.T) {
 // 此前 `DetectShellKind` 偷读 runtime.GOOS，非 Windows 上 win32 分支永不可达。
 func TestWin32ShellKindRendersNote(t *testing.T) {
 	dir := t.TempDir()
-	for _, kind := range []string{"bash", "powershell", "cmd"} {
+	// **断言各分支的独有文案**（非仅「含 <shell-note>」）——后者无法区分「接线层
+	// 正确传递 kind」与「接线层把 kind 写死/丢失」。逐分支对账函数本身已有
+	// TestWindowsShellNoteParity 覆盖，此处锁的是**链路**：host.ShellKind →
+	// BuildStableVolatileBlock → WindowsShellNote 的传递正确。
+	markers := map[string]string{
+		"bash":       "Git Bash（POSIX）",
+		"powershell": "shell 是 PowerShell",
+		"cmd":        "shell 是 cmd.exe",
+	}
+	for kind, marker := range markers {
 		host := HostEnv{Platform: "win32", OSType: "Windows_NT", OSRelease: "10.0.22631", ShellKind: kind}
 		got := BuildFullSystemPrompt(Context{}, dir, host)
 		if !contains(got, "<shell-note>") {
 			t.Errorf("win32 + ShellKind=%q 应注入 shell-note，实际 %q", kind, trunc2(got, 300))
+			continue
+		}
+		if !contains(got, marker) {
+			t.Errorf("ShellKind=%q 应渲染其专属文案（含 %q），实际 %q", kind, marker, trunc2(got, 400))
 		}
 	}
 	// 对照：Unix shell 族不注入（对账 WindowsShellNote 的 default 分支）。
