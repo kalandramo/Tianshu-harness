@@ -37,13 +37,33 @@ type PermissionAllowRule struct {
 
 // PermissionConfig 是用户配置的权限面。
 //
-// 对账 TS `PermissionConfig`（仅 allow/deny 部分——bash 子配置属
-// `splitShellSegments` 家族，本刀不含）。
+// 对账 TS `PermissionConfig`（`allow` / `deny` / `bash` 三部分）。
 type PermissionConfig struct {
 	// Allow 是放行规则（匹配则跳过审批）。
 	Allow []PermissionAllowRule `json:"allow"`
 	// Deny 覆盖 allow 规则与审批档位——**任何档位都不能绕过**。
 	Deny []PermissionAllowRule `json:"deny"`
+	// Bash 是 bash 命令前缀的 allow / deny 列表。
+	//
+	// 对账 TS `permissions.bash`（`schema.ts:293` → `bashAllowlistSchema`）。
+	// **与 `Deny` 是不同语义**：`Deny` 匹配工具名 + 参数模式；
+	// `Bash.Denylist` 是**命令前缀**（`taskkill` 匹配 `taskkill /f /im x.exe`），
+	// 且需穿透 `;` / `&&` / `$( … )` 找到藏在后面的段——见
+	// `permissions_shellsplit.go` 的 `IsBashCommandDenied`。
+	Bash *BashPermissionConfig `json:"bash,omitempty"`
+}
+
+// BashPermissionConfig 对账 TS `bashAllowlistSchema` 的 allowlist / denylist。
+//
+// **指针语义与 `Permissions` 一致**：nil = 未配置该字段；非 nil 空切片 =
+// 配置了但为空。两者在判定上等价（空列表不拦/不放行），但保留区分以便
+// 将来诊断。
+type BashPermissionConfig struct {
+	// Allowlist 是命令前缀白名单（**本刀未接线**——`IsBashCommandAllowlisted`
+	// 依赖 5 组 fail-closed 守卫，是独立工作量；见 HANDOFF 遗留段）。
+	Allowlist []string `json:"allowlist"`
+	// Denylist 是命令前缀黑名单（**已接线**，见 loop.go 的 deny 门）。
+	Denylist []string `json:"denylist"`
 }
 
 // wildcardExclude 是 `*` 通配符**不匹配**的字符类（TS 侧逐字节对账）。

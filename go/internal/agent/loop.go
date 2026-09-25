@@ -857,7 +857,9 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 	//
 	// **行为**：命中即拒，返回模型可见的「指令性非重试拒绝」——要点是
 	// **换路而非重试**（重试只会撞同一道门，浪费 turn 预算）。
-	if l.cfg.Permissions != nil && IsToolDenied(tc.name, p.Input, l.cfg.Permissions.Deny) {
+	if l.cfg.Permissions != nil &&
+		(IsToolDenied(tc.name, p.Input, l.cfg.Permissions.Deny) ||
+			bashDeniedFor(l.cfg.Permissions, tc)) {
 		return contract.Result{Content: DeniedRuleReason(tc.name), IsError: true}
 	}
 

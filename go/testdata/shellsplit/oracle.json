@@ -1,0 +1,2669 @@
+{
+  "segments": [
+    {
+      "label": "single-token",
+      "cmd": "ls",
+      "segments": [
+        "ls"
+      ]
+    },
+    {
+      "label": "single-with-args",
+      "cmd": "git status --short",
+      "segments": [
+        "git status --short"
+      ]
+    },
+    {
+      "label": "leading-trailing-space",
+      "cmd": "  ls -la  ",
+      "segments": [
+        "ls -la"
+      ]
+    },
+    {
+      "label": "empty",
+      "cmd": "",
+      "segments": []
+    },
+    {
+      "label": "only-spaces",
+      "cmd": "   ",
+      "segments": []
+    },
+    {
+      "label": "semi-two",
+      "cmd": "ls; rm -rf /",
+      "segments": [
+        "ls",
+        "rm -rf /"
+      ]
+    },
+    {
+      "label": "semi-trailing",
+      "cmd": "ls;",
+      "segments": [
+        "ls"
+      ]
+    },
+    {
+      "label": "semi-leading",
+      "cmd": "; ls",
+      "segments": [
+        "ls"
+      ]
+    },
+    {
+      "label": "semi-double",
+      "cmd": "a;;b",
+      "segments": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "label": "semi-hidden-denied",
+      "cmd": "echo hi; taskkill /f /im x.exe",
+      "segments": [
+        "echo hi",
+        "taskkill /f /im x.exe"
+      ]
+    },
+    {
+      "label": "and-and",
+      "cmd": "npm test && echo ok",
+      "segments": [
+        "npm test",
+        "echo ok"
+      ]
+    },
+    {
+      "label": "or-or",
+      "cmd": "a || b",
+      "segments": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "label": "and-hidden-denied",
+      "cmd": "ls && taskkill /f /im x.exe",
+      "segments": [
+        "ls",
+        "taskkill /f /im x.exe"
+      ]
+    },
+    {
+      "label": "or-hidden-denied",
+      "cmd": "ls || taskkill /f /im x.exe",
+      "segments": [
+        "ls",
+        "taskkill /f /im x.exe"
+      ]
+    },
+    {
+      "label": "mixed-and-semi",
+      "cmd": "a && b; c || d",
+      "segments": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ]
+    },
+    {
+      "label": "amp-background",
+      "cmd": "sleep 1 & echo done",
+      "segments": [
+        "sleep 1",
+        "echo done"
+      ]
+    },
+    {
+      "label": "newline",
+      "cmd": "ls\nrm -rf /",
+      "segments": [
+        "ls",
+        "rm -rf /"
+      ]
+    },
+    {
+      "label": "newline-hidden-denied",
+      "cmd": "ls\ntaskkill /f /im x.exe",
+      "segments": [
+        "ls",
+        "taskkill /f /im x.exe"
+      ]
+    },
+    {
+      "label": "pipe",
+      "cmd": "cat f | grep x",
+      "segments": [
+        "cat f",
+        "grep x"
+      ]
+    },
+    {
+      "label": "pipe-hidden-denied",
+      "cmd": "cat f | taskkill /f /im x.exe",
+      "segments": [
+        "cat f",
+        "taskkill /f /im x.exe"
+      ]
+    },
+    {
+      "label": "pipe-vs-or-or",
+      "cmd": "a || b",
+      "segments": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "label": "cmdsubst",
+      "cmd": "echo $(date)",
+      "segments": [
+        "date",
+        "echo"
+      ]
+    },
+    {
+      "label": "cmdsubst-hidden-denied",
+      "cmd": "echo $(taskkill /f /im x.exe)",
+      "segments": [
+        "taskkill /f /im x.exe",
+        "echo"
+      ]
+    },
+    {
+      "label": "cmdsubst-with-args",
+      "cmd": "git diff $(git merge-base main HEAD)",
+      "segments": [
+        "git merge-base main HEAD",
+        "git diff"
+      ]
+    },
+    {
+      "label": "cmdsubst-then-more",
+      "cmd": "echo $(date); ls",
+      "segments": [
+        "date",
+        "echo",
+        "ls"
+      ]
+    },
+    {
+      "label": "cmdsubst-nested-parens-unparsed",
+      "cmd": "echo $(a $(b) c)",
+      "segments": [
+        "b",
+        "echo $(a   c)"
+      ]
+    },
+    {
+      "label": "cmdsubst-empty",
+      "cmd": "echo $()",
+      "segments": [
+        "echo"
+      ]
+    },
+    {
+      "label": "cmdsubst-spaces-only",
+      "cmd": "echo $(   )",
+      "segments": [
+        "echo"
+      ]
+    },
+    {
+      "label": "backtick",
+      "cmd": "echo `date`",
+      "segments": [
+        "date",
+        "echo"
+      ]
+    },
+    {
+      "label": "backtick-hidden-denied",
+      "cmd": "echo `taskkill /f /im x.exe`",
+      "segments": [
+        "taskkill /f /im x.exe",
+        "echo"
+      ]
+    },
+    {
+      "label": "backtick-with-semi",
+      "cmd": "echo `a; b`",
+      "segments": [
+        "a",
+        "b",
+        "echo"
+      ]
+    },
+    {
+      "label": "redirect-not-separator",
+      "cmd": "echo hi > out.txt",
+      "segments": [
+        "echo hi > out.txt"
+      ]
+    },
+    {
+      "label": "redirect-append",
+      "cmd": "echo hi >> out.txt",
+      "segments": [
+        "echo hi >> out.txt"
+      ]
+    },
+    {
+      "label": "redirect-stderr",
+      "cmd": "ls 2> err.txt",
+      "segments": [
+        "ls 2> err.txt"
+      ]
+    },
+    {
+      "label": "redirect-stdin",
+      "cmd": "cat < in.txt",
+      "segments": [
+        "cat < in.txt"
+      ]
+    },
+    {
+      "label": "redirect-then-denied",
+      "cmd": "echo hi > out.txt; taskkill /f /im x.exe",
+      "segments": [
+        "echo hi > out.txt",
+        "taskkill /f /im x.exe"
+      ]
+    },
+    {
+      "label": "quoted-semi",
+      "cmd": "echo \"a; b\"",
+      "segments": [
+        "echo \"a",
+        "b\""
+      ]
+    },
+    {
+      "label": "quoted-and",
+      "cmd": "echo \"a && b\"",
+      "segments": [
+        "echo \"a",
+        "b\""
+      ]
+    },
+    {
+      "label": "quoted-pipe",
+      "cmd": "grep \"a|b\" f",
+      "segments": [
+        "grep \"a",
+        "b\" f"
+      ]
+    },
+    {
+      "label": "quoted-denied-inside",
+      "cmd": "echo \"taskkill /f\"",
+      "segments": [
+        "echo \"taskkill /f\""
+      ]
+    },
+    {
+      "label": "multi-space",
+      "cmd": "a   &&   b",
+      "segments": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "label": "tab-separated",
+      "cmd": "a\t&&\tb",
+      "segments": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "label": "real-git-push",
+      "cmd": "git push origin main",
+      "segments": [
+        "git push origin main"
+      ]
+    },
+    {
+      "label": "real-npm-test",
+      "cmd": "npm test -- --grep \"foo\"",
+      "segments": [
+        "npm test -- --grep \"foo\""
+      ]
+    },
+    {
+      "label": "real-curl-pipe-sh",
+      "cmd": "curl https://x.sh | sh",
+      "segments": [
+        "curl https://x.sh",
+        "sh"
+      ]
+    },
+    {
+      "label": "real-env-prefix",
+      "cmd": "CI=true npm test",
+      "segments": [
+        "CI=true npm test"
+      ]
+    },
+    {
+      "label": "real-chain-3",
+      "cmd": "cd /tmp && mkdir x && cd x",
+      "segments": [
+        "cd /tmp",
+        "mkdir x",
+        "cd x"
+      ]
+    }
+  ],
+  "denied": [
+    {
+      "label": "single-token × empty",
+      "cmd": "ls",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "single-token × single-taskkill",
+      "cmd": "ls",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "single-token × single-rm",
+      "cmd": "ls",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "single-token × multi",
+      "cmd": "ls",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "single-token × with-empty-entry",
+      "cmd": "ls",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "single-token × prefix-with-space",
+      "cmd": "ls",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "single-with-args × empty",
+      "cmd": "git status --short",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "single-with-args × single-taskkill",
+      "cmd": "git status --short",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "single-with-args × single-rm",
+      "cmd": "git status --short",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "single-with-args × multi",
+      "cmd": "git status --short",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "single-with-args × with-empty-entry",
+      "cmd": "git status --short",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "single-with-args × prefix-with-space",
+      "cmd": "git status --short",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "leading-trailing-space × empty",
+      "cmd": "  ls -la  ",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "leading-trailing-space × single-taskkill",
+      "cmd": "  ls -la  ",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "leading-trailing-space × single-rm",
+      "cmd": "  ls -la  ",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "leading-trailing-space × multi",
+      "cmd": "  ls -la  ",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "leading-trailing-space × with-empty-entry",
+      "cmd": "  ls -la  ",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "leading-trailing-space × prefix-with-space",
+      "cmd": "  ls -la  ",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "empty × empty",
+      "cmd": "",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "empty × single-taskkill",
+      "cmd": "",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "empty × single-rm",
+      "cmd": "",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "empty × multi",
+      "cmd": "",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "empty × with-empty-entry",
+      "cmd": "",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "empty × prefix-with-space",
+      "cmd": "",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "only-spaces × empty",
+      "cmd": "   ",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "only-spaces × single-taskkill",
+      "cmd": "   ",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "only-spaces × single-rm",
+      "cmd": "   ",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "only-spaces × multi",
+      "cmd": "   ",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "only-spaces × with-empty-entry",
+      "cmd": "   ",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "only-spaces × prefix-with-space",
+      "cmd": "   ",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-two × empty",
+      "cmd": "ls; rm -rf /",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "semi-two × single-taskkill",
+      "cmd": "ls; rm -rf /",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-two × single-rm",
+      "cmd": "ls; rm -rf /",
+      "denylist": [
+        "rm"
+      ],
+      "denied": true
+    },
+    {
+      "label": "semi-two × multi",
+      "cmd": "ls; rm -rf /",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": true
+    },
+    {
+      "label": "semi-two × with-empty-entry",
+      "cmd": "ls; rm -rf /",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": true
+    },
+    {
+      "label": "semi-two × prefix-with-space",
+      "cmd": "ls; rm -rf /",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-trailing × empty",
+      "cmd": "ls;",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "semi-trailing × single-taskkill",
+      "cmd": "ls;",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-trailing × single-rm",
+      "cmd": "ls;",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-trailing × multi",
+      "cmd": "ls;",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-trailing × with-empty-entry",
+      "cmd": "ls;",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-trailing × prefix-with-space",
+      "cmd": "ls;",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-leading × empty",
+      "cmd": "; ls",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "semi-leading × single-taskkill",
+      "cmd": "; ls",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-leading × single-rm",
+      "cmd": "; ls",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-leading × multi",
+      "cmd": "; ls",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-leading × with-empty-entry",
+      "cmd": "; ls",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-leading × prefix-with-space",
+      "cmd": "; ls",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-double × empty",
+      "cmd": "a;;b",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "semi-double × single-taskkill",
+      "cmd": "a;;b",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-double × single-rm",
+      "cmd": "a;;b",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-double × multi",
+      "cmd": "a;;b",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-double × with-empty-entry",
+      "cmd": "a;;b",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-double × prefix-with-space",
+      "cmd": "a;;b",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-hidden-denied × empty",
+      "cmd": "echo hi; taskkill /f /im x.exe",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "semi-hidden-denied × single-taskkill",
+      "cmd": "echo hi; taskkill /f /im x.exe",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": true
+    },
+    {
+      "label": "semi-hidden-denied × single-rm",
+      "cmd": "echo hi; taskkill /f /im x.exe",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-hidden-denied × multi",
+      "cmd": "echo hi; taskkill /f /im x.exe",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": true
+    },
+    {
+      "label": "semi-hidden-denied × with-empty-entry",
+      "cmd": "echo hi; taskkill /f /im x.exe",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "semi-hidden-denied × prefix-with-space",
+      "cmd": "echo hi; taskkill /f /im x.exe",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "and-and × empty",
+      "cmd": "npm test && echo ok",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "and-and × single-taskkill",
+      "cmd": "npm test && echo ok",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "and-and × single-rm",
+      "cmd": "npm test && echo ok",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "and-and × multi",
+      "cmd": "npm test && echo ok",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "and-and × with-empty-entry",
+      "cmd": "npm test && echo ok",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "and-and × prefix-with-space",
+      "cmd": "npm test && echo ok",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "or-or × empty",
+      "cmd": "a || b",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "or-or × single-taskkill",
+      "cmd": "a || b",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "or-or × single-rm",
+      "cmd": "a || b",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "or-or × multi",
+      "cmd": "a || b",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "or-or × with-empty-entry",
+      "cmd": "a || b",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "or-or × prefix-with-space",
+      "cmd": "a || b",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "and-hidden-denied × empty",
+      "cmd": "ls && taskkill /f /im x.exe",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "and-hidden-denied × single-taskkill",
+      "cmd": "ls && taskkill /f /im x.exe",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": true
+    },
+    {
+      "label": "and-hidden-denied × single-rm",
+      "cmd": "ls && taskkill /f /im x.exe",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "and-hidden-denied × multi",
+      "cmd": "ls && taskkill /f /im x.exe",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": true
+    },
+    {
+      "label": "and-hidden-denied × with-empty-entry",
+      "cmd": "ls && taskkill /f /im x.exe",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "and-hidden-denied × prefix-with-space",
+      "cmd": "ls && taskkill /f /im x.exe",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "or-hidden-denied × empty",
+      "cmd": "ls || taskkill /f /im x.exe",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "or-hidden-denied × single-taskkill",
+      "cmd": "ls || taskkill /f /im x.exe",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": true
+    },
+    {
+      "label": "or-hidden-denied × single-rm",
+      "cmd": "ls || taskkill /f /im x.exe",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "or-hidden-denied × multi",
+      "cmd": "ls || taskkill /f /im x.exe",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": true
+    },
+    {
+      "label": "or-hidden-denied × with-empty-entry",
+      "cmd": "ls || taskkill /f /im x.exe",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "or-hidden-denied × prefix-with-space",
+      "cmd": "ls || taskkill /f /im x.exe",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "mixed-and-semi × empty",
+      "cmd": "a && b; c || d",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "mixed-and-semi × single-taskkill",
+      "cmd": "a && b; c || d",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "mixed-and-semi × single-rm",
+      "cmd": "a && b; c || d",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "mixed-and-semi × multi",
+      "cmd": "a && b; c || d",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "mixed-and-semi × with-empty-entry",
+      "cmd": "a && b; c || d",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "mixed-and-semi × prefix-with-space",
+      "cmd": "a && b; c || d",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "amp-background × empty",
+      "cmd": "sleep 1 & echo done",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "amp-background × single-taskkill",
+      "cmd": "sleep 1 & echo done",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "amp-background × single-rm",
+      "cmd": "sleep 1 & echo done",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "amp-background × multi",
+      "cmd": "sleep 1 & echo done",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "amp-background × with-empty-entry",
+      "cmd": "sleep 1 & echo done",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "amp-background × prefix-with-space",
+      "cmd": "sleep 1 & echo done",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "newline × empty",
+      "cmd": "ls\nrm -rf /",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "newline × single-taskkill",
+      "cmd": "ls\nrm -rf /",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "newline × single-rm",
+      "cmd": "ls\nrm -rf /",
+      "denylist": [
+        "rm"
+      ],
+      "denied": true
+    },
+    {
+      "label": "newline × multi",
+      "cmd": "ls\nrm -rf /",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": true
+    },
+    {
+      "label": "newline × with-empty-entry",
+      "cmd": "ls\nrm -rf /",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": true
+    },
+    {
+      "label": "newline × prefix-with-space",
+      "cmd": "ls\nrm -rf /",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "newline-hidden-denied × empty",
+      "cmd": "ls\ntaskkill /f /im x.exe",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "newline-hidden-denied × single-taskkill",
+      "cmd": "ls\ntaskkill /f /im x.exe",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": true
+    },
+    {
+      "label": "newline-hidden-denied × single-rm",
+      "cmd": "ls\ntaskkill /f /im x.exe",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "newline-hidden-denied × multi",
+      "cmd": "ls\ntaskkill /f /im x.exe",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": true
+    },
+    {
+      "label": "newline-hidden-denied × with-empty-entry",
+      "cmd": "ls\ntaskkill /f /im x.exe",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "newline-hidden-denied × prefix-with-space",
+      "cmd": "ls\ntaskkill /f /im x.exe",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "pipe × empty",
+      "cmd": "cat f | grep x",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "pipe × single-taskkill",
+      "cmd": "cat f | grep x",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "pipe × single-rm",
+      "cmd": "cat f | grep x",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "pipe × multi",
+      "cmd": "cat f | grep x",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "pipe × with-empty-entry",
+      "cmd": "cat f | grep x",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "pipe × prefix-with-space",
+      "cmd": "cat f | grep x",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "pipe-hidden-denied × empty",
+      "cmd": "cat f | taskkill /f /im x.exe",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "pipe-hidden-denied × single-taskkill",
+      "cmd": "cat f | taskkill /f /im x.exe",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": true
+    },
+    {
+      "label": "pipe-hidden-denied × single-rm",
+      "cmd": "cat f | taskkill /f /im x.exe",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "pipe-hidden-denied × multi",
+      "cmd": "cat f | taskkill /f /im x.exe",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": true
+    },
+    {
+      "label": "pipe-hidden-denied × with-empty-entry",
+      "cmd": "cat f | taskkill /f /im x.exe",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "pipe-hidden-denied × prefix-with-space",
+      "cmd": "cat f | taskkill /f /im x.exe",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "pipe-vs-or-or × empty",
+      "cmd": "a || b",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "pipe-vs-or-or × single-taskkill",
+      "cmd": "a || b",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "pipe-vs-or-or × single-rm",
+      "cmd": "a || b",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "pipe-vs-or-or × multi",
+      "cmd": "a || b",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "pipe-vs-or-or × with-empty-entry",
+      "cmd": "a || b",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "pipe-vs-or-or × prefix-with-space",
+      "cmd": "a || b",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst × empty",
+      "cmd": "echo $(date)",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst × single-taskkill",
+      "cmd": "echo $(date)",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst × single-rm",
+      "cmd": "echo $(date)",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst × multi",
+      "cmd": "echo $(date)",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst × with-empty-entry",
+      "cmd": "echo $(date)",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst × prefix-with-space",
+      "cmd": "echo $(date)",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-hidden-denied × empty",
+      "cmd": "echo $(taskkill /f /im x.exe)",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-hidden-denied × single-taskkill",
+      "cmd": "echo $(taskkill /f /im x.exe)",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": true
+    },
+    {
+      "label": "cmdsubst-hidden-denied × single-rm",
+      "cmd": "echo $(taskkill /f /im x.exe)",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-hidden-denied × multi",
+      "cmd": "echo $(taskkill /f /im x.exe)",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": true
+    },
+    {
+      "label": "cmdsubst-hidden-denied × with-empty-entry",
+      "cmd": "echo $(taskkill /f /im x.exe)",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-hidden-denied × prefix-with-space",
+      "cmd": "echo $(taskkill /f /im x.exe)",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-with-args × empty",
+      "cmd": "git diff $(git merge-base main HEAD)",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-with-args × single-taskkill",
+      "cmd": "git diff $(git merge-base main HEAD)",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-with-args × single-rm",
+      "cmd": "git diff $(git merge-base main HEAD)",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-with-args × multi",
+      "cmd": "git diff $(git merge-base main HEAD)",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-with-args × with-empty-entry",
+      "cmd": "git diff $(git merge-base main HEAD)",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-with-args × prefix-with-space",
+      "cmd": "git diff $(git merge-base main HEAD)",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-then-more × empty",
+      "cmd": "echo $(date); ls",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-then-more × single-taskkill",
+      "cmd": "echo $(date); ls",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-then-more × single-rm",
+      "cmd": "echo $(date); ls",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-then-more × multi",
+      "cmd": "echo $(date); ls",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-then-more × with-empty-entry",
+      "cmd": "echo $(date); ls",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-then-more × prefix-with-space",
+      "cmd": "echo $(date); ls",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-nested-parens-unparsed × empty",
+      "cmd": "echo $(a $(b) c)",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-nested-parens-unparsed × single-taskkill",
+      "cmd": "echo $(a $(b) c)",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-nested-parens-unparsed × single-rm",
+      "cmd": "echo $(a $(b) c)",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-nested-parens-unparsed × multi",
+      "cmd": "echo $(a $(b) c)",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-nested-parens-unparsed × with-empty-entry",
+      "cmd": "echo $(a $(b) c)",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-nested-parens-unparsed × prefix-with-space",
+      "cmd": "echo $(a $(b) c)",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-empty × empty",
+      "cmd": "echo $()",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-empty × single-taskkill",
+      "cmd": "echo $()",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-empty × single-rm",
+      "cmd": "echo $()",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-empty × multi",
+      "cmd": "echo $()",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-empty × with-empty-entry",
+      "cmd": "echo $()",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-empty × prefix-with-space",
+      "cmd": "echo $()",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-spaces-only × empty",
+      "cmd": "echo $(   )",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-spaces-only × single-taskkill",
+      "cmd": "echo $(   )",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-spaces-only × single-rm",
+      "cmd": "echo $(   )",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-spaces-only × multi",
+      "cmd": "echo $(   )",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-spaces-only × with-empty-entry",
+      "cmd": "echo $(   )",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "cmdsubst-spaces-only × prefix-with-space",
+      "cmd": "echo $(   )",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "backtick × empty",
+      "cmd": "echo `date`",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "backtick × single-taskkill",
+      "cmd": "echo `date`",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "backtick × single-rm",
+      "cmd": "echo `date`",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "backtick × multi",
+      "cmd": "echo `date`",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "backtick × with-empty-entry",
+      "cmd": "echo `date`",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "backtick × prefix-with-space",
+      "cmd": "echo `date`",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "backtick-hidden-denied × empty",
+      "cmd": "echo `taskkill /f /im x.exe`",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "backtick-hidden-denied × single-taskkill",
+      "cmd": "echo `taskkill /f /im x.exe`",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": true
+    },
+    {
+      "label": "backtick-hidden-denied × single-rm",
+      "cmd": "echo `taskkill /f /im x.exe`",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "backtick-hidden-denied × multi",
+      "cmd": "echo `taskkill /f /im x.exe`",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": true
+    },
+    {
+      "label": "backtick-hidden-denied × with-empty-entry",
+      "cmd": "echo `taskkill /f /im x.exe`",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "backtick-hidden-denied × prefix-with-space",
+      "cmd": "echo `taskkill /f /im x.exe`",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "backtick-with-semi × empty",
+      "cmd": "echo `a; b`",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "backtick-with-semi × single-taskkill",
+      "cmd": "echo `a; b`",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "backtick-with-semi × single-rm",
+      "cmd": "echo `a; b`",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "backtick-with-semi × multi",
+      "cmd": "echo `a; b`",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "backtick-with-semi × with-empty-entry",
+      "cmd": "echo `a; b`",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "backtick-with-semi × prefix-with-space",
+      "cmd": "echo `a; b`",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-not-separator × empty",
+      "cmd": "echo hi > out.txt",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "redirect-not-separator × single-taskkill",
+      "cmd": "echo hi > out.txt",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-not-separator × single-rm",
+      "cmd": "echo hi > out.txt",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-not-separator × multi",
+      "cmd": "echo hi > out.txt",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-not-separator × with-empty-entry",
+      "cmd": "echo hi > out.txt",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-not-separator × prefix-with-space",
+      "cmd": "echo hi > out.txt",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-append × empty",
+      "cmd": "echo hi >> out.txt",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "redirect-append × single-taskkill",
+      "cmd": "echo hi >> out.txt",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-append × single-rm",
+      "cmd": "echo hi >> out.txt",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-append × multi",
+      "cmd": "echo hi >> out.txt",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-append × with-empty-entry",
+      "cmd": "echo hi >> out.txt",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-append × prefix-with-space",
+      "cmd": "echo hi >> out.txt",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-stderr × empty",
+      "cmd": "ls 2> err.txt",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "redirect-stderr × single-taskkill",
+      "cmd": "ls 2> err.txt",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-stderr × single-rm",
+      "cmd": "ls 2> err.txt",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-stderr × multi",
+      "cmd": "ls 2> err.txt",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-stderr × with-empty-entry",
+      "cmd": "ls 2> err.txt",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-stderr × prefix-with-space",
+      "cmd": "ls 2> err.txt",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-stdin × empty",
+      "cmd": "cat < in.txt",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "redirect-stdin × single-taskkill",
+      "cmd": "cat < in.txt",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-stdin × single-rm",
+      "cmd": "cat < in.txt",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-stdin × multi",
+      "cmd": "cat < in.txt",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-stdin × with-empty-entry",
+      "cmd": "cat < in.txt",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-stdin × prefix-with-space",
+      "cmd": "cat < in.txt",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-then-denied × empty",
+      "cmd": "echo hi > out.txt; taskkill /f /im x.exe",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "redirect-then-denied × single-taskkill",
+      "cmd": "echo hi > out.txt; taskkill /f /im x.exe",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": true
+    },
+    {
+      "label": "redirect-then-denied × single-rm",
+      "cmd": "echo hi > out.txt; taskkill /f /im x.exe",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-then-denied × multi",
+      "cmd": "echo hi > out.txt; taskkill /f /im x.exe",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": true
+    },
+    {
+      "label": "redirect-then-denied × with-empty-entry",
+      "cmd": "echo hi > out.txt; taskkill /f /im x.exe",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "redirect-then-denied × prefix-with-space",
+      "cmd": "echo hi > out.txt; taskkill /f /im x.exe",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-semi × empty",
+      "cmd": "echo \"a; b\"",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "quoted-semi × single-taskkill",
+      "cmd": "echo \"a; b\"",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-semi × single-rm",
+      "cmd": "echo \"a; b\"",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-semi × multi",
+      "cmd": "echo \"a; b\"",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-semi × with-empty-entry",
+      "cmd": "echo \"a; b\"",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-semi × prefix-with-space",
+      "cmd": "echo \"a; b\"",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-and × empty",
+      "cmd": "echo \"a && b\"",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "quoted-and × single-taskkill",
+      "cmd": "echo \"a && b\"",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-and × single-rm",
+      "cmd": "echo \"a && b\"",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-and × multi",
+      "cmd": "echo \"a && b\"",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-and × with-empty-entry",
+      "cmd": "echo \"a && b\"",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-and × prefix-with-space",
+      "cmd": "echo \"a && b\"",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-pipe × empty",
+      "cmd": "grep \"a|b\" f",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "quoted-pipe × single-taskkill",
+      "cmd": "grep \"a|b\" f",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-pipe × single-rm",
+      "cmd": "grep \"a|b\" f",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-pipe × multi",
+      "cmd": "grep \"a|b\" f",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-pipe × with-empty-entry",
+      "cmd": "grep \"a|b\" f",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-pipe × prefix-with-space",
+      "cmd": "grep \"a|b\" f",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-denied-inside × empty",
+      "cmd": "echo \"taskkill /f\"",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "quoted-denied-inside × single-taskkill",
+      "cmd": "echo \"taskkill /f\"",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-denied-inside × single-rm",
+      "cmd": "echo \"taskkill /f\"",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-denied-inside × multi",
+      "cmd": "echo \"taskkill /f\"",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-denied-inside × with-empty-entry",
+      "cmd": "echo \"taskkill /f\"",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "quoted-denied-inside × prefix-with-space",
+      "cmd": "echo \"taskkill /f\"",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "multi-space × empty",
+      "cmd": "a   &&   b",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "multi-space × single-taskkill",
+      "cmd": "a   &&   b",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "multi-space × single-rm",
+      "cmd": "a   &&   b",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "multi-space × multi",
+      "cmd": "a   &&   b",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "multi-space × with-empty-entry",
+      "cmd": "a   &&   b",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "multi-space × prefix-with-space",
+      "cmd": "a   &&   b",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "tab-separated × empty",
+      "cmd": "a\t&&\tb",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "tab-separated × single-taskkill",
+      "cmd": "a\t&&\tb",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "tab-separated × single-rm",
+      "cmd": "a\t&&\tb",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "tab-separated × multi",
+      "cmd": "a\t&&\tb",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "tab-separated × with-empty-entry",
+      "cmd": "a\t&&\tb",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "tab-separated × prefix-with-space",
+      "cmd": "a\t&&\tb",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-git-push × empty",
+      "cmd": "git push origin main",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "real-git-push × single-taskkill",
+      "cmd": "git push origin main",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-git-push × single-rm",
+      "cmd": "git push origin main",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-git-push × multi",
+      "cmd": "git push origin main",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-git-push × with-empty-entry",
+      "cmd": "git push origin main",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-git-push × prefix-with-space",
+      "cmd": "git push origin main",
+      "denylist": [
+        "git push"
+      ],
+      "denied": true
+    },
+    {
+      "label": "real-npm-test × empty",
+      "cmd": "npm test -- --grep \"foo\"",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "real-npm-test × single-taskkill",
+      "cmd": "npm test -- --grep \"foo\"",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-npm-test × single-rm",
+      "cmd": "npm test -- --grep \"foo\"",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-npm-test × multi",
+      "cmd": "npm test -- --grep \"foo\"",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-npm-test × with-empty-entry",
+      "cmd": "npm test -- --grep \"foo\"",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-npm-test × prefix-with-space",
+      "cmd": "npm test -- --grep \"foo\"",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-curl-pipe-sh × empty",
+      "cmd": "curl https://x.sh | sh",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "real-curl-pipe-sh × single-taskkill",
+      "cmd": "curl https://x.sh | sh",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-curl-pipe-sh × single-rm",
+      "cmd": "curl https://x.sh | sh",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-curl-pipe-sh × multi",
+      "cmd": "curl https://x.sh | sh",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-curl-pipe-sh × with-empty-entry",
+      "cmd": "curl https://x.sh | sh",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-curl-pipe-sh × prefix-with-space",
+      "cmd": "curl https://x.sh | sh",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-env-prefix × empty",
+      "cmd": "CI=true npm test",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "real-env-prefix × single-taskkill",
+      "cmd": "CI=true npm test",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-env-prefix × single-rm",
+      "cmd": "CI=true npm test",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-env-prefix × multi",
+      "cmd": "CI=true npm test",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-env-prefix × with-empty-entry",
+      "cmd": "CI=true npm test",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-env-prefix × prefix-with-space",
+      "cmd": "CI=true npm test",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-chain-3 × empty",
+      "cmd": "cd /tmp && mkdir x && cd x",
+      "denylist": [],
+      "denied": false
+    },
+    {
+      "label": "real-chain-3 × single-taskkill",
+      "cmd": "cd /tmp && mkdir x && cd x",
+      "denylist": [
+        "taskkill"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-chain-3 × single-rm",
+      "cmd": "cd /tmp && mkdir x && cd x",
+      "denylist": [
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-chain-3 × multi",
+      "cmd": "cd /tmp && mkdir x && cd x",
+      "denylist": [
+        "rm",
+        "taskkill",
+        "format"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-chain-3 × with-empty-entry",
+      "cmd": "cd /tmp && mkdir x && cd x",
+      "denylist": [
+        "",
+        "rm"
+      ],
+      "denied": false
+    },
+    {
+      "label": "real-chain-3 × prefix-with-space",
+      "cmd": "cd /tmp && mkdir x && cd x",
+      "denylist": [
+        "git push"
+      ],
+      "denied": false
+    }
+  ]
+}

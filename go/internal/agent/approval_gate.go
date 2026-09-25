@@ -39,9 +39,10 @@
 // 但决定了调用能否走到本门。
 //
 //	输入              TS 来源                     Go 现状
-//	denied            isToolDenied(denyRules)     ✅ 已接线（loop.go:860，决策链最前）
-//	bashDenied        isBashCommandDenied         ❌ 未移植（依赖 `splitShellSegments`，
-//	                  (bashDenyPrefixes)             permissions.go 显式非目标）
+//	denied            isToolDenied(denyRules)     ✅ 已接线（loop.go，决策链最前）
+//	bashDenied        isBashCommandDenied         ✅ 第六十五刀接线
+//	                  (bashDenyPrefixes)            （`permissions_shellsplit.go`
+//	                                                + PermissionConfig.Bash）
 //	selfKill          isSelfDestructiveKill       ❌ 未移植（self-preservation.ts:85）
 //	                  (selfProcessTree())
 //
@@ -78,7 +79,10 @@
 //	                                                          （档位门内豁免，全工具面）
 //	                                                          注：`bashWriteNeedsApproval`
 //	                                                          内另有一处豁免（bash 写门）
-//	bashAllowlisted           isBashCommandAllowlisted       ❌ 未移植（同 bashDenied）
+//	bashAllowlisted           isBashCommandAllowlisted       ❌ 未移植（同 bashDenied；
+//	                                                          但另需 5 组 fail-closed
+//	                                                          守卫，见 permissions.ts
+//	                                                          `segmentMatchesAllowEntry`）
 //	canAutoApprove            sensorium 置信度               ❌ 无 sensorium
 //	                                                          （仅注释/字符串表）
 //	computerUsePerAppGate     computer_use 逐应用            ❌ 工具未移植

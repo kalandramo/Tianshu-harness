@@ -122,6 +122,15 @@ type userConfigFile struct {
 type permissionsRaw struct {
 	Allow []agent.PermissionAllowRule `json:"allow"`
 	Deny  []agent.PermissionAllowRule `json:"deny"`
+	// Bash 对账 TS `permissions.bash`（`schema.ts:293`）——含 allowlist / denylist。
+	//
+	// **此前缺失的后果**：用户在 `permissions.bash.denylist` 里写的命令前缀
+	// 被**静默忽略**（`PermissionConfig` 连字段都没有）。这是第五十二刀
+	// 「deny 规则不生效」的同族——安全机制不存在，而非没接线。
+	Bash *struct {
+		Allowlist []string `json:"allowlist"`
+		Denylist  []string `json:"denylist"`
+	} `json:"bash"`
 }
 
 // LoadPermissions 从用户全局配置读取 `agent.permissions`。
@@ -174,7 +183,20 @@ func LoadPermissions() (*agent.PermissionConfig, error) {
 		deny = []agent.PermissionAllowRule{}
 	}
 
-	return &agent.PermissionConfig{Allow: allow, Deny: deny}, nil
+	var bash *agent.BashPermissionConfig
+	if cfg.Agent.Permissions.Bash != nil {
+		allow := cfg.Agent.Permissions.Bash.Allowlist
+		if allow == nil {
+			allow = []string{}
+		}
+		deny := cfg.Agent.Permissions.Bash.Denylist
+		if deny == nil {
+			deny = []string{}
+		}
+		bash = &agent.BashPermissionConfig{Allowlist: allow, Denylist: deny}
+	}
+
+	return &agent.PermissionConfig{Allow: allow, Deny: deny, Bash: bash}, nil
 }
 
 // LoadPermissionsOrNil 是 LoadPermissions 的便利包装：忽略错误。
