@@ -279,6 +279,22 @@ func TestPathGrantParity(t *testing.T) {
 		t.Fatal("oracle 的 pathGrant 矩阵为空——前置失败")
 	}
 
+	// **平台语义说明（关键）**：oracle 的 pathGrant 矩阵用 **Windows 盘符语义**
+	// 构造（cwd=`D:/repo`）。而 `OutOfWorkspaceFilePaths` 经 `nodeResolve`
+	// **按宿主平台分派**（忠实复刻 Node 的 path.win32/path.posix，见 nodepath.go）。
+	//
+	// POSIX 上语义**整体不同**，不只是标签格式：
+	//   - `/etc/passwd` → 仍绝对越界，但标签是 `/etc/passwd`（非 `D:\etc\passwd`）
+	//   - `D:/x/y` → **相对路径**（POSIX 无盘符概念）→ 解析进 cwd → **nil**
+	//     （Windows 上是绝对路径 → 非 nil）
+	//
+	// 故「越界性」与「标签」**都**是 win32 特有的。本测试门控到 Windows；
+	// POSIX 语义由伴生测试 `TestPathGrantParityPosix` 覆盖（CI 跑 ubuntu，
+	// 不能因门控让越界检测在 CI 上失明）。
+	if !isWindowsLike() {
+		t.Skip("非 Windows 平台——pathGrant 矩阵为 win32 语义；POSIX 语义见 TestPathGrantParityPosix")
+	}
+
 	for i, c := range o.PathGrant {
 		t.Run(c.ToolName+"_"+itoa(i), func(t *testing.T) {
 			got := OutOfWorkspaceFilePaths(c.Cwd, c.ToolName, c.Input, nil)
@@ -312,6 +328,70 @@ func TestPathGrantParity(t *testing.T) {
 				if got.Paths[j] != c.Result.Paths[j] {
 					t.Errorf("paths[%d]\n  got  %q\n  want %q", j, got.Paths[j], c.Result.Paths[j])
 				}
+			}
+		})
+	}
+}
+
+// TestPathGrantParityPosix —— **POSIX 语义**下的越界检测（CI 的 ubuntu 覆盖）。
+//
+// 与 `TestPathGrantParity` 同一函数、同一安全关键逻辑，但用 **POSIX 绝对 cwd**
+// （真实存在的临时目录）与 POSIX 路径形态，使断言在所有平台成立。
+//
+// **为什么必需**：`TestPathGrantParity` 的 golden 是 win32 语义，非 Windows 上
+// 门控跳过。若没有本测试，「越界写目标 → 必须问」这条安全关键逻辑会在 CI
+// （ubuntu）上**零覆盖**——门控不能变成安全逻辑的隐身衣。
+func TestPathGrantParityPosix(t *testing.T) {
+	cwd := t.TempDir() // 真实存在的 POSIX 绝对路径
+
+	cases := []struct {
+		name     string
+		tool     string
+		input    map[string]any
+		wantNil  bool
+		wantMode pathsafe.Mode
+		wantPath string
+	}{
+		// 区内相对路径 → nil（不越界）
+		{"in-workspace-relative", "write_file", map[string]any{"file_path": "src/a.ts"}, true, 0, ""},
+		{"in-workspace-read", "read_file", map[string]any{"file_path": "src/a.ts"}, true, 0, ""},
+		// POSIX 绝对越界路径 → 非 nil（安全关键：必须问）
+		{"absolute-write-out", "write_file", map[string]any{"file_path": "/etc/passwd"}, false, pathsafe.ModeWrite, "/etc/passwd"},
+		{"absolute-read-out", "read_file", map[string]any{"file_path": "/etc/passwd"}, false, pathsafe.ModeRead, "/etc/passwd"},
+		{"absolute-open-out", "open_path", map[string]any{"path": "/etc/hosts"}, false, pathsafe.ModeRead, "/etc/hosts"},
+		// 上溯越界——标签依赖 cwd（临时目录），**不硬编码**，只断言「越界 + 标签非空」
+		// （临时路径进断言不可复现，正是 HANDOFF 记录的 golden 复现性教训）。
+		{"dotdot-out", "write_file", map[string]any{"file_path": "../../etc/x"}, false, pathsafe.ModeWrite, ""},
+		// 非文件工具 → nil
+		{"unknown-tool", "unknown_tool", map[string]any{"file_path": "/etc/x"}, true, 0, ""},
+		// 无路径 → nil
+		{"no-path", "read_file", map[string]any{}, true, 0, ""},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := OutOfWorkspaceFilePaths(cwd, c.tool, c.input, nil)
+			if c.wantNil {
+				if got != nil {
+					t.Fatalf("期望 nil，得到 mode=%v paths=%v", got.Mode, got.Paths)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("期望非 nil（越界路径必须触发授权需求）")
+			}
+			if got.Mode != c.wantMode {
+				t.Errorf("mode = %v, want %v", got.Mode, c.wantMode)
+			}
+			if len(got.Paths) != 1 {
+				t.Fatalf("paths = %v, want 恰 1 条", got.Paths)
+			}
+			// wantPath 为空 = 不硬编码（cwd 相关的临时路径），只要求非空。
+			if c.wantPath != "" && got.Paths[0] != c.wantPath {
+				t.Errorf("paths[0] = %q, want %q", got.Paths[0], c.wantPath)
+			}
+			if got.Paths[0] == "" {
+				t.Errorf("paths[0] 不应为空")
 			}
 		})
 	}
@@ -366,6 +446,15 @@ func TestPathGrantsParity(t *testing.T) {
 					wantMode := GrantMode(c.Grants[j].Mode)
 					if g.Mode != wantMode {
 						t.Errorf("grants[%d].Mode = %q, want %q", j, g.Mode, wantMode)
+					}
+					// **平台门控**：root 的字符串比对是 **Windows 语义**——TS 的
+					// 截断缺陷只在「驱动器根下的父目录」场景触发（`D:\` + 段），
+					// 且 Go 的 canonicalize 在 POSIX 上把 `D:/outside` 当相对路径
+					// 解析进 cwd（`/Users/.../D:/outside`），与 TS 的 `D:\outside`
+					// 形态本就不同。故非 Windows 上跳过该字符串比对——mode 比对
+					// （上方）仍跨平台有效。
+					if !isWindowsLike() {
+						continue
 					}
 					// **有意差异**：不复刻 TS 的字符截断。
 					if g.Root == c.Grants[j].Root {

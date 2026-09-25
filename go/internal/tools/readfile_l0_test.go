@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -173,10 +174,15 @@ func TestReadFileL0GracefulWhenSaveFails(t *testing.T) {
 	}
 }
 
-// rootDir 返回带尾分隔符的临时目录（Windows 用反斜杠）。
+// rootDir 返回带尾分隔符的临时目录。
+//
+// **用 os.PathSeparator 而非硬编码反斜杠**：t.TempDir() 在 macOS/Linux 上是
+// `/var/folders/.../001`，硬拼 `\` 会产出 `.../001\a.ts` 这种把反斜杠当文件名
+// 字符的路径——工具按 `filepath.Join` 解析时找不到文件（「文件不存在」）。
+// 这是平台假设缺陷，非被测行为。
 func rootDir(root string) string {
-	if strings.HasSuffix(root, "/") || strings.HasSuffix(root, "\\") {
+	if strings.HasSuffix(root, "/") || strings.HasSuffix(root, string(os.PathSeparator)) {
 		return root
 	}
-	return root + string([]byte{92})
+	return root + string(os.PathSeparator)
 }

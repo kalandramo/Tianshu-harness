@@ -68,6 +68,20 @@ func runRT(t *testing.T, cwd string, file string) (string, bool) {
 	return res.Content, res.IsError
 }
 
+// normPathSep 把路径分隔符归一化为 `/`，供跨平台比对。
+//
+// related_tests 的输出**忠实复刻 Node 的 `path.join`**——用平台分隔符
+// （Windows 上 `\`，POSIX 上 `/`）。而 oracle.json 是在**某一平台**生成的
+// （见 `gen-oracle.ts` 跑 `path.join`），故另一平台的测试若逐字节比对必红
+// ——这是平台假设缺陷，不是被测行为差异。
+//
+// 归一化只影响分隔符字符；路径**结构**（哪些候选命中、排序、重复次数）仍被
+// 严格逐字节比对。注意 `win-backslash-*` 用例锁定的是**候选数量**差异
+// （正斜杠比反斜杠多一个命中），归一化不削弱该判别力。
+func normPathSep(s string) string {
+	return strings.ReplaceAll(s, "\\", "/")
+}
+
 // TestOracleRelatedTestsSource 对账「源文件 → 测试」路径。
 func TestOracleRelatedTestsSource(t *testing.T) {
 	o, cwd := loadRTOracle(t)
@@ -77,7 +91,7 @@ func TestOracleRelatedTestsSource(t *testing.T) {
 			if gotErr != c.IsError {
 				t.Errorf("isError 不一致：期望 %v，实得 %v（content=%q）", c.IsError, gotErr, got)
 			}
-			if got != c.Content {
+			if normPathSep(got) != normPathSep(c.Content) {
 				t.Errorf("content 不一致\n期望: %q\n实得: %q", c.Content, got)
 			}
 		})
@@ -93,7 +107,7 @@ func TestOracleRelatedTestsReverse(t *testing.T) {
 			if gotErr != c.IsError {
 				t.Errorf("isError 不一致：期望 %v，实得 %v（content=%q）", c.IsError, gotErr, got)
 			}
-			if got != c.Content {
+			if normPathSep(got) != normPathSep(c.Content) {
 				t.Errorf("content 不一致\n期望: %q\n实得: %q", c.Content, got)
 			}
 		})
@@ -109,7 +123,7 @@ func TestOracleRelatedTestsErrors(t *testing.T) {
 			if gotErr != c.IsError {
 				t.Errorf("isError 不一致：期望 %v，实得 %v（content=%q）", c.IsError, gotErr, got)
 			}
-			if got != c.Content {
+			if normPathSep(got) != normPathSep(c.Content) {
 				t.Errorf("content 不一致\n期望: %q\n实得: %q", c.Content, got)
 			}
 		})
@@ -131,7 +145,7 @@ func TestRelatedTestsDedupNotApplied(t *testing.T) {
 			t.Fatalf("oracle 前提失效：py-flat-top 期望 4 行，实得 %d", len(lines))
 		}
 		got, _ := runRT(t, cwd, c.File)
-		if got != c.Content {
+		if normPathSep(got) != normPathSep(c.Content) {
 			t.Errorf("重复未被保留\n期望: %q\n实得: %q", c.Content, got)
 		}
 		return
@@ -152,7 +166,7 @@ func TestRelatedTestsBackslashStartsWithGone(t *testing.T) {
 			continue
 		}
 		got, _ := runRT(t, cwd, c.File)
-		if got != c.Content {
+		if normPathSep(got) != normPathSep(c.Content) {
 			t.Errorf("反斜杠输入行为不一致\n期望: %q\n实得: %q", c.Content, got)
 		}
 		// 正斜杠输入应有 3 个结果，反斜杠只有 2 个——锁定差异存在

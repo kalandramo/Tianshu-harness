@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -184,17 +185,28 @@ func TestEnvironmentHostAttribute(t *testing.T) {
 // pwsh 需真实 Windows 环境才能验证。此处只锁定非 Windows 行为 + Windows 的
 // 保守返回（空串，不注入可能错误的指引）。
 func TestDetectShellKind(t *testing.T) {
+	// 非 Windows **参数**：恒返回 "sh"，与宿主无关——这是纯参数分派，可确定性断言。
 	for _, p := range []string{"darwin", "linux", "freebsd"} {
 		if got := DetectShellKind(p); got != "sh" {
 			t.Errorf("非 Windows 平台应返回 sh，%s 得到 %q", p, got)
 		}
 	}
-	// Windows：**真实探测**（Git Bash → PowerShell → cmd，对账 TS 的
-	// getShellCommand().kind）。返回值必须是四个合法 kind 之一——探测逻辑
-	// 本身的对账在 internal/platform（30 个 oracle 用例），此处只锁契约。
+	// Windows 分支：`DetectShellKind("win32")` 内部调 **真实宿主探测**
+	// （`platform.HostShellCommand()`），其 `isWindowsHost()` 读 `runtime.GOOS`
+	// ——故**参数 "win32" 只在真实 Windows 宿主上才产出 Windows shell 族**，
+	// 在 macOS/Linux 上无论传什么参数都返回 "sh"（探测走非 Windows 路径）。
 	//
-	// 注意：结果**依赖本机环境**（装了 Git Bash 就是 "bash"），故不断言具体值，
-	// 只断言落在合法集合内——否则测试会在不同开发机上假红。
+	// 因此该断言**必须门控到真实 Windows 宿主**，否则在任何非 Windows 开发机
+	// 与 CI（ubuntu）上必红。探测逻辑本身的对账在 internal/platform（30 个
+	// oracle 用例，纯函数 `ResolveShellCommand`），此处只锁契约。
+	//
+	// **已知设计张力（非本测试引入）**：`DetectShellKind` 的文档称 hostPlatform
+	// 参数「让 shell-note 的渲染可测——测试可喂 "win32" 而不依赖真实宿主」，但
+	// 实现调 `HostShellCommand()` 读真实宿主，参数对探测分支实际无效。修它需
+	// 给 prompt 层注入探测依赖（扩大 API 面），暂记于此。
+	if runtime.GOOS != "windows" {
+		t.Skip("win32 分支需真实 Windows 宿主（探测读 runtime.GOOS）；非 Windows 上恒返回 sh")
+	}
 	got := DetectShellKind("win32")
 	switch got {
 	case "bash", "powershell", "cmd":

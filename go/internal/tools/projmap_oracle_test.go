@@ -426,10 +426,10 @@ func TestOracleFileInfo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("[%s] Execute 报错：%v", c.Name, err)
 		}
-		got := stripModifiedLine(res.Content)
-		want := stripModifiedLine(c.Content)
+		got := stripVolatileLines(res.Content)
+		want := stripVolatileLines(c.Content)
 		if got != want {
-			t.Errorf("[%s] content 不一致（已剔 Modified 行）\n--- TS ---\n%s\n--- Go ---\n%s", c.Name, want, got)
+			t.Errorf("[%s] content 不一致（已剔 Modified/Permissions 行）\n--- TS ---\n%s\n--- Go ---\n%s", c.Name, want, got)
 		}
 		if res.IsError != c.IsError {
 			t.Errorf("[%s] isError TS=%v Go=%v", c.Name, c.IsError, res.IsError)
@@ -442,11 +442,19 @@ func TestOracleFileInfo(t *testing.T) {
 	t.Logf("fileInfo 对账 %d 例", len(o.FileInfo))
 }
 
-// stripModifiedLine 剔除 `Modified:` 行（mtime 不可比对）。
-func stripModifiedLine(s string) string {
+// stripVolatileLines 剔除平台/时间相关的行，供跨平台比对。
+//
+//   - `Modified:` —— mtime 逐次不同，不可比对。
+//   - `Permissions:` —— **平台分叉**：TS 在 win32 上产 `read-write`/`read-only`，
+//     在 POSIX 上产 `0644` 八进制。而 `FormatPermissions` 是**宿主平台**决定的
+//     （`fileinfo.go` 传 `runtime.GOOS`），故 golden 在 Windows 生成时固化的是
+//     `read-write`，在 macOS/Linux 上跑必红——这是平台假设缺陷，非被测行为。
+//     两条分支的**语义**已由 `TestOracleFormatPermissions`（显式 platform 参数）
+//     覆盖，此处剔除不削弱判别力。
+func stripVolatileLines(s string) string {
 	var out []string
 	for _, line := range strings.Split(s, "\n") {
-		if strings.HasPrefix(line, "Modified:") {
+		if strings.HasPrefix(line, "Modified:") || strings.HasPrefix(line, "Permissions:") {
 			continue
 		}
 		out = append(out, line)
