@@ -29,27 +29,66 @@
 // 会被全部拦下——`write_file` 直接不可用（`registry.go` 警告过「6 个既有
 // 测试转红」）。而写工具的风险实测为 low/none，故 auto-safe 下应当放行。
 //
-// # Go 侧当前可表达的输入（其余留口，明示不静默收窄）
+// # Go 侧当前状态（逐条核实，2026-06 第六十四刀对账）
+//
+// ## A. 决策树**之前**的守卫分支（TS `tool-pipeline.ts:1126-1143`）
+//
+// 这三条在 `shouldAsk` 之前、**不受档位影响**（TS 注释：「Deny rules always
+// win, even in dangerously-skip-permissions」/「Always on, independent of
+// config/approval mode」）。**本表此前漏列**——它们不在 `shouldAsk` 里，
+// 但决定了调用能否走到本门。
+//
+//	输入              TS 来源                     Go 现状
+//	denied            isToolDenied(denyRules)     ✅ 已接线（loop.go:860，决策链最前）
+//	bashDenied        isBashCommandDenied         ❌ 未移植（依赖 `splitShellSegments`，
+//	                  (bashDenyPrefixes)             permissions.go 显式非目标）
+//	selfKill          isSelfDestructiveKill       ❌ 未移植（self-preservation.ts:85）
+//	                  (selfProcessTree())
+//
+// **`bashDenied` 与 `denied` 的差距**：`denied` 走 `IsToolDenied`——它能匹配
+// `{tool:"bash", params:{command:"rm -rf*"}}` 这类**参数模式**规则，故用户写的
+// bash 前缀 deny 规则**部分**仍生效。但 TS 的 `permissions.bash.denylist`
+// （`schema.ts:286`）是**独立字段**，Go 的 `PermissionConfig` 无此字段 →
+// 用户在 `permissions.bash.denylist` 里写的规则被**静默忽略**。
+// （严重性低于第五十二刀：参数模式 deny 仍可用，但配了独立字段的用户会失效。）
+//
+// **`selfKill` 的 Go 侧适配性（待判定，非缺陷结论）**：TS 的动机是「杀掉
+// agent 自身所在的 Node sidecar 进程 → 会话中断 + API 认证丢失」。Go CLI 的
+// 运行形态不同（单进程，无 Node sidecar）——**该风险是否成立需要单独称量**，
+// 本表只记录「无对应实现」，不判定为缺口。
+//
+// ## B. `shouldAsk` 决策树的输入
 //
 //	输入                      TS 来源                        Go 现状
 //	skipAllApproval           approvalMode 派生              ✅ ApprovalMode 字段
 //	needsApproval             toolRegistry.needsApproval     ✅ 本文件消费
 //	isHighRisk                assessToolRisk().level         ✅ 本文件消费
 //	pathGrantNeed             outOfWorkspaceFilePaths        ✅ 已接线（loop.go，先于本门）
-//	unconditionalApproval     requiresUnconditionalApproval  ⚠️ 已移植；其覆盖的工具
-//	                                                          （computer_use /
-//	                                                          request_path_access）
-//	                                                          Go 侧未移植 → 暂不接
 //	bashWriteRequiresApproval requiresBashWriteApproval      ✅ 第六十三刀接线
-//	                                                          （`bashWriteNeedsApproval`
-//	                                                          + loop.go 门）
+//	                                                          （`bashWriteNeedsApproval`）
+//	unconditionalApproval     requiresUnconditionalApproval  ⚠️ 判定已接线（经
+//	                                                          AssessToolRisk 置 high），
+//	                                                          但 Go 侧无触发它的工具：
+//	                                                          `request_path_access` /
+//	                                                          `computer_use` 均未移植
+//	                                                          → **分支实际不可达**
 //	protectionMode            doomLoop + destructiveGit      ❌ 无 doom-loop 会话态
-//	allowlisted               isToolAllowed(allowRules)      ❌ 无 allowRules 装配
+//	                                                          （`DoomLoop` 零生产文件）
+//	allowlisted               isToolAllowed(allowRules)      ⚠️ 部分：`IsToolAllowed` +
+//	                                                          `allowRulesOf` 已有，
+//	                                                          但**只在 `bashWriteNeedsApproval`
+//	                                                          内部消费**（豁免 bash 写门）。
+//	                                                          TS 里它是**全工具面**的
+//	                                                          独立分支 → 其余工具的
+//	                                                          allow 规则**未生效**
+//	bashAllowlisted           isBashCommandAllowlisted       ❌ 未移植（同 bashDenied）
 //	canAutoApprove            sensorium 置信度               ❌ 无 sensorium
-//	computerUsePerAppGate     computer_use 逐应用            ❌ 无 computer_use 工具
+//	                                                          （仅注释/字符串表）
+//	computerUsePerAppGate     computer_use 逐应用            ❌ 工具未移植
 //
-// **未接的输入不改变本门的正确性**：它们要么已被 loop.go 前置门覆盖，要么对应
-// 的工具尚未移植。接入时按上表逐条补，并在此更新状态列。
+// **未接的输入不改变**已接分支**的正确性**——但「不影响正确性」不等于
+// 「无缺口」：上表 ⚠️ 与 ❌ 各行都是**已声明的能力未生效**，各自需要独立的刀。
+// 接入时按上表逐条补，并在此更新状态列与日期。
 //
 // # 已知欠账（前置③，本刀**有意未做**）
 //
