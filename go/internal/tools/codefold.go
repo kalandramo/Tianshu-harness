@@ -15,7 +15,9 @@ package tools
 // # 消费者
 //
 //   - `focused-read` 的无匹配分支（`structuralSkeleton`）——**本刀接线**
-//   - `applyFoldThenPartial`（readFilePayload 的 partial 分支，未移植）
+//   - `applyFoldThenPartial`（readFilePayload 的 partial 分支）
+//     ——**已实现**：`readpayload.go:36` 的 `ApplyFoldThenPartial`
+//     （**第七十八刀订正**：原注释写「未移植」，实测已存在）
 //
 // # 两个反直觉的边界（差分 oracle 锁定，勿"修"）
 //

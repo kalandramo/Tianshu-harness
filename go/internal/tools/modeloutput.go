@@ -50,8 +50,16 @@ type ToolOutputMeta struct {
 	DurationMs int64
 	// RawPath 是持久化的原始输出路径。
 	//
-	// 对账 TS 的 `rawPath`——**当前 Go 侧未接**（`persistRawOutput` 未移植），
-	// 故调用方传空串，`recovery` 提示随之缺席。
+	// 对账 TS 的 `rawPath`。
+	//
+	// **第七十八刀订正**：原注释写「当前 Go 侧未接（`persistRawOutput` 未移植），
+	// 故调用方传空串」——**已过期**。实测：
+	//
+	//	`PersistRawOutput`  已实现（`bash.go` / `diff.go` 调用）
+	//	`bash.go:311`       `meta.RawPath = PersistRawOutput(...)`
+	//	`diff.go:247`       `RawPath: rawPath`（同函数内已算出）
+	//
+	// 落盘失败时返回空串 → recovery 提示缺席（不误导）——见 `bash.go` 的注释。
 	RawPath string
 }
 

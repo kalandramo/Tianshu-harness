@@ -30,9 +30,14 @@ const collapseToolResultMinTurnAge = 2
 // 每个有损变换（预算驱逐、轮次读预算、上下文压力截断、工具类型预算、
 // stale-round 压缩）都必须保留这个标记，让模型仍能 `read_section` 取回原文。
 //
-// ⚠️ **Go 侧当前无 artifact 生产端**（artifact store 未移植），故所有
-// artifact 分支在生产路径上不会触发。保留复刻是为了：TS 契约完整性 +
-// 未来接入 artifact store 时无需改动本模块。
+// ⚠️ **本模块（compact）不产 artifact**，故所有 artifact 分支在生产路径上
+// 不会触发。保留复刻是为了：TS 契约完整性 + 未来接入时无需改动本模块。
+//
+// **第七十八刀订正**：原注释写「artifact store 未移植」——**已过期**。
+// `internal/artifact/`（store / summarize / threshold / types）**已存在**，
+// 且生产端已接线（`agent/artifact_intercept.go` 的 L1 拦截把大结果落盘、
+// `read_section` 取回）。准确的说法是「**compact 模块自己不产 artifact**」
+// ——artifact 由工具结果拦截层产出，本模块只负责**保留**已有的标记。
 var ArtifactMarkerRegex = regexp.MustCompile(`\[artifact:([A-Za-z0-9_-]+)\]\s*$`)
 
 // artifactAnyRegex 匹配任意位置的 artifact 标记（不要求行尾）。

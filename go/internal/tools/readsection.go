@@ -12,15 +12,26 @@ package tools
 //
 // # 本刀范围（有意收窄）
 //
-// 只实现 **artifactId 分支**（artifact 召回）。
+// **三个分支都已实现**（`artifactId` 召回 + `file_path` 磁盘读取 +
+// `compact-history` 流式快速路径）。
 //
-// **未移植 file_path 分支**：TS 还支持 `read_section(file_path=...)` 从
-// 磁盘活动文件读——它依赖 `getFileReadMtime`（本会话读过的文件 mtime 表，
-// 用于陈旧性告警）与 `computeModelReadCap`（按窗口/提供商算读上限）。
-// 这两个模块 Go 侧尚未移植，故 file_path 分支留待后续刀。
+// ## 第七十八刀订正：原文件头注释**整体过期**
 //
-// **未移植 compact-history 快速路径**：那是 compact 归档（`COMPACT_HISTORY_TOOL`）
-// 的专用流式读取 + recall 标记，依赖 `recall-marker.ts`。
+// 原文列了两项「未移植」——**实测两项都已实现**：
+//
+//	① file_path 分支        → `readFromDisk`（本文件 L323），L208 调用
+//	   依赖 `GetFileReadMtime`（`filestate.go:69`）+ `ComputeModelReadCap`
+//	   （`modelreadcap.go`）——**两者都早已存在**，非「尚未移植」。
+//	   含 TS 的全部三环：staleness 告警（mtime 比对，文案逐字对账）、
+//	   2MB 大文件守卫、按窗口截断。
+//
+//	② compact-history 快速路径 → 本文件 L235-247（`store.ReadLineRange`），
+//	   有专属测试 `readsection_compacthistory_test.go`。
+//
+// **教训（本刀最有价值的一条）**：**文件头注释会落后于实现**。
+// 本会话已连续三次按注释判定「缺口」后发现是**注释过期**
+// （`TaskAnchor` 的「半落地」、`readsection` 的两项「未移植」）。
+// **改前先 grep 核实实现**，别照注释判断缺口。
 
 import (
 	"context"

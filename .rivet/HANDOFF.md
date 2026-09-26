@@ -222,6 +222,33 @@ go/testdata/shellsplit/gen-oracle.ts + oracle.json
   原断言「放开档位下写操作不应需批准」——那是把 Go 侧偏离 TS 的实现固化成了
   断言，已改为「任何档位恒真」。
 
+### ★ 第七十八刀：**文件头注释落后于实现**（系统性发现，勿按注释判缺口）
+
+本会话连续**四次**按 Go 侧文件头注释判定「缺口」，grep 核实后发现**注释过期**：
+
+| 注释声称 | 实测 |
+|---|---|
+| `readsection.go` 头：「未移植 file_path 分支」 | **已实现**——`readFromDisk`（L323），含 mtime 告警/大文件守卫/截断 |
+| `readsection.go` 头：「未移植 compact-history 快速路径」 | **已实现**——L235-247 + 专属测试 `readsection_compacthistory_test.go` |
+| `codefold.go:18`：「`applyFoldThenPartial` 未移植」 | **已实现**——`readpayload.go:36` 的 `ApplyFoldThenPartial` |
+| `modeloutput.go:53`：「`persistRawOutput` 未移植，调用方传空串」 | **已实现**——`bash.go:311` / `diff.go:247` 都传了 `RawPath` |
+| `compact/context_collapse.go:33`：「artifact store 未移植」 | **已存在**——`internal/artifact/` 全套 + 生产端已接线 |
+
+**但也核实了三处注释是准确的**（不是普遍现象）：
+`plan.go` 的写工具禁用机制、`bash.go` 的 `runInBackground`（`jobRegistry` 全库零命中）、
+`tools/readdedup.go` 的 `sliceFromArtifact`。
+
+**教训（写给下个人）**：**判缺口前先 grep 实现，别照注释**。
+文件头注释写于「本刀」，而后续刀补齐实现时**不会回头改前人的注释**——
+故注释的「未移植」断言**天然短时效**。核实方式：
+```
+grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test
+```
+
+**已订正**：上述 5 处注释均加了「第七十八刀订正」段（保留原文以示修正轨迹）。
+
+---
+
 ### 卡点 3：状态表剩余 ⚠️ 项（均判定不做，除非需求出现）
 
 #### ★ 第七十六刀：三条勘探路径的结论（**勿重复勘探**）
