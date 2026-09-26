@@ -175,6 +175,12 @@ func loadConfig(model, baseURL, approval string, maxTurns int, systemPrompt stri
 			// 传原始取值而非 bool——解析（optOut/optIn/未识别值三态）交给
 			// `prompt.ResolveTersenessFlags`，避免两处各写一套。
 			TerseEnv: os.Getenv("RIVET_TERSE"),
+			// TDD gate：`RIVET_TDD_GATE=enforce` 时编辑工具在「连续 3 次
+			// 未验证编辑」后硬拦（默认 suggest：只建议不拦）。
+			//
+			// 传原始取值而非解析结果——解析交给 `ParseTddGateConfig`，
+			// 避免两处各写一套（与 TerseEnv 同一模式）。
+			TddGateEnv: os.Getenv("RIVET_TDD_GATE"),
 		},
 		Client: client.Config{
 			BaseURL:  baseURL,

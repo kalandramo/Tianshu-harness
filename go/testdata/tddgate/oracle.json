@@ -1,0 +1,817 @@
+{
+  "generatedBy": "go/testdata/tddgate/gen-oracle.ts",
+  "cases": [
+    {
+      "name": "disabled-blocks-nothing",
+      "input": {
+        "gateState": {
+          "filesModified": 9,
+          "verifications": 0,
+          "editsSinceLastTest": 99,
+          "hasFailedTests": true,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": false,
+          "mode": "suggest",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "allow"
+      }
+    },
+    {
+      "name": "non-edit-tool-read_file",
+      "input": {
+        "gateState": {
+          "filesModified": 5,
+          "verifications": 0,
+          "editsSinceLastTest": 9,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "read_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "allow"
+      }
+    },
+    {
+      "name": "non-edit-tool-bash",
+      "input": {
+        "gateState": {
+          "filesModified": 5,
+          "verifications": 0,
+          "editsSinceLastTest": 9,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "bash",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "allow"
+      }
+    },
+    {
+      "name": "non-edit-tool-grep",
+      "input": {
+        "gateState": {
+          "filesModified": 5,
+          "verifications": 0,
+          "editsSinceLastTest": 9,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "grep",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "allow"
+      }
+    },
+    {
+      "name": "non-edit-tool-run_tests",
+      "input": {
+        "gateState": {
+          "filesModified": 5,
+          "verifications": 0,
+          "editsSinceLastTest": 9,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "run_tests",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "allow"
+      }
+    },
+    {
+      "name": "non-edit-tool-todo",
+      "input": {
+        "gateState": {
+          "filesModified": 5,
+          "verifications": 0,
+          "editsSinceLastTest": 9,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "todo",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "allow"
+      }
+    },
+    {
+      "name": "non-edit-tool-git_scout",
+      "input": {
+        "gateState": {
+          "filesModified": 5,
+          "verifications": 0,
+          "editsSinceLastTest": 9,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "git_scout",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "allow"
+      }
+    },
+    {
+      "name": "scratch-path-allows",
+      "input": {
+        "gateState": {
+          "filesModified": 5,
+          "verifications": 0,
+          "editsSinceLastTest": 9,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": ".rivet/scratch/probe.ts"
+      },
+      "output": {
+        "action": "allow"
+      }
+    },
+    {
+      "name": "scratch-nested-allows",
+      "input": {
+        "gateState": {
+          "filesModified": 5,
+          "verifications": 0,
+          "editsSinceLastTest": 9,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": "a/b/.rivet/scratch/x.ts"
+      },
+      "output": {
+        "action": "allow"
+      }
+    },
+    {
+      "name": "no-code-edits-allows",
+      "input": {
+        "gateState": {
+          "filesModified": 3,
+          "verifications": 0,
+          "editsSinceLastTest": 9,
+          "hasFailedTests": false,
+          "hasCodeEdits": false,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "allow"
+      }
+    },
+    {
+      "name": "zero-files-modified-allows",
+      "input": {
+        "gateState": {
+          "filesModified": 0,
+          "verifications": 0,
+          "editsSinceLastTest": 0,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "allow"
+      }
+    },
+    {
+      "name": "verified-no-failure-allows",
+      "input": {
+        "gateState": {
+          "filesModified": 2,
+          "verifications": 1,
+          "editsSinceLastTest": 0,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "allow"
+      }
+    },
+    {
+      "name": "verified-many-allows",
+      "input": {
+        "gateState": {
+          "filesModified": 2,
+          "verifications": 7,
+          "editsSinceLastTest": 1,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "allow"
+      }
+    },
+    {
+      "name": "verified-with-failure-suggests",
+      "input": {
+        "gateState": {
+          "filesModified": 2,
+          "verifications": 3,
+          "editsSinceLastTest": 0,
+          "hasFailedTests": true,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "suggest",
+        "message": "TDD discipline: 3 verification(s) failed. Fix the failing tests before continuing to edit."
+      }
+    },
+    {
+      "name": "verified-with-failure-suggests-default",
+      "input": {
+        "gateState": {
+          "filesModified": 2,
+          "verifications": 1,
+          "editsSinceLastTest": 0,
+          "hasFailedTests": true,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "suggest",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "suggest",
+        "message": "TDD discipline: 1 verification(s) failed. Fix the failing tests before continuing to edit."
+      }
+    },
+    {
+      "name": "threshold-suggest-mode-suggests",
+      "input": {
+        "gateState": {
+          "filesModified": 3,
+          "verifications": 0,
+          "editsSinceLastTest": 3,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "suggest",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "suggest",
+        "message": "TDD discipline: 3 edit(s) made, 0 verifications. Consider running tests before more edits."
+      }
+    },
+    {
+      "name": "threshold-suggest-mode-far-over",
+      "input": {
+        "gateState": {
+          "filesModified": 3,
+          "verifications": 0,
+          "editsSinceLastTest": 99,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "suggest",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "suggest",
+        "message": "TDD discipline: 99 edit(s) made, 0 verifications. Consider running tests before more edits."
+      }
+    },
+    {
+      "name": "enforce-skip-no-tests-read-suggests",
+      "input": {
+        "gateState": {
+          "filesModified": 3,
+          "verifications": 0,
+          "editsSinceLastTest": 3,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": false
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "suggest",
+        "message": "TDD discipline: 3 edit(s) made, 0 verifications. Consider running tests before more edits."
+      }
+    },
+    {
+      "name": "enforce-with-test-read-blocks",
+      "input": {
+        "gateState": {
+          "filesModified": 3,
+          "verifications": 0,
+          "editsSinceLastTest": 3,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "block",
+        "message": "TDD Gate: 3 edits without a test run. Write a failing test first (run_tests or bash test command should fail = RED), then edit. Run tests (run_tests tool or bash: npm test / pytest / etc.) to clear this gate."
+      }
+    },
+    {
+      "name": "enforce-far-over-blocks",
+      "input": {
+        "gateState": {
+          "filesModified": 5,
+          "verifications": 0,
+          "editsSinceLastTest": 10,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "block",
+        "message": "TDD Gate: 10 edits without a test run. Write a failing test first (run_tests or bash test command should fail = RED), then edit. Run tests (run_tests tool or bash: npm test / pytest / etc.) to clear this gate."
+      }
+    },
+    {
+      "name": "enforce-noskip-no-test-read-blocks",
+      "input": {
+        "gateState": {
+          "filesModified": 3,
+          "verifications": 0,
+          "editsSinceLastTest": 3,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": false
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": false
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "block",
+        "message": "TDD Gate: 3 edits without a test run. Write a failing test first (run_tests or bash test command should fail = RED), then edit. Run tests (run_tests tool or bash: npm test / pytest / etc.) to clear this gate."
+      }
+    },
+    {
+      "name": "enforce-test-target-suggests",
+      "input": {
+        "gateState": {
+          "filesModified": 3,
+          "verifications": 0,
+          "editsSinceLastTest": 3,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": "src/agent/__tests__/foo.test.ts"
+      },
+      "output": {
+        "action": "suggest",
+        "message": "TDD discipline: 3 edit(s) without a test run, but this edit targets a test file — writing/fixing the test is the RED step, so it is allowed. Run the test after this edit to verify it fails (RED) or passes (GREEN)."
+      }
+    },
+    {
+      "name": "enforce-test-target-dot-test",
+      "input": {
+        "gateState": {
+          "filesModified": 3,
+          "verifications": 0,
+          "editsSinceLastTest": 3,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "write_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": "src/foo.spec.ts"
+      },
+      "output": {
+        "action": "suggest",
+        "message": "TDD discipline: 3 edit(s) without a test run, but this edit targets a test file — writing/fixing the test is the RED step, so it is allowed. Run the test after this edit to verify it fails (RED) or passes (GREEN)."
+      }
+    },
+    {
+      "name": "enforce-test-target-camelcase",
+      "input": {
+        "gateState": {
+          "filesModified": 3,
+          "verifications": 0,
+          "editsSinceLastTest": 3,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": "src/foo_test.go"
+      },
+      "output": {
+        "action": "block",
+        "message": "TDD Gate: 3 edits without a test run. Write a failing test first (run_tests or bash test command should fail = RED), then edit. Run tests (run_tests tool or bash: npm test / pytest / etc.) to clear this gate."
+      }
+    },
+    {
+      "name": "under-threshold-suggests",
+      "input": {
+        "gateState": {
+          "filesModified": 2,
+          "verifications": 0,
+          "editsSinceLastTest": 2,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "suggest",
+        "message": "TDD discipline: 2 edit(s) made, 0 verifications. Consider running tests before more edits."
+      }
+    },
+    {
+      "name": "at-threshold-minus-1",
+      "input": {
+        "gateState": {
+          "filesModified": 1,
+          "verifications": 0,
+          "editsSinceLastTest": 1,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "suggest",
+        "message": "TDD discipline: 1 edit(s) made, 0 verifications. Consider running tests before more edits."
+      }
+    },
+    {
+      "name": "exactly-at-threshold-blocks",
+      "input": {
+        "gateState": {
+          "filesModified": 3,
+          "verifications": 0,
+          "editsSinceLastTest": 3,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "block",
+        "message": "TDD Gate: 3 edits without a test run. Write a failing test first (run_tests or bash test command should fail = RED), then edit. Run tests (run_tests tool or bash: npm test / pytest / etc.) to clear this gate."
+      }
+    },
+    {
+      "name": "edit-tool-edit_file-at-threshold",
+      "input": {
+        "gateState": {
+          "filesModified": 3,
+          "verifications": 0,
+          "editsSinceLastTest": 3,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "block",
+        "message": "TDD Gate: 3 edits without a test run. Write a failing test first (run_tests or bash test command should fail = RED), then edit. Run tests (run_tests tool or bash: npm test / pytest / etc.) to clear this gate."
+      }
+    },
+    {
+      "name": "edit-tool-write_file-at-threshold",
+      "input": {
+        "gateState": {
+          "filesModified": 3,
+          "verifications": 0,
+          "editsSinceLastTest": 3,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "write_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "block",
+        "message": "TDD Gate: 3 edits without a test run. Write a failing test first (run_tests or bash test command should fail = RED), then edit. Run tests (run_tests tool or bash: npm test / pytest / etc.) to clear this gate."
+      }
+    },
+    {
+      "name": "edit-tool-apply_patch-at-threshold",
+      "input": {
+        "gateState": {
+          "filesModified": 3,
+          "verifications": 0,
+          "editsSinceLastTest": 3,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "apply_patch",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "block",
+        "message": "TDD Gate: 3 edits without a test run. Write a failing test first (run_tests or bash test command should fail = RED), then edit. Run tests (run_tests tool or bash: npm test / pytest / etc.) to clear this gate."
+      }
+    },
+    {
+      "name": "edit-tool-hash_edit-at-threshold",
+      "input": {
+        "gateState": {
+          "filesModified": 3,
+          "verifications": 0,
+          "editsSinceLastTest": 3,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "hash_edit",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 3,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "block",
+        "message": "TDD Gate: 3 edits without a test run. Write a failing test first (run_tests or bash test command should fail = RED), then edit. Run tests (run_tests tool or bash: npm test / pytest / etc.) to clear this gate."
+      }
+    },
+    {
+      "name": "custom-threshold-1-blocks",
+      "input": {
+        "gateState": {
+          "filesModified": 1,
+          "verifications": 0,
+          "editsSinceLastTest": 1,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 1,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "block",
+        "message": "TDD Gate: 1 edits without a test run. Write a failing test first (run_tests or bash test command should fail = RED), then edit. Run tests (run_tests tool or bash: npm test / pytest / etc.) to clear this gate."
+      }
+    },
+    {
+      "name": "custom-threshold-5-under",
+      "input": {
+        "gateState": {
+          "filesModified": 3,
+          "verifications": 0,
+          "editsSinceLastTest": 3,
+          "hasFailedTests": false,
+          "hasCodeEdits": true,
+          "hasReadTestFiles": true
+        },
+        "toolName": "edit_file",
+        "config": {
+          "enabled": true,
+          "mode": "enforce",
+          "threshold": 5,
+          "skipIfNoTests": true
+        },
+        "targetPath": null
+      },
+      "output": {
+        "action": "suggest",
+        "message": "TDD discipline: 3 edit(s) made, 0 verifications. Consider running tests before more edits."
+      }
+    }
+  ]
+}

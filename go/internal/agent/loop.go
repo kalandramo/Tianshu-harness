@@ -69,6 +69,20 @@ type Config struct {
 	// 模式——依赖由装配层注入，使测试可隔离（测试不需要污染真实环境变量）。
 	// 生产路径在 `cmd/tianshu/main.go` 用 `os.Getenv("RIVET_TERSE")` 填充。
 	TerseEnv string
+	// TddGateEnv 是 `RIVET_TDD_GATE` 环境变量的原始取值（空串 = 未设）。
+	//
+	// 消费方：`ParseTddGateConfig` → `EvaluateTddGate`（`tddgate.go`）——
+	// 决定编辑工具是否被 TDD gate 建议/拦截。
+	//
+	// **为什么经 Config 注入而非直接读 os.Getenv**：与 `TerseEnv` 同一模式
+	// ——依赖由装配层注入，使测试可隔离。生产路径在 `cmd/tianshu/main.go`
+	// 用 `os.Getenv("RIVET_TDD_GATE")` 填充。
+	//
+	// **对账 TS**：TS 侧在会话构造时调一次 `parseTddGateConfig()` 并持有
+	// （`_TDD_GATE_CONFIG`）。Go 侧改为每轮解析——`ParseTddGateConfig` 是
+	// 纯函数且开销可忽略，换来「测试可直接注入配置字符串」的可测性。
+	// **语义等价**（同一 env 取值 → 同一配置）。
+	TddGateEnv string
 	// SessionID 用于缓存路由亲和。
 	SessionID string
 	// StarDomain 是当前星域名（用于 advisory 预算与措辞适配）。
@@ -1097,6 +1111,53 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 			"不要重复发出同一调用——它会再次撞上同一道门，白白消耗轮次预算。\n" +
 			"请改用其他方式完成任务，或停下来向用户说明哪一步需要授权。"
 		return contract.Result{Content: msg, IsError: true}
+	}
+
+	// ── TDD gate（第七十二刀接线）──
+	//
+	// 对账 TS `tool-pipeline.ts:889-905` 的 TDD gate 分支。**Go 侧此前只有
+	// 状态追踪、没有拦截**：`evidenceTracker` 的 `GateState` /
+	// `HasVerificationDebt` 零生产消费（`loop.go` 的字段注释曾显式披露
+	// 「无 gate 拦截消费方——拦截是独立的一刀」）。本门即那一刀。
+	//
+	// **为什么在门链末尾**（bash 写门之后）：TS 的 TDD gate 在
+	// `destructiveGate` **之前**、cerebellar gate **之后**；而 Go 门链的
+	// 顺序是「用户边界（deny/pathGrant/审批）→ 纪律门」。TDD 是**纪律**门
+	// （不是安全边界），放在审批门之后对账这个分层——安全边界优先于纪律。
+	//
+	// **suggest 的处理与 TS 有别（有意）**：TS 的 suggest 文案经
+	// `tddSuggestNote` 附加到**工具结果**上（`tool-pipeline.ts:900-905`）。
+	// Go 侧 `contract.Result` 无对应的附注字段，故 suggest 时**不附注**
+	// ——只做 allow。**这是已知的降级**：enforce 模式的硬拦完整生效，
+	// suggest 模式的提示价值在 Go 侧暂缺（需要 immune/advisory 通道，
+	// 见 `tddgate.go` 的范围声明）。
+	//
+	// **skip 档不豁免本门**（与审批门不同）：TDD gate 不是审批门——它
+	// 不需要人工批准，拦下只是让模型先写测试。TS 侧同样不读审批档位。
+	if editTools[tc.name] {
+		// **配置来源唯一**：`Config.TddGateEnv`（装配层从 `os.Getenv` 填充）。
+		//
+		// **不在此处回退读 os.Getenv**（初版曾这么做，是设计错误）：那会让
+		// 环境变量**绕过**注入层——e2e 测试设了子进程 env 后，`TddGateEnv`
+		// 为空也能生效，于是「装配层漏填」这个缺陷**测不出来**（变异反证
+		// 实测红 0 处）。与 `TerseEnv` 的注入模式一致：Config 是唯一来源。
+		gateCfg := parseTddGateEnv(l.cfg.TddGateEnv)
+		target, _ := tc.input["file_path"].(string)
+		filesModified := 0
+		var filesRead []string
+		if l.State != nil {
+			snap := l.State.Snapshot()
+			filesModified = EvidenceStateFromSession(snap)
+			for _, k := range snap.FileIndex.Keys() {
+				if v, ok := snap.FileIndex.Get(k); ok && !v.ModifiedByMe {
+					filesRead = append(filesRead, k)
+				}
+			}
+		}
+		decision := EvaluateTddGate(l.evidence.GateState(filesModified, filesRead), tc.name, gateCfg, target)
+		if decision.Action == "block" {
+			return contract.Result{Content: decision.Message, IsError: true}
+		}
 	}
 
 	result, err := l.registry.Execute(ctx, tc.name, p)
