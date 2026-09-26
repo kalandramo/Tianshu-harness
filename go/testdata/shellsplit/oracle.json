@@ -2665,5 +2665,1688 @@
       ],
       "denied": false
     }
+  ],
+  "allowed": [
+    {
+      "label": "exact × empty",
+      "cmd": "ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "exact × ls",
+      "cmd": "ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "exact × git-status",
+      "cmd": "ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "exact × multi",
+      "cmd": "ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "exact × with-empty-entry",
+      "cmd": "ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "with-args × empty",
+      "cmd": "ls -la",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "with-args × ls",
+      "cmd": "ls -la",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "with-args × git-status",
+      "cmd": "ls -la",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "with-args × multi",
+      "cmd": "ls -la",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "with-args × with-empty-entry",
+      "cmd": "ls -la",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "prefix-with-space × empty",
+      "cmd": "git status",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "prefix-with-space × ls",
+      "cmd": "git status",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "prefix-with-space × git-status",
+      "cmd": "git status",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "prefix-with-space × multi",
+      "cmd": "git status",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "prefix-with-space × with-empty-entry",
+      "cmd": "git status",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "prefix-with-args × empty",
+      "cmd": "git status --short",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "prefix-with-args × ls",
+      "cmd": "git status --short",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "prefix-with-args × git-status",
+      "cmd": "git status --short",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "prefix-with-args × multi",
+      "cmd": "git status --short",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "prefix-with-args × with-empty-entry",
+      "cmd": "git status --short",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "multi-seg-all-covered × empty",
+      "cmd": "ls && ls -la",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "multi-seg-all-covered × ls",
+      "cmd": "ls && ls -la",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "multi-seg-all-covered × git-status",
+      "cmd": "ls && ls -la",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "multi-seg-all-covered × multi",
+      "cmd": "ls && ls -la",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "multi-seg-all-covered × with-empty-entry",
+      "cmd": "ls && ls -la",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "leading-trailing-space × empty",
+      "cmd": "  ls  ",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "leading-trailing-space × ls",
+      "cmd": "  ls  ",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "leading-trailing-space × git-status",
+      "cmd": "  ls  ",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "leading-trailing-space × multi",
+      "cmd": "  ls  ",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "leading-trailing-space × with-empty-entry",
+      "cmd": "  ls  ",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "env-inert-value × empty",
+      "cmd": "CI=true ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "env-inert-value × ls",
+      "cmd": "CI=true ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "env-inert-value × git-status",
+      "cmd": "CI=true ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-inert-value × multi",
+      "cmd": "CI=true ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "env-inert-value × with-empty-entry",
+      "cmd": "CI=true ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "env-path-value × empty",
+      "cmd": "PATH=/tmp/evil: ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "env-path-value × ls",
+      "cmd": "PATH=/tmp/evil: ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-path-value × git-status",
+      "cmd": "PATH=/tmp/evil: ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-path-value × multi",
+      "cmd": "PATH=/tmp/evil: ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-path-value × with-empty-entry",
+      "cmd": "PATH=/tmp/evil: ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-expansion × empty",
+      "cmd": "A=$HOME ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "env-expansion × ls",
+      "cmd": "A=$HOME ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-expansion × git-status",
+      "cmd": "A=$HOME ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-expansion × multi",
+      "cmd": "A=$HOME ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-expansion × with-empty-entry",
+      "cmd": "A=$HOME ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-second-eq × empty",
+      "cmd": "A=b=c ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "env-second-eq × ls",
+      "cmd": "A=b=c ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-second-eq × git-status",
+      "cmd": "A=b=c ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-second-eq × multi",
+      "cmd": "A=b=c ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-second-eq × with-empty-entry",
+      "cmd": "A=b=c ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-two-assignments × empty",
+      "cmd": "A=1 B=2 ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "env-two-assignments × ls",
+      "cmd": "A=1 B=2 ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "env-two-assignments × git-status",
+      "cmd": "A=1 B=2 ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-two-assignments × multi",
+      "cmd": "A=1 B=2 ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "env-two-assignments × with-empty-entry",
+      "cmd": "A=1 B=2 ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "env-trailing-no-cmd × empty",
+      "cmd": "A=1",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "env-trailing-no-cmd × ls",
+      "cmd": "A=1",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-trailing-no-cmd × git-status",
+      "cmd": "A=1",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-trailing-no-cmd × multi",
+      "cmd": "A=1",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-trailing-no-cmd × with-empty-entry",
+      "cmd": "A=1",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-in-nonfirst-seg × empty",
+      "cmd": "ls && CI=true ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "env-in-nonfirst-seg × ls",
+      "cmd": "ls && CI=true ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "env-in-nonfirst-seg × git-status",
+      "cmd": "ls && CI=true ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "env-in-nonfirst-seg × multi",
+      "cmd": "ls && CI=true ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "env-in-nonfirst-seg × with-empty-entry",
+      "cmd": "ls && CI=true ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "residual-paren × empty",
+      "cmd": "echo $(a $(b) c)",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "residual-paren × ls",
+      "cmd": "echo $(a $(b) c)",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "residual-paren × git-status",
+      "cmd": "echo $(a $(b) c)",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "residual-paren × multi",
+      "cmd": "echo $(a $(b) c)",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "residual-paren × with-empty-entry",
+      "cmd": "echo $(a $(b) c)",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "residual-backtick × empty",
+      "cmd": "echo `ls`",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "residual-backtick × ls",
+      "cmd": "echo `ls`",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "residual-backtick × git-status",
+      "cmd": "echo `ls`",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "residual-backtick × multi",
+      "cmd": "echo `ls`",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "residual-backtick × with-empty-entry",
+      "cmd": "echo `ls`",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "cmdsubst-clean × empty",
+      "cmd": "ls $(ls)",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "cmdsubst-clean × ls",
+      "cmd": "ls $(ls)",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "cmdsubst-clean × git-status",
+      "cmd": "ls $(ls)",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "cmdsubst-clean × multi",
+      "cmd": "ls $(ls)",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "cmdsubst-clean × with-empty-entry",
+      "cmd": "ls $(ls)",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": true
+    },
+    {
+      "label": "binary-expansion × empty",
+      "cmd": "$CMD ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "binary-expansion × ls",
+      "cmd": "$CMD ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "binary-expansion × git-status",
+      "cmd": "$CMD ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "binary-expansion × multi",
+      "cmd": "$CMD ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "binary-expansion × with-empty-entry",
+      "cmd": "$CMD ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "binary-dollar-brace × empty",
+      "cmd": "${CMD} ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "binary-dollar-brace × ls",
+      "cmd": "${CMD} ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "binary-dollar-brace × git-status",
+      "cmd": "${CMD} ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "binary-dollar-brace × multi",
+      "cmd": "${CMD} ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "binary-dollar-brace × with-empty-entry",
+      "cmd": "${CMD} ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-env × empty",
+      "cmd": "env ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-env × ls",
+      "cmd": "env ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-env × git-status",
+      "cmd": "env ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-env × multi",
+      "cmd": "env ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-env × with-empty-entry",
+      "cmd": "env ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-timeout × empty",
+      "cmd": "timeout 5 ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-timeout × ls",
+      "cmd": "timeout 5 ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-timeout × git-status",
+      "cmd": "timeout 5 ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-timeout × multi",
+      "cmd": "timeout 5 ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-timeout × with-empty-entry",
+      "cmd": "timeout 5 ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-nice × empty",
+      "cmd": "nice ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-nice × ls",
+      "cmd": "nice ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-nice × git-status",
+      "cmd": "nice ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-nice × multi",
+      "cmd": "nice ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-nice × with-empty-entry",
+      "cmd": "nice ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-xargs × empty",
+      "cmd": "xargs ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-xargs × ls",
+      "cmd": "xargs ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-xargs × git-status",
+      "cmd": "xargs ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-xargs × multi",
+      "cmd": "xargs ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-xargs × with-empty-entry",
+      "cmd": "xargs ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-nohup × empty",
+      "cmd": "nohup ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-nohup × ls",
+      "cmd": "nohup ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-nohup × git-status",
+      "cmd": "nohup ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-nohup × multi",
+      "cmd": "nohup ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-nohup × with-empty-entry",
+      "cmd": "nohup ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-source × empty",
+      "cmd": "source ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-source × ls",
+      "cmd": "source ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-source × git-status",
+      "cmd": "source ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-source × multi",
+      "cmd": "source ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-source × with-empty-entry",
+      "cmd": "source ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-exec × empty",
+      "cmd": "exec ls",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-exec × ls",
+      "cmd": "exec ls",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-exec × git-status",
+      "cmd": "exec ls",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-exec × multi",
+      "cmd": "exec ls",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "wrapper-exec × with-empty-entry",
+      "cmd": "exec ls",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-inline-c × empty",
+      "cmd": "bash -c \"rm -rf /\"",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "interp-inline-c × ls",
+      "cmd": "bash -c \"rm -rf /\"",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-inline-c × git-status",
+      "cmd": "bash -c \"rm -rf /\"",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-inline-c × multi",
+      "cmd": "bash -c \"rm -rf /\"",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-inline-c × with-empty-entry",
+      "cmd": "bash -c \"rm -rf /\"",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-inline-cluster × empty",
+      "cmd": "bash -lc \"rm -rf /\"",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "interp-inline-cluster × ls",
+      "cmd": "bash -lc \"rm -rf /\"",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-inline-cluster × git-status",
+      "cmd": "bash -lc \"rm -rf /\"",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-inline-cluster × multi",
+      "cmd": "bash -lc \"rm -rf /\"",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-inline-cluster × with-empty-entry",
+      "cmd": "bash -lc \"rm -rf /\"",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-node-eval × empty",
+      "cmd": "node -e \"x\"",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "interp-node-eval × ls",
+      "cmd": "node -e \"x\"",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-node-eval × git-status",
+      "cmd": "node -e \"x\"",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-node-eval × multi",
+      "cmd": "node -e \"x\"",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-node-eval × with-empty-entry",
+      "cmd": "node -e \"x\"",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-long-eval × empty",
+      "cmd": "node --eval \"x\"",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "interp-long-eval × ls",
+      "cmd": "node --eval \"x\"",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-long-eval × git-status",
+      "cmd": "node --eval \"x\"",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-long-eval × multi",
+      "cmd": "node --eval \"x\"",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-long-eval × with-empty-entry",
+      "cmd": "node --eval \"x\"",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-no-inline-flag × empty",
+      "cmd": "bash script.sh",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "interp-no-inline-flag × ls",
+      "cmd": "bash script.sh",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-no-inline-flag × git-status",
+      "cmd": "bash script.sh",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-no-inline-flag × multi",
+      "cmd": "bash script.sh",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-no-inline-flag × with-empty-entry",
+      "cmd": "bash script.sh",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-python3-c × empty",
+      "cmd": "python3 -c \"import os\"",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "interp-python3-c × ls",
+      "cmd": "python3 -c \"import os\"",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-python3-c × git-status",
+      "cmd": "python3 -c \"import os\"",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-python3-c × multi",
+      "cmd": "python3 -c \"import os\"",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "interp-python3-c × with-empty-entry",
+      "cmd": "python3 -c \"import os\"",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "non-interp-dash-c × empty",
+      "cmd": "grep -c x f",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "non-interp-dash-c × ls",
+      "cmd": "grep -c x f",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "non-interp-dash-c × git-status",
+      "cmd": "grep -c x f",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "non-interp-dash-c × multi",
+      "cmd": "grep -c x f",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "non-interp-dash-c × with-empty-entry",
+      "cmd": "grep -c x f",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "redirect-out × empty",
+      "cmd": "echo x > f",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "redirect-out × ls",
+      "cmd": "echo x > f",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "redirect-out × git-status",
+      "cmd": "echo x > f",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "redirect-out × multi",
+      "cmd": "echo x > f",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "redirect-out × with-empty-entry",
+      "cmd": "echo x > f",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "redirect-in × empty",
+      "cmd": "cat < f",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "redirect-in × ls",
+      "cmd": "cat < f",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "redirect-in × git-status",
+      "cmd": "cat < f",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "redirect-in × multi",
+      "cmd": "cat < f",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "redirect-in × with-empty-entry",
+      "cmd": "cat < f",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "backslash × empty",
+      "cmd": "ls \\",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "backslash × ls",
+      "cmd": "ls \\",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "backslash × git-status",
+      "cmd": "ls \\",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "backslash × multi",
+      "cmd": "ls \\",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "backslash × with-empty-entry",
+      "cmd": "ls \\",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "bang × empty",
+      "cmd": "ls !x",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "bang × ls",
+      "cmd": "ls !x",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "bang × git-status",
+      "cmd": "ls !x",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "bang × multi",
+      "cmd": "ls !x",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "bang × with-empty-entry",
+      "cmd": "ls !x",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "chain-second-uncovered × empty",
+      "cmd": "ls && rm -rf /",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "chain-second-uncovered × ls",
+      "cmd": "ls && rm -rf /",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "chain-second-uncovered × git-status",
+      "cmd": "ls && rm -rf /",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "chain-second-uncovered × multi",
+      "cmd": "ls && rm -rf /",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "chain-second-uncovered × with-empty-entry",
+      "cmd": "ls && rm -rf /",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "chain-pipe-uncovered × empty",
+      "cmd": "ls | rm",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "chain-pipe-uncovered × ls",
+      "cmd": "ls | rm",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "chain-pipe-uncovered × git-status",
+      "cmd": "ls | rm",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "chain-pipe-uncovered × multi",
+      "cmd": "ls | rm",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "chain-pipe-uncovered × with-empty-entry",
+      "cmd": "ls | rm",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "chain-semi-uncovered × empty",
+      "cmd": "ls; rm",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "chain-semi-uncovered × ls",
+      "cmd": "ls; rm",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "chain-semi-uncovered × git-status",
+      "cmd": "ls; rm",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "chain-semi-uncovered × multi",
+      "cmd": "ls; rm",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "chain-semi-uncovered × with-empty-entry",
+      "cmd": "ls; rm",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "empty × empty",
+      "cmd": "",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "empty × ls",
+      "cmd": "",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "empty × git-status",
+      "cmd": "",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "empty × multi",
+      "cmd": "",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "empty × with-empty-entry",
+      "cmd": "",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "only-spaces × empty",
+      "cmd": "   ",
+      "allowlist": [],
+      "allowed": false
+    },
+    {
+      "label": "only-spaces × ls",
+      "cmd": "   ",
+      "allowlist": [
+        "ls"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "only-spaces × git-status",
+      "cmd": "   ",
+      "allowlist": [
+        "git status"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "only-spaces × multi",
+      "cmd": "   ",
+      "allowlist": [
+        "ls",
+        "git status",
+        "npm test"
+      ],
+      "allowed": false
+    },
+    {
+      "label": "only-spaces × with-empty-entry",
+      "cmd": "   ",
+      "allowlist": [
+        "",
+        "ls"
+      ],
+      "allowed": false
+    }
   ]
 }

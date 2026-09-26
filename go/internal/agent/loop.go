@@ -1031,7 +1031,7 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 	// **硬闸门不受此影响**：它在更前（`RequiresHardGate`）、且不读档位——
 	// 破坏性命令在 skip 档下仍被拦（有测试钉住）。
 	if l.cfg.ApprovalMode != "dangerously-skip-permissions" &&
-		bashWriteNeedsApproval(tc.name, tc.input, l.cfg.ApprovalMode, allowRulesOf(l.cfg)) {
+		bashWriteNeedsApproval(tc.name, tc.input, l.cfg.ApprovalMode, allowRulesOf(l.cfg), l.cfg.Permissions) {
 		cmd, _ := tc.input["command"].(string)
 		msg := "工具 \"" + tc.name + "\" (" + truncateRunes(cmd, 60) + ") " + approvalBlockedMarker + "。\n"
 		msg += "该命令会写入文件系统，需人工批准。\n" +

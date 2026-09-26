@@ -193,7 +193,10 @@ func TestBashWriteGateMatrix(t *testing.T) {
 			if c.cmd != "" {
 				input["command"] = c.cmd
 			}
-			got := bashWriteNeedsApproval(c.tool, input, c.mode, c.rules)
+			// perms 传 nil：本矩阵只覆盖「档位 × 命令类型 × allowRules」；
+			// `permissions.bash.allowlist` 维度由
+			// `permissions_bashallow_test.go` 的专项测试覆盖。
+			got := bashWriteNeedsApproval(c.tool, input, c.mode, c.rules, nil)
 			if got != c.want {
 				t.Errorf("bashWriteNeedsApproval(%q, %q, %q) = %v, want %v（%s）",
 					c.tool, c.cmd, c.mode, got, c.want, c.why)

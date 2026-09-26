@@ -23,6 +23,12 @@ type shellsplitOracle struct {
 		Denylist []string `json:"denylist"`
 		Denied   bool     `json:"denied"`
 	} `json:"denied"`
+	Allowed []struct {
+		Label     string   `json:"label"`
+		Cmd       string   `json:"cmd"`
+		Allowlist []string `json:"allowlist"`
+		Allowed   bool     `json:"allowed"`
+	} `json:"allowed"`
 }
 
 func loadShellsplitOracle(t *testing.T) shellsplitOracle {

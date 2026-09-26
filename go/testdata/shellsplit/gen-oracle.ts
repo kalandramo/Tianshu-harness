@@ -19,7 +19,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
-import { splitShellSegments, isBashCommandDenied } from '../../../src/agent/permissions.js'
+import { splitShellSegments, isBashCommandDenied, isBashCommandAllowlisted } from '../../../src/agent/permissions.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -112,6 +112,89 @@ const denylists: Array<{ label: string; list: string[] }> = [
   { label: 'prefix-with-space', list: ['git push'] },
 ]
 
+// ── allowlist 语料 ──
+//
+// 覆盖 segmentMatchesAllowEntry 的 5 道 fail-closed 守卫——每道都要有
+// 正例（可放行）与反例（必须拒绝）：
+//   1 环境赋值严格剥离（惰性值可剥；含斜杠/冒号/美元/等号的不可剥）
+//   2 残余替换符（方括号圆括号反引号——分段没解干净就不放行）
+//   3 二进制含美元符（静态不可知）
+//   4 ALWAYS_PROMPT_BINARIES（wrapper 洗白）
+//   5 INTERPRETERS 加内联代码 flag（bash -c 后接危险命令）
+// 外加 UNMODELLED_SHELL_CHARS（尖括号/反斜杠/叹号）在整体层的拒绝。
+const allowlists: Array<{ label: string; list: string[] }> = [
+  { label: 'empty', list: [] },
+  { label: 'ls', list: ['ls'] },
+  { label: 'git-status', list: ['git status'] },
+  { label: 'multi', list: ['ls', 'git status', 'npm test'] },
+  { label: 'with-empty-entry', list: ['', 'ls'] },
+]
+
+// ── allow 判定的命令语料 ──
+//
+// 每条都对着一道守卫或一条放行路径。allowlist 语料见 `allowlists`
+// （多数用例用 `ls` 或 `git status` 作为被放行的前缀）。
+const allowCommands: Array<{ label: string; cmd: string }> = [
+  // ── 放行路径 ──
+  { label: 'exact', cmd: 'ls' },
+  { label: 'with-args', cmd: 'ls -la' },
+  { label: 'prefix-with-space', cmd: 'git status' },
+  { label: 'prefix-with-args', cmd: 'git status --short' },
+  { label: 'multi-seg-all-covered', cmd: 'ls && ls -la' },
+  { label: 'leading-trailing-space', cmd: '  ls  ' },
+
+  // ── 守卫 1：环境赋值剥离 ──
+  { label: 'env-inert-value', cmd: 'CI=true ls' },        // 惰性值 → 可剥 → 放行
+  { label: 'env-path-value', cmd: 'PATH=/tmp/evil: ls' }, // 含斜杠冒号 → 拒绝
+  { label: 'env-expansion', cmd: 'A=$HOME ls' },          // 含美元 → 拒绝
+  { label: 'env-second-eq', cmd: 'A=b=c ls' },            // 含第二个等号 → 拒绝
+  { label: 'env-two-assignments', cmd: 'A=1 B=2 ls' },    // 两个惰性赋值 → 放行
+  { label: 'env-trailing-no-cmd', cmd: 'A=1' },           // 只有赋值无命令 → 拒绝
+  { label: 'env-in-nonfirst-seg', cmd: 'ls && CI=true ls' },
+
+  // ── 守卫 2：残余替换符 ──
+  { label: 'residual-paren', cmd: 'echo $(a $(b) c)' },   // 嵌套未解净 → 段含括号
+  { label: 'residual-backtick', cmd: 'echo `ls`' },
+  { label: 'cmdsubst-clean', cmd: 'ls $(ls)' },           // 替换体已抽净 → 两段各自判定
+
+  // ── 守卫 3：二进制含美元 ──
+  { label: 'binary-expansion', cmd: '$CMD ls' },
+  { label: 'binary-dollar-brace', cmd: '${CMD} ls' },
+
+  // ── 守卫 4：ALWAYS_PROMPT_BINARIES ──
+  { label: 'wrapper-env', cmd: 'env ls' },
+  { label: 'wrapper-timeout', cmd: 'timeout 5 ls' },
+  { label: 'wrapper-nice', cmd: 'nice ls' },
+  { label: 'wrapper-xargs', cmd: 'xargs ls' },
+  { label: 'wrapper-nohup', cmd: 'nohup ls' },
+  { label: 'wrapper-source', cmd: 'source ls' },
+  { label: 'wrapper-exec', cmd: 'exec ls' },
+
+  // ── 守卫 5：解释器 + 内联代码 ──
+  { label: 'interp-inline-c', cmd: 'bash -c "rm -rf /"' },
+  { label: 'interp-inline-cluster', cmd: 'bash -lc "rm -rf /"' },
+  { label: 'interp-node-eval', cmd: 'node -e "x"' },
+  { label: 'interp-long-eval', cmd: 'node --eval "x"' },
+  { label: 'interp-no-inline-flag', cmd: 'bash script.sh' }, // 无内联 flag → 可放行
+  { label: 'interp-python3-c', cmd: 'python3 -c "import os"' },
+  { label: 'non-interp-dash-c', cmd: 'grep -c x f' },        // 非解释器 → -c 无害
+
+  // ── UNMODELLED_SHELL_CHARS 整体拒绝 ──
+  { label: 'redirect-out', cmd: 'echo x > f' },
+  { label: 'redirect-in', cmd: 'cat < f' },
+  { label: 'backslash', cmd: 'ls \\' },
+  { label: 'bang', cmd: 'ls !x' },
+
+  // ── 链式：一段未覆盖 → 整条拒绝 ──
+  { label: 'chain-second-uncovered', cmd: 'ls && rm -rf /' },
+  { label: 'chain-pipe-uncovered', cmd: 'ls | rm' },
+  { label: 'chain-semi-uncovered', cmd: 'ls; rm' },
+
+  // ── 空 / 仅空白 ──
+  { label: 'empty', cmd: '' },
+  { label: 'only-spaces', cmd: '   ' },
+]
+
 const out: Record<string, unknown> = {
   // 分段：每条命令的段数组（逐值对账）
   segments: commands.map(({ label, cmd }) => ({
@@ -128,6 +211,18 @@ const out: Record<string, unknown> = {
       denied: isBashCommandDenied(cmd, list),
     })),
   ),
+  // allow 判定：allow 语料 × allowlist 的交叉矩阵
+  //
+  // **不复用 `commands` 语料**：那批是围绕**分段**设计的（含大量引号/替换符
+  // 怪例），而 allow 侧的重点是 5 道守卫。混用会让失败信号难以定位到守卫。
+  allowed: allowCommands.flatMap(({ label, cmd }) =>
+    allowlists.map(({ label: alLabel, list }) => ({
+      label: `${label} × ${alLabel}`,
+      cmd,
+      allowlist: list,
+      allowed: isBashCommandAllowlisted(cmd, list),
+    })),
+  ),
 }
 
 mkdirSync(here, { recursive: true })
@@ -135,5 +230,7 @@ writeFileSync(join(here, 'oracle.json'), JSON.stringify(out, null, 2) + '\n')
 const sha = createHash('sha256').update(JSON.stringify(out)).digest('hex')
 console.error(
   `shellsplit oracle：命令 ${commands.length} 条、denylist ${denylists.length} 组、` +
-    `denied 组合 ${(out.denied as unknown[]).length} 条 — sha256 ${sha.slice(0, 16)}`,
+    `denied 组合 ${(out.denied as unknown[]).length} 条、` +
+    `allow 命令 ${allowCommands.length} 条、allowlist ${allowlists.length} 组、` +
+    `allowed 组合 ${(out.allowed as unknown[]).length} 条 — sha256 ${sha.slice(0, 16)}`,
 )

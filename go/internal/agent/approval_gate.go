@@ -79,10 +79,8 @@
 //	                                                          （档位门内豁免，全工具面）
 //	                                                          注：`bashWriteNeedsApproval`
 //	                                                          内另有一处豁免（bash 写门）
-//	bashAllowlisted           isBashCommandAllowlisted       ❌ 未移植（同 bashDenied；
-//	                                                          但另需 5 组 fail-closed
-//	                                                          守卫，见 permissions.ts
-//	                                                          `segmentMatchesAllowEntry`）
+//	bashAllowlisted           isBashCommandAllowlisted       ✅ 第六十六刀接线
+//	                                                          （`bashAllowlistedFor`）
 //	canAutoApprove            sensorium 置信度               ❌ 无 sensorium
 //	                                                          （仅注释/字符串表）
 //	computerUsePerAppGate     computer_use 逐应用            ❌ 工具未移植
@@ -183,14 +181,17 @@ func allowRulesOf(cfg Config) []PermissionAllowRule {
 //	  && !safeWriteInNoSandbox
 //	  && noSandbox
 //
-// **Go 侧代入**（两处恒值，理由见下）：
+// **Go 侧代入**（一处恒值，理由见下）：
 //   - `noSandbox` 恒 **true**：Go 侧无内核沙箱（`isSandboxActive` 零命中）。
-//   - `bashAllowlisted` 恒 **false**：`isBashCommandAllowlisted` 未移植
-//     （依赖 `splitShellSegments`，是 `permissions.go` 的显式非目标）。
+//
+// `bashAllowlisted` 原为恒 false（`isBashCommandAllowlisted` 未移植）；
+// **第六十六刀已接线**——现由 `bashAllowlistedFor` 消费
+// `permissions.bash.allowlist`。
 //
 // 故化简为：
 //
-//	RequiresBashWriteApproval && !allowlisted && !safeWriteInAutoSafe
+//	RequiresBashWriteApproval && !allowlisted && !bashAllowlisted
+//	  && !safeWriteInAutoSafe
 //
 // **`safeWriteInNoSandbox` 的档位依赖不可省**：它含
 // `approvalMode === 'auto-safe'`——即「安全写（mkdir/touch/cp/echo>file，
@@ -204,12 +205,18 @@ func allowRulesOf(cfg Config) []PermissionAllowRule {
 // 与硬闸门的关系：本函数管的**写**命令（`mkdir`/`cp`/`echo >`/`chmod`/
 // `rm`（无 -rf））与硬闸门管的**破坏**命令（`rm -rf`/`git reset --hard`）
 // 只有部分交集——`mkdir` 不在硬闸门内，故本门是独立的补强，不是重复。
-func bashWriteNeedsApproval(toolName string, input map[string]any, approvalMode string, allowRules []PermissionAllowRule) bool {
+func bashWriteNeedsApproval(toolName string, input map[string]any, approvalMode string, allowRules []PermissionAllowRule, perms *PermissionConfig) bool {
 	if !RequiresBashWriteApproval(toolName, input) {
 		return false
 	}
 	// TS: `!allowlisted` —— 用户显式 allow 规则可豁免。
 	if IsToolAllowed(toolName, input, allowRules) {
+		return false
+	}
+	// TS: `!bashAllowlisted` —— `permissions.bash.allowlist` 前缀覆盖（第六十六刀）。
+	// 与上面的 `allowlisted` 是**两个不同输入**：前者是规则模式（工具名+参数），
+	// 后者是命令前缀（含 5 道 fail-closed 守卫）。
+	if bashAllowlistedFor(perms, toolName, input) {
 		return false
 	}
 	// TS: `!safeWriteInNoSandbox` —— 仅 auto-safe 档豁免安全写。

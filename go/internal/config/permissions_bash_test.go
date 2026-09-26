@@ -92,5 +92,35 @@ func TestLoadPermissionsBash(t *testing.T) {
 		if len(perms.Bash.Denylist) != 0 {
 			t.Errorf("空 denylist 应为空切片，got=%v", perms.Bash.Denylist)
 		}
+		if len(perms.Bash.Allowlist) != 0 {
+			t.Errorf("空 allowlist 应为空切片，got=%v", perms.Bash.Allowlist)
+		}
+	})
+
+	t.Run("只配allowlist不配denylist", func(t *testing.T) {
+		// 第六十六刀：allowlist 接线后，只配它的用户也应正确读出。
+		writeConfig(t, `{
+			"agent": {
+				"permissions": {
+					"bash": {"allowlist": ["git status", "ls"]}
+				}
+			}
+		}`)
+		perms, err := LoadPermissions()
+		if err != nil {
+			t.Fatalf("读取失败：%v", err)
+		}
+		if perms == nil || perms.Bash == nil {
+			t.Fatal("应返回非 nil 的 perms.Bash")
+		}
+		if len(perms.Bash.Allowlist) != 2 {
+			t.Fatalf("allowlist 应为 2 条：got=%v", perms.Bash.Allowlist)
+		}
+		if perms.Bash.Allowlist[0] != "git status" {
+			t.Errorf("allowlist[0] = %q, want %q", perms.Bash.Allowlist[0], "git status")
+		}
+		if len(perms.Bash.Denylist) != 0 {
+			t.Errorf("未配 denylist 应为空切片，got=%v", perms.Bash.Denylist)
+		}
 	})
 }
