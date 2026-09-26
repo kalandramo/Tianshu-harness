@@ -365,6 +365,17 @@ func (r *Registry) Execute(ctx context.Context, name string, p *CallParams) (con
 // （`agent.AssessToolRisk` + `agent.decideApprovalGate`），故「完整的档位
 // 门控待提示通道落地后接入」**已完成**（第六十二刀）。
 //
+// **第八十一刀三续补注（读本条时请配合）**：上句的「这两项」中，② 由
+// **「确定性解析」**替代弹窗通道满足（见下方「接线条件」② 的「取后者：
+// `decideApprovalGate` 的确定性解析，不造弹窗、不争 stdin」）——**这是有意
+// 的架构决策**，故引用 `decideApprovalGate` 是正确的，非错误声称。
+//
+// **但需知其后果（多处已记录）**：确定性解析对「**本质需用户决定**」的工具
+// （如 `request_path_access`——「是否授权访问 /etc」不能由程序决定）**无能为力**。
+// 非 skip 档下这类调用得到**硬拒绝**（「需人工批准，agent 无法自行授权」），
+// 而 TS 是「弹审批 → 用户批准 → 放行」。这是**既有的架构缺口**，
+// 非某个工具的缺陷（`approval_gate.go` / `loop.go` 已分别记录）。
+//
 // 但 `HardGate` **仍然必要**，理由变了：它是「**任何档位都不能绕过**」的
 // 独立语义层——优先级**高于**档位门。`RequiresApproval` 是**档位驱动**的
 // （可能被 skip 档放行），而硬闸门（bash 破坏性命令）在 skip 档下**也必须
