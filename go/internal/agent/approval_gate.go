@@ -43,8 +43,9 @@
 //	bashDenied        isBashCommandDenied         ✅ 第六十五刀接线
 //	                  (bashDenyPrefixes)            （`permissions_shellsplit.go`
 //	                                                + PermissionConfig.Bash）
-//	selfKill          isSelfDestructiveKill       ❌ 未移植（self-preservation.ts:85）
-//	                  (selfProcessTree())
+//	selfKill          isSelfDestructiveKill       ⚠️ 第六十七刀称量：**部分适用**
+//	                  (selfProcessTree())           ——PID 类真实存在，镜像名类
+//	                                                不适用；未接线（见下节）
 //
 // **`bashDenied` 与 `denied` 的差距**：`denied` 走 `IsToolDenied`——它能匹配
 // `{tool:"bash", params:{command:"rm -rf*"}}` 这类**参数模式**规则，故用户写的
@@ -53,10 +54,46 @@
 // 用户在 `permissions.bash.denylist` 里写的规则被**静默忽略**。
 // （严重性低于第五十二刀：参数模式 deny 仍可用，但配了独立字段的用户会失效。）
 //
-// **`selfKill` 的 Go 侧适配性（待判定，非缺陷结论）**：TS 的动机是「杀掉
-// agent 自身所在的 Node sidecar 进程 → 会话中断 + API 认证丢失」。Go CLI 的
-// 运行形态不同（单进程，无 Node sidecar）——**该风险是否成立需要单独称量**，
-// 本表只记录「无对应实现」，不判定为缺口。
+// **`selfKill` 的称量结论（第六十七刀，实测）**——**部分适用，不是「不适用」**：
+//
+// TS 的 `isSelfDestructiveKill` 挡两类命令，**在 Go 侧命运不同**：
+//
+//	TS 模式                                      Go 侧
+//	taskkill /IM node.exe · pkill node           ❌ 不适用——Go agent 是原生
+//	killall node · wmic … node.exe delete          二进制，不是 node 进程
+//	kill <pid> · taskkill /PID <n> 命中自身/祖先  ✅ **真实存在**
+//
+// 第二类是决定性的。**实测进程树**（bash 工具内 `echo $PPID; ps -p $PPID`）：
+//
+//	SELF=72921 PPID=72918
+//	  PID  PPID COMM
+//	72918 72916 /tmp/ts-probe      ← Go agent 自身
+//
+// bash 工具用 `exec.Command` 启动 shell，故 **agent 就是命令的直接父进程**——
+// shell 里 `kill $PPID` 直接杀掉 agent 自己。**这与语言无关**：TS 的
+// `killsOwnPidInSegment` 逻辑在 Go 下同样成立。
+//
+// **但收益的「量级」低于 TS**（结构差异，非判断）：
+//   - TS 动机是「杀 sidecar → **API 认证上下文丢失 → 401 级联**」。Go 侧
+//     **无 `auth` 包**，API key 来自环境变量（`main.go:128` `firstEnv(...)`）
+//     → **进程重启无鉴权损失**。
+//   - Go 会话**增量落盘**（`.rivet/sessions/<id>.jsonl`，batchwriter 首行
+//     同步 flush）→ 被杀丢的是**当轮未 flush 的部分**，不是全部历史。
+//
+// 故 Go 侧真实损失 = 当前 turn 中断 + 少量未落盘上下文。**风险真实但轻于 TS**。
+//
+// **移植时的判据**：只移植第②类，**明确跳过第①类**（照搬 TS 四模式会让
+// 代码假装在防一个本平台不存在的威胁）。实现面小：纯函数
+// `IsSelfDestructiveKill(command, selfPid, ppid)` + 一条与 `bashDeniedFor`
+// 并列的 deny 门（补齐 TS 的 `denied || bashDenied || selfKill` 三元组）。
+// `os.Getpid`/`os.Getppid` 是标准库（无需平台分叉），`splitShellSegments`
+// 已就位（第六十五刀）。
+//
+// **同族风险（Go 特有，已处理）**：`proctree_unix.go` 的
+// `configureProcessGroupPlatform` 注释记录——「没有 `Setpgid`，`kill(-pid)`
+// 会命中调用者自己的进程组，那会杀掉整个天枢进程（含 TUI 与所有并行
+// worker）」。已由 `Setpgid: true` 解决。**这条比 selfKill 更该被记住**：
+// 它是 Go 侧特有的自毁路径（TS 无进程组杀）。
 //
 // ## B. `shouldAsk` 决策树的输入
 //
