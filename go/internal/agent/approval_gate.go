@@ -139,6 +139,9 @@
 //	bashAllowlisted           isBashCommandAllowlisted       ✅ 第六十六刀接线
 //	                                                          （`bashAllowlistedFor`）
 //	canAutoApprove            sensorium 置信度               ❌ 无 sensorium
+//	                                                          （**且实测冗余**：
+//	                                                          256 组穷举 0 差异
+//	                                                          ——见 E 节的链称量）
 //	                                                          （仅注释/字符串表）
 //	computerUsePerAppGate     computer_use 逐应用            ❌ 工具未移植
 //
@@ -225,6 +228,50 @@
 //
 // `canAutoApprove` / `unconditionalApproval` 同理需先称量收益——接入时
 // 按上表逐条补，并更新状态列与日期。
+//
+// ## E. 认知状态子系统的依赖链称量（第七十刀）
+//
+// 「造 sensorium」不是一件事，而是一条**链**。逐项核实后，**链上每一项的
+// 消费者都缺失**——故整条链当前都属「造了没人用」：
+//
+//	pressureResult   ✅ **Go 侧已完整实现**（`compact.PressureMonitor`，
+//	                    含 `Suggestion` 字段与 oracle 对账
+//	                    `TestPressureCheckParity`）——**零实例化**
+//	evidenceState    ✅ 已实现（`evidence.go` + `session.Manager`）——见下
+//	sensorium         ❌ 未实现——且其消费者 `StrategyProfile` / `vigor` /
+//	                    `turn-intent` / `model-policy-selection` **全为 0**
+//	turn-intent       ❌ 未移植——**这才是 `pressureResult` 的独立消费者**
+//
+// **关键事实（推翻「pressureResult 该做」的前提）**：`pressureResult` 在 TS
+// 侧**有独立于 sensorium 的消费者**——`turn-intent` 的
+// `thrashingSuggestion: input.pressureResult.suggestion`。但 Go 侧
+// **无 `turn-intent` 实现**（`TurnIntent` 标识符在全仓生产代码里零出现），
+// 且它自身还依赖 `strategy` + `sensorium` + `pheromones` +
+// `recentToolHistory`（**四项 Go 侧皆缺**）。
+//
+// **故「做 pressureResult」在当前 Go 侧是空转**——它已做完，缺的是
+// **消费者**。接线它需要先有 `turn-intent`，而 `turn-intent` 需要 sensorium
+// 与 pheromone 两条链。**与 `protectionMode` / `canAutoApprove` 同型**：
+// 造出来没有消费者，就是 `NeedsApproval` 曾经的形态。
+//
+// **什么时候该做**：当 Go 侧出现「需要按上下文压力做**方向提示**（thrashing
+// 时建议任务分解）」这一需求时——那时 `pressureResult` 直接可用（已实现），
+// 只需接一条消费路径。**现在不做**，因为该需求本身尚未被提出。
+//
+// **sensorium 链的最小起点建议**（若将来要做）：从 `turn-intent` 反向切入
+// ——它是**唯一有明确外部价值**（给用户方向提示）的节点，而非从 sensorium
+// 这个中间层开始造。见 `evidence.go` 的「范围声明」段。
+//
+// **`canAutoApprove` 的冗余性（第七十刀探针实测）**：它是 sensorium 的
+// **直接消费者**，但**接线它不改变任何行为**——穷举 256 组输入（档位 ×
+// 风险级 × 置信度 × sensorium 有无 × needsApproval），结果差异 **0 组**。
+//
+// 推导：它的定义要求 `mode === 'auto-safe'` 且 `risk ∈ {none, low}`，而那个
+// 位置的回退分支 `auto-safe ? isHighRisk` 在**同条件下必然 false**——两者
+// 同值。故为它造 sensorium 是**白做**（与 `protectionMode` 同型）。
+//
+// **这进一步削弱了「造 sensorium」的理由**：它的两个直接消费者
+// （`canAutoApprove` 冗余、`pressureResult` 无消费者）都不构成需求。
 //
 // # 已知欠账（`registry.go` 的前置③，**仍未做**）
 //
