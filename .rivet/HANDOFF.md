@@ -1,10 +1,12 @@
-# 交接文档 — Go 重写天枢运行时（macOS 会话 · 审批门 / 认知状态 / hooks）
+# 交接文档 — Go 重写天枢运行时（macOS 会话 · 审批门 / 认知状态 / hooks / TDD gate / 接线）
 
-> 生成时间：2026-09-26 · 设备：macOS（Darwin 25.6.0，作者 moweilong）
+> 生成时间：2026-09-26（初版）· 最后更新：2026-09-27 · 设备：macOS（Darwin 25.6.0，作者 moweilong）
 > 仓库：`/Users/moweilong/Workspace/go/src/github.com/kalandramo/Tianshu-harness`
-> 分支：`go-runtime` · HEAD：`c7f91de8` · 工作树 **clean**
-> 本会话共 **20 个提交**（`e866fad8`..`c7f91de8`），全部在 `go-runtime` 分支
+> 分支：`go-runtime` · HEAD：`fde51827` · 工作树 **clean**
+> 本会话共 **32 个提交**（`e866fad8^..HEAD`，即 `e866fad8` 含起点；不含起点口径是 31），全部在 `go-runtime` 分支
 > 本文自包含——读者无需本会话任何上下文。
+>
+> **更新轨迹**：`8d5c9853`（初版，20 提交，第七十一刀止）→ `f13a73c1`/`5609187d`/`b78a5b4d`/`903e9855`（增量补刀）→ 本次（`fde51827`，补齐至第七十九刀 + 修头部元数据 + 消矛盾）。
 
 ---
 
@@ -12,10 +14,11 @@
 
 **一句话目标**：把 TypeScript 版天枢运行时（`src/`）**行为等价**地移植成 Go（`go/`），逐刀推进、每刀独立验证。
 
-**本会话实际推进的三条线**（前序会话已完成压缩/session-split 主线，见 `go/HANDOFF.md` 第六十刀）：
+**本会话实际推进的四条线**（前序会话已完成压缩/session-split 主线，见 `go/HANDOFF.md` 第六十刀）：
 1. **审批门接线**——修「配置字段存在但零调用者」导致的 fail-open 静默执行
-2. **认知状态子系统称量**——核实「该不该做」，三次判定「不该做」
+2. **认知状态子系统称量**——核实「该不该做」，三次判定「不该做」后，第四次找到**真接线缺口**（TDD gate）
 3. **hooks 隔离缺陷**——修 `internal/hooks` 全量并发时间歇失败
+4. **「实现已有但零消费」接线系列**——TDD gate 拦截 + suggest 通道、Plan Mode（第七十二/七十三/七十九刀）
 
 **非目标**：
 - 不重写 TS 版（`src/` 下代码一行未动）。
@@ -28,21 +31,21 @@
 
 ## 拓扑（先读这段，否则会搞错上下文）
 
-`go-runtime` 分支上，**两段会话接力**：
+`go-runtime` 分支上，**四段会话接力**：
 
 | 会话 | 设备 | 提交区间 | 主题 |
 |---|---|---|---|
-| 前序 | Windows（`D:\code\Tianshu-harness`） | 至 `516a226`（2026-09-20） | Windows 可移植性 + 压缩/session-split 主线 |
-| 中间 | macOS | `516a226`..`6c6904e9`（483 提交，其中 102 触及 `go/`） | 第三十一刀..第六十刀（volatile / 动态 appendix / terse / plan-mode 等） |
-| **本会话** | macOS | `e866fad8`..`c7f91de8`（20 提交） | 审批门 / 认知状态称量 / hooks |
+| 前序① | Windows（`D:\code\Tianshu-harness`） | 至 `516a226`（2026-09-20） | Windows 可移植性 + 压缩/session-split 主线 |
+| 前序② | macOS | `516a226`..`6c6904e9`（483 提交，其中 102 触及 `go/`） | 第三十一刀..第六十刀（volatile / 动态 appendix / terse / plan-mode 等） |
+| **本会话** | macOS | `e866fad8^..fde51827`（**32 提交**） | 审批门 / 认知状态称量 / hooks / TDD gate / Plan Mode 接线 |
 
 **关键数字（实测）**：`git rev-list --count 516a226..HEAD` = **483**；`-- go/` 限定 = **102**。
 
 **权威文档**：
-- `go/HANDOFF.md`（**7018 行**，每刀一个专章）——覆盖到**第六十刀**（2026-09-24）。**本会话（第六十一刀起）尚未写入该文件**。
+- `go/HANDOFF.md`（**7217 行**，每刀一个专章）——覆盖到**第七十六刀**（`b78a5b4d` 回填「第六十一刀起」章节，169 行）。**第七十七..七十九刀尚未写入**（那三刀只写进了本文档）。
 - `go/PLAN.md`——架构欠账清单。
 
-**注意**：本文档路径是 `.rivet/HANDOFF.md`，**被 git 跟踪**（上一版提交 `4ecab8b2`）。本次为覆盖写，旧版（20584 字节，Windows 会话的 16 刀详细记录）仍可从 git 取回：
+**注意**：本文档路径是 `.rivet/HANDOFF.md`，**被 git 跟踪**。旧版（20584 字节，Windows 会话的 16 刀详细记录）可从 git 取回：
 
 ```
 git show 4ecab8b2:.rivet/HANDOFF.md
@@ -132,7 +135,8 @@ macOS 上 `/var` 是 `/private/var` 的符号链接，`hasPathPrefix` 比较未�
 - **实测踩坑**：`session.RecordVerification` 是**同 target 替换**语义，TS 的 `verifications` 是**追加数组**（oracle `two-verifies` 期望 2、替换语义得 1）→ tracker 自持追加计数。
 - 54 子用例 + 变异反证 3 个 + RED 反证 + 2 条不变量。
 - **接线**：`loop.go:321` `l.evidence = newEvidenceTracker()`；写入端 `loop.go:1219/1226`（TrackFileModified）、`loop.go:1250`（TrackVerification）。
-- **⚠ 读取端零消费（有意披露）**：`GateState()` / `HasVerificationDebt()` 在**生产代码零引用**（仅测试引用）。`loop.go:196` 的注释**明确写了**「目前**无 gate 拦截消费方**——本刀只建立追踪与派生，拦截是独立的一刀（避免造无消费者的门）」。**这不是缺陷，是显式披露**。
+- **⚠ 读取端零消费（有意披露）——当时状态**：`GateState()` / `HasVerificationDebt()` 在**生产代码零引用**（仅测试引用）。`loop.go:231` 的注释**当时**写了「目前**无 gate 拦截消费方**——本刀只建立追踪与派生，拦截是独立的一刀（避免造无消费者的门）」。**这不是缺陷，是显式披露**。
+  > **后续**：第七十二刀（`abcfc8a7`）已接线拦截、第七十三刀（`59c970e6`）已补 suggest 通道，`loop.go:231` 的注释也已随之订正。**读本节请配合「第 4 段」**——本节是当时的快照，不是现状。
 
 ### 第 3 段：`c7f91de8` 修 hooks 间歇失败根因
 
@@ -157,6 +161,126 @@ macOS 上 `/var` 是 `/private/var` 的符号链接，`hasPathPrefix` 比较未�
 
 **验证**：RED 反证（修前 `TestHookTimeoutReportsReason` 红）；变异 M1 回退错误写入 → 红 1；全量 **×6 全绿**（修复前约 1/3 失败）；`-race` hooks 包绿；vet/gofmt 干净；无探针残留。
 **诚实标注**：M2 变异（去掉测试的 `timeoutMs` 回到 5s）3 次全量**未复现**——**弱证据**（原复现率约 1/3，3 次不中概率约 30%）。修复正当性不依赖 M2，基于已确证根因。
+
+### 第 4 段：接线系列——修「实现已有但零消费」（第七十二..七十九刀）
+
+**共性根因**（与第 1 段同型，但更隐蔽）：机制**已完整实现且有 oracle 测试**，
+但**生产代码零消费**——不是「忘了写」，而是「写了没接」。判缺口**不能只看文件存在**，
+要 grep **消费点**（排除定义文件与测试）。
+
+#### `abcfc8a7` 接线 TDD gate——修「追踪有、拦截无」（第七十二刀）
+
+- **缺口**：`evidence.go`（第 2 段 `1b9c8ed8` 建立）的 `GateState()`/`HasVerificationDebt()`
+  **生产零引用**（`loop.go:231` 注释显式披露「无 gate 拦截消费方」）。
+- **新增** `go/internal/agent/tddgate.go`（**257 行**）：`EvaluateTddGate`（8 分支顺序敏感）
+  + `parseTddGateEnv` + 4 段文案**逐字对账** TS。
+- **接线**：`loop.go` 门链末尾 + `main.go` 装配层（`cmd/tianshu/main.go`）。
+- **oracle**：`go/testdata/tddgate/oracle.json`（**33 用例**：allow 13 / suggest 10 / block 10），
+  从 TS 真实执行生成。**抓到手写必错的差异**：`src/foo_test.go` 在 enforce 下是 **block**
+  而非 suggest——TS 的 `isTestFile`（`tdd-gate.ts`）与 `evidence.go` 的 `testFileRe`
+  是**两个不同正则**。
+- **失误记录（重要教训）**：M1 变异首版**红 0**——只断言 `IsError`，而空 registry 下
+  放行也返回 `IsError=true`（「工具未找到」）。修法：断言**命中文案** + 负面用例加**阳性对照**。
+  M7 红 0 暴露**注入设计缺陷**：初版 `TddGateEnv` 为空时回退读 `os.Getenv`，让环境变量
+  **绕过注入层**（「装配层漏填」测不出）→ 改为 Config 唯一来源。
+- **提交信息里的数字错了**：写了「41 用例」，实测 33——下个提交 `6ca114da` 纠正。
+
+#### `59c970e6` 补 TDD gate 的 suggest 提示通道（第七十三刀）
+
+- **推翻上一刀的误判**：TS 的 `tddSuggestNote` **不走 immune 通道**，而是**追加到工具结果尾部**
+  （`tool-pipeline.ts:1748-1750`）。immune 通道只属 `buildTddGateHint`（每轮边界提示）。两者互补。
+- **实现要点**：只在「enforce 会拦」区域贴（`hasFailedTests || edits >= threshold`）、
+  只在成功时贴、格式 `\n\n[TDD] `、时机在内部记录**之后**（内部用原始 content）、
+  用**编辑前**快照。**缓存友好**：追加尾部 = 冻结前缀不变。
+- **新教训**：M1 变异首版红 0 是**编译失败伪装**——删代码块让局部变量「声明未使用」
+  → build failed → `grep -c '^--- FAIL'` 返回 0（测试没跑）→ 误判为覆盖缺口。
+  修法：用 `_ = 变量` 保留声明。
+
+#### `f13a73c1` 写工具 `RequiresApproval` 恒真（第七十四刀）
+
+- **称量**：TS 是 `() => true`（4 处），Go 是 `ApprovalMode != skip`。`decideApprovalGate`
+  开头已处理 skip、auto-safe 读 `isHighRisk`——故只在 manual 档被消费，**行为等价**
+  但**档位语义两处判定**（结构隐患）。
+- **实现**：4 处改恒真（`write_file`/`edit_file`/`hash_edit`/`apply_patch`），
+  单点收敛到 `decideApprovalGate`。
+- **订正既有测试**：`tools_test.go` 的 `TestWriteFileRequiresApproval` 断言旧行为
+  （把 Go 侧偏离 TS 的实现固化成断言）→ 改为「任何档位恒真」。
+- **诚实标注**：M3（移除 skip 短路）红 0 = **等价变异**（skip 档不在 `switch` 里，
+  走末尾兜底，行为不变）。**顺带发现既有隐患**：末尾兜底是「**未知档位放行**」。
+- 新增 `cmd/tianshu/approval_gate_skipwrite_e2e_test.go`（139 行，补此前缺失的 skip 档 write_file 路径）。
+
+#### `5609187d` TaskAnchor 称量——**判定不做**（第七十五刀）
+
+`go/PLAN.md:180` 标它「半落地」。核实后**缺口比文档大得多**：`TaskContract` 在 Go 侧
+**类型都不存在**；TS 的 `task-contract.ts` **570 行**；**16+ 个模块**消费它；
+**决定性判据**——它需要**契约生命周期的维护者**（TS 是 `loop.ts` 的 `this.taskContract`），
+**Go 侧 turn 流程无此概念**。接上去也没契约可渲染 → 下一个「声明但无人消费」。
+落盘到 `checkpoint.go` 字段注释 + 本文档。
+
+#### `b78a5b4d` 三条勘探路径（第七十六刀）
+
+用户第三次要求「推进」。**换方法**——三条独立路径找缺口：
+① grep 未接线标记（命中的**全是有意披露**）② 逐包查测试（**26/27 有测试**）
+③ 全量 **×8**（**8 次全绿**）。**全部收敛到「已知且有意」**。
+**途中三次误判被数据纠正**：`ReadRefStats` 未注入（TS 侧同样无赋值点，忠实移植）、
+`modelreadcap.go` 用 `int()` 而非 `Math.floor`（正数域等价）、
+`default_registry.go:20` 疑似基准矛盾（`PLAN.md:55` 已准确记录）。
+**订正**：`go/HANDOFF.md` 的「建议的第一刀」推荐 `related_tests`+`leave_mark`——
+**第三十七刀就已做**（逐个核实 6 项全已注册）。
+
+#### `d4227ba5` 移植将星账本（第七十七刀）——**本段唯一新增工具**
+
+- **筛选方式改变**：不看文档推荐，按**依赖面**找。`recall_general` + `record_general_finding`
+  依赖只有 `node:fs` + 星域表。
+- **新增** `go/internal/context/generalledger.go`（**344 行**，对账 TS 12 个导出）
+  + `go/internal/tools/generalledger.go`（**178 行**）。
+- **星域表最小化**：TS 的 `star-domain-data.ts` 600+ 行，但 `starToGeneralSlug`
+  **只需 id + name 两列**——只提取 **16 条**映射，不拖入无关认知资产（漂移风险已声明）。
+- **注册位置核实**：TS 侧不在 `default-registry.ts` 而在 `bootstrap.ts:682-683`
+  （受 preset 门控，minimal 档不含）——**Go 侧无 preset 机制**，故无条件注册（差异已注释）。
+- **验证**：oracle **42 slug + 4 path + 8 parse** 逐值；工具级 8 条；**变异反证 5 个全红**；
+  工具数 **22 → 24**（显式工具）。
+- 后续 `289aedf5` 补 `generatedBy` 断言——交付门禁 YELLOW（**0 读取方**）是**真缺口**：
+  声明了字段却从不断言，而既有 `planmode_test.go:55` **确实断言**它（防 oracle 被覆盖）。
+
+#### `903e9855` 订正 5 处过期注释（第七十八刀）
+
+**系统性发现**：连续**四次**按文件头注释判缺口，核实后**全是注释过期**——
+`readsection.go` 的 file_path 分支与 compact-history 快速路径（都已实现）、
+`codefold.go` 的 `applyFoldThenPartial`（`readpayload.go:36`）、
+`modeloutput.go` 的 `persistRawOutput`（`bash.go:311`/`diff.go:247` 都传了）、
+`context_collapse.go` 的 artifact store（`internal/artifact/` 已存在）。
+**同时核实三处注释准确**（避免夸大）：`plan.go` 写工具禁用、`bash.go` 的 `runInBackground`、
+`readdedup.go` 的 `sliceFromArtifact`。
+**根因**：注释写于「本刀」，后续刀补齐时不会回头改前人注释——「未移植」断言**天然短时效**。
+
+#### `fde51827` 接线 Plan Mode（第七十九刀）——**本段最后一刀**
+
+- **缺口**：`internal/agent/planmode.go` 的 `CheckPlanMode`（5 段分支，oracle 对账过）
+  **生产零消费**——`Loop` 无状态字段、门链不调它。后果是 `plan` 工具的
+  `enter_mode`/`exit_mode` 只能走 `planModeUnsupported` **明确报错**，文案写
+  「Go 侧**尚未移植**写工具禁用机制」——**但机制其实早已实现**。
+- **接线三者缺一不可**：
+  1. **状态**：`Loop.PlanModeState` + `ActivePlanFilePath`（对账 TS `loop.ts:261`）。
+     **放 Loop 而非 Config**——会话可变状态（由工具运行中改写）。
+  2. **门链**：`executeTool` 最前（deny 门**之前**，对账 TS 顺序 plan-mode(1062) → deny(1137)）。
+  3. **入口**：`CallParams.EnterPlanMode`/`ExitPlanMode` 回调 + `Loop.enterPlanMode`/
+     `exitPlanMode`（真建草稿文件 + 置状态）+ `plan` 工具接线（替换原报错）。
+- **为什么入口不可省**：只接门链而入口不置状态 → `PlanModeState` 永远 `off`
+  → **门是死代码**。这是本仓库栽过的「造了没人用」。
+- **验证**：门链 5 条 + 工具 6 条 + **端到端闭环 1 条**（`enter_mode` → 门拦写工具
+  → 写活动计划文件放行 → `exit_mode` → 写工具恢复放行，含草稿文件真被创建）。
+  **变异反证 4 个全红**（M1 移除门链红 2 / M2 enter 不置状态红 1 / M3 工具回退成报错红 4 /
+  M4 exit 不清状态红 1）。
+- **必须记录的判断：订正了一条既有测试**。`plan_test.go` 的
+  `TestPlanEnterExitModeHonestError` 断言 `enter_mode`/`exit_mode` **恒报错**且文案含
+  「暂不支持」——它把「机制未移植」的**临时状态固化成了断言**。判为**过期断言**而非有效保护：
+  新实现**保留了 fail-closed**（无回调时仍报错，对账 TS「子代理不能切主代理的计划模式」），
+  只是文案从「暂不支持」变为「上下文不可用」。已订正断言（保留 fail-closed 检查）。
+- **诚实标注（Go 侧的有意收窄）**：TS 的 `enterPlanMode` 还做三件事，Go 侧**未做**
+  （子系统不存在或未接线）：① Ask Mode 互斥；② `promptEngine` 同步；③ 调研 advisory 注入。
+  TS 的 `delegatesWriteCapableProfile` 依赖 profile registry（`profileIsPlanModeSafe`）
+  ——Go 侧未移植，故恒 false（该分支不触发）。
 
 ### 本会话新增文件全表（`git log --diff-filter=A e866fad8^..HEAD`）
 
@@ -183,29 +307,59 @@ go/testdata/selfkill/gen-oracle.ts + oracle.json
 go/testdata/shellsplit/gen-oracle.ts + oracle.json
 ```
 
-### 验证基线（本会话末次**真实工具输出**）
+**第 4 段（接线系列）新增**：
+
+```
+go/internal/agent/tddgate.go                       (257 行)
+go/internal/agent/tddgate_oracle_test.go
+go/internal/agent/tddgate_wiring_test.go
+go/internal/agent/tddgate_suggest_test.go
+go/cmd/tianshu/tddgate_e2e_test.go                 (250 行)
+go/testdata/tddgate/gen-oracle.ts + oracle.json    (33 用例)
+go/internal/context/generalledger.go               (344 行)
+go/internal/context/generalledger_oracle_test.go
+go/internal/tools/generalledger.go                 (178 行)
+go/internal/tools/generalledger_tools_test.go
+go/testdata/generalledger/gen-oracle.ts + oracle.json  (42 slug + 4 path + 8 parse)
+go/cmd/tianshu/approval_gate_skipwrite_e2e_test.go (139 行)
+go/internal/tools/writeapproval_test.go            (106 行)
+go/internal/agent/planmode_wiring_test.go          (227 行)
+go/internal/tools/planmode_tools_test.go           (139 行)
+```
+
+### 验证基线（末次**真实工具输出**，`fde51827` 时点）
 
 | 命令 | 结果 |
 |---|---|
 | `cd go && go test ./... -count=1` | **26 包 ok、0 FAIL**（`go list ./...` = 27 包，含无测试的） |
 | `cd go && go vet ./...` | exit=0 |
 | `cd go && gofmt -l .` | 零违规 |
-| `cd go && go test -race ./internal/hooks/ -count=1` | ok（7.6s） |
+| `cd go && go test -race ./internal/agent/ ./internal/tools/ -count=1` | 两包均 ok（3.5s / 15.4s） |
+| 工具数（`internal/tools/default_registry.go` 显式 `Register`） | **24**（+1 处循环注册 `r.Register(t)`） |
 | 工作树 `git status --short` | **clean** |
 | 探针残留 `find . -name 'zz_probe*'` | 0 |
 
 **⚠ 已知未复现的失败**：本会话早期曾见 `-race` 3 FAIL，**之后多次重跑未复现，归因未知**。若下个会话遇到，从头查。
 
+**⚠ 工具数口径**：`grep -cE 'r\.Register\('` 会数到 **25**（含 `r.Register(t)` 循环行）。
+**24 个显式工具** + 1 处循环注册（`opts.Extra` 遍历）。旧文档写 22 是第七十七刀之前的数。
+
 ---
 
 ## 当前卡点
 
-### 卡点 1：`evidenceTracker` 的读取端零消费（TDD gate 拦截未做）
+### 卡点 1：~~`evidenceTracker` 的读取端零消费~~ → **已解决**（第七十二/七十三刀）
 
-- **状态**：追踪与派生**已就位**（`evidence.go` 全部函数 + 写入端接线），**读取端零生产消费**。
-- **已排除**：不是「忘了接线」——`loop.go:196` 注释**显式披露**「无 gate 拦截消费方，拦截是独立的一刀」。这是**有意的范围切分**。
-- **待做**：TDD gate 的**拦截**——在 `loop.go` 的 `executeTool`（或合适的门链位置）读 `HasVerificationDebt()`（阈值 3，见 `evidence.go:212`），对「连续 3 次未验证的代码编辑」施加约束。
-- **不确定项**：拦截的**具体动作**（拒绝？警告？注入提示？）——需对账 TS 侧 `src/agent/` 的 TDD gate 实现。**未知**，开工前先 grep TS。
+> **⚠ 本节原文已废，保留以示修正轨迹。** 原写于 `8d5c9853`（第七十一刀时点），
+> 当时 `evidenceTracker` 的读取端确实零消费。**第七十二刀（`abcfc8a7`）已接线拦截**，
+> **第七十三刀（`59c970e6`）已补 suggest 提示通道**。本节与「下一步」第 1 条
+> **曾经互相矛盾**——那是增量补刀时只改了一处留下的疤痕，本次订正。
+
+**原记录（历史）**：`evidence.go` 的 `GateState()`/`HasVerificationDebt()` 生产零引用，
+`loop.go:231` 注释显式披露「无 gate 拦截消费方」——那是**有意的范围切分**（避免造无消费者的门）。
+
+**现状**：`internal/agent/tddgate.go` 的 `EvaluateTddGate` 在 `loop.go` 门链末尾消费它
+（allow / suggest / block 三态）。阈值 3、文案逐字对账 TS、oracle 33 用例。详见「第 4 段」。
 
 ### 卡点 2：~~`registry.go` 前置③~~ → **已解决**（第七十四刀）
 
@@ -356,7 +510,17 @@ grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test
    **判据**：该需求本身尚未被提出，做出来就是下一个「造了没人用」。
 
 5. ~~**把本会话 20 刀写入 `go/HANDOFF.md`**~~ → **已完成**（`304f8a51`，回填
-   第六十一刀起共 23 提交）。
+   第六十一刀起共 23 提交）。**注**：`go/HANDOFF.md` 现覆盖到**第七十六刀**
+   （`b78a5b4d` 追加 34 行）——**第七十七..七十九刀只在本文档**（`go/HANDOFF.md`
+   未记）。若要两边齐平，需把第七十七..七十九刀补进 `go/HANDOFF.md`。
+
+6. **接线系列的候选（第七十九刀后）**：本会话已修完**四条**「实现已有但零消费」
+   （`NeedsApproval` → 审批门、`CheckPlanMode` → Plan Mode、`evidenceTracker` 读取端
+   → TDD gate、`RequiresApproval` 重复判定 → 单点）。**剩余的候选工具**
+   （`update_goal` / `session_vitals` / `semantic_search`）经第七十五刀的判据
+   （「Go 侧有无该状态的**维护者**」）**全部是造子系统**，不适合推进。
+   **判缺口的方法**（已验证有效）：`grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test`
+   ——排除定义文件与测试后若零命中，才是真缺口；**不要照文件头注释判**（第七十八刀教训）。
 
 ---
 
@@ -377,6 +541,14 @@ grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test
 24. **探针必须清理**——本会话用过 `.rivet/scratch/` 与 `zz_probe_*`，交付前 `find . -name 'zz_probe*'` 应返回 0。
 25. **「字段/函数存在但零调用者」是本仓库的高频缺陷模式**——`NeedsApproval`、`PermissionConfig.bash`、`TrySessionSplit` 都栽过。**落地新符号后必须 grep 消费方**；反之，声称「已有某能力」前也要 grep 调用点。
 
+### 本会话第 4 段新增（第 26 条起）
+
+26. **「红 0」有三种假象**（第七十二/七十三刀各踩一次）：①**等价变异**（`skip` 档不在 `switch` 里走兜底，行为不变）②**真覆盖缺口**（只断言 `IsError`，而空 registry 下放行也返回 `IsError=true`）③**编译失败伪装**（删代码块 → 局部变量「声明未使用」→ build failed → `grep -c '^--- FAIL'` 得 0，**测试根本没跑**）。**修法**：负面用例加**阳性对照**；核实变异**落地且编译通过**；删代码时用 `_ = 变量` 保留声明。
+27. **注入层若回退读 `os.Getenv`，环境变量会绕过注入**——第七十二刀 `TddGateEnv` 初版如此，「装配层漏填」测不出。**Config 必须是唯一来源**。
+28. **接线「状态 + 门 + 入口」三者缺一不可**（第七十九刀）——只接门链而入口不置状态 → 状态永远 `off` → **门是死代码**。验证必须走**端到端**（enter → 门拦 → exit → 放行），单测门函数绿不等于接线绿。
+29. **实现落地会让「未移植占位」的断言与事实相反**（第七十九刀）——`TestPlanEnterExitModeHonestError` 断言 `enter_mode` **恒报错**，那是把「机制未移植」的**临时状态固化成断言**。**改测试前先判**：它是有效保护（fail-closed 语义要保留）还是过期断言（临时状态要撤销）？第七十九刀的答案是**两者都占**——保留 fail-closed 检查、撤销「暂不支持」文案断言。
+30. **本会话两处自相矛盾都是「增量补刀只改一处」留下的疤痕**——①文档内卡点 1 说「TDD gate 未做」vs 下一步 1 说「已完成」；②`loop.go:231` 注释说「目前无 gate 拦截消费方」vs `loop.go:1191` 说「第七十二刀补了拦截」。**同一事实写两处时，改一处必须 grep 另一处**（`grep -rn "无 gate 拦截消费方" go/`）。
+
 ### 前序会话的坑（**仍然有效**，Windows 可移植性相关）
 
 1. **手拼 JSON 字符串嵌 Windows 路径 → `\U` 非法转义，JSON 解析失败**。夹具一律走 `json.Marshal`。
@@ -391,7 +563,7 @@ grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test
 10. **变异反证必须核实变异真的落地**——python 脚本替换可能**静默未生效**。改用 `edit_file`。
 11. **断言「不该发生 X」的测试必须验证 X 的可达性**——否则只是恒真断言。
 12. **落地新导出符号后必须 grep 消费方**——`TrySessionSplit` 首版是悬空代码，交付报告漏报还错误声称已验收。
-13. **实现落地会让「未移植占位」的断言与事实相反**——这类测试必须随之反转或删除，否则 panic 或假红。
+13. **实现落地会让「未移植占位」的断言与事实相反**——这类测试必须随之反转或删除，否则 panic 或假红。**（第七十九刀给了具体判据，见坑 29）**
 14. **交付门禁的「字段无读取方」YELLOW 提示可能是真缺陷**——`ResultSummary` 无消费方暴露了 handoff 失败行漏 summary 段。
 15. **`npm install` 会改 `package-lock.json`（3.19.0→3.21.1）→ 不要把它卷进 Go 相关提交**。
 
@@ -403,10 +575,10 @@ grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test
 - 仓库根：`/Users/moweilong/Workspace/go/src/github.com/kalandramo/Tianshu-harness`
 - Go module：`github.com/kalandramo/tianshu/go`（`go/` 子目录）
 - Node：24.18.0（`package.json` engines 声明 >=24）
-- 分支：`go-runtime` · HEAD：`c7f91de8` · 工作树 clean
+- 分支：`go-runtime` · HEAD：`fde51827` · 工作树 clean
 - 仓库双 remote：`origin`（私有镜像）、`tianshu`（公开仓库，**绝不直接 push**——历史不同步会被拒；正确流程见项目 `AGENTS.md` 的 `scripts/sync-to-public.sh`）
-- `go/internal/` 包列表（27 个，`go list ./...`）：agent api apierr artifact cache client compact config context contract filediff hooks pathsafe platform prompt recovery retry session syntaxcheck tools trust …
-- **测试命令**：`cd go && go test ./... -count=1`（本会话基线 26 包 ok / 0 FAIL）
+- `go/internal/` 包（27 个，`go list ./...` 实测）：`cmd/tianshu` + `internal/{agent,api,api/sse,api/stablejson,api/wire,apierr,artifact,cache,client,compact,config,context,contract,filediff,hooks,pathsafe,plan,platform,prompt,recovery,retry,session,skills,syntaxcheck,tools,trust}`
+- **测试命令**：`cd go && go test ./... -count=1`（基线 26 包 ok / 0 FAIL）
 
 ---
 
@@ -414,8 +586,9 @@ grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test
 
 | 想了解 | 读 |
 |---|---|
-| 每刀的完整技术细节（第一..六十刀） | `go/HANDOFF.md`（**7018 行**，每刀一个专章） |
+| 每刀的完整技术细节（第一..七十六刀） | `go/HANDOFF.md`（**7217 行**，每刀一个专章） |
 | 架构欠账清单 | `go/PLAN.md` |
 | 审批门的状态表与称量结论 | `go/internal/agent/approval_gate.go` 的 A/B/B'/C/D/E 节（`approval_gate.go:34,108,151,180,204,232`） |
-| 本会话的 20 刀 | 本文档 + `git log e866fad8^..c7f91de8` |
+| 本会话的 32 提交 | 本文档 + `git log e866fad8^..fde51827` |
+| 第七十七..七十九刀（`go/HANDOFF.md` **未记**） | 本文档「第 4 段」 |
 | Windows 可移植性的完整记录 | 本文档「坑」1–15 + `go/HANDOFF.md` 前五刀 |

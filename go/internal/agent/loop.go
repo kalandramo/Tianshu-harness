@@ -228,8 +228,9 @@ type Loop struct {
 	// 编辑数**——那是相对计数，验证即归零，累计式状态表达不了。
 	//
 	// **消费者**：`HasVerificationDebt()`（阈值 3）与将来的 sensorium
-	// `evidenceState`。目前**无 gate 拦截消费方**——本刀只建立追踪与派生，
-	// 拦截是独立的一刀（避免造无消费者的门）。
+	// `evidenceState`。**第七十二刀起已有 gate 拦截消费方**——
+	// `EvaluateTddGate`（`tddgate.go`）在门链末尾消费它（allow/suggest/block 三态）；
+	// 本字段建立时（第一刀）只做追踪与派生，拦截是后续独立的一刀。
 	evidence *evidenceTracker
 	// hookState 是跨轮累积的 hook 快照状态。
 	//
