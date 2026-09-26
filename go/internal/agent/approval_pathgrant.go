@@ -25,6 +25,15 @@ import (
 // fileToolModes 对账 TS `FILE_TOOL_MODES`（`tool-pipeline.ts:243-249`）。
 //
 // 决定各文件工具的访问模式（读/写）。写侧是更强的授权面。
+//
+// **与 TS 的差异（已核实，非缺口）**：TS 有 5 项，此处 4 项——差的正是
+// `ast_edit: 'write'`。**`ast_edit` 工具 Go 侧未移植**（第八十刀勘探已核实：
+// 依赖 tree-sitter + workers/cpu-pool，Go 侧零基础），故其缺席是合理的。
+//
+// **另核实**：TS 侧**也不含** `apply_patch` / `read_section`——即这两个工具
+// 本就不在 pathGrant 门的自动授权面内（它们的越界访问只能靠显式
+// `request_path_access` 授权）。Go 侧与 TS **一致**。
+// （第八十一刀的独立审查曾疑此为缺口，对账 TS 后判定为误报。）
 var fileToolModes = map[string]pathsafe.Mode{
 	"read_file":  pathsafe.ModeRead,
 	"write_file": pathsafe.ModeWrite,

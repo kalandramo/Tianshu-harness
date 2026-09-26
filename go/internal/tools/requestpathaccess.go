@@ -119,11 +119,16 @@ func (t *requestPathAccessTool) Definition() contract.Definition {
 			"读写，直接调用 read_file/write_file 会触发同样的内联提示。",
 		InputSchema: objSchemaOrdered([]string{"path", "mode", "remember"}, map[string]any{
 			"path": strProp("要授权访问的工作区外路径（文件或目录），绝对路径或 ~ 相对路径。"),
-			"mode": map[string]any{
-				"type":        "string",
-				"enum":        []any{"read", "write"},
-				"description": "访问级别。'write' 隐含读取权限。默认 'read'（最小权限；确需写请显式传 'write'）。",
-			},
+			// **必须用 enumPropOrdered**（第八十一刀审查订正）：此前用裸
+			// `map[string]any`，`wire.writeValue` 会对它**排序键** → 产出
+			// `description → enum → type`，而 TS 是 `type → enum → description`。
+			// 键序不同会让工具定义字节不稳定（打的是整个前缀）。
+			// 实测（探针）：裸 map 产出 `{"description":…,"enum":…,"type":…}`。
+			// 全仓其他 enum 属性（file_tools/git/gitscout/plan）均用本 helper。
+			"mode": enumPropOrdered(
+				"访问级别。'write' 隐含读取权限。默认 'read'（最小权限；确需写请显式传 'write'）。",
+				[]string{"read", "write"},
+			),
 			"remember": boolProp("为当前工作区跨会话持久化此授权。默认 false（仅本会话）。"),
 		}, "path"),
 	}

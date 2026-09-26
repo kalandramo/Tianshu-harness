@@ -445,6 +445,54 @@ Go CLI **有**工作区外读写场景——`pathgrants.go` 存在、门链的 p
 **诚实标注**：该工具在 Go 侧**实际只在 skip 档可用**，而 skip 档本身已对文件工具
 首触即授——**它的独立价值被削平**。已记入下条「遗留」。
 
+#### 第八十一刀审查的**未结项**处理（LOW/MEDIUM 两条）
+
+上条记了审查的 4 项发现（假绿/授权面/状态表/档位语义）。另有 2 条**未结项**，
+本轮处理完毕：
+
+**⑤ `mode` 属性的键序偏离 TS（LOW → 实为真缺陷，已修）**：
+审查标 LOW（「偏差仅 vs TS，无实际缓存 churn」）。但核实后**判定为真缺陷**——
+项目三大支柱之一是「前缀缓存字节稳定」，而工具定义**打的是整个前缀**。
+证据（探针实测）：裸 `map[string]any` 经 `wire.writeValue` 排序键 → 产出
+`{"description":…,"enum":…,"type":"string"}`，而 TS 是
+`type → enum → description`。**全仓其他 enum 属性**（`file_tools`/`git`/
+`gitscout`/`plan`）**都用 `enumPropOrdered`**——我是唯一例外。
+**修**：改用 `enumPropOrdered`（实测新输出 `{"type":"string","enum":["read","write"],"description":…}`）。
+**补断言**：`TestRequestPathAccessDefinitionParity` 此前只校验顶层 `PropOrder`
+与 enum **值**，不校验嵌套键序——那是审查指出的「假信心」。已补 `mode` 的
+`Marshal()` 前缀断言（变异 M9 红 1 验证有判别力）。
+
+**⑥ `fileToolModes` 不含 `apply_patch`/`read_section`（MEDIUM → **误报**，已核实）**：
+审查建议「与 TS FILE_TOOL_MODES 对账确认」。**对账结果：Go 侧与 TS 一致**——
+TS 的 `FILE_TOOL_MODES`（`tool-pipeline.ts:243-249`）**也不含**这两个工具。
+Go 4 项 vs TS 5 项，差的正是 `ast_edit`（**Go 侧未移植的工具**，缺席合理）。
+已在 `approval_pathgrant.go` 补注释说明，避免下个人重复勘探。
+
+#### ⑦ 副作用暴露：`pathgrant_wiring_test.go` 用真实系统路径（已修）
+
+修 ⑤ 后跑全量，**`internal/agent` 包超时 600s**（不是断言失败，是 `panic: test timed out`）。
+栈定位：`pathgrant_wiring_test.go` → `loop.go:1279` → `file_tools.go:115`
+（`os.WriteFile`）。
+
+**根因**：该测试（第五十一刀引入）用**真实系统路径** `/etc/passwd` 做「出界写」用例。
+**skip 档首触即授会对它授权**（对账 TS `tool-pipeline.ts:1241-1249`——TS 同样
+**无 forbiddenRoot 上界**），于是 `write_file` **真的尝试写 /etc/passwd**。
+此前不暴露是因为 `effectiveGrants` 修复前工具看不到授权（**bug 掩盖了它**）；
+本刀的修复让授权真的生效 → 测试的副作用暴露。
+
+**修**：改用「`root` 的兄弟临时目录」——出界判定只需「不在 root 之下」，
+等价且无副作用。引入 `outsidePlaceholder` 占位常量，由 `run` 在构造 root 后替换
+（**必须在 `toolTurnArgs` 之前**——它把 args 序列化成 JSON，之后改已无效；
+首版踩过这个顺序坑）。
+
+**验证**：修复后 PASS（0.02s）；变异 M11（去掉占位替换）红 1。
+
+**诚实标注（M10 等价变异）**：回退成 `/etc/passwd` 后**单独跑该测试是 ok**（0.249s，
+未挂）——说明「全量挂」依赖**并发条件**（该测试与其他测试并行时触发）。
+**故 M10 红 0 是等价变异**，不是覆盖缺口。
+但无论如何，**测试用真实系统路径本身是缺陷**（不可移植、有副作用、时序依赖），
+修复消除了整类风险——这与 M10 是否打红无关。
+
 ### 本会话新增文件全表（`git log --diff-filter=A e866fad8^..HEAD`）
 
 ```

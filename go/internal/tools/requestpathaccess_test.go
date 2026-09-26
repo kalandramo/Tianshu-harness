@@ -137,14 +137,26 @@ func TestRequestPathAccessDefinitionParity(t *testing.T) {
 			t.Errorf("PropOrder[%d] 应为 %q，实得 %q", i, w, def.InputSchema.PropOrder[i])
 		}
 	}
-	// mode 的 enum 对账。
-	mode, ok := props["mode"].(map[string]any)
+	// mode 的 enum 对账 + **嵌套键序对账**。
+	//
+	// **为什么必须校验键序**（第八十一刀审查订正）：`mode` 此前用裸
+	// `map[string]any`，`wire.writeValue` 会排序键 → 产出
+	// `description → enum → type`，而 TS 是 `type → enum → description`。
+	// 键序不同会让工具定义**字节不稳定**（打的是整个前缀）。
+	// 而旧版本测试只校验顶层 PropOrder 与 enum **值**，不校验嵌套键序——
+	// 那是审查指出的「假信心」。
+	mode, ok := props["mode"].(interface{ Marshal() string })
 	if !ok {
-		t.Fatalf("mode 应是对象，实得 %#v", props["mode"])
+		t.Fatalf("mode 应是有序结构（enumPropOrdered 的 *wire.OrderedMap），实得 %T", props["mode"])
 	}
-	enum, ok := mode["enum"].([]any)
-	if !ok || len(enum) != 2 || enum[0] != "read" || enum[1] != "write" {
-		t.Errorf("mode enum 应为 [read, write]，实得 %#v", mode["enum"])
+	modeRaw := mode.Marshal()
+	// 键序：type → enum → description（对账 TS）。
+	wantModePrefix := `{"type":"string","enum":["read","write"],"description":`
+	if !strings.HasPrefix(modeRaw, wantModePrefix) {
+		t.Errorf("mode 键序应逐字对账 TS（type→enum→description）：\n实得 %s\n期望前缀 %s", modeRaw, wantModePrefix)
+	}
+	if !strings.Contains(modeRaw, `"read"`) || !strings.Contains(modeRaw, `"write"`) {
+		t.Errorf("mode enum 应含 read/write，实得 %s", modeRaw)
 	}
 }
 
