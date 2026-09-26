@@ -24,6 +24,17 @@ func writeHooks(t *testing.T, dir, content string) {
 	}
 }
 
+// 关于「执行真实脚本的测试为何显式声明 timeoutMs:30000」
+//
+// 它们验的是「脚本能被执行」——**不该由产品默认值（5s）承担并发负载**。
+// 实测：`go test ./...` 并行多包时 CPU/IO 争抢 → 起 `sh` 进程变慢 → 撞 5s
+// 超时 → `TestRunForEventExecutesScript` 间歇失败（复现率约 1/3，耗时
+// 5.01s 是超时的指纹）。根因是**测试超时太紧**，不是 trust 污染
+// （曾误判——见 hook_timeout_test.go 的说明）。
+//
+// **不要**把这批测试的 timeoutMs 去掉：那会让全量跑重新变得不稳定。
+// **也不要**改 DefaultTimeoutMs——那是产品默认值，影响真实用户。
+
 // trustProject 让 trust 认这个目录为已授信（经环境变量覆盖，跨平台稳定）。
 func trustProject(t *testing.T) {
 	t.Helper()
@@ -154,7 +165,7 @@ func TestRunForEventExecutesScript(t *testing.T) {
 	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"event=$RIVET_HOOK_EVENT\"\n"), 0o755); err != nil {
 		t.Fatalf("写脚本失败: %v", err)
 	}
-	writeHooks(t, dir, `{"hooks":[{"event":"preTurn","script":"hello.sh"}]}`)
+	writeHooks(t, dir, `{"hooks":[{"event":"preTurn","script":"hello.sh","timeoutMs":30000}]}`)
 
 	r := &Runner{Cwd: dir, GetTurn: func() int { return 0 }}
 	results := r.RunForEvent(HookContext{Event: EventPreTurn, Cwd: dir})
@@ -181,7 +192,7 @@ func TestRunForEventStdinJSON(t *testing.T) {
 	if err := os.WriteFile(script, []byte("#!/bin/sh\ncat\n"), 0o755); err != nil {
 		t.Fatalf("写脚本失败: %v", err)
 	}
-	writeHooks(t, dir, `{"hooks":[{"event":"postTool","script":"dump.sh"}]}`)
+	writeHooks(t, dir, `{"hooks":[{"event":"postTool","script":"dump.sh","timeoutMs":30000}]}`)
 
 	r := &Runner{Cwd: dir, SessionID: "sess-1", GetTurn: func() int { return 7 }}
 	results := r.RunForEvent(HookContext{
@@ -239,8 +250,8 @@ func TestRunForEventContinuesAfterFailure(t *testing.T) {
 		t.Fatalf("写脚本失败: %v", err)
 	}
 	writeHooks(t, dir, `{"hooks":[
-		{"event":"preTurn","script":"fail.sh"},
-		{"event":"preTurn","script":"ok.sh"}
+		{"event":"preTurn","script":"fail.sh","timeoutMs":30000},
+		{"event":"preTurn","script":"ok.sh","timeoutMs":30000}
 	]}`)
 
 	r := &Runner{Cwd: dir, GetTurn: func() int { return 0 }}

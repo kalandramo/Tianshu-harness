@@ -251,6 +251,22 @@ func (r *Runner) runOne(entry HookEntry, ctx HookContext) HookResult {
 
 	out, err := runWithTimeout(cmd, time.Duration(timeoutMs)*time.Millisecond)
 	ok := err == nil
+	// **失败时必须给出可诊断的原因**（第七十一刀修）。
+	//
+	// 原实现是 `Output: strings.TrimSpace(out)`——但 `out` 只含脚本的
+	// stdout/stderr。**超时时 `out` 是空串**（脚本还没输出就被杀），
+	// 故调用方看到「失败了但不知道为什么」——无法区分
+	// 「脚本不存在」「超时」「退出码非零」。
+	//
+	// 修法：`err` 非空时把它的文本并入 `Output`（保留已有 out——非零退出码
+	// 场景下脚本的 stderr 是有效诊断信息，不能丢）。
+	if err != nil {
+		msg := err.Error()
+		if s := strings.TrimSpace(out); s != "" {
+			return HookResult{Script: entry.Script, Ok: false, Output: msg + "\n" + s}
+		}
+		return HookResult{Script: entry.Script, Ok: false, Output: msg}
+	}
 	return HookResult{Script: entry.Script, Ok: ok, Output: strings.TrimSpace(out)}
 }
 
