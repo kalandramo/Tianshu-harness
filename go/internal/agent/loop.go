@@ -187,6 +187,16 @@ type Loop struct {
 	//
 	// **消费者**：`executeTool` 的 selfKill 门（`kill $PPID` 类命令）。
 	selfTree selfKillProcessTree
+	// evidence 是 TDD gate 的编辑计数（补 `session.Manager` 缺的相对计数）。
+	//
+	// **与 `State` 的分工**：`State`（`session.Manager`）记累计事实
+	// （FileIndex / Verification 列表）；本计数器记**距上次验证的连续代码
+	// 编辑数**——那是相对计数，验证即归零，累计式状态表达不了。
+	//
+	// **消费者**：`HasVerificationDebt()`（阈值 3）与将来的 sensorium
+	// `evidenceState`。目前**无 gate 拦截消费方**——本刀只建立追踪与派生，
+	// 拦截是独立的一刀（避免造无消费者的门）。
+	evidence *evidenceTracker
 	// hookState 是跨轮累积的 hook 快照状态。
 	//
 	// **为什么需要**：部分快照字段是**任务级**而非窗口级（如 TouchedTSFiles
@@ -307,6 +317,8 @@ func New(cfg Config, cl *client.Client, reg *tools.Registry) *Loop {
 	// 对账 TS `selfProcessTree()` 的**缓存语义**——PID 在进程生命周期内不变。
 	// 构造时读一次，门控内是纯判定（可测，不引入 IO）。
 	l.selfTree = currentProcessTree()
+	// TDD gate 的编辑计数器（见字段注释）。
+	l.evidence = newEvidenceTracker()
 	if cfg.SessionID != "" {
 		l.State = session.New(cfg.SessionID)
 		// 会话持久化：落盘到 <cwd>/.rivet/sessions/<id>.jsonl。
@@ -1176,8 +1188,20 @@ func truncateRunes(s string, n int) string {
 //
 // 对账 TS 侧的证据追踪（trackFileRead / trackFileModified / recordVerification）。
 // 只在工具**成功**时记账——失败的工具调用不该污染状态。
+//
+// **`run_tests` 是例外**（第七十刀修既有缺陷）：它在**测试失败**时返回
+// `IsError: exitCode != 0`（`run_tests.go`），故「只记成功」的早退会把
+// 「验证发生过且红了」这一**正是要记的事实**挡在门外——
+// 原 `run_tests` 分支里的 `if res.IsError { status = "failed" }` 因此
+// **永不可达**，`hasFailedTests` 恒 false。
+//
+// 修法：早退条件排除 `run_tests`——它的失败是**验证结果**，不是「工具坏了」。
+// 其余工具（读/写类）的失败仍不记账（`TestObserveToolResultFailedRead…` 钉住）。
 func (l *Loop) observeToolResult(name string, input map[string]any, res contract.Result) {
-	if l.State == nil || res.IsError {
+	if l.State == nil {
+		return
+	}
+	if res.IsError && name != "run_tests" {
 		return
 	}
 	switch name {
@@ -1190,12 +1214,16 @@ func (l *Loop) observeToolResult(name string, input map[string]any, res contract
 	case "write_file", "edit_file", "hash_edit":
 		if p, ok := input["file_path"].(string); ok && p != "" {
 			l.State.TrackFileModified(p)
+			// TDD gate 计数（与上一行**并列**——前者记会话索引，后者记
+			// 距上次验证的连续代码编辑数；两处事实不同，见 evidenceTracker 注释）
+			l.evidence.TrackFileModified(p)
 		}
 	case "apply_patch":
 		// 目标路径从 diff 提取（与工具内部同一函数）
 		if d, ok := input["diff"].(string); ok {
 			for _, rel := range prompt.ExtractPatchTargetPaths(d) {
 				l.State.TrackFileModified(rel)
+				l.evidence.TrackFileModified(rel)
 			}
 		}
 	case "run_tests":
@@ -1204,11 +1232,22 @@ func (l *Loop) observeToolResult(name string, input map[string]any, res contract
 		if target == "" {
 			target = "全部测试"
 		}
+		// **优先读 `res.Verification.Status`**（工具产出的权威状态，区分
+		// passed/failed/blocked）；无该字段时退回 `res.IsError` 推断。
+		//
+		// 为什么不用 `res.IsError` 单判：它把 **blocked**（无测试框架/运行器
+		// 超时）也归为 error，而 blocked 与 failed 语义不同——对账 TS 的
+		// `VerificationStatus` 三态。
 		status := "passed"
-		if res.IsError {
+		if res.Verification != nil {
+			status = string(res.Verification.Status)
+		} else if res.IsError {
 			status = "failed"
 		}
 		l.State.RecordVerification(target, status)
+		// TDD gate 计数（与上一行并列——前者记会话验证列表，后者记
+		// 「距上次验证的连续编辑数」归零 + 失败粘滞）
+		l.evidence.TrackVerification(status)
 	}
 }
 

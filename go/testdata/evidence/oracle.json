@@ -1,0 +1,579 @@
+{
+  "scenarios": [
+    {
+      "label": "empty",
+      "steps": [],
+      "gate": {
+        "filesModified": 0,
+        "verifications": 0,
+        "editsSinceLastTest": 0,
+        "hasFailedTests": false,
+        "hasCodeEdits": false,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 0,
+        "verifications": 0
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "read-only",
+      "steps": [
+        {
+          "kind": "read",
+          "path": "src/a.ts"
+        }
+      ],
+      "gate": {
+        "filesModified": 0,
+        "verifications": 0,
+        "editsSinceLastTest": 0,
+        "hasFailedTests": false,
+        "hasCodeEdits": false,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 0,
+        "verifications": 0
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "one-code-edit",
+      "steps": [
+        {
+          "kind": "modify",
+          "path": "src/a.ts"
+        }
+      ],
+      "gate": {
+        "filesModified": 1,
+        "verifications": 0,
+        "editsSinceLastTest": 1,
+        "hasFailedTests": false,
+        "hasCodeEdits": true,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 1,
+        "verifications": 0
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "three-code-edits",
+      "steps": [
+        {
+          "kind": "modify",
+          "path": "src/a.ts"
+        },
+        {
+          "kind": "modify",
+          "path": "src/b.ts"
+        },
+        {
+          "kind": "modify",
+          "path": "src/c.ts"
+        }
+      ],
+      "gate": {
+        "filesModified": 3,
+        "verifications": 0,
+        "editsSinceLastTest": 3,
+        "hasFailedTests": false,
+        "hasCodeEdits": true,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 3,
+        "verifications": 0
+      },
+      "hasVerificationDebt": true
+    },
+    {
+      "label": "same-file-three-edits",
+      "steps": [
+        {
+          "kind": "modify",
+          "path": "src/a.ts"
+        },
+        {
+          "kind": "modify",
+          "path": "src/a.ts"
+        },
+        {
+          "kind": "modify",
+          "path": "src/a.ts"
+        }
+      ],
+      "gate": {
+        "filesModified": 1,
+        "verifications": 0,
+        "editsSinceLastTest": 3,
+        "hasFailedTests": false,
+        "hasCodeEdits": true,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 1,
+        "verifications": 0
+      },
+      "hasVerificationDebt": true
+    },
+    {
+      "label": "doc-only-edits",
+      "steps": [
+        {
+          "kind": "modify",
+          "path": "README.md"
+        },
+        {
+          "kind": "modify",
+          "path": "docs/x.md"
+        },
+        {
+          "kind": "modify",
+          "path": "config.json"
+        }
+      ],
+      "gate": {
+        "filesModified": 3,
+        "verifications": 0,
+        "editsSinceLastTest": 0,
+        "hasFailedTests": false,
+        "hasCodeEdits": false,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 3,
+        "verifications": 0
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "mixed-code-and-docs",
+      "steps": [
+        {
+          "kind": "modify",
+          "path": "src/a.ts"
+        },
+        {
+          "kind": "modify",
+          "path": "README.md"
+        },
+        {
+          "kind": "modify",
+          "path": "docs/x.md"
+        }
+      ],
+      "gate": {
+        "filesModified": 3,
+        "verifications": 0,
+        "editsSinceLastTest": 1,
+        "hasFailedTests": false,
+        "hasCodeEdits": true,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 3,
+        "verifications": 0
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "scratch-code-edit",
+      "steps": [
+        {
+          "kind": "modify",
+          "path": ".rivet/scratch/probe.ts"
+        }
+      ],
+      "gate": {
+        "filesModified": 1,
+        "verifications": 0,
+        "editsSinceLastTest": 0,
+        "hasFailedTests": false,
+        "hasCodeEdits": false,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 1,
+        "verifications": 0
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "scratch-mixed",
+      "steps": [
+        {
+          "kind": "modify",
+          "path": ".rivet/scratch/probe.ts"
+        },
+        {
+          "kind": "modify",
+          "path": "src/a.ts"
+        }
+      ],
+      "gate": {
+        "filesModified": 2,
+        "verifications": 0,
+        "editsSinceLastTest": 1,
+        "hasFailedTests": false,
+        "hasCodeEdits": true,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 2,
+        "verifications": 0
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "scratch-doc",
+      "steps": [
+        {
+          "kind": "modify",
+          "path": ".rivet/scratch/notes.md"
+        }
+      ],
+      "gate": {
+        "filesModified": 1,
+        "verifications": 0,
+        "editsSinceLastTest": 0,
+        "hasFailedTests": false,
+        "hasCodeEdits": false,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 1,
+        "verifications": 0
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "edits-then-verify",
+      "steps": [
+        {
+          "kind": "modify",
+          "path": "src/a.ts"
+        },
+        {
+          "kind": "modify",
+          "path": "src/b.ts"
+        },
+        {
+          "kind": "verify",
+          "status": "passed"
+        }
+      ],
+      "gate": {
+        "filesModified": 2,
+        "verifications": 1,
+        "editsSinceLastTest": 0,
+        "hasFailedTests": false,
+        "hasCodeEdits": true,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 2,
+        "verifications": 1
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "edits-verify-then-more-edits",
+      "steps": [
+        {
+          "kind": "modify",
+          "path": "src/a.ts"
+        },
+        {
+          "kind": "verify",
+          "status": "passed"
+        },
+        {
+          "kind": "modify",
+          "path": "src/b.ts"
+        },
+        {
+          "kind": "modify",
+          "path": "src/c.ts"
+        }
+      ],
+      "gate": {
+        "filesModified": 3,
+        "verifications": 1,
+        "editsSinceLastTest": 2,
+        "hasFailedTests": false,
+        "hasCodeEdits": true,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 3,
+        "verifications": 1
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "edits-then-failed-verify",
+      "steps": [
+        {
+          "kind": "modify",
+          "path": "src/a.ts"
+        },
+        {
+          "kind": "verify",
+          "status": "failed"
+        }
+      ],
+      "gate": {
+        "filesModified": 1,
+        "verifications": 1,
+        "editsSinceLastTest": 0,
+        "hasFailedTests": true,
+        "hasCodeEdits": true,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 1,
+        "verifications": 1
+      },
+      "hasVerificationDebt": true
+    },
+    {
+      "label": "edits-then-blocked-verify",
+      "steps": [
+        {
+          "kind": "modify",
+          "path": "src/a.ts"
+        },
+        {
+          "kind": "verify",
+          "status": "blocked"
+        }
+      ],
+      "gate": {
+        "filesModified": 1,
+        "verifications": 1,
+        "editsSinceLastTest": 0,
+        "hasFailedTests": false,
+        "hasCodeEdits": true,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 1,
+        "verifications": 1
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "two-verifies",
+      "steps": [
+        {
+          "kind": "verify",
+          "status": "passed"
+        },
+        {
+          "kind": "verify",
+          "status": "failed"
+        }
+      ],
+      "gate": {
+        "filesModified": 0,
+        "verifications": 2,
+        "editsSinceLastTest": 0,
+        "hasFailedTests": true,
+        "hasCodeEdits": false,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 0,
+        "verifications": 2
+      },
+      "hasVerificationDebt": true
+    },
+    {
+      "label": "failed-then-passed",
+      "steps": [
+        {
+          "kind": "verify",
+          "status": "failed"
+        },
+        {
+          "kind": "verify",
+          "status": "passed"
+        }
+      ],
+      "gate": {
+        "filesModified": 0,
+        "verifications": 2,
+        "editsSinceLastTest": 0,
+        "hasFailedTests": true,
+        "hasCodeEdits": false,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 0,
+        "verifications": 2
+      },
+      "hasVerificationDebt": true
+    },
+    {
+      "label": "read-test-file-dot-test",
+      "steps": [
+        {
+          "kind": "read",
+          "path": "src/a.test.ts"
+        }
+      ],
+      "gate": {
+        "filesModified": 0,
+        "verifications": 0,
+        "editsSinceLastTest": 0,
+        "hasFailedTests": false,
+        "hasCodeEdits": false,
+        "hasReadTestFiles": true
+      },
+      "evidence": {
+        "filesModified": 0,
+        "verifications": 0
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "read-test-file-underscore",
+      "steps": [
+        {
+          "kind": "read",
+          "path": "go/internal/x_test.go"
+        }
+      ],
+      "gate": {
+        "filesModified": 0,
+        "verifications": 0,
+        "editsSinceLastTest": 0,
+        "hasFailedTests": false,
+        "hasCodeEdits": false,
+        "hasReadTestFiles": true
+      },
+      "evidence": {
+        "filesModified": 0,
+        "verifications": 0
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "read-test-dir",
+      "steps": [
+        {
+          "kind": "read",
+          "path": "src/__tests__/a.ts"
+        }
+      ],
+      "gate": {
+        "filesModified": 0,
+        "verifications": 0,
+        "editsSinceLastTest": 0,
+        "hasFailedTests": false,
+        "hasCodeEdits": false,
+        "hasReadTestFiles": true
+      },
+      "evidence": {
+        "filesModified": 0,
+        "verifications": 0
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "read-spec",
+      "steps": [
+        {
+          "kind": "read",
+          "path": "src/a.spec.ts"
+        }
+      ],
+      "gate": {
+        "filesModified": 0,
+        "verifications": 0,
+        "editsSinceLastTest": 0,
+        "hasFailedTests": false,
+        "hasCodeEdits": false,
+        "hasReadTestFiles": true
+      },
+      "evidence": {
+        "filesModified": 0,
+        "verifications": 0
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "read-non-test",
+      "steps": [
+        {
+          "kind": "read",
+          "path": "src/a.ts"
+        }
+      ],
+      "gate": {
+        "filesModified": 0,
+        "verifications": 0,
+        "editsSinceLastTest": 0,
+        "hasFailedTests": false,
+        "hasCodeEdits": false,
+        "hasReadTestFiles": false
+      },
+      "evidence": {
+        "filesModified": 0,
+        "verifications": 0
+      },
+      "hasVerificationDebt": false
+    },
+    {
+      "label": "realistic-tdd-cycle",
+      "steps": [
+        {
+          "kind": "read",
+          "path": "src/a.test.ts"
+        },
+        {
+          "kind": "modify",
+          "path": "src/a.ts"
+        },
+        {
+          "kind": "modify",
+          "path": "src/a.ts"
+        },
+        {
+          "kind": "verify",
+          "status": "failed"
+        },
+        {
+          "kind": "modify",
+          "path": "src/a.ts"
+        },
+        {
+          "kind": "verify",
+          "status": "passed"
+        },
+        {
+          "kind": "modify",
+          "path": "src/b.ts"
+        }
+      ],
+      "gate": {
+        "filesModified": 2,
+        "verifications": 2,
+        "editsSinceLastTest": 1,
+        "hasFailedTests": true,
+        "hasCodeEdits": true,
+        "hasReadTestFiles": true
+      },
+      "evidence": {
+        "filesModified": 2,
+        "verifications": 2
+      },
+      "hasVerificationDebt": true
+    }
+  ]
+}
