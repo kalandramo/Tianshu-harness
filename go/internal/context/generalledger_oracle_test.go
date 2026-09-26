@@ -44,6 +44,13 @@ func loadGLOracle(t *testing.T) glOracle {
 	if len(doc.SlugCases) == 0 || len(doc.PathCases) == 0 || len(doc.ParseCases) == 0 {
 		t.Fatal("oracle 用例为空——生成器没跑成功")
 	}
+	// **断言生成器来源**（对账 `planmode_test.go:55` 的既有模式）：
+	// 防「oracle.json 被别的生成器覆盖」——那会让本测试对账**另一组输入**，
+	// 静默假绿。这是交付门禁的「wrote-but-never-read」提示指向的真实缺口。
+	if doc.GeneratedBy != "go/testdata/generalledger/gen-oracle.ts" {
+		t.Fatalf("oracle 生成器不符：got=%q want=%q（oracle.json 可能被覆盖）",
+			doc.GeneratedBy, "go/testdata/generalledger/gen-oracle.ts")
+	}
 	return doc
 }
 
