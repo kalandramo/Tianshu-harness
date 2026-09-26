@@ -364,19 +364,25 @@ func (r *Registry) RequiresHardGate(name string, p *CallParams) bool {
 // manual 档下 `needsApproval=true` 却无人消费 → 写操作静默执行（fail-open）。
 // 第六十二刀接线后闭合。
 //
-// ## 接线条件（**①②已完成，③仍未做**）
+// ## 接线条件（**①②③ 全部完成**）
 //
 // 原列三条前置：
 //
 //	① `assessToolRisk` 的纯函数子集 —— ✅ 已完成（`agent.AssessToolRisk`）
 //	② 审批提示往返通道（或 TS headless 语义的确定性解析）—— ✅ 已完成
 //	   （取**后者**：`decideApprovalGate` 的确定性解析，不造弹窗、不争 stdin）
-//	③ 写工具的 `RequiresApproval` 语义订正（当前 `ApprovalMode != "..."` 与
-//	   TS 的 `() => true` + pipeline 中和不等价）—— ❌ **仍未做**
+//	③ 写工具的 `RequiresApproval` 语义订正 —— ✅ **第七十四刀完成**
+//	   （4 个写工具改为**恒真** `() => true`，对账 TS `write-file.ts:349` /
+//	   `edit.ts:390` / `hash-edit.ts:569` / `apply-patch.ts:262`）
 //
-// **③的影响**：本函数与 `decideApprovalGate` **各判一次档位**（重复判定）。
-// 行为当前正确（两处都处理 skip），但将来任一处改动会导致不一致——
-// 结构性隐患，非当前缺陷。详见 `approval_gate.go` 的「已知欠账」段。
+// **③ 完成后的语义**：档位判定**单点**在 `decideApprovalGate`（它开头处理
+// skip 档、manual 分支读 `needsApproval`、auto-safe 分支读 `isHighRisk`）。
+// 工具层不再读档位——故本函数返回的是「**这个工具本质是否需要批准**」，
+// 而非「当前档位下是否需要」。
+//
+// **③ 完成前的影响（已消除）**：本函数与 `decideApprovalGate` 曾**各判一次
+// 档位**（重复判定）——将来任一处改动会导致不一致。第七十四刀把工具层
+// 的档位判定移除后，档位语义只剩 `decideApprovalGate` 一处。
 func (r *Registry) NeedsApproval(name string, p *CallParams) bool {
 	t, ok := r.tools[name]
 	if !ok {

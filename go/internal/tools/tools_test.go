@@ -223,14 +223,34 @@ func TestWriteFileRegistersWrite(t *testing.T) {
 }
 
 // 审批模式：非放开档位时需要批准。
+// TestWriteFileRequiresApproval —— **第七十四刀订正**。
+//
+// # 原断言（已废）
+//
+//	if tool.RequiresApproval(&CallParams{ApprovalMode: "dangerously-skip-permissions"}) {
+//		t.Error("放开档位下写操作不应需批准")
+//	}
+//
+// 它断言 `RequiresApproval` **读档位**——但那让档位语义被**两处**判定
+// （本函数 + `agent.decideApprovalGate`）。TS 侧是 `() => true`
+// （`src/tools/write-file.ts:349`），**不读档位**。
+//
+// # 为什么订正不是「删除保护」
+//
+// skip 档的真实保护在 `decideApprovalGate`（它开头 `skipAllApproval ? false`），
+// 有**真实 CLI 的 e2e** 覆盖（`cmd/tianshu/approval_gate_e2e_test.go` 的
+// `TestCLIEndToEndSkipModeAllowsBashWrite` + manual/auto-safe 各档）。
+// 本测试**不是**那层保护——它只是把 Go 侧的偏离实现固化成了断言。
 func TestWriteFileRequiresApproval(t *testing.T) {
 	root := t.TempDir()
 	tool := WriteFile(root, nil)
-	if !tool.RequiresApproval(&CallParams{ApprovalMode: "auto-safe"}) {
-		t.Error("auto-safe 档位下写操作应需批准")
-	}
-	if tool.RequiresApproval(&CallParams{ApprovalMode: "dangerously-skip-permissions"}) {
-		t.Error("放开档位下写操作不应需批准")
+	// **任何档位都需批准**（对账 TS `() => true`）——档位语义由
+	// `decideApprovalGate` 单点判定，不在工具层。
+	for _, mode := range []string{"manual", "auto-safe", "dangerously-skip-permissions"} {
+		if !tool.RequiresApproval(&CallParams{ApprovalMode: mode}) {
+			t.Errorf("档位 %q 下 RequiresApproval 应恒为 true（对账 TS `() => true`）；"+
+				"档位豁免由 decideApprovalGate 负责，不在工具层", mode)
+		}
 	}
 }
 

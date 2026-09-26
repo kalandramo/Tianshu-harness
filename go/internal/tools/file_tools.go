@@ -47,9 +47,19 @@ func WriteFile(cwd string, grants pathsafe.GrantChecker) Tool {
 	return t
 }
 
-// RequiresApproval 写操作需要批准（除非会话档位已放开）。
-func (t *writeFileTool) RequiresApproval(p *CallParams) bool {
-	return p.ApprovalMode != "dangerously-skip-permissions"
+// RequiresApproval 写操作**恒需批准**（对账 TS `requiresApproval: () => true`，
+// `src/tools/write-file.ts:349`）。
+//
+// **为什么不判档位**（第七十四刀改）：档位语义由 `agent.decideApprovalGate`
+// **单点判定**——它开头就处理 skip 档（`dangerously-skip-permissions` →
+// 不拦），且 `auto-safe` 分支读 `isHighRisk`（不读本函数）。故本函数的返回值
+// **只在 manual 档被消费**，那里 `!= skip` 恒为 true——与 `() => true` 等价。
+//
+// **改前是 `p.ApprovalMode != "dangerously-skip-permissions"`**：那让档位语义
+// 被**两处**判定（本函数 + `decideApprovalGate`），任一处改动会不一致。
+// 这是**结构性隐患**，非行为缺陷（改前后行为等价）。
+func (t *writeFileTool) RequiresApproval(*CallParams) bool {
+	return true
 }
 
 func (t *writeFileTool) Timeout(*CallParams) time.Duration { return 30 * time.Second }
@@ -184,8 +194,11 @@ func EditFile(cwd string, grants pathsafe.GrantChecker) Tool {
 	return t
 }
 
-func (t *editFileTool) RequiresApproval(p *CallParams) bool {
-	return p.ApprovalMode != "dangerously-skip-permissions"
+// RequiresApproval 写操作**恒需批准**（对账 TS `requiresApproval: () => true`，
+// `src/tools/edit.ts:390`）。档位语义由 `decideApprovalGate` 单点判定——见
+// `writeFileTool.RequiresApproval` 的说明。
+func (t *editFileTool) RequiresApproval(*CallParams) bool {
+	return true
 }
 
 func (t *editFileTool) Timeout(*CallParams) time.Duration { return 30 * time.Second }

@@ -207,11 +207,20 @@ go/testdata/shellsplit/gen-oracle.ts + oracle.json
 - **待做**：TDD gate 的**拦截**——在 `loop.go` 的 `executeTool`（或合适的门链位置）读 `HasVerificationDebt()`（阈值 3，见 `evidence.go:212`），对「连续 3 次未验证的代码编辑」施加约束。
 - **不确定项**：拦截的**具体动作**（拒绝？警告？注入提示？）——需对账 TS 侧 `src/agent/` 的 TDD gate 实现。**未知**，开工前先 grep TS。
 
-### 卡点 2：`registry.go` 前置③（写工具 `RequiresApproval` 语义订正）仍未做
+### 卡点 2：~~`registry.go` 前置③~~ → **已解决**（第七十四刀）
 
-- **位置**：`go/internal/tools/registry.go:368-385` 的注释块，③ 标 ❌ **仍未做**。
-- **问题**：`NeedsApproval`（`registry.go:381`）与 `decideApprovalGate` **各判一次档位**（重复判定）。4 处写工具的 `RequiresApproval` 仍是 `ApprovalMode != skip` 形态，与 TS 的 `() => true` + pipeline 中和**不等价**。
-- **性质**：**行为当前正确**（两处都处理 skip），是**结构性隐患**，非当前缺陷。
+- **位置**：`go/internal/tools/registry.go` 的「接线条件」注释块，③ 已标 ✅。
+- **原问题**：`NeedsApproval` 与 `decideApprovalGate` **各判一次档位**（重复判定）；
+  4 处写工具的 `RequiresApproval` 是 `ApprovalMode != skip`，与 TS 的
+  `() => true` 不等价。
+- **修法**：4 处改为**恒真**（`write_file`/`edit_file`/`hash_edit`/`apply_patch`），
+  档位语义**单点**在 `decideApprovalGate`。
+- **行为等价性证据**：跨 4 档位的 e2e 全绿（改前改后同结果）；
+  新增 2 条 e2e 补上此前缺失的 **skip 档 write_file** 路径
+  （`cmd/tianshu/approval_gate_skipwrite_e2e_test.go`）。
+- **同时订正**：`internal/tools/tools_test.go` 的 `TestWriteFileRequiresApproval`
+  原断言「放开档位下写操作不应需批准」——那是把 Go 侧偏离 TS 的实现固化成了
+  断言，已改为「任何档位恒真」。
 
 ### 卡点 3：状态表剩余 ⚠️ 项（均判定不做，除非需求出现）
 
@@ -230,25 +239,29 @@ go/testdata/shellsplit/gen-oracle.ts + oracle.json
 
 ## 下一步
 
-按优先级排列，每条可立即执行：
+**本节已按第七十四刀的核实订正**——原 5 条里 **4 条已失效**（见各条标注）。
+仅剩第 4 条仍开放，且文档自己已判「不做」。
 
-1. **TDD gate 拦截**（卡点 1，当前最高优先级）
-   ```
-   cd /Users/moweilong/Workspace/go/src/github.com/kalandramo/Tianshu-harness
-   grep -rn "hasVerificationDebt\|verificationDebt\|TDD gate\|editsSinceLastTest" src/agent/ | head -20
-   ```
-   先定位 TS 侧拦截的**动作与阈值**，再在 `go/internal/agent/loop.go` 的门链（`loop.go:867-1063` 那一段）接入。判据：新增测试能打红「无拦截」的实现。
+1. ~~**TDD gate 拦截**~~ → **已完成**（`abcfc8a7` 第七十二刀接线 + `59c970e6`
+   第七十三刀补 suggest 提示通道）。**修正一处原判断**：原文说 suggest 需要
+   immune 通道——**错**，TS 的 `tddSuggestNote` 是追加到工具结果尾部
+   （`tool-pipeline.ts:1748-1750`），不需新通道。
 
-2. **`registry.go` 前置③**（卡点 2）
-   对账 TS 的 `() => true` + pipeline 中和语义，订正 4 处写工具的 `RequiresApproval`。消除重复判定。
+2. ~~**`registry.go` 前置③**~~ → **已完成**（第七十四刀）。见「卡点 2」。
 
-3. **工具缺口**（`go/HANDOFF.md:6958`「建议的第一刀」）
-   `related_tests` + `leave_mark`——两个都是**浅依赖**（纯文件名 glob 推导 / 写标记文件，`filediff`+`pathsafe` 已具备），可一轮做完、产出可独立验证。
-   注意：`go/HANDOFF.md:6958` 之后的内容有**过期修正轨迹**，读时要看「修正后」段落。
+3. ~~**工具缺口 `related_tests` + `leave_mark`**~~ → **本就已完成**（第三十七刀，
+   `e6883b66`）。**本条是过期条目**——原文档引用的 `go/HANDOFF.md:6958` 那段
+   自带「过期修正轨迹」（文档自己也警告过）。**核实方式**：
+   `ls go/internal/tools/ | grep -iE 'related|leave'` + 确认
+   `default_registry.go` 里 `RelatedTests(cwd)` / `LeaveMark()` 已注册。
 
-4. **若要继续认知状态线**：从 `turn-intent` **反向切入**（它是唯一有明确外部价值的节点——给用户方向提示），而非从 sensorium 这个中间层开始造。见 `approval_gate.go` 状态表 E 节。
+4. **若要继续认知状态线**（**仍开放，但文档已判「不做」**）：从 `turn-intent`
+   **反向切入**（它是唯一有明确外部价值的节点——给用户方向提示），而非从
+   sensorium 这个中间层开始造。见 `approval_gate.go` 状态表 E 节。
+   **判据**：该需求本身尚未被提出，做出来就是下一个「造了没人用」。
 
-5. **把本会话 20 刀写入 `go/HANDOFF.md`**（补第六十一刀起）——保持「每刀一个专章」的既有格式。
+5. ~~**把本会话 20 刀写入 `go/HANDOFF.md`**~~ → **已完成**（`304f8a51`，回填
+   第六十一刀起共 23 提交）。
 
 ---
 

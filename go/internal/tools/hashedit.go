@@ -357,8 +357,10 @@ new_string 必须是真实文件内容；把历史里的
 	return t
 }
 
-func (t *hashEditTool) RequiresApproval(p *CallParams) bool {
-	return p.ApprovalMode != "dangerously-skip-permissions"
+// RequiresApproval 写操作**恒需批准**（对账 TS `requiresApproval: () => true`，
+// `src/tools/hash-edit.ts:569`）。档位语义由 `decideApprovalGate` 单点判定。
+func (t *hashEditTool) RequiresApproval(*CallParams) bool {
+	return true
 }
 
 func (t *hashEditTool) Timeout(*CallParams) time.Duration { return 30 * time.Second }

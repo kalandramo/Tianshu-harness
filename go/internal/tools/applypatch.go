@@ -158,8 +158,10 @@ func ApplyPatch(cwd string, grants pathsafe.GrantChecker) Tool {
 	return t
 }
 
-func (t *applyPatchTool) RequiresApproval(p *CallParams) bool {
-	return p.ApprovalMode != "dangerously-skip-permissions"
+// RequiresApproval 写操作**恒需批准**（对账 TS `requiresApproval: () => true`，
+// `src/tools/apply-patch.ts:262`）。档位语义由 `decideApprovalGate` 单点判定。
+func (t *applyPatchTool) RequiresApproval(*CallParams) bool {
+	return true
 }
 
 func (t *applyPatchTool) Timeout(*CallParams) time.Duration { return 60 * time.Second }
