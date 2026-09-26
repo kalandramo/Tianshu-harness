@@ -45,20 +45,32 @@ func TestPlanUnknownAction(t *testing.T) {
 	}
 }
 
-// TestPlanEnterExitModeHonestError —— **诚实声明**（Go 侧无 plan mode 状态机）。
+// TestPlanEnterExitModeHonestError —— **fail-closed**（第七十九刀订正）。
 //
-// 对账本刀的设计决策：不假装成功，明确报错并给替代路径。
+// # 原断言（已废）
+//
+// 它断言 `enter_mode`/`exit_mode` **恒报错**且文案含「暂不支持」——
+// 那编码的是「Go 侧无 plan mode 状态机」的**临时状态**。
+//
+// # 第七十九刀变更
+//
+// `CheckPlanMode`（`agent/planmode.go`）**早已实现**，只是没接线。
+// 本刀把 `Loop.PlanModeState` + 门链 + 工具回调三者接起来——
+// `enter_mode`/`exit_mode` 现在**真改状态**。
+//
+// # 保留的语义（本测试现在验的）
+//
+// **无回调时仍 fail-closed 报错**（对账 TS：子代理不能切主代理的计划模式）。
+// 这不是「暂不支持」，而是「**当前上下文不可用**」——保护有效，只是文案变了。
 func TestPlanEnterExitModeHonestError(t *testing.T) {
 	for _, action := range []string{"enter_mode", "exit_mode"} {
 		content, isErr := planToolIsError(t, newPlanParams(t.TempDir(), map[string]any{"action": action}))
 		if !isErr {
-			t.Errorf("%s 应报错（未支持），实得成功：%q", action, content)
+			t.Errorf("%s 无回调时应报错（fail-closed），实得成功：%q", action, content)
 		}
-		if !strings.Contains(content, "暂不支持") {
-			t.Errorf("%s 应说明暂不支持：%q", action, content)
-		}
-		if !strings.Contains(content, "静默失效") {
-			t.Errorf("%s 应说明为何不假装成功：%q", action, content)
+		// **不再断言「暂不支持」**——机制已实现（见本测试说明）。
+		if !strings.Contains(content, "不可用") {
+			t.Errorf("%s 应说明上下文不可用（而非「暂不支持」）：%q", action, content)
 		}
 	}
 }

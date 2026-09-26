@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -131,6 +132,25 @@ type Loop struct {
 	Emit func(Event)
 	// ToolParams 是工具调用的基础参数（注入依赖）。
 	ToolParams *tools.CallParams
+	// PlanModeState 是计划模式状态（第七十九刀接线）。
+	//
+	// 对账 TS `loop.ts:261` 的**实例字段** `planModeState`（由 `enterPlanMode`
+	// 变更、`exitPlanMode` 清除）。**放在 Loop 而非 Config**：它是**会话可变
+	// 状态**，不是启动期配置——`Config` 的其它字段（如 `TddGateEnv`）在会话内
+	// 不变，而本字段由 `plan` 工具在运行中改写。
+	//
+	// **Go 侧此前无该字段**——`planmode.go` 的 `CheckPlanMode`（5 段分支，
+	// oracle 对账过）在生产代码**零消费**，`plan` 工具的 `enter`/`exit` action
+	// 只能报错（`plan.go:176` 说「尚未移植写工具禁用机制」），**而机制其实已实现**。
+	//
+	// 取值：`PlanModeOff`（默认）/ `PlanModePlanning`。
+	PlanModeState PlanModeState
+	// ActivePlanFilePath 是当前活动计划文件——**仅允许对该路径写入**（计划期
+	// 唯一的写例外，对账 TS `planModePathsMatch`）。
+	//
+	// 对账 TS `loop.ts` 的 `activePlanFilePath`。空串 = 无活动计划文件。
+	// 由 `plan` 工具的 enter action 设置、exit 清除。
+	ActivePlanFilePath string
 	// State 是会话状态容器（跨轮的文件/验证/决策感知）。
 	//
 	// 对账 TS 侧 loop.ts:848 的 `new SessionStateManager(this.config.sessionId)`。
@@ -876,7 +896,59 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 		p.SkillRegistry = l.cfg.SkillRegistry
 	}
 
+	// ── 计划模式回调（第七十九刀接线）──
+	//
+	// 对账 TS `loop.ts` 传给 plan 工具的 `enterPlanMode` / `exitPlanMode` ref。
+	// **为什么在此注入**：`plan` 工具是无状态的（只收 `CallParams`），无法直接
+	// 改 `Loop` 的字段——故经回调暴露。这与 `OnSkillInvoked` / `OnFileWrite`
+	// 同一模式。
+	//
+	// **仅在主 agent 上下文注入**：worker/子代理不得切主代理的计划模式
+	// （对账 TS 的 fail-closed）。Go 侧当前无子代理调用 `executeTool` 的路径，
+	// 故此处无条件注入；将来引入子代理时须按上下文条件化。
+	p.EnterPlanMode = l.enterPlanMode
+	p.ExitPlanMode = l.exitPlanMode
+
 	started := time.Now()
+
+	// ── 计划模式门（第七十九刀接线）──
+	//
+	// 对账 TS `tool-pipeline.ts:1062` 的 plan-mode gate。**Go 侧此前零接线**：
+	// `planmode.go` 的 `CheckPlanMode`（5 段分支，oracle 对账过）在生产代码
+	// **零消费**——`Loop` 无状态字段、门链不调它。后果是 `plan` 工具的
+	// `enter`/`exit` action 只能报错（`plan.go:176` 说「尚未移植写工具禁用
+	// 机制」），**而机制其实已实现**。
+	//
+	// **顺序**：TS 侧 plan-mode(1062) 在 deny(1137) **之前**——故本门置于
+	// 门链最前（deny 门之前）。语义：计划模式是**会话级纪律**，先于用户边界。
+	//
+	// **例外**（`CheckPlanMode` 内部处理，逐条对账 TS）：
+	//   - 写**活动计划文件** → 放行（计划期唯一的写目标）
+	//   - 写 `.rivet/scratch/` 探针 → 放行（计划期验证声称的标准出路）
+	//   - 白名单的 18 个只读/无害工具 → 放行
+	//
+	// **Go 侧的差异（有意）**：TS 的 `delegatesWriteCapableProfile` 依赖
+	// profile registry（`profileIsPlanModeSafe`）——Go 侧未移植，故恒 false
+	// （该分支不触发）。
+	if l.PlanModeState == PlanModePlanning {
+		target, _ := tc.input["file_path"].(string)
+		var activePlan *string
+		if l.ActivePlanFilePath != "" {
+			activePlan = &l.ActivePlanFilePath
+		}
+		planRes := CheckPlanMode(l.PlanModeState, tc.name, PlanModeCheckContext{
+			Cwd:                l.cfg.Cwd,
+			TargetFilePath:     target,
+			ActivePlanFilePath: activePlan,
+		})
+		if !planRes.Allowed {
+			reason := planRes.Reason
+			if reason == "" {
+				reason = "Plan Mode: write operations blocked"
+			}
+			return contract.Result{Content: reason, IsError: true}
+		}
+	}
 
 	// ── 用户 deny 规则门（第五十二刀接线）──
 	//
@@ -1217,6 +1289,44 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 		result.Content = result.Content + "\n\n[TDD] " + tddSuggestNote
 	}
 	return result
+}
+
+// enterPlanMode 切入计划模式（第七十九刀）。
+//
+// 对账 TS `loop.ts:2038` 的 `enterPlanMode`：
+//
+//	① 已在 planning 且有活动计划文件 → 幂等早返回（alreadyPlanning=true）
+//	② 否则生成草稿路径（`.rivet/plans/draft-<ms>.md`）并落盘空文件
+//	③ 状态置 planning
+//
+// **Go 侧的收窄（有意）**：TS 还做 Ask Mode 互斥（进入 plan 静默退出 ask）、
+// promptEngine 同步、调研 advisory 注入——那些子系统 Go 侧不存在或未接线，
+// 故此处只做「状态 + 草稿路径」两件核心事。
+func (l *Loop) enterPlanMode() (activePlanFilePath string, alreadyPlanning bool) {
+	if l.PlanModeState == PlanModePlanning && l.ActivePlanFilePath != "" {
+		return l.ActivePlanFilePath, true
+	}
+	// 生成草稿路径（对账 TS `createActivePlanDraftPath`）并确保父目录存在。
+	rel := CreateActivePlanDraftPath()
+	abs := filepath.Join(l.cfg.Cwd, rel)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err == nil {
+		if _, statErr := os.Stat(abs); statErr != nil {
+			// 空文件——对账 TS 的 `if (!existsSync(abs)) writeFileSync(abs, '', 'utf-8')`
+			_ = os.WriteFile(abs, nil, 0o644)
+		}
+	}
+	l.ActivePlanFilePath = rel
+	l.PlanModeState = PlanModePlanning
+	return rel, false
+}
+
+// exitPlanMode 退出计划模式（第七十九刀）。
+//
+// 对账 TS `loop.ts` 的 `exitPlanMode`：状态置 off、清活动计划文件。
+// **不修改计划文件本身**（对账 TS 注释）。
+func (l *Loop) exitPlanMode() {
+	l.PlanModeState = PlanModeOff
+	l.ActivePlanFilePath = ""
 }
 
 // recordTrajectory 把一次工具调用记进轨迹。

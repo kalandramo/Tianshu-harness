@@ -85,6 +85,21 @@ type CallParams struct {
 	//
 	// 对账 TS 的 `params.onSkillCompleted?.(skill.name)`。
 	OnSkillCompleted func(name string)
+	// EnterPlanMode 把主 agent 切入计划模式（第七十九刀接线）。
+	//
+	// 对账 TS `params.enterPlanMode?.()`（`plan.ts:329`）。返回活动计划草稿路径
+	// 与「是否已在计划模式」。
+	//
+	// **nil = 当前上下文不可用**（对账 TS 的 fail-closed）：子代理/worker
+	// 不能把主代理切入计划模式——`plan` 工具会明确报错而非静默成功。
+	EnterPlanMode func() (activePlanFilePath string, alreadyPlanning bool)
+	// ExitPlanMode 退出计划模式（解除写限制）。
+	//
+	// 对账 TS `params.exitPlanMode?.()`（`plan.ts:363`）。正常流程审批即自动
+	// 退出；本回调是**后备**——审批后系统未自动退出时手动调用。
+	//
+	// nil = 当前上下文不可用（fail-closed）。
+	ExitPlanMode func()
 	// SessionID 用于隔离按会话的状态（读历史、去重跟踪），
 	// 防同 cwd 的并发会话交叉污染。
 	SessionID string

@@ -160,8 +160,10 @@ func (t *planTool) Execute(_ context.Context, p *CallParams) (contract.Result, e
 		return planSubmitExecute(p), nil
 	case "close":
 		return planCloseExecute(p), nil
-	case "enter_mode", "exit_mode":
-		return planModeUnsupported(action), nil
+	case "enter_mode":
+		return planEnterModeExecute(p), nil
+	case "exit_mode":
+		return planExitModeExecute(p), nil
 	}
 	return contract.Result{
 		Content: fmt.Sprintf("错误：未知 action「%s」。请使用 \"submit\"、\"close\"、\"enter_mode\" 或 \"exit_mode\"。", action),
@@ -169,15 +171,64 @@ func (t *planTool) Execute(_ context.Context, p *CallParams) (contract.Result, e
 	}, nil
 }
 
-// planModeUnsupported 是 enter_mode/exit_mode 的诚实声明（见文件头差异 1）。
-func planModeUnsupported(action string) contract.Result {
-	return contract.Result{
-		Content: "错误：Go 运行时暂不支持 plan action=" + action + "。\n\n" +
-			"原因：该 action 依赖 plan mode 状态机（进入后禁用写工具），而 Go 侧**尚未移植写工具禁用机制**。\n" +
-			"只搬 action 外壳而不接状态机，会产出「声称进入计划模式、实际没禁用写工具」的静默失效——故此处明确报错而非假装成功。\n\n" +
-			"替代路径：直接用 write_file / edit_file 写计划到 .rivet/plans/ 下，再用 plan action=submit 提交审批。",
-		IsError: true,
+// planEnterModeExecute 切入计划模式（第七十九刀接线）。
+//
+// 对账 TS `planEnterModeExecute`（`plan.ts:324`）。
+//
+// **接线背景**：此前本 action 走 `planModeUnsupported` 明确报错，理由写
+// 「Go 侧尚未移植写工具禁用机制」——**但机制其实早已实现**
+// （`agent/planmode.go` 的 `CheckPlanMode`），只是没接线。本刀补上。
+//
+// **fail-closed**：`EnterPlanMode` 回调为 nil 时明确报错（对账 TS：
+// 子代理不能把主代理切入计划模式）。
+func planEnterModeExecute(p *CallParams) contract.Result {
+	if p.EnterPlanMode == nil {
+		return contract.Result{
+			Content: "错误：当前上下文不可用 enter_mode（子代理不能把主代理切入计划模式）。",
+			IsError: true,
+		}
 	}
+	activePlanFilePath, alreadyPlanning := p.EnterPlanMode()
+	if alreadyPlanning {
+		msg := "已在计划模式中。"
+		if activePlanFilePath != "" {
+			msg += " 活动计划草稿：" + activePlanFilePath
+		}
+		return contract.Result{Content: msg}
+	}
+	lines := []string{
+		"已进入计划模式——写工具已禁用（计划草稿文件除外）。",
+	}
+	if activePlanFilePath != "" {
+		lines = append(lines, "计划草稿: "+activePlanFilePath)
+	}
+	lines = append(lines,
+		"",
+		"下一步：",
+		"1. 先用 todo 建调研清单（3-6 项：摸清各模块现状、外部调研、设计收敛），最后一项固定为「汇总写计划并用 plan action=submit 提交审批」；逐项勾掉推进。计划正文只写计划文件，不进 todo。",
+		"2. 调研：多模块任务用 delegate_batch 一次并行派 2-4 个只读 code_scout（按模块/文件域切分），汇总发现。",
+		"3. 用 write_file/edit_file 把计划增量写入草稿——开头（H1 之后）先写「## 需求提炼」：用用户原话提炼需求目标与非目标（submit 门禁）。",
+		"4. 瑶光反证（必需章节，submit 门禁）：关键断言在计划期复现——设计定稿后回读引用代码到 file:line、bugfix 跑 run_tests 拿 RED 证据、或派 profile=adversarial_verifier authority=yaoguang。复现不了的推论写为待验证假设，不当结论。",
+		"5. 用 plan action=submit 提交（省略 plan 字段即从草稿提交）。提交门禁：标题级「需求提炼」章节、一张 ```mermaid 图、标题级「反证/复现」章节、>8 任务/>15 文件时 ### Wave N 分波——所有未达标项一次驳回列全。提交后用户通过会话内审批卡批准；不要让用户手输 /plan-approve 或任何命令。",
+	)
+	return contract.Result{Content: strings.Join(lines, "\n")}
+}
+
+// planExitModeExecute 退出计划模式（第七十九刀接线）。
+//
+// 对账 TS `planExitModeExecute`（`plan.ts:354`）：退出并解除写限制，**不修改
+// 计划文件**。正常流程审批即自动退出；本 action 是后备。
+//
+// **fail-closed**：`ExitPlanMode` 回调为 nil 时明确报错。
+func planExitModeExecute(p *CallParams) contract.Result {
+	if p.ExitPlanMode == nil {
+		return contract.Result{
+			Content: "错误：当前上下文不可用 exit_mode（子代理不能退出主代理的计划模式）。",
+			IsError: true,
+		}
+	}
+	p.ExitPlanMode()
+	return contract.Result{Content: "已退出计划模式——写操作限制已解除。"}
 }
 
 // ── submit ──
