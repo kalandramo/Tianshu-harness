@@ -48,15 +48,11 @@ func Bash(cwd string) Tool {
 		InputSchema: objSchemaOrdered([]string{"command", "timeout", "run_in_background"}, map[string]any{
 			"command": strProp("要执行的 shell 命令"),
 			"timeout": intPropMin("超时毫秒数（默认 120000；非正数按默认值处理）", 1),
-			// **显式未实现声明**（第二十五刀）：Go 侧无 sessionJobRegistry 设施
-			// （`JobRegistry`/`JobStore` 全库零命中），故此参数**被忽略**，命令
-			// 仍走前台同步执行。用户级验收已实测证实（传 true/false/不传，输出
-			// 逐字一致、无 job id）。
-			//
-			// 保留参数（而非删除）是为了不丢接口语义——TS 侧该参数正确，待 job
-			// 子系统移植后恢复原文案。**与 TS 的偏离是有意的**，已在
-			// schema_parity_test.go 的已知偏离白名单里登记（含移除条件）。
-			"run_in_background": boolProp("（Go 侧暂未实现：传 true 仍走前台同步执行，不会转入后台、不返回 job id。job 子系统移植后恢复。）"),
+			// **第八十刀已恢复 TS 原文案**（第二十五刀的显式未实现声明已移除）：
+			// job 子系统（`jobstore.go` + `job.go`）已移植并接线，本参数现在
+			// **真的会转入后台**并返回 job id。`schema_parity_test.go` 的
+			// 已知偏离白名单条目已随之删除（那条登记自带这个移除条件）。
+			"run_in_background": boolProp("设为 true 转入后台并返回 job id。自动检测已知长跑命令。"),
 		}, "command"),
 	}
 	t.enabled = true
@@ -130,6 +126,93 @@ var destructivePatterns = []struct {
 	{regexp.MustCompile(`>\s*/dev/sd[a-z]`), "直接写块设备"},
 }
 
+// longRunnerPatterns 是「已知长跑 / 不自行退出」的命令模式。
+//
+// 对账 TS `bash.ts:452-466` 的 `LONG_RUNNER_PATTERNS`——**逐条对账，含顺序**。
+//
+// **为什么自动后台化**：① dev server / watcher 永不退出，前台跑会占满整个
+// 轮次直到超时，纯浪费；② 长 install 虽会终止，但会把轮次吊住，模型真需要
+// 结果时可以用 `job(await)` 等。
+//
+// **有意排除 build/test**：模型通常**同步依赖**它们的结果，静默转入后台会让
+// 它意外。模型仍可显式传 `run_in_background=true` opt in。
+var longRunnerPatterns = []*regexp.Regexp{
+	// 包安装。
+	regexp.MustCompile(`(?i)\b(npm|pnpm|yarn|bun)\s+(install|ci|add)\b`),
+	regexp.MustCompile(`(?i)\bnpm\s+i\b`),
+	// dev server / start / watch / serve 脚本。
+	regexp.MustCompile(`(?i)\b(npm|pnpm|yarn|bun)\s+(run\s+)?(dev|start|watch|serve|storybook)\b`),
+	// 常见 dev-server / watcher 二进制。
+	regexp.MustCompile(`(?i)\b(vite|nodemon|ng\s+serve|webpack(-dev-server|\s+serve)|rollup\s+.*-w\b|esbuild\s+.*--watch)\b`),
+	regexp.MustCompile(`(?i)\bnext\s+(dev|start)\b`),
+	// TypeScript watch 模式。
+	regexp.MustCompile(`(?i)\btsc\b[^&|;]*(--watch|\s-w\b)`),
+	// Docker / compose up（非 -d 的前台会把服务拉起来并阻塞）。
+	regexp.MustCompile(`(?i)\bdocker(\s+compose|-compose)?\s+up\b`),
+}
+
+// runBashBackground 在后台启动命令并返回「已转后台」结果。
+//
+// 对账 TS `bash.ts:497-520` 的后台分支。返回的 content **逐字对账** TS 文案——
+// 它进模型上下文，且告诉模型**怎么用** job 工具接续（id + 三种 action 示例）。
+//
+// **为什么把 tcLock / mirrorEnv 等略去**：TS 侧后台分支还做 typecheck 串行锁与
+// mirror 环境叠加。Go 侧无这两套子系统（`tryAcquireAdhocLock` 未移植；
+// `getResolvedEnv` 在 spawngit.go 已声明未移植）——属**有意收窄**，
+// 不影响 job 语义本身。
+func runBashBackground(p *CallParams, t *bashTool, rawCommand string, timeout time.Duration) (contract.Result, error) {
+	snap := p.Jobs.Spawn(JobSpawnOptions{
+		Command:    rawCommand,
+		RawCommand: rawCommand,
+		Cwd:        t.Cwd,
+		MaxLifetimeMs: func() int64 {
+			// 工具级 timeout 转成 job 墙钟上限的**下限**保护：
+			// 前台执行时 timeout 会掐断命令；后台化后不该失去这个保护，
+			// 否则「前台 120s 超时」的同一命令后台跑会永不退出。
+			// 取 max(timeout, RIVET_JOB_MAX_MS)——显式设了环境变量的以它为准。
+			ms := timeout.Milliseconds()
+			if env := JobMaxLifetimeMs(); env > ms {
+				ms = env
+			}
+			return ms
+		}(),
+	})
+
+	explicitBg, hasBg := p.Input["run_in_background"].(bool)
+	auto := !(hasBg && explicitBg)
+	prefix := "已在后台启动"
+	if auto {
+		prefix = "已自动转入后台"
+	}
+
+	content := fmt.Sprintf(
+		"[job:%s] %s: %s\n"+
+			"不阻塞当前轮次。用 job(action=\"await\", id=\"%s\", pattern=\"Ready|listening|compiled\") 等待就绪/退出，"+
+			"job(action=\"logs\", id=\"%s\") 看输出，job(action=\"kill\", id=\"%s\") 终止。",
+		snap.ID, prefix, rawCommand, snap.ID, snap.ID, snap.ID,
+	)
+	shortCmd := rawCommand
+	if len(shortCmd) > 80 {
+		shortCmd = shortCmd[:80] + "…"
+	}
+	return contract.Result{
+		Content:   content,
+		UIContent: "▶ 后台任务 " + snap.ID + ": " + shortCmd,
+	}, nil
+}
+
+// IsLongRunner 报告命令是否匹配已知长跑模式。
+//
+// 对账 TS `isLongRunner`：`LONG_RUNNER_PATTERNS.some(p => p.test(command))`。
+func IsLongRunner(command string) bool {
+	for _, re := range longRunnerPatterns {
+		if re.MatchString(command) {
+			return true
+		}
+	}
+	return false
+}
+
 // isDestructiveCommand 判定命令是否破坏性/不可逆。
 func isDestructiveCommand(cmd string) bool {
 	for _, p := range destructivePatterns {
@@ -161,6 +244,20 @@ func (t *bashTool) Execute(ctx context.Context, p *CallParams) (contract.Result,
 	maxOut := t.MaxOutputBytes
 	if maxOut <= 0 {
 		maxOut = 8 << 20 // 8MB
+	}
+
+	// ── 后台路径（对账 TS `bash.ts:486-516`）──
+	//
+	// 显式 `run_in_background=true`，或**自动检测**到长跑命令（除非显式传 false）。
+	// 需要会话的 job registry；没有则退回前台同步执行（TS 同语义）。
+	explicitBg, hasBg := p.Input["run_in_background"].(bool)
+	wantBackground := (hasBg && explicitBg) || (!hasBg || explicitBg) && IsLongRunner(command)
+	if hasBg && !explicitBg {
+		// 显式 false：强制前台（模型明确要同步结果）。
+		wantBackground = false
+	}
+	if wantBackground && p.Jobs != nil {
+		return runBashBackground(p, t, command, timeout)
 	}
 
 	// 可取消的执行上下文

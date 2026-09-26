@@ -203,7 +203,30 @@ func (l *Loop) buildToolCallParams(tc toolCall) *tools.CallParams {
 		// **来源**：CompactBoundary 持有（bootstrap 时按 provider 名 + 窗口算出）。
 		// 无 Compact 时为 nil → 走 balanced（系数 1.0），与 TS 默认一致。
 		ProviderProfile: l.providerProfile(),
+		// Jobs：后台任务注册表（bash 的 run_in_background 与 job 工具用）。
+		//
+		// 对账 TS `tool-pipeline.ts:842` 的 `jobs: deps.jobs`——TS 侧由
+		// `tool-execution.ts:303` 的 `this.deps.getJobs?.()` 取出 AgentLoop 的
+		// `_jobs`。**nil 是合法值**：无会话上下文时 bash 退回前台、job 工具
+		// 提示不可用（两者都是 TS 的既有语义，不是错误）。
+		// **必须显式判空**：`l.Jobs` 是 `*SessionJobs`，直接赋给 `JobRegistry`
+		// 接口会产生 **typed-nil**（接口非 nil、底层指针 nil）——消费侧的
+		// `p.Jobs != nil` 会通过，随后 `s.jobs[...]` 解引用 nil 崩溃
+		// （实测：无会话的 bash 后台调用 panic 在 jobstore.go 的 `s.mu.Lock()`）。
+		Jobs: jobRegistryOrNil(l.Jobs),
 	}
+}
+
+// jobRegistryOrNil 把可能为 nil 的 *SessionJobs 转成**真 nil 接口**。
+//
+// Go 的经典陷阱：`var s *T = nil; var i I = s` → `i != nil` 为 true。
+// 消费侧（bash / job 工具）用 `p.Jobs != nil` 判「有无会话」，
+// 故 nil 时必须返回真 nil 而非 typed-nil。
+func jobRegistryOrNil(j *tools.SessionJobs) tools.JobRegistry {
+	if j == nil {
+		return nil
+	}
+	return j
 }
 
 // generateArtifactSummary 生成注入历史的启发式摘要。

@@ -280,6 +280,22 @@ type Loop struct {
 	// nil 时跳过 L1 拦截与 read_section 召回（增强而非必需）。
 	Artifacts *artifact.Store
 
+	// Jobs 是本会话的后台任务注册表（bash 的 run_in_background 与 job 工具用）。
+	//
+	// 对账 TS 的 `this._jobs`（`loop.ts:850`）：
+	//
+	//	this._jobs = new SessionJobs(join(artifactDir, 'jobs'), source => touchActivity(...))
+	//
+	// **创建条件也对账 TS**：TS 侧在 `if (this.config.sessionId)` 内创建
+	// ——无会话时 `getJobs()` 返回 undefined，bash 退回前台执行（TS 同语义）。
+	//
+	// **与 `Artifacts` 的区别（重要）**：本字段**有真实创建者**
+	// （`NewLoop` 在 sessionId 非空时构造）。`Artifacts` 目前全库零赋值点，
+	// 是既有的悬空字段——不要照它抄（那是「声明但无人消费」的既有缺陷）。
+	//
+	// nil 时：bash 走前台同步执行、job 工具提示「后台任务系统在当前上下文不可用」。
+	Jobs *tools.SessionJobs
+
 	// CheckpointDeps 是 checkpoint 替换的可注入增强。
 	//
 	// 对账 TS 的 `archiveDiscardedHistory` / `buildTaskAnchorAppendix` /
@@ -356,6 +372,17 @@ func New(cfg Config, cl *client.Client, reg *tools.Registry) *Loop {
 	l.evidence = newEvidenceTracker()
 	if cfg.SessionID != "" {
 		l.State = session.New(cfg.SessionID)
+		// 后台任务注册表——**对账 TS 的创建条件**：`loop.ts:850` 在
+		// `if (this.config.sessionId)` 内 `new SessionJobs(join(artifactDir,'jobs'), ...)`。
+		// 无会话 → 保持 nil → bash 退回前台执行（TS 同语义）。
+		//
+		// 日志目录：`.rivet/artifacts/jobs`（对账 TS 的 `join(artifactDir, 'jobs')`，
+		// artifactDir = `<cwd>/.rivet/artifacts`，见 TS `loop.ts:847`）。
+		l.Jobs = tools.NewSessionJobs(
+			filepath.Join(cfg.Cwd, ".rivet", "artifacts", "jobs"),
+			nil, // 心跳上报：Go 侧无 touchActivity 对应物（stall-observer 未移植）
+			0,   // → 默认 30s
+		)
 		// 会话持久化：落盘到 <cwd>/.rivet/sessions/<id>.jsonl。
 		// 构造失败不阻塞会话（降级为无持久化）——持久化是增强而非必需。
 		if p, err := session.NewPersist(cfg.SessionID, cfg.Cwd); err == nil {
@@ -492,6 +519,12 @@ func (l *Loop) SeedEfficacyPriors() {
 func (l *Loop) FlushSession() []UnresolvedExpectation {
 	if l.Listener != nil {
 		_ = l.Listener.Drain()
+	}
+	// 终止所有后台 job——会话关闭时防孤儿（对账 TS 的 `killAll()`，
+	// `loop.ts` 的会话收尾路径）。不这么做的话，dev server 会活过会话，
+	// 占住端口直到进程退出。
+	if l.Jobs != nil {
+		l.Jobs.KillAll()
 	}
 	// 跨会话效能写回（postSession 兜底——对账 TS loop.ts:2401）
 	l.FlushAdvisoryEfficacy()

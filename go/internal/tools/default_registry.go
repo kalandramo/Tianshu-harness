@@ -84,6 +84,12 @@ func NewDefaultRegistry(opts Options) *Registry {
 
 	// ── 执行 ──
 	r.Register(Bash(cwd))
+	// job：后台任务控制面（第八十刀）。
+	//
+	// **为什么紧随 bash**：它管的正是 `bash(run_in_background)` 起的任务——
+	// 后台任务的生命周期脱离调用点，控制面必须是独立工具（可跨轮调用）。
+	// TS 侧同样紧跟 BASH_TOOL 注册（`default-registry.ts`）。
+	r.Register(Job())
 	r.Register(RunTests(cwd))
 
 	// ── 任务 ──

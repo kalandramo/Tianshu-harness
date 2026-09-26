@@ -170,15 +170,15 @@ func TestToolSchemaParity(t *testing.T) {
 //
 // 只登记「Go 侧能力确实缺失、且诚实描述优于虚假承诺」的偏离。任何**能力对等**
 // 却描述不同的条目，都是缺陷而非偏离——不该进这张表。
-var knownSchemaDeviations = map[string]map[string]string{
-	// tool → property → 偏离原因（含移除条件）
-	"bash": {
-		"run_in_background": "Go 侧无 sessionJobRegistry 设施（JobRegistry/JobStore 全库零命中），" +
-			"参数被忽略、命令走前台。用户级验收已实测证实（第二十五刀）。" +
-			"TS 描述承诺「转入后台并返回 job id」会误导模型——故改为诚实声明。" +
-			"**移除条件**：job 子系统移植后，恢复 TS 原文案并从本表删除。",
-	},
-}
+// knownSchemaDeviations 登记**有意的**与 TS schema 的偏离。
+//
+// **当前为空**：唯一的历史条目（`bash.run_in_background`，第二十五刀登记的
+// 「Go 侧无 job 子系统故忽略该参数」）已在**第八十刀移除**——job 子系统
+// 移植完成，bash 已恢复 TS 原文案（该条登记自带此移除条件）。
+//
+// **保留这个空 map 而非删掉机制**：它是「有意偏离」的登记处，后续再有
+// 合理偏离时仍需它（且 `deviatingProps` 的「部分登记仍报错」纪律依赖它存在）。
+var knownSchemaDeviations = map[string]map[string]string{}
 
 // deviationFor 返回该工具该属性的偏离原因；无偏离返回 ""。
 func deviationFor(tool, prop string) string {

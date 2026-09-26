@@ -125,6 +125,13 @@ type CallParams struct {
 	OwnedFiles []string
 	// SessionModifiedFiles 是本会话已修改的文件。
 	SessionModifiedFiles []string
+	// Jobs 是本会话的后台任务注册表（bash 的 run_in_background 与 job 工具用）。
+	//
+	// 对账 TS 的 `params.jobs?: JobRegistry`（`types.ts:247`）——TS 侧由
+	// `AgentLoop` 在 `if (config.sessionId)` 时创建（`loop.ts:850`）并经
+	// `tool-pipeline.ts:842` 注入。**nil = 无会话上下文**：bash 退回前台执行、
+	// job 工具提示「后台任务系统在当前上下文不可用」——两者都是 TS 的既有语义。
+	Jobs JobRegistry
 	// AbortSignal 在工具级超时触发时取消。
 	AbortSignal context.Context
 	// ArtifactStore 是 artifact 存储（read_section 用）。

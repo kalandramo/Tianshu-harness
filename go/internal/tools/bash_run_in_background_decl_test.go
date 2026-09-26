@@ -5,29 +5,24 @@ import (
 	"testing"
 )
 
-// bash_run_in_background_decl_test.go —— `run_in_background` 的**显式未实现声明**。
+// bash_run_in_background_decl_test.go —— `run_in_background` 的**契约**（第八十刀反转）。
 //
-// # 背景
+// # 历史（第二十五刀 → 第八十刀）
 //
-// 第二十五刀的用户级验收（实跑探针，2/2 met）证实：传 `run_in_background=true`
-// 与不传**行为完全一致**——参数被静默忽略（无 job id、无后台标记、前台同步完成）。
+// 第二十五刀时：Go 侧无 job 子系统（`JobRegistry`/`JobStore` 全库零命中），
+// 该参数**被静默忽略**。当时的处理是「把静默变显式」——改描述为诚实声明
+// 「Go 侧暂未实现：传 true 仍走前台同步执行」，并在 `schema_parity_test.go`
+// 登记一条**含移除条件**的已知偏离（「job 子系统移植后恢复 TS 原文案并从本表删除」）。
 //
-// TS 侧该参数是好的（`bash.ts:468` `params.input.run_in_background`），但依赖
-// `sessionJobRegistry`（TS 注释明说「Requires a session job registry (server / TUI
-// with sessionId); otherwise falls through to normal foreground execution」），
-// Go 侧**无该设施**（`JobRegistry`/`jobRegistry`/`JobStore` 全库零命中）。
+// **第八十刀：移除条件已满足**——`jobstore.go` + `job.go` 已移植并接线，
+// 描述恢复 TS 原文案（`设为 true 转入后台并返回 job id。自动检测已知长跑命令。`），
+// 白名单条目已删。故**本测试反转**：从「断言未实现」改为「断言已实现」。
 //
-// # 本测试钉住的契约
+// # 为什么反转而非删除
 //
-// 既然能力未实现，**描述必须诚实**——不能让模型看到「转入后台并返回 job id」
-// 的承诺而实际走前台。把「静默」变「显式」。
-//
-// # 与 schema_parity_test.go 的关系（**关键**）
-//
-// `TestToolSchemaByteParity` 逐字节对账 TS oracle（含描述文本）。本刀**有意偏离**
-// ——故该测试会红，且**红是对的**（它检测到了真实偏离）。处理方式：**oracle 保持
-// TS 原样不动**（它是 TS 的忠实快照），在 `schema_parity_test.go` 里加显式的
-// **已知偏离白名单**（含移除条件），而非偷偷改 oracle 掩盖。
+// 断言「承诺返回 job id」现在是**真契约**——测试仍有价值：它钉住
+// ①描述不被回退成「未实现」声明；②描述里出现 job id 承诺时它处于**肯定**语境
+// （第二十五刀那版是**否定**语境，两版必须区分，否则回退会静默通过）。
 func TestBashRunInBackgroundDescriptionHonest(t *testing.T) {
 	tool := Bash(t.TempDir())
 	def := tool.Definition()
@@ -36,33 +31,36 @@ func TestBashRunInBackgroundDescriptionHonest(t *testing.T) {
 	}
 	raw, ok := def.InputSchema.Properties["run_in_background"]
 	if !ok {
-		t.Fatal("run_in_background 应在 schema 里（保留接口语义，不删）")
+		t.Fatal("run_in_background 应在 schema 里")
 	}
 	desc := propDescription(t, raw)
 
-	// 1) 必须显式说明 Go 侧未实现。
-	if !strings.Contains(desc, "未实现") && !strings.Contains(desc, "暂未") {
-		t.Errorf("描述应显式说明未实现，实得：%q", desc)
+	// 1) **不得**再出现「未实现/暂未」声明——机制已落地。
+	if strings.Contains(desc, "未实现") || strings.Contains(desc, "暂未") {
+		t.Errorf("job 子系统已移植，描述不应再有「未实现」声明，实得：%q", desc)
 	}
-	// 2) 必须说明实际行为（走前台）。
-	if !strings.Contains(desc, "前台") {
-		t.Errorf("描述应说明实际走前台，实得：%q", desc)
+	// 2) 必须**承诺**返回 job id（且是肯定语境）。
+	i := strings.Index(desc, "返回 job id")
+	if i < 0 {
+		t.Fatalf("描述应承诺返回 job id（机制已实现），实得：%q", desc)
 	}
-	// 3) **不得**再承诺 job id（那是未实现的能力）。
-	//
-	// 注意断言写法：新描述里含「**不**返回 job id」——朴素的
-	// `Contains(desc, "返回 job id")` 会被这个**否定式**误判（子串命中）。
-	// 故改为：若出现「返回 job id」，它**必须**处于否定语境。
-	if i := strings.Index(desc, "返回 job id"); i >= 0 {
-		// 检查紧邻前缀是否含否定词。
-		lo := i - 6
-		if lo < 0 {
-			lo = 0
-		}
-		prefix := desc[lo:i]
-		if !strings.Contains(prefix, "不") && !strings.Contains(prefix, "未") {
-			t.Errorf("描述不应**承诺**返回 job id（未实现），实得：%q", desc)
-		}
+	// 否定语境（如「不会返回 job id」）不算承诺——那正是第二十五刀的旧版。
+	lo := i - 6
+	if lo < 0 {
+		lo = 0
+	}
+	prefix := desc[lo:i]
+	if strings.Contains(prefix, "不") || strings.Contains(prefix, "未") {
+		t.Errorf("描述里的 job id 承诺处于否定语境（旧版回退？），实得：%q", desc)
+	}
+	// 3) 必须说明自动检测（第八十刀移植的 isLongRunner）。
+	if !strings.Contains(desc, "自动检测") {
+		t.Errorf("描述应说明自动检测长跑命令，实得：%q", desc)
+	}
+	// 4) 与 TS 原文案逐字一致（进前缀，字节稳定是硬约束）。
+	want := "设为 true 转入后台并返回 job id。自动检测已知长跑命令。"
+	if desc != want {
+		t.Errorf("描述应逐字对账 TS：\n实得 %q\n期望 %q", desc, want)
 	}
 }
 

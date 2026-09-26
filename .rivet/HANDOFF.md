@@ -2,11 +2,11 @@
 
 > 生成时间：2026-09-26（初版）· 最后更新：2026-09-27 · 设备：macOS（Darwin 25.6.0，作者 moweilong）
 > 仓库：`/Users/moweilong/Workspace/go/src/github.com/kalandramo/Tianshu-harness`
-> 分支：`go-runtime` · HEAD：`fde51827` · 工作树 **clean**
-> 本会话共 **32 个提交**（`e866fad8^..HEAD`，即 `e866fad8` 含起点；不含起点口径是 31），全部在 `go-runtime` 分支
+> 分支：`go-runtime` · HEAD：`f760cb7b`（+ 第八十刀未提交）· 工作树 **clean**（第八十刀前）
+> 本会话共 **33 个提交**（`e866fad8^..f760cb7b`，含起点；第八十刀待提交后为 34），全部在 `go-runtime` 分支
 > 本文自包含——读者无需本会话任何上下文。
 >
-> **更新轨迹**：`8d5c9853`（初版，20 提交，第七十一刀止）→ `f13a73c1`/`5609187d`/`b78a5b4d`/`903e9855`（增量补刀）→ 本次（`fde51827`，补齐至第七十九刀 + 修头部元数据 + 消矛盾）。
+> **更新轨迹**：`8d5c9853`（初版，20 提交，第七十一刀止）→ `f13a73c1`/`5609187d`/`b78a5b4d`/`903e9855`（增量补刀）→ `f760cb7b`（补齐至第七十九刀 + 修头部元数据 + 消矛盾）→ 第八十刀（job 子系统，见「第 5 段」）。
 
 ---
 
@@ -282,6 +282,75 @@ macOS 上 `/var` 是 `/private/var` 的符号链接，`hasPathPrefix` 比较未�
   TS 的 `delegatesWriteCapableProfile` 依赖 profile registry（`profileIsPlanModeSafe`）
   ——Go 侧未移植，故恒 false（该分支不触发）。
 
+### 第 5 段：job 子系统——修「参数存在但静默忽略」（第八十刀）
+
+**背景**：Go 侧 `bash` 的 `run_in_background` 参数**一直存在但被静默忽略**。
+第二十五刀（`go/HANDOFF.md:1973-2028`）把它降级为**显式声明**，并登记了一条
+**含移除条件**的 schema 偏离（「job 子系统移植后恢复 TS 原文案并从白名单删除」）。
+**本刀满足该移除条件**。
+
+**为什么是真缺口（不是忠实移植）**：TS 的 `AgentLoop` **自己创建** `SessionJobs`
+（`loop.ts:850`，条件 `if (config.sessionId)`）——所以 **CLI 交互模式也真的会后台化**。
+TS `bash.ts:487-488` 的注释「Requires a session job registry (server / TUI with
+sessionId)」容易被误读为「只有 server/TUI 才有」，但 `loop.ts` 的创建点证明 CLI 也有。
+
+**新增**：
+- `internal/tools/jobstore.go`（约 900 行）——`SessionJobs` + `backgroundJob`，
+  对账 TS `job-store.ts`（411 行）。含输出环（64KB）/ 节流（500ms）/ 三态 await
+  （命中/退出/超时）/ 终态淘汰（上限 50，running 永不淘汰）/ 墙钟上限
+  （`RIVET_JOB_MAX_MS`）/ await 心跳。
+- `internal/tools/job.go`（约 300 行）——`job` 工具（list/await/logs/kill），
+  对账 TS `job-tool.ts`（120 行）。**所有输出文案逐字对账**（进模型上下文）。
+- `internal/tools/jobstore_test.go`（22 条）+ `job_test.go`（20 条）
+  + `internal/agent/job_wiring_test.go`（9 条端到端）。
+
+**接线（三处，缺一不可）**：
+1. `Loop.Jobs` 字段 + `New()` 在 `cfg.SessionID != ""` 时创建（对账 TS 的创建条件）。
+2. `CallParams.Jobs` + `buildToolCallParams` 注入（**必须经 `jobRegistryOrNil`**，见下）。
+3. `bash.go` 后台分支（含 `IsLongRunner` 自动检测，对账 TS `bash.ts:452-466`）
+   + `FlushSession` 调 `KillAll`（防孤儿）。
+
+**踩的坑（三条，都有实测证据）**：
+1. **`cmd.Stdout = writer` 必须在 `cmd.Start()` 之前**——Go 在 Start 时建立管道，
+   Start 之后再赋值**被忽略**（实测：`tail=""`，输出全丢）。
+2. **`await` 的 regex 忘了挂到 waiter 上**——局部变量 `regex` 不赋给 `w.regex`，
+   `onData` 的 `w.regex != nil` 恒 false，**永不匹配**（实测：`matched=false` 但
+   `tail="Ready\n"`——输出到了却不命中）。**测试正确抓住了这个真 bug**。
+3. **`-race` 抓到真 data race**：`await` 在**锁外**写 `w.timer` 与 `w.waiters`，
+   而 `onData`/`onExit` 在锁内遍历它们。修法：整个 waiter 注册（含 timer 创建）
+   纳入同一临界区。**这是 `-race` 的价值——全量测试（无 -race）是绿的**。
+
+**typed-nil 陷阱（值得单独记）**：`Jobs: l.Jobs` 当 `l.Jobs == nil` 时产生
+**typed-nil**（接口非 nil、底层指针 nil）——消费侧 `p.Jobs != nil` 通过，
+随后 `s.mu.Lock()` 解引用 nil **panic**（实测：无会话的 bash 后台调用崩溃）。
+修法：`jobRegistryOrNil()` 显式返回真 nil 接口。
+
+**订正既有测试（反转而非删除）**：`bash_run_in_background_decl_test.go` 断言
+「描述应说明未实现」——它把「机制未移植」的**临时状态固化成了断言**。本刀反转
+为「断言已实现」，并**保留否定语境的检查**（旧版是「**不**返回 job id」，
+新版是「返回 job id」——两版必须区分，否则回退会静默通过）。
+
+**验证**：42 条单测 + 9 条端到端；**变异反证 6 个全红**（M1 移除后台分支红 5 /
+M2 typed-nil 红 3 / M3 kill 不透传红 2 / M4 忽略显式 false 红 1 / M5 isLongRunner
+恒 false 红 1 / M6 schema 回退红 2）；全量 ×2 绿（26 包）；`-race` 两包绿；
+vet/gofmt 干净；工具数 **25 → 26**。
+
+**诚实标注**：
+- TS 的 `spawnShell`（Windows 作业持有者 `job-launch.exe`，issue #144 修复）**未移植**
+  ——依赖一个未随仓库分发的原生二进制。Unix 上等价（进程组语义）；Windows 上
+  与 Go 侧 bash 工具**一致**（同为无 helper 路径）。
+- TS 后台分支的 `tryAcquireAdhocLock`（typecheck 串行锁）与 `buildMirrorEnv`
+  （mirror 环境叠加）**未做**——Go 侧无这两套子系统（`getResolvedEnv` 在
+  `spawngit.go` 已声明未移植）。属**有意收窄**，不影响 job 语义。
+- await 心跳上报（`touchActivity`）**传 nil**——Go 侧无 stall-observer 对应物。
+
+**已排除的候选（勿重复勘探）**：文档「下一步」列的 `update_goal` / `session_vitals` /
+`semantic_search` 三个工具，我逐个核实其依赖在 Go 侧的命中数——**全部为 0**
+（`GoalTracker` 331 行 + 12 模块消费 / `RuntimeSelfModel` 231 行 /
+`semantic-index` 464 行 + embedding provider）。**确为造子系统**，文档判断正确。
+另核实 `diff` / `plan_close` / `did-you-mean` / `syntax-check` **均已实现**
+（前三者是别名或内部库，非独立工具）。
+
 ### 本会话新增文件全表（`git log --diff-filter=A e866fad8^..HEAD`）
 
 ```
@@ -327,6 +396,16 @@ go/internal/agent/planmode_wiring_test.go          (227 行)
 go/internal/tools/planmode_tools_test.go           (139 行)
 ```
 
+**第 5 段（job 子系统）新增**：
+
+```
+go/internal/tools/jobstore.go                      (~900 行，SessionJobs + backgroundJob)
+go/internal/tools/jobstore_test.go                 (22 条)
+go/internal/tools/job.go                           (~300 行，job 工具)
+go/internal/tools/job_test.go                      (20 条)
+go/internal/agent/job_wiring_test.go               (9 条端到端)
+```
+
 ### 验证基线（末次**真实工具输出**，`fde51827` 时点）
 
 | 命令 | 结果 |
@@ -335,7 +414,7 @@ go/internal/tools/planmode_tools_test.go           (139 行)
 | `cd go && go vet ./...` | exit=0 |
 | `cd go && gofmt -l .` | 零违规 |
 | `cd go && go test -race ./internal/agent/ ./internal/tools/ -count=1` | 两包均 ok（3.5s / 15.4s） |
-| 工具数（`internal/tools/default_registry.go` 显式 `Register`） | **24**（+1 处循环注册 `r.Register(t)`） |
+| 工具数（`internal/tools/default_registry.go` 显式 `Register`） | **25**（+1 处循环注册 `r.Register(t)`；第八十刀后为 26） |
 | 工作树 `git status --short` | **clean** |
 | 探针残留 `find . -name 'zz_probe*'` | 0 |
 
