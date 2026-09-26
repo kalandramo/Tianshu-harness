@@ -224,6 +224,47 @@ go/testdata/shellsplit/gen-oracle.ts + oracle.json
 
 ### 卡点 3：状态表剩余 ⚠️ 项（均判定不做，除非需求出现）
 
+#### ★ 第七十六刀：三条勘探路径的结论（**勿重复勘探**）
+
+「下一步」清空后，用三条独立路径主动找缺口，**全部收敛到「已知且有意」**：
+
+| 路径 | 方法 | 结果 |
+|---|---|---|
+| ① 未接线标记 | `grep -rnE '未接线\|未注入\|未移植\|悬空' --include='*.go'` | 命中的**全部是有意披露**（如 `askuserquestion.go` 的 `DisplayContent`、`plan.go` 的写工具禁用、`readsection.go` 的 file_path 分支）——每条都写了理由 |
+| ② 无测试包 | 逐包查 `*_test.go` | **26/27 有测试**（唯一无测试的 `internal/contract` 是纯类型包） |
+| ③ 间歇性失败 | 全量 **×8**（`PLAN.md:1014` 的判据「至少连跑 5 次」） | **8 次全绿**——无时间/浮点/并发类残留偏差 |
+
+**途中被数据纠正的三次误判**（记录，避免下个人重走）：
+
+1. **`CallParams.ReadRefStats` 未注入** → 核实 TS 侧 `params.readRefStats`
+   **同样无赋值点**（`types.ts:256` 仅 interface，`read-file.ts` 只读）——
+   **两侧一致，忠实移植，非缺口**。TS 的 per-session 遥测实际写在
+   `cache-log.jsonl`（`loop-factory.ts:253-257`），而 Go 侧**整个 cache-log
+   子系统未移植**（`prefixDiverged` 零命中）——那是子系统级，非同型。
+2. **`modelreadcap.go:99` 用 `int()` 而非 `Math.floor`（TS 是 floor）** →
+   核实该处 `contextWindow` 已有 `<= 0` 守卫、各乘数恒正——**正数域 `int()` 与
+   `Math.floor` 等价，非偏差**。（`profile.go:92` 的注释警告的是**负数域**。）
+3. **`default_registry.go:20` 写「完整 51 是分波目标」疑似基准矛盾** →
+   `PLAN.md:55` 已准确记录（51 = **full** 基线；minimal 30 / frontend 31），
+   **文档无歧义**，是我只读了片段。
+
+**当前工具数**：Go **22**（`grep -cE 'r\.Register\('` 报 23，含循环注册的伪影）。
+距 full(51) 的差是**既有分波计划**（`go/HANDOFF.md:6958` 按依赖面从浅到深排了序），
+非遗漏。
+
+**结论**：Go 侧当前**无未记录的缺口**。若要继续，从 `go/HANDOFF.md` 的
+**「## 建议的第一刀」章节**（用章节名定位，**不要用行号**——该文件持续增长，
+行号会漂移；本项目已踩过「同刀内写下的锚点就失效」）取工具清单，
+按依赖面从浅到深。
+
+**⚠️ 该章节的推荐已过期**（第七十六刀核实）：它推荐 `related_tests` +
+`leave_mark`，而**这两个在第三十七刀（`e6883b66`）就已移植并注册**。
+读它时要**逐条核实实际状态**，不要照做。
+
+---
+
+### 卡点 3（原）：状态表剩余 ⚠️ 项（均判定不做，除非需求出现）
+
 | 项 | 称量结论 |
 |---|---|
 | `protectionMode` | 接线后行为不变 → 不做（`d2246fc8`） |

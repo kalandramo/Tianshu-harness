@@ -7169,8 +7169,38 @@ Go 侧 17 个工具（TS 侧 full preset 48 个）。缺口按**依赖面从浅�
 | `ast_grep` / `ast_edit` | **深** | 需 tree-sitter 绑定（Go 侧无） |
 | `web_*` / `browser_debug` / `computer_use` | **超出内核** | 网络 + 桌面自动化 |
 
-**推荐下一刀**：`related_tests` + `leave_mark`（两个都是浅依赖、可一轮做完、
-产出可独立验证）。
+**推荐下一刀**：~~`related_tests` + `leave_mark`（两个都是浅依赖、可一轮做完、
+产出可独立验证）。~~
+
+**（2026-09-26 第七十六刀修正：上述推荐已过期）**
+
+实测核实上表每一行的**实际状态**：
+
+| 候选 | 上表估价 | **实测状态** |
+|---|---|---|
+| `related_tests` | 浅 | ✅ **第三十七刀已移植**（`e6883b66`，`relatedtests.go` + oracle 测试） |
+| `leave_mark` | 浅 | ✅ **第三十七刀已移植**（`e6883b66`，`leavemark.go`） |
+| `ask_user_question` | 浅 | ✅ **已移植**（`askuserquestion.go`，`default_registry.go` 已注册） |
+| `skill` | 中 | ✅ **已移植**（`skill.go`，已注册） |
+| `inspect_project` | — | ✅ **已移植**（`inspectproject.go`，已注册） |
+| `git_scout` | — | ✅ **已移植**（`gitscout.go`，第六十一刀，工具集 21→22） |
+| `undo` | 中 | ❌ 未做（需检查点子系统的持久化面） |
+| `job` / `monitor` | 深 | ❌ 未做（后台进程管理） |
+| `ast_grep` / `ast_edit` | 深 | ❌ 未做（需 tree-sitter） |
+| `web_*` / `browser_debug` / `computer_use` | 超出内核 | ❌ 未做（网络 + 桌面自动化） |
+
+**核实方式**（下个人照做）：
+```
+ls go/internal/tools/ | grep -iE 'related|leave|askuser|skill|inspect|gitscout'
+grep -cE 'r\.Register\(' go/internal/tools/default_registry.go   # 当前 23（含循环伪影）
+```
+
+**当前工具数 22**（TS full 基线 51；minimal 30）。剩余缺口**全是深依赖或超出内核**
+——浅依赖的**已全部做完**。
+
+**修正后的推荐**：剩余候选按依赖面都**不浅**。若要推进，从 `undo` 起（它需检查点
+持久化面，但 `checkpoint.go` 已有地基）。**不要**照上表原推荐做 `related_tests`/
+`leave_mark`——它们早已存在。
 
 （以下为历史记录）
 static 层（BASE_PROMPT + calibration）已完成并逐字节对账通过——
