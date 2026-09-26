@@ -1,6 +1,6 @@
 // approval_gate.go —— 档位驱动的审批门决策（`NeedsApproval` 的消费端）。
 //
-// 对账 TS `tool-pipeline.ts:1213-1232` 的 `shouldAsk` 决策树。
+// 对账 TS `tool-pipeline.ts` 的 `shouldAsk` 决策树（`let shouldAsk = …` 三元链）。
 //
 // # 为什么需要它（Go 侧的 fail-open 缺口）
 //
@@ -31,7 +31,7 @@
 //
 // # Go 侧当前状态（逐条核实，第六十九刀对账）
 //
-// ## A. 决策树**之前**的守卫分支（TS `tool-pipeline.ts:1126-1143`）
+// ## A. 决策树**之前**的守卫分支（TS `tool-pipeline.ts` 的 `denied || bashDenied || selfKill` 块）
 //
 // 这三条在 `shouldAsk` 之前、**不受档位影响**（TS 注释：「Deny rules always
 // win, even in dangerously-skip-permissions」/「Always on, independent of
@@ -121,6 +121,12 @@
 //	                                                          `computer_use` 均**未注册**
 //	                                                          （实测：23 个工具中无此二者）
 //	                                                          → **分支实际不可达**
+//	yoloBypassesUnconditional skipAllApproval（=YOLO 档）   ✅ 语义等价：TS 让 YOLO
+//	                                                          豁免 unconditional 门；
+//	                                                          Go 侧该门本就不可达
+//	                                                          （上一行），故无差别。
+//	                                                          但**条件表达式里它是
+//	                                                          独立输入**，故列出
 //	protectionMode            doomLoop + destructiveGit      ❌ 无 doom-loop 会话态
 //	                                                          （`DoomLoop` 零生产文件）
 //	                                                          **且需先判定收益**：它防
@@ -140,6 +146,60 @@
 //
 // **未接的输入不改变**已接分支**的正确性**——但「不影响正确性」不等于
 // 「无缺口」：上表 ⚠️ 与 ❌ 各行都是**已声明的能力未生效**，各自需要独立的刀。
+//
+// ## B'. 规则**来源**的缺口：`permissionsOverlay`（第六十九刀新发现）
+//
+// 上表 B 节的四行（`allowlisted` / `bashAllowlisted` / `denied` / `bashDenied`）
+// 在 TS 里都读**两个**来源，Go 侧只读**一个**：
+//
+//	规则              TS 来源（两来源合并）                        Go 现状
+//	allowRules        permissions.allow + overlay.allow            ⚠️ 只读前者
+//	denyRules         permissions.deny  + overlay.deny             ⚠️ 只读前者
+//	bashAllowPrefixes permissions.bash.allowlist + overlay.bashAllow ⚠️ 只读前者
+//	bashDenyPrefixes  permissions.bash.denylist  + overlay.bashDeny ⚠️ 只读前者
+//
+// **`permissionsOverlay` 是什么**：**会话级运行时 overlay**。TS 在用户于审批
+// 提示上批准后写它——**写入者两处，目标不同**（`tool-pipeline.ts` 的
+// `learnBashPrefix` / `learnFileApproval` 调用点）：
+//
+//	learnBashPrefix    → 写 `permissions`（**持久**，跨会话生效）
+//	learnFileApproval  → 写 `permissionsOverlay`（**会话级**，仅 manual 档）
+//
+// 另有「永久记住」双轨：审批卡勾选 `remember` 时，bash 前缀额外落盘
+// （`appendBashAllowPrefix`）。**共同点**：都由「用户批准」事件驱动。
+//
+// **Go 侧缺的不只是"读第二个来源"**：Go 无提示通道 → 无「用户批准」事件 →
+// **overlay 无写入者**（`LearnBashPrefix`/`LearnFileApproval` 均未移植，
+// 实测零命中）。故这不是「补一行合并切片」，而是「需先有审批交互」——
+// 与 B 节剩余三项同属「要先造子系统」类。
+//
+// **影响**：Go 侧每次都按配置判定（无会话级学习）。**行为不错误**（配置仍在
+// 生效），但缺少 TS 的「批准一次、本会话免问」体验——是**能力缺失**，非缺陷。
+//
+// ## C. `shouldAsk` **之后**的两段（TS `tool-pipeline.ts` 的 YOLO fallback
+// 与 headless override 两块）
+//
+// **本表此前完全漏列**（第六十九刀补）——它们不在三元链里，但改变了判定结果。
+//
+//	段                        TS 语义                        Go 现状
+//	YOLO fallback             skip 档 + pathGrantNeed →       ✅ 语义等价，已实现
+//	                          **首触即授**（会话级）            （`loop.go` pathGrant 门的
+//	                                                          skip 档分支：`GrantPath`）
+//	headless override         `headless && shouldAsk` →       ⚠️ **设计差异**（见下）
+//	                          自动放行 5 个写工具
+//
+// **headless override 的差异是设计选择，不是缺口**：
+//
+//   - TS 在 `deps.config.headless` 下对 `HEADLESS_AUTO_APPROVE_WRITE_TOOLS`
+//     （`edit_file`/`write_file`/`hash_edit`/`apply_patch`/`ast_edit`）
+//     **自动放行**——因为 sidecar/worker 场景无人可答，挂起会耗尽 turn 预算。
+//   - Go 侧**无 `Headless` 配置字段**（`headless` 只出现在注释里指「不装 hook
+//     的场景」）。`-p` 单次模式**实测**：manual 档写文件 → 被拦 + 指令性
+//     拒绝 + **正常结束**（2 个请求，未挂死）。
+//   - **为何 Go 不照搬自动放行**：Go 无提示通道，被拦时给模型「换路」指引
+//     （第五十刀确立的「指令性非重试拒绝」范式）——这比 TS 的「静默放行写操作」
+//     **更保守**。若将来引入 sidecar/worker（无人可答但需推进），再评估是否
+//     需要自动放行。**当前行为是有意选择，非缺陷。**
 //
 // **剩余三项的共性是「要先造子系统」，不是接线**（与前面几刀性质不同）：
 //
@@ -241,7 +301,7 @@ func allowRulesOf(cfg Config) []PermissionAllowRule {
 
 // bashWriteNeedsApproval 对账 TS 的复合条件 `bashWriteRequiresApproval`。
 //
-// TS（`tool-pipeline.ts:1163-1167`）：
+// TS（`tool-pipeline.ts` 的 `bashWriteRequiresApproval` 复合条件）：
 //
 //	bashWriteRequiresApproval = requiresBashWriteApproval(tu.name, tu.input)
 //	  && !allowlisted && !bashAllowlisted
@@ -296,7 +356,7 @@ func bashWriteNeedsApproval(toolName string, input map[string]any, approvalMode 
 
 // isHighRiskCall 报告该次调用是否被评估为高风险。
 //
-// 对账 TS `const isHighRisk = risk.level === 'high'`（`tool-pipeline.ts:1097`）。
+// 对账 TS `const isHighRisk = risk.level === 'high'`。
 //
 // **doomLoopLevel 传空串**：Go 侧无 doom-loop 会话态（`AssessToolRisk` 的该参数
 // 只影响 `SuggestedAction`，不改变 `Level`）——故传空串与 TS 省略该输入等价。
