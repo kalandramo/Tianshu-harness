@@ -309,12 +309,25 @@ func (r *Registry) Execute(ctx context.Context, name string, p *CallParams) (con
 //   - `HardGate` 表达「**无条件**需人工批准」——与档位无关（如 bash 的
 //     破坏性命令、git commit）。这类调用在任何档位下都不该静默执行。
 //
-// **为什么单独提取**：Go 侧尚无审批提示往返通道（`onApprovalRequired` 无
-// 对应物），也没有 `assessToolRisk` 风险分级。直接消费 `RequiresApproval`
-// 会把写工具一并拦下（默认档下 `write_file` 将不可用）。故门控只作用于
-// `HardGate`——这是无提示通道时唯一能安全闭合的子集。
+// **为什么单独提取**（**历史理由，已部分过期**——第六十九刀核实）：
+// 提取时的理由是「Go 侧尚无审批提示往返通道、无 `assessToolRisk` 风险分级，
+// 直接消费 `RequiresApproval` 会把写工具一并拦下」。**这两项现已具备**
+// （`agent.AssessToolRisk` + `agent.decideApprovalGate`），故「完整的档位
+// 门控待提示通道落地后接入」**已完成**（第六十二刀）。
 //
-// 完整的档位门控待审批提示通道落地后接入。
+// 但 `HardGate` **仍然必要**，理由变了：它是「**任何档位都不能绕过**」的
+// 独立语义层——优先级**高于**档位门。`RequiresApproval` 是**档位驱动**的
+// （可能被 skip 档放行），而硬闸门（bash 破坏性命令）在 skip 档下**也必须
+// 拦**。两者不是替代关系。
+//
+// **实际门链顺序**（`agent/loop.go`，第六十九刀核实）：
+//
+//	deny(855) → selfKill(878) → HardGate(902) → 档位门(950)
+//	  → pathGrant(988) → bash 写门(1041) → Execute
+//
+// 即硬闸门**先于**档位门——故档位门放行 skip 档时，硬闸门已拦过一遍。
+// **注意**：后两门的次序与 TS 三元链**不同**（TS 是 pathGrant 先于档位分支）；
+// Go 侧相反，但不影响结果（见 `loop.go` 档位门段的说明）。
 type HardGate interface {
 	RequiresHardGate(p *CallParams) bool
 }
@@ -338,28 +351,30 @@ func (r *Registry) RequiresHardGate(name string, p *CallParams) bool {
 //
 // 对账 TS `ToolRegistry.needsApproval`（`tool-pipeline.ts:1092` 有真实消费者）。
 //
-// ## 当前状态：零调用者（**有意**，非缺陷）
+// ## 当前状态：**已有生产消费者**（第六十二刀起）
 //
-// 第五十刀核实：本函数在 Go 侧**无生产调用者**。这与「有声明、无执行」的
-// 缺陷不同——后者是无意遗漏（`RequiresApproval` 的返回值曾无人消费，导致
-// 破坏性命令静默执行），本函数则是**有意暂缓**：
+// **本段曾写「零调用者（有意暂缓）」——已过期**（第六十九刀核实）。现状：
+// `agent.decideApprovalGate`（`approval_gate.go`）消费它——那是 TS `shouldAsk`
+// 决策树的 Go 落地，含档位分支（manual → needsApproval / auto-safe →
+// isHighRisk / skip → 放行）与 pathGrant / bash 写门 / allowlist 等前置门。
 //
-//   - 它的返回值是**档位驱动**的（写工具在非放开档恒返回 true）。TS 侧由
-//     `tool-pipeline` 的完整决策树消费（档位 × 风险分级 × pathGrant ×
-//     allowlist × headless 中和），**不是直接拒绝**。
-//   - Go 侧缺该决策树、缺 `assessToolRisk` 风险分级、缺审批提示往返通道
-//     （`onApprovalRequired` 对应物）。直接消费会拦下所有写操作——`write_file`
-//     在默认档下将完全不可用（第五十刀首版实测：6 个既有测试转红）。
+// **历史缺口（保留记录）**：第五十刀时它确实零调用者，后果是 4 个写工具在
+// manual 档下 `needsApproval=true` 却无人消费 → 写操作静默执行（fail-open）。
+// 第六十二刀接线后闭合。
 //
-// ## 接线条件（勿在条件满足前接）
+// ## 接线条件（**①②已完成，③仍未做**）
 //
-// 接入前必须先有：① `assessToolRisk` 的纯函数子集（风险分级）；
-// ② 审批提示往返通道（或 TS headless 语义的确定性解析）；
-// ③ 写工具的 `RequiresApproval` 语义订正（当前 `ApprovalMode != "..."` 与
-// TS 的 `() => true` + pipeline 中和不等价）。
+// 原列三条前置：
 //
-// 当前生效的是 `RequiresHardGate`（无条件硬闸门）——那是无上述前置时唯一
-// 能安全闭合的子集。
+//	① `assessToolRisk` 的纯函数子集 —— ✅ 已完成（`agent.AssessToolRisk`）
+//	② 审批提示往返通道（或 TS headless 语义的确定性解析）—— ✅ 已完成
+//	   （取**后者**：`decideApprovalGate` 的确定性解析，不造弹窗、不争 stdin）
+//	③ 写工具的 `RequiresApproval` 语义订正（当前 `ApprovalMode != "..."` 与
+//	   TS 的 `() => true` + pipeline 中和不等价）—— ❌ **仍未做**
+//
+// **③的影响**：本函数与 `decideApprovalGate` **各判一次档位**（重复判定）。
+// 行为当前正确（两处都处理 skip），但将来任一处改动会导致不一致——
+// 结构性隐患，非当前缺陷。详见 `approval_gate.go` 的「已知欠账」段。
 func (r *Registry) NeedsApproval(name string, p *CallParams) bool {
 	t, ok := r.tools[name]
 	if !ok {

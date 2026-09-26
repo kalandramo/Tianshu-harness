@@ -29,7 +29,7 @@
 // 会被全部拦下——`write_file` 直接不可用（`registry.go` 警告过「6 个既有
 // 测试转红」）。而写工具的风险实测为 low/none，故 auto-safe 下应当放行。
 //
-// # Go 侧当前状态（逐条核实，2026-06 第六十四刀对账）
+// # Go 侧当前状态（逐条核实，第六十九刀对账）
 //
 // ## A. 决策树**之前**的守卫分支（TS `tool-pipeline.ts:1126-1143`）
 //
@@ -47,31 +47,48 @@
 //	                  (selfProcessTree())           镜像名类有意不移植（见下节）
 //	                                                已知盲区：动态求值 PID 不拦
 //
-// **`bashDenied` 与 `denied` 的差距**：`denied` 走 `IsToolDenied`——它能匹配
-// `{tool:"bash", params:{command:"rm -rf*"}}` 这类**参数模式**规则，故用户写的
-// bash 前缀 deny 规则**部分**仍生效。但 TS 的 `permissions.bash.denylist`
-// （`schema.ts:286`）是**独立字段**，Go 的 `PermissionConfig` 无此字段 →
-// 用户在 `permissions.bash.denylist` 里写的规则被**静默忽略**。
-// （严重性低于第五十二刀：参数模式 deny 仍可用，但配了独立字段的用户会失效。）
+// **`bashDenied` 与 `denied` 的语义差别**（两者**都已接线**，非缺口）：
+// `denied` 走 `IsToolDenied`——匹配 `{tool:"bash", params:{command:"rm -rf*"}}`
+// 这类**参数模式**规则；`bashDenied` 走 `IsBashCommandDenied`——匹配
+// `permissions.bash.denylist` 的**命令前缀**（`taskkill` 匹配
+// `taskkill /f /im x.exe`，且穿透 `;` / `&&` / `$( … )` 找隐藏段）。
 //
-// **`selfKill` 的称量结论（第六十七刀，实测）**——**部分适用，不是「不适用」**：
+// **第六十五刀前的缺口**（已修，保留记录）：`PermissionConfig` 当时**无
+// `bash` 字段** → 用户配的 `permissions.bash.denylist` 被 `json.Unmarshal`
+// 静默丢弃。现已有 `PermissionConfig.Bash`（`permissions.go:53`）+
+// `permissionsRaw.bash` + `LoadPermissions` 读取。
 //
-// TS 的 `isSelfDestructiveKill` 挡两类命令，**在 Go 侧命运不同**：
+// **`selfKill` 的称量结论（第六十七刀称量 / 第六十八刀执行）**：
+//
+// TS 的 `isSelfDestructiveKill` 挡两类命令，**Go 侧只移植了第②类**：
 //
 //	TS 模式                                      Go 侧
-//	taskkill /IM node.exe · pkill node           ❌ 不适用——Go agent 是原生
-//	killall node · wmic … node.exe delete          二进制，不是 node 进程
-//	kill <pid> · taskkill /PID <n> 命中自身/祖先  ✅ **真实存在**
+//	① taskkill /IM node.exe · pkill node         有意**不移植**——理由见下
+//	  killall node · wmic … node.exe delete
+//	② kill <pid> · taskkill /PID <n> 命中自身/祖先  ✅ 第六十八刀接线
 //
-// 第二类是决定性的。**实测进程树**（bash 工具内 `echo $PPID; ps -p $PPID`）：
+// **① 不移植的真实理由是「收益低」，不是「不适用」**（第六十八刀修正——
+// 称量时我曾写成「不适用」，不准确）：Go 侧**确有**对应物
+// （`pkill tianshu` 能杀 agent，二进制名可经 `os.Executable()` 取到）。
+// 但 TS 做①是因为「node」是**极常见**进程名、用户常有 `pkill node`
+// 「重启本地服务」的习惯（TS 字段报告正是 `taskkill //F //IM node.exe`）；
+// Go 二进制名是 `tianshu`，**没有**该习惯性动机。
+// 详见 `self_preservation.go` 文件头「有意差异」。
+//
+// **② 是决定性的**——**实测进程树**（bash 工具内 `echo $PPID; ps -p $PPID`）：
 //
 //	SELF=72921 PPID=72918
 //	  PID  PPID COMM
 //	72918 72916 /tmp/ts-probe      ← Go agent 自身
 //
 // bash 工具用 `exec.Command` 启动 shell，故 **agent 就是命令的直接父进程**——
-// shell 里 `kill $PPID` 直接杀掉 agent 自己。**这与语言无关**：TS 的
-// `killsOwnPidInSegment` 逻辑在 Go 下同样成立。
+// `kill <该 pid>` 直接杀掉 agent 自己。**这与语言无关**。
+//
+// **已知盲区（TS 同样存在，第六十八刀端到端实测）**：判定是静态字符串
+// 分析，无法求值 shell 变量/命令替换——`kill $PPID` / `kill ${PPID}` /
+// `kill $(echo 1000)` **都不拦**（TS 侧实测同样全 false）。真实 CLI 验证过：
+// 该形态会让 agent `context canceled`。要闭合需**动态求值**（先跑一次 shell
+// 展开再判），代价与风险高得多——见 `self_preservation.go` 的「已知盲区」段。
 //
 // **但收益的「量级」低于 TS**（结构差异，非判断）：
 //   - TS 动机是「杀 sidecar → **API 认证上下文丢失 → 401 级联**」。Go 侧
@@ -81,13 +98,6 @@
 //     同步 flush）→ 被杀丢的是**当轮未 flush 的部分**，不是全部历史。
 //
 // 故 Go 侧真实损失 = 当前 turn 中断 + 少量未落盘上下文。**风险真实但轻于 TS**。
-//
-// **移植时的判据**：只移植第②类，**明确跳过第①类**（照搬 TS 四模式会让
-// 代码假装在防一个本平台不存在的威胁）。实现面小：纯函数
-// `IsSelfDestructiveKill(command, selfPid, ppid)` + 一条与 `bashDeniedFor`
-// 并列的 deny 门（补齐 TS 的 `denied || bashDenied || selfKill` 三元组）。
-// `os.Getpid`/`os.Getppid` 是标准库（无需平台分叉），`splitShellSegments`
-// 已就位（第六十五刀）。
 //
 // **同族风险（Go 特有，已处理）**：`proctree_unix.go` 的
 // `configureProcessGroupPlatform` 注释记录——「没有 `Setpgid`，`kill(-pid)`
@@ -108,10 +118,16 @@
 //	                                                          AssessToolRisk 置 high），
 //	                                                          但 Go 侧无触发它的工具：
 //	                                                          `request_path_access` /
-//	                                                          `computer_use` 均未移植
+//	                                                          `computer_use` 均**未注册**
+//	                                                          （实测：23 个工具中无此二者）
 //	                                                          → **分支实际不可达**
 //	protectionMode            doomLoop + destructiveGit      ❌ 无 doom-loop 会话态
 //	                                                          （`DoomLoop` 零生产文件）
+//	                                                          **且需先判定收益**：它防
+//	                                                          「doom-loop 期间破坏性 git
+//	                                                          操作」——Go 侧破坏性 git
+//	                                                          已由硬闸门拦（任何档位），
+//	                                                          故增量收益可能很小
 //	allowlisted               isToolAllowed(allowRules)      ✅ 第六十四刀接线
 //	                                                          （档位门内豁免，全工具面）
 //	                                                          注：`bashWriteNeedsApproval`
@@ -124,16 +140,28 @@
 //
 // **未接的输入不改变**已接分支**的正确性**——但「不影响正确性」不等于
 // 「无缺口」：上表 ⚠️ 与 ❌ 各行都是**已声明的能力未生效**，各自需要独立的刀。
-// 接入时按上表逐条补，并在此更新状态列与日期。
 //
-// # 已知欠账（前置③，本刀**有意未做**）
+// **剩余三项的共性是「要先造子系统」，不是接线**（与前面几刀性质不同）：
 //
-// `registry.go:358` 列出的接线条件③「写工具的 `RequiresApproval` 语义订正」
-// **未在本刀完成**。现状：4 个写工具（write_file / edit_file / hash_edit /
-// apply_patch）返回 `p.ApprovalMode != "dangerously-skip-permissions"`，
-// 而 TS 是 `requiresApproval: () => true`（本质属性，档位判定只在 pipeline 一处）。
+//	protectionMode     需 doom-loop 会话态（状态机 + 检测逻辑）
+//	canAutoApprove     需 sensorium 置信度（认知状态，Go 侧仅注释/字符串表）
+//	unconditional…     需先移植触发它的工具（request_path_access / computer_use）
 //
-// **为什么不在本刀做**：本门已独立按档位判定（`skip` 档在最前短路），故
+// 故它们**不是"补一行调用"能闭合的**——每条都要先称量收益（例：protectionMode
+// 防的破坏性 git 已由硬闸门拦，增量收益待测）。接入时按上表逐条补，并更新
+// 状态列与日期。
+//
+// # 已知欠账（`registry.go` 的前置③，**仍未做**）
+//
+// `registry.go` 列的接线条件③「写工具的 `RequiresApproval` 语义订正」
+// **仍未完成**（第六十九刀核实：4 处仍是 `p.ApprovalMode !=
+// "dangerously-skip-permissions"`，而 TS 是 `requiresApproval: () => true`）。
+//
+// **①②已完成**（本文件即②的落地：确定性解析取代提示往返通道；
+// `AssessToolRisk` 即①）。故 `registry.go` 那段「零调用者 / 需前置①②③」
+// 的表述已过期——见该文件的新注释。
+//
+// **为什么③仍未做**：本门已独立按档位判定（`skip` 档在最前短路），故
 // **行为当前正确**。但这是**重复判定**（工具层与本门各判一次档位），
 // 将来任一处改动会导致不一致——是结构性隐患，非当前缺陷。
 // 订正会改变工具层语义并可能波及既有断言（如 `bash_test.go` 记录的同类修正），
@@ -141,7 +169,9 @@
 // 「一次只接一条输入」的原则一致。
 //
 // 订正时的判据：4 处 `RequiresApproval` 改为恒 `true`，并确认本门仍覆盖
-// skip 档（本文件的 skip 短路即为此保留）。
+// skip 档（本文件的 skip 短路即为此保留）。**注意**：`bashTool` 的
+// `RequiresApproval` 已在第五十刀订正为 `isDestructiveCommand`（**不在此列**，
+// 它是硬闸门语义，不是档位语义）——故③只涉及 4 个**写工具**。
 package agent
 
 import (
