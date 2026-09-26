@@ -1,0 +1,306 @@
+{
+  "generatedBy": "go/testdata/generalledger/gen-oracle.ts",
+  "slugCases": [
+    {
+      "input": "tianshu",
+      "output": "tianshu"
+    },
+    {
+      "input": "pojun",
+      "output": "pojun"
+    },
+    {
+      "input": "tianfu",
+      "output": "tianfu"
+    },
+    {
+      "input": "tianliang",
+      "output": "tianliang"
+    },
+    {
+      "input": "tianquan",
+      "output": "tianquan"
+    },
+    {
+      "input": "tianji",
+      "output": "tianji"
+    },
+    {
+      "input": "tianxuan",
+      "output": "tianxuan"
+    },
+    {
+      "input": "fu",
+      "output": "fu"
+    },
+    {
+      "input": "wenqu",
+      "output": "wenqu"
+    },
+    {
+      "input": "kaiyang",
+      "output": "kaiyang"
+    },
+    {
+      "input": "yaoguang",
+      "output": "yaoguang"
+    },
+    {
+      "input": "huagai",
+      "output": "huagai"
+    },
+    {
+      "input": "qiming",
+      "output": "qiming"
+    },
+    {
+      "input": "changgeng",
+      "output": "changgeng"
+    },
+    {
+      "input": "qisha",
+      "output": "qisha"
+    },
+    {
+      "input": "taiyi",
+      "output": "taiyi"
+    },
+    {
+      "input": "天枢",
+      "output": "tianshu"
+    },
+    {
+      "input": "破军",
+      "output": "pojun"
+    },
+    {
+      "input": "天府",
+      "output": "tianfu"
+    },
+    {
+      "input": "天梁",
+      "output": "tianliang"
+    },
+    {
+      "input": "天权",
+      "output": "tianquan"
+    },
+    {
+      "input": "天机",
+      "output": "tianji"
+    },
+    {
+      "input": "天璇",
+      "output": "tianxuan"
+    },
+    {
+      "input": "辅",
+      "output": "fu"
+    },
+    {
+      "input": "文曲",
+      "output": "wenqu"
+    },
+    {
+      "input": "开阳",
+      "output": "kaiyang"
+    },
+    {
+      "input": "瑶光",
+      "output": "yaoguang"
+    },
+    {
+      "input": "华盖",
+      "output": "huagai"
+    },
+    {
+      "input": "启明",
+      "output": "qiming"
+    },
+    {
+      "input": "长庚",
+      "output": "changgeng"
+    },
+    {
+      "input": "七杀",
+      "output": "qisha"
+    },
+    {
+      "input": "太一",
+      "output": "taiyi"
+    },
+    {
+      "input": "TIANQUAN",
+      "output": "tianquan"
+    },
+    {
+      "input": "TianQuan",
+      "output": "tianquan"
+    },
+    {
+      "input": "YAOGUANG",
+      "output": "yaoguang"
+    },
+    {
+      "input": "贪狼",
+      "output": "tanlang"
+    },
+    {
+      "input": "unknown",
+      "output": null
+    },
+    {
+      "input": "不存在",
+      "output": null
+    },
+    {
+      "input": "",
+      "output": null
+    },
+    {
+      "input": "   ",
+      "output": null
+    },
+    {
+      "input": "  tianquan  ",
+      "output": "tianquan"
+    },
+    {
+      "input": " 天权 ",
+      "output": "tianquan"
+    }
+  ],
+  "pathCases": [
+    {
+      "input": {
+        "cwd": "/tmp/proj",
+        "slug": "tianquan"
+      },
+      "output": "/tmp/proj/.rivet/generals/tianquan.md"
+    },
+    {
+      "input": {
+        "cwd": "/a/b/c",
+        "slug": "yaoguang"
+      },
+      "output": "/a/b/c/.rivet/generals/yaoguang.md"
+    },
+    {
+      "input": {
+        "cwd": ".",
+        "slug": "fu"
+      },
+      "output": ".rivet/generals/fu.md"
+    },
+    {
+      "input": {
+        "cwd": "/tmp/x",
+        "slug": "tanlang"
+      },
+      "output": "/tmp/x/.rivet/generals/tanlang.md"
+    }
+  ],
+  "parseCases": [
+    {
+      "name": "sample_0",
+      "input": "",
+      "output": []
+    },
+    {
+      "name": "sample_1",
+      "input": "### 类型断言失败 | recurrenceCount: 1 | lastSeen: 2026-09-26\n**signature**: 编译期报错与运行时不符\n\n- 2026-09-26 首次记录\n",
+      "output": [
+        {
+          "family": "类型断言失败",
+          "recurrenceCount": 1,
+          "lastSeen": "2026-09-26",
+          "signature": "编译期报错与运行时不符"
+        }
+      ]
+    },
+    {
+      "name": "sample_2",
+      "input": "### 族A | recurrenceCount: 3 | lastSeen: 2026-09-20\n**signature**: 签名A\n\n- 实例1\n- 实例2\n\n### 族B | recurrenceCount: 1 | lastSeen: 2026-09-25\n**signature**: 签名B\n\n- 实例3\n",
+      "output": [
+        {
+          "family": "族A",
+          "recurrenceCount": 3,
+          "lastSeen": "2026-09-20",
+          "signature": "签名A"
+        },
+        {
+          "family": "族B",
+          "recurrenceCount": 1,
+          "lastSeen": "2026-09-25",
+          "signature": "签名B"
+        }
+      ]
+    },
+    {
+      "name": "sample_3",
+      "input": "### 族C | recurrenceCount: 2 | lastSeen: 2026-09-01\n\n- 无签名的实例\n",
+      "output": [
+        {
+          "family": "族C",
+          "recurrenceCount": 2,
+          "lastSeen": "2026-09-01",
+          "signature": ""
+        }
+      ]
+    },
+    {
+      "name": "sample_4",
+      "input": "### 缺字段 | 没有 recurrenceCount\n### 族D | recurrenceCount: 5 | lastSeen: 2026-09-26\n**signature**: 有效\n",
+      "output": [
+        {
+          "family": "族D",
+          "recurrenceCount": 5,
+          "lastSeen": "2026-09-26",
+          "signature": "有效"
+        }
+      ]
+    },
+    {
+      "name": "sample_5",
+      "input": "### 中文族名 | recurrenceCount: 7 | lastSeen: 2026-09-26\n**signature**: 中文签名\n",
+      "output": [
+        {
+          "family": "中文族名",
+          "recurrenceCount": 7,
+          "lastSeen": "2026-09-26",
+          "signature": "中文签名"
+        }
+      ]
+    },
+    {
+      "name": "sample_6",
+      "input": "### 族E | recurrenceCount: 4 | lastSeen: 2026-09-26   \n**signature**: 尾空白\n",
+      "output": [
+        {
+          "family": "族E",
+          "recurrenceCount": 4,
+          "lastSeen": "2026-09-26",
+          "signature": "尾空白"
+        }
+      ]
+    },
+    {
+      "name": "sample_7",
+      "input": "### 族F | recurrenceCount: 1 | lastSeen: 2026-09-26\n内容行\n**signature**: 隔了一行\n\n### 族G | recurrenceCount: 2 | lastSeen: 2026-09-26\n",
+      "output": [
+        {
+          "family": "族F",
+          "recurrenceCount": 1,
+          "lastSeen": "2026-09-26",
+          "signature": "隔了一行"
+        },
+        {
+          "family": "族G",
+          "recurrenceCount": 2,
+          "lastSeen": "2026-09-26",
+          "signature": ""
+        }
+      ]
+    }
+  ]
+}

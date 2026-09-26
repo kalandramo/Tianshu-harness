@@ -54,6 +54,20 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// scope 收窄：印记的真正落盘者（constellation post-session hook）在 Go 侧
 	// 不存在——详见 leavemark.go 文件头。
 	r.Register(LeaveMark())
+	// recall_general / record_general_finding：将星账本（跨会话战绩累积）。
+	//
+	// 对账 TS `bootstrap.ts:682-683`（**不是** `default-registry.ts`——那两个
+	// 工具在 TS 侧由 bootstrap 层注册，且受 preset 门控：
+	// `tool-preset.ts:139-140` 把它们列在 `MINIMAL_EXCLUDES`，即 **minimal
+	// 档不含**，属 full 档）。
+	//
+	// **Go 侧的差异（有意）**：Go 侧**没有 preset 机制**（全仓无
+	// `presetIncludes`/`ToolPreset`）——所有工具无条件注册。故此处直接注册，
+	// 与 Go 侧现状一致。移植 preset 门控是独立的一刀。
+	//
+	// 存储层在 `internal/context/generalledger.go`（纯文件 I/O）。
+	r.Register(RecallGeneral(cwd))
+	r.Register(RecordGeneralFinding(cwd))
 
 	// ── Git ──
 	// diff：工作树改动。经 `SpawnGit`（环境消毒 + 可执行路径发现）。
