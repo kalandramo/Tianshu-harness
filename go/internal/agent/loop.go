@@ -958,7 +958,8 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 	//
 	// **与 TS 的一处有意偏差（第六十九刀修正本段）**：TS 三元链里
 	// `pathGrantNeed` 在**档位分支之前**（skip → pathGrant → protection →
-	// bashWrite → … → 档位）。Go 侧相反——本门(950) 在 pathGrant 门(988) **之前**。
+	// bashWrite → … → 档位）。Go 侧相反——本门在 pathGrant 门**之前**。
+	// （**不写行号**：注释增删会让行号漂移；定位用门名 grep。）
 	//
 	// **为什么这样也正确**：两门**不冲突**——档位门只对 `decideApprovalGate`
 	// 判定为拦的调用生效，而 pathGrant 门处理的是「路径越界」这一**独立维度**
@@ -1051,7 +1052,7 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 	//
 	// 对账 TS `tool-pipeline.ts:1163-1172` 的 `bashWriteRequiresApproval` 分支。
 	// **Go 侧此前完全没有这一环**：`RequiresBashWriteApproval`
-	// （`approval_risk.go:372`）零调用者。
+	// （`approval_risk.go` 的同名函数）零调用者——本门即其接线（第六十三刀）。
 	//
 	// **缺口实测**（第六十三刀）：`mkdir foo` 在 **manual 档**下——
 	// 硬闸门 false（非破坏性）、档位门 false（bash 的 `RequiresApproval`

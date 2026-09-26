@@ -320,14 +320,16 @@ func (r *Registry) Execute(ctx context.Context, name string, p *CallParams) (con
 // （可能被 skip 档放行），而硬闸门（bash 破坏性命令）在 skip 档下**也必须
 // 拦**。两者不是替代关系。
 //
-// **实际门链顺序**（`agent/loop.go`，第六十九刀核实）：
+// **实际门链顺序**（`agent/loop.go` 的 `executeTool`，按源码出现序）：
 //
-//	deny(855) → selfKill(878) → HardGate(902) → 档位门(950)
-//	  → pathGrant(988) → bash 写门(1041) → Execute
+//	deny → selfKill → HardGate → 档位门 → pathGrant → bash 写门 → Execute
 //
 // 即硬闸门**先于**档位门——故档位门放行 skip 档时，硬闸门已拦过一遍。
 // **注意**：后两门的次序与 TS 三元链**不同**（TS 是 pathGrant 先于档位分支）；
 // Go 侧相反，但不影响结果（见 `loop.go` 档位门段的说明）。
+//
+// **不写行号**：门链顺序稳定，但行号随注释增删漂移（本段初版写的
+// `988`/`1041` 在同一次编辑中就失效了）。要定位用函数名或门名 grep。
 type HardGate interface {
 	RequiresHardGate(p *CallParams) bool
 }

@@ -55,7 +55,7 @@
 //
 // **第六十五刀前的缺口**（已修，保留记录）：`PermissionConfig` 当时**无
 // `bash` 字段** → 用户配的 `permissions.bash.denylist` 被 `json.Unmarshal`
-// 静默丢弃。现已有 `PermissionConfig.Bash`（`permissions.go:53`）+
+// 静默丢弃。现已有 `PermissionConfig.Bash`（`permissions.go` 的同名字段）+
 // `permissionsRaw.bash` + `LoadPermissions` 读取。
 //
 // **`selfKill` 的称量结论（第六十七刀称量 / 第六十八刀执行）**：
@@ -92,7 +92,7 @@
 //
 // **但收益的「量级」低于 TS**（结构差异，非判断）：
 //   - TS 动机是「杀 sidecar → **API 认证上下文丢失 → 401 级联**」。Go 侧
-//     **无 `auth` 包**，API key 来自环境变量（`main.go:128` `firstEnv(...)`）
+//     **无 `auth` 包**，API key 来自环境变量（`main.go` 的 `firstEnv(...)`）
 //     → **进程重启无鉴权损失**。
 //   - Go 会话**增量落盘**（`.rivet/sessions/<id>.jsonl`，batchwriter 首行
 //     同步 flush）→ 被杀丢的是**当轮未 flush 的部分**，不是全部历史。

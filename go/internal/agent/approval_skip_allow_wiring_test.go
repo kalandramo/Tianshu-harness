@@ -70,7 +70,8 @@ func TestBashWriteGateSurvivesSkipMode(t *testing.T) {
 //
 // 这是不变量测试：修 skip 短路时**不能**顺手把硬闸门也放行了。
 // 对账 TS：`unconditionalApproval && !yoloBypassesUnconditional` 在 skip 之前，
-// 而 bash 破坏性命令由 Go 的独立硬闸门（loop.go:889）覆盖——先于本门。
+// 而 bash 破坏性命令由 Go 的独立硬闸门（`loop.go` 的「审批硬闸门」段）
+// 覆盖——它先于本门执行。
 func TestBashWriteGateSkipModeStillBlocksDestructive(t *testing.T) {
 	root := t.TempDir()
 
