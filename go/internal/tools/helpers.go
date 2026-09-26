@@ -7,6 +7,7 @@ import (
 
 	"github.com/kalandramo/tianshu/go/internal/api/wire"
 	"github.com/kalandramo/tianshu/go/internal/contract"
+	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 )
 
 // objSchema 构造一个 object 型入参 schema。
@@ -221,3 +222,24 @@ func (b *baseTool) RequiresApproval(*CallParams) bool { return false }
 
 // timeoutsFor 返回工具超时（秒），0 表示用默认。
 func (b *baseTool) timeoutSeconds() int { return b.timeout }
+
+// effectiveGrants 返回本次调用应使用的路径授权存储。
+//
+// **为什么需要**（第八十一刀发现的既有缺陷）：写/读工具的 `Grants` 是
+// **构造时**绑定的（`NewDefaultRegistry` 的参数），而会话的授权存储由
+// `Loop` 在 `New()` 里创建——**两个实例**；且 `main.go` 装配 registry 时
+// **根本没传** `Grants`（零值 nil）。后果：门链授了权、放行了，工具内部的
+// `pathsafe.Validate` 仍拒绝——**授权形同虚设**。
+//
+// 对账 TS：TS 的 `isWriteGranted`（`path-grants.ts:181`）读**包级单例**
+// `_grants`，所有工具共享同一状态、无构造时注入。本函数把 Go 侧对齐到
+// 「以会话注入的 `CallParams.Grants` 为准」。
+//
+// **优先级**：`p.Grants`（会话级，随会话变化）> `fallback`（构造时，向后兼容）。
+// 两者都 nil 时返回 nil——`pathsafe` 视 nil 为「无任何授权」（fail-closed）。
+func effectiveGrants(p *CallParams, fallback pathsafe.GrantChecker) pathsafe.GrantChecker {
+	if p != nil && p.Grants != nil {
+		return p.Grants
+	}
+	return fallback
+}

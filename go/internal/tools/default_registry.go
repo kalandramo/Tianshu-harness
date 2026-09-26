@@ -90,6 +90,11 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// 后台任务的生命周期脱离调用点，控制面必须是独立工具（可跨轮调用）。
 	// TS 侧同样紧跟 BASH_TOOL 注册（`default-registry.ts`）。
 	r.Register(Job())
+	// request_path_access：工作区外路径的**主动申请**入口（第八十一刀）。
+	//
+	// **为什么需要它**：门链在非 skip 档遇到工作区外路径时直接拒绝
+	// （「无提示通道」）。没有本工具，模型无法做目录级/批量/bash 场景的授权。
+	r.Register(RequestPathAccess(cwd))
 	r.Register(RunTests(cwd))
 
 	// ── 任务 ──

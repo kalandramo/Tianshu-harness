@@ -351,6 +351,63 @@ vet/gofmt 干净；工具数 **25 → 26**。
 另核实 `diff` / `plan_close` / `did-you-mean` / `syntax-check` **均已实现**
 （前三者是别名或内部库，非独立工具）。
 
+### 第 6 段：`request_path_access` + 修「授权形同虚设」的既有缺陷（第八十一刀）
+
+**称量订正**：文档此前判它「不做」（理由：「需先移植 `request_path_access` /
+`computer_use`，而 Go CLI 无该场景」）。**这条把两件事混在一起，且后半句是错的**：
+Go CLI **有**工作区外读写场景——`pathgrants.go` 存在、门链的 pathGrant 门
+**已接线**（`approval_gate.go` 状态表标 ✅）。缺的只是**主动申请**的入口。
+
+**缺口**：门链在**非 skip 档**遇到工作区外路径时**直接拒绝**（注释写明「无提示通道」）。
+模型没有主动申请授权的入口 → 无法做目录级 / 批量 / bash 场景的授权。
+
+**新增**：
+- `internal/tools/requestpathaccess.go`（235 行）——`request_path_access` 工具，
+  对账 TS `request-path-access.ts`（104 行）。含 `isForbiddenGrantRoot`
+  （issue #117 的系统目录黑名单，**纯函数**）+ 敏感文件检测 + `~` 展开。
+- `internal/tools/requestpathaccess_test.go`（24 条）+ `internal/agent/requestpathaccess_wiring_test.go`（7 条端到端）。
+
+**称量的收益不止于新工具**：`RequiresUnconditionalApproval`（`approval_risk.go:380`）
+**早已实现且已接线**，且**已含 `request_path_access` 分支**——但此前**没有这个工具**，
+故那分支是**死代码**（`approval_gate.go` 的注释明写「分支实际不可达」）。
+**本刀让那条已接线的判定第一次有真实消费者**。
+
+#### ★ 途中发现的**既有跨模块缺陷**：授权形同虚设
+
+修端到端测试时发现：**授权后写工具仍拒绝**。根因（三层）：
+
+1. **两个实例**：写/读工具的 `Grants` 是**构造时**绑定的
+   （`NewDefaultRegistry` 的参数），而会话的授权存储由 `Loop.New()` 创建。
+2. **装配层根本没传**：`cmd/tianshu/main.go` 的
+   `tools.NewDefaultRegistry(tools.Options{Cwd: ...})` **没传 `Grants`**（零值 nil）。
+3. **`Loop.pathGrants` 私有无访问器**：装配层拿不到它对不齐。
+
+后果：门链（用 `l.pathGrants`）授了权、放行了，但工具内部的 `pathsafe.Validate`
+用 nil grants → **永远拒绝**。**skip 档的「首触即授」授了权也没用**——那是死路径。
+
+**对账 TS**：TS 的 `isWriteGranted`（`path-grants.ts:181`）读**包级单例** `_grants`
+——所有工具共享同一状态、**无构造时注入**。Go 侧做成了构造时字段，这是**移植偏差**。
+
+**修法（最小化，向后兼容）**：
+- `CallParams.Grants` 新字段（会话级，随会话变化）。
+- `Loop.buildToolCallParams` 注入 `l.pathGrants`（经 `grantCheckerOrNil` 防 typed-nil）。
+- `effectiveGrants(p, fallback)` helper：**优先 `p.Grants`**、回退构造时字段。
+- 8 处 `pathsafe.Validate` 调用点改用 helper（`file_tools.go`×2 / `applypatch.go`×2 /
+  `hashedit.go`×1 / `read_file.go`×2 / `readsection.go`×1——后者需把 `p` 传进
+  `readFromDisk`）。
+
+**验证**：24 条单测 + 7 条端到端；**变异反证见下**；全量 ×2 绿（26 包）；
+`-race` 两包绿；vet/gofmt 干净；工具数 **26 → 27**。
+
+**诚实标注**：
+- **持久化未移植**：TS 的 `grantPath(..., {persist: remember})` 支持跨会话持久化，
+  Go 侧 `agent.GrantPath` **无 persist 参数**（`pathgrants.go:18-23` 已声明）。
+  故 `remember=true` 时**明示降级**为「仅本会话」——**不得**谎称已持久化。
+- **跨包类型独立**：`tools.GrantMode` 与 `agent.GrantMode` 是**独立定义**
+  （字符串值一致）——因为 `agent` 已依赖 `tools`，反向 import 会成环。装配层做一次转换。
+- **`computer_use` 仍未移植**——`RequiresUnconditionalApproval` 的另一分支
+  （`js_eval`/`browser_adopt`/`sequence`）仍不可达。
+
 ### 本会话新增文件全表（`git log --diff-filter=A e866fad8^..HEAD`）
 
 ```
@@ -529,7 +586,7 @@ grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test
 |---|---|
 | `protectionMode` | 接线后行为不变 → 不做（`d2246fc8`） |
 | `canAutoApprove` | 256 组穷举 0 差异，**完全冗余** → 不做 |
-| `unconditionalApproval` | 需先移植 `request_path_access` / `computer_use`，而 Go CLI 无该场景 → 不做 |
+| `unconditionalApproval` | ~~需先移植 `request_path_access` / `computer_use`，而 Go CLI 无该场景~~ → **第八十一刀订正：判断有误**。`request_path_access` 已移植（本刀），该判定**第一次有真实消费者**；「Go CLI 无该场景」是错的——工作区外读写场景存在（`pathgrants.go` 与门链的 pathGrant 门都已接线）。`computer_use` 仍未移植 |
 | sensorium 链 | 两个直接消费者一个冗余、一个无消费者 → 不做 |
 | **`CheckpointDeps.TaskAnchor`** | **造子系统，不是接线** → 不做（第七十五刀称量，详见下） |
 

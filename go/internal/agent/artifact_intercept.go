@@ -41,6 +41,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/artifact"
 	"github.com/kalandramo/tianshu/go/internal/compact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
+	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 	"github.com/kalandramo/tianshu/go/internal/tools"
 )
 
@@ -214,6 +215,48 @@ func (l *Loop) buildToolCallParams(tc toolCall) *tools.CallParams {
 		// `p.Jobs != nil` 会通过，随后 `s.jobs[...]` 解引用 nil 崩溃
 		// （实测：无会话的 bash 后台调用 panic 在 jobstore.go 的 `s.mu.Lock()`）。
 		Jobs: jobRegistryOrNil(l.Jobs),
+		// GrantPath：目录子树授权（request_path_access 用）。
+		//
+		// **为什么需要转换**：`tools.GrantMode` 与 `agent.GrantMode` 是**独立
+		// 定义**（字符串值一致，类型不同——避免 import 环）。此处做一次转换。
+		//
+		// nil 判定：`l.pathGrants` 是 `*pathGrantStore`——**必须显式判空**，
+		// 否则赋给 func 的闭包会捕获 typed-nil 并在调用时 panic（同 Jobs 的坑）。
+		GrantPath: l.grantPathFunc(),
+		// Grants：**会话级**授权存储（第八十一刀修的既有缺陷）。
+		//
+		// 写/读工具的 `Grants` 是构造时绑定的（`NewDefaultRegistry` 的参数），
+		// 而本存储由 `Loop.New()` 创建——**两个实例**；且 `main.go` 装配
+		// registry 时根本没传 `Grants`（零值 nil）→ 工具内部永远看不到授权。
+		// 经本字段把工具的判定对齐到会话实例（工具侧 `effectiveGrants` 优先用它）。
+		//
+		// **typed-nil 防护**：`l.pathGrants` 是 `*pathGrantStore`——nil 时
+		// 必须返回真 nil 接口（同 Jobs 的坑）。
+		Grants: grantCheckerOrNil(l.pathGrants),
+	}
+}
+
+// grantCheckerOrNil 把可能为 nil 的 *pathGrantStore 转成**真 nil 接口**。
+//
+// Go 经典陷阱：`var s *T = nil; var i I = s` → `i != nil` 为 true。
+// `pathsafe` 视 nil grants 为「无任何授权」（fail-closed），故必须返回真 nil。
+func grantCheckerOrNil(s *pathGrantStore) pathsafe.GrantChecker {
+	if s == nil {
+		return nil
+	}
+	return s
+}
+
+// grantPathFunc 返回注入给 `request_path_access` 的授权回调。
+//
+// nil store → nil（工具侧 fail-closed 报错，不假装成功）。
+func (l *Loop) grantPathFunc() func(string, tools.GrantMode, string) {
+	if l.pathGrants == nil {
+		return nil
+	}
+	return func(root string, mode tools.GrantMode, cwd string) {
+		// tools.GrantMode → agent.GrantMode（值一致，类型不同）。
+		l.pathGrants.GrantPath(root, GrantMode(mode), cwd)
 	}
 }
 

@@ -375,7 +375,7 @@ func (t *hashEditTool) Execute(_ context.Context, p *CallParams) (contract.Resul
 		}, nil
 	}
 
-	vr := pathsafe.Validate(t.Cwd, path, pathsafe.ModeWrite, &pathsafe.Options{Grants: t.Grants})
+	vr := pathsafe.Validate(t.Cwd, path, pathsafe.ModeWrite, &pathsafe.Options{Grants: effectiveGrants(p, t.Grants)})
 	if !vr.OK {
 		return contract.Result{Content: vr.Error, IsError: true}, nil
 	}

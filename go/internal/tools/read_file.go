@@ -84,7 +84,7 @@ func (t *readFileTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 	}
 
 	// 路径校验——fail-closed
-	vr := pathsafe.Validate(t.Cwd, path, pathsafe.ModeRead, &pathsafe.Options{Grants: t.Grants})
+	vr := pathsafe.Validate(t.Cwd, path, pathsafe.ModeRead, &pathsafe.Options{Grants: effectiveGrants(p, t.Grants)})
 	if !vr.OK {
 		return contract.Result{Content: vr.Error, IsError: true}, nil
 	}
@@ -686,7 +686,7 @@ func (t *readFileTool) executeMultiRead(ctx context.Context, p *CallParams, path
 
 		res, err := t.Execute(ctx, &sub)
 		canonical := ""
-		if vr := pathsafe.Validate(t.Cwd, trimmed, pathsafe.ModeRead, &pathsafe.Options{Grants: t.Grants}); vr.OK {
+		if vr := pathsafe.Validate(t.Cwd, trimmed, pathsafe.ModeRead, &pathsafe.Options{Grants: effectiveGrants(p, t.Grants)}); vr.OK {
 			canonical = vr.Path
 		}
 

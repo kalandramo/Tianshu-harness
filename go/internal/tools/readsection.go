@@ -216,7 +216,7 @@ func (t *readSectionTool) Execute(_ context.Context, p *CallParams) (contract.Re
 	// 用途：配合 read-ref 引用恢复本会话早前读过的文件内容。
 	// **必须置于 artifactId 分支之前**（对账 TS 的 `if (file_path && !artifactId)`）。
 	if filePath != "" && artifactId == "" {
-		return t.readFromDisk(filePath, section)
+		return t.readFromDisk(p, filePath, section)
 	}
 
 	store := p.ArtifactStore
@@ -331,9 +331,9 @@ func (t *readSectionTool) Execute(_ context.Context, p *CallParams) (contract.Re
 //  3. 大文件守卫（>2MB → 报错并建议 grep/head）
 //  4. 读取 + 切区段
 //  5. 按 `computeModelReadCap` 截断（**不是** artifact 阈值近似）
-func (t *readSectionTool) readFromDisk(filePath, section string) (contract.Result, error) {
+func (t *readSectionTool) readFromDisk(p *CallParams, filePath, section string) (contract.Result, error) {
 	// 1) 路径校验——fail-closed。
-	vr := pathsafe.Validate(t.Cwd, filePath, pathsafe.ModeRead, &pathsafe.Options{Grants: t.Grants})
+	vr := pathsafe.Validate(t.Cwd, filePath, pathsafe.ModeRead, &pathsafe.Options{Grants: effectiveGrants(p, t.Grants)})
 	if !vr.OK {
 		return contract.Result{Content: vr.Error, IsError: true}, nil
 	}

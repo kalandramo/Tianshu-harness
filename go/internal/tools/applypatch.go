@@ -203,7 +203,7 @@ func (t *applyPatchTool) Execute(ctx context.Context, p *CallParams) (contract.R
 	// 目标路径安全校验（git 自身拒绝绝对路径/..，但 verify/备份会在 git 之前
 	// 读写这些 join 出来的绝对路径——符号链接目录场景下仍需工作区边界把关）
 	for _, rel := range prompt.ExtractPatchTargetPaths(normalized) {
-		vr := pathsafe.Validate(t.Cwd, rel, pathsafe.ModeWrite, &pathsafe.Options{Grants: t.Grants})
+		vr := pathsafe.Validate(t.Cwd, rel, pathsafe.ModeWrite, &pathsafe.Options{Grants: effectiveGrants(p, t.Grants)})
 		if !vr.OK {
 			return contract.Result{Content: "错误：补丁目标 " + rel + "：" + vr.Error, IsError: true}, nil
 		}
@@ -287,7 +287,7 @@ func (t *applyPatchTool) Execute(ctx context.Context, p *CallParams) (contract.R
 	// 登记写入的文件（让证据追踪感知）
 	if p.OnFileWrite != nil {
 		for _, rel := range prompt.ExtractPatchTargetPaths(normalized) {
-			vr := pathsafe.Validate(t.Cwd, rel, pathsafe.ModeWrite, &pathsafe.Options{Grants: t.Grants})
+			vr := pathsafe.Validate(t.Cwd, rel, pathsafe.ModeWrite, &pathsafe.Options{Grants: effectiveGrants(p, t.Grants)})
 			if vr.OK {
 				p.OnFileWrite(vr.Path)
 			}

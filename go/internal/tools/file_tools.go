@@ -78,7 +78,7 @@ func (t *writeFileTool) Execute(_ context.Context, p *CallParams) (contract.Resu
 		mode = "overwrite"
 	}
 
-	vr := pathsafe.Validate(t.Cwd, path, pathsafe.ModeWrite, &pathsafe.Options{Grants: t.Grants})
+	vr := pathsafe.Validate(t.Cwd, path, pathsafe.ModeWrite, &pathsafe.Options{Grants: effectiveGrants(p, t.Grants)})
 	if !vr.OK {
 		return contract.Result{Content: vr.Error, IsError: true}, nil
 	}
@@ -215,7 +215,7 @@ func (t *editFileTool) Execute(_ context.Context, p *CallParams) (contract.Resul
 	}
 	replaceAll := boolArg(p.Input, "replace_all")
 
-	vr := pathsafe.Validate(t.Cwd, path, pathsafe.ModeWrite, &pathsafe.Options{Grants: t.Grants})
+	vr := pathsafe.Validate(t.Cwd, path, pathsafe.ModeWrite, &pathsafe.Options{Grants: effectiveGrants(p, t.Grants)})
 	if !vr.OK {
 		return contract.Result{Content: vr.Error, IsError: true}, nil
 	}

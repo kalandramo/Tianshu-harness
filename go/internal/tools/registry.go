@@ -13,6 +13,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/artifact"
 	"github.com/kalandramo/tianshu/go/internal/compact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
+	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 	"github.com/kalandramo/tianshu/go/internal/skills"
 )
 
@@ -132,6 +133,33 @@ type CallParams struct {
 	// `tool-pipeline.ts:842` 注入。**nil = 无会话上下文**：bash 退回前台执行、
 	// job 工具提示「后台任务系统在当前上下文不可用」——两者都是 TS 的既有语义。
 	Jobs JobRegistry
+	// GrantPath 授予目录子树的访问权（request_path_access 用）。
+	//
+	// **为什么是回调而非接口**：`GrantMode`/`PathGrant` 定义在
+	// `internal/agent`，而 `agent` 已依赖 `tools`——反向 import 会成 import 环。
+	// 故按本仓库既有模式（同 `EnterPlanMode`/`ExitPlanMode`）：`agent` 注入
+	// `func` 回调，`tools` 只依赖签名。
+	//
+	// **nil = 无会话上下文** → 工具 fail-closed 报错，不假装授权成功。
+	//
+	// `cwd` 非空时授权绑定该工作区（sidecar 多会话隔离，见 `PathGrant.Scope`）。
+	GrantPath func(root string, mode GrantMode, cwd string)
+	// Grants 是**会话级**的路径授权存储（越界读写判定用）。
+	//
+	// **为什么需要它**（第八十一刀发现的既有缺陷）：`writeFileTool.Grants`
+	// 等是**构造时**绑定的（`NewDefaultRegistry` 的参数），而会话的授权存储
+	// 由 `Loop` 在 `New()` 里创建——**两个实例**。且 `main.go` 装配 registry
+	// 时**根本没传** `Grants`（零值 nil）→ 工具内部的越界检查永远看不到授权。
+	//
+	// 后果：门链（`loop.go` 的 pathGrant 门）授了权、放行了，但工具内部
+	// 的 `pathsafe.Validate` 仍拒绝——**授权形同虚设**。
+	//
+	// 对账 TS：TS 的 `isWriteGranted`（`path-grants.ts:181`）读**包级单例**
+	// `_grants`——所有工具共享同一状态，无构造时注入。Go 侧经本字段对齐
+	// 到同一实例。
+	//
+	// 工具应**优先用本字段**、回退构造时字段（向后兼容）。
+	Grants pathsafe.GrantChecker
 	// AbortSignal 在工具级超时触发时取消。
 	AbortSignal context.Context
 	// ArtifactStore 是 artifact 存储（read_section 用）。
