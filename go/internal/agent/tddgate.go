@@ -22,8 +22,16 @@ import (
 // matchedMistakes, suggestion}`），经 `turn-step-producer` 的
 // `formatImmuneContext` → `buildCognitiveProjectionParts` 进入 prompt。Go 侧
 // **该通道完全不存在**（`signalKinds` / `immune-signal` 在生产代码零出现）——
-// 移植它们等于先造一条新提示管道，**超出本刀**。它们的功能是「提示文案」，
-// 而 `evaluateTddGate` 的 suggest 分支已覆盖同类价值（且走既有的门链返回）。
+// 移植它们等于先造一条新提示管道，**超出本刀**。
+//
+// **但 suggest 的提示价值已在 Go 侧落地**（第七十三刀，**走的是另一条路**）：
+// 不是 immune 通道，而是对账 TS `tool-pipeline.ts:1748-1750` 的**结果尾部追加**
+// ——`loop.go` 的 `executeTool` 在工具成功后把 `[TDD] <message>` 拼到
+// `result.Content` 尾部。**这条路的根据**：TS 的 `tddSuggestNote` 本来就是
+// 追加到 `finalContent`（不是走 immune hint），故无需新通道。
+//
+// 区别：`buildTddGateHint` 是**每轮边界**的主动提示（未移植），
+// `tddSuggestNote` 是**编辑当下**的即时反馈（已移植）。两者互补，不是替代。
 //
 // # 与 TS 的一处**必须注意的差异**（oracle 当场抓到）
 //

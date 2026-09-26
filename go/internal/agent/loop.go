@@ -1113,27 +1113,22 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 		return contract.Result{Content: msg, IsError: true}
 	}
 
-	// ── TDD gate（第七十二刀接线）──
+	// ── TDD gate（第七十二刀接线 / 第七十三刀补 suggest 通道）──
 	//
-	// 对账 TS `tool-pipeline.ts:889-905` 的 TDD gate 分支。**Go 侧此前只有
-	// 状态追踪、没有拦截**：`evidenceTracker` 的 `GateState` /
+	// 对账 TS `tool-pipeline.ts:889-908`（判定）与 `:1748-1750`（附注）。
+	// **Go 侧此前只有状态追踪、没有拦截**：`evidenceTracker` 的 `GateState` /
 	// `HasVerificationDebt` 零生产消费（`loop.go` 的字段注释曾显式披露
-	// 「无 gate 拦截消费方——拦截是独立的一刀」）。本门即那一刀。
+	// 「无 gate 拦截消费方——拦截是独立的一刀」）。第七十二刀补了拦截，
+	// 第七十三刀补了 suggest 附注。
 	//
 	// **为什么在门链末尾**（bash 写门之后）：TS 的 TDD gate 在
 	// `destructiveGate` **之前**、cerebellar gate **之后**；而 Go 门链的
 	// 顺序是「用户边界（deny/pathGrant/审批）→ 纪律门」。TDD 是**纪律**门
 	// （不是安全边界），放在审批门之后对账这个分层——安全边界优先于纪律。
 	//
-	// **suggest 的处理与 TS 有别（有意）**：TS 的 suggest 文案经
-	// `tddSuggestNote` 附加到**工具结果**上（`tool-pipeline.ts:900-905`）。
-	// Go 侧 `contract.Result` 无对应的附注字段，故 suggest 时**不附注**
-	// ——只做 allow。**这是已知的降级**：enforce 模式的硬拦完整生效，
-	// suggest 模式的提示价值在 Go 侧暂缺（需要 immune/advisory 通道，
-	// 见 `tddgate.go` 的范围声明）。
-	//
 	// **skip 档不豁免本门**（与审批门不同）：TDD gate 不是审批门——它
 	// 不需要人工批准，拦下只是让模型先写测试。TS 侧同样不读审批档位。
+	var tddSuggestNote string
 	if editTools[tc.name] {
 		// **配置来源唯一**：`Config.TddGateEnv`（装配层从 `os.Getenv` 填充）。
 		//
@@ -1154,9 +1149,24 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 				}
 			}
 		}
-		decision := EvaluateTddGate(l.evidence.GateState(filesModified, filesRead), tc.name, gateCfg, target)
+		gateState := l.evidence.GateState(filesModified, filesRead)
+		decision := EvaluateTddGate(gateState, tc.name, gateCfg, target)
 		if decision.Action == "block" {
 			return contract.Result{Content: decision.Message, IsError: true}
+		}
+		// **suggest 附注的触发区域**（对账 TS `tool-pipeline.ts:900-905`）：
+		//
+		//	decision.action === 'suggest' && decision.message
+		//	  && (gateState.hasFailedTests || gateState.editsSinceLastTest >= threshold)
+		//
+		// 即**只在「enforce 会拦」的区域才附注**——探索窗口（<threshold）与
+		// 测试文件 RED 步骤保持安静，避免每次编辑都贴尾巴（TS 注释原文）。
+		//
+		// **快照时机**：此处取的是**编辑前**的状态（与 TS 一致——TS 在
+		// `:891` 取 `getGateState()`，`trackFileModified` 在工具执行后）。
+		if decision.Action == "suggest" && decision.Message != "" &&
+			(gateState.HasFailedTests || gateState.EditsSinceLastTest >= gateCfg.Threshold) {
+			tddSuggestNote = decision.Message
 		}
 	}
 
@@ -1184,6 +1194,28 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 	l.recordTrajectory(tc, result, time.Since(started))
 
 	l.observeToolResult(tc.name, tc.input, result)
+
+	// ── TDD suggest 附注（第七十三刀）──
+	//
+	// 对账 TS `tool-pipeline.ts:1748-1750`：
+	//
+	//	if (tddSuggestNote && !harnessResult.isError) {
+	//	  finalContent = `${finalContent}\n\n[TDD] ${tddSuggestNote}`
+	//	}
+	//
+	// **时机在内部记录之后**（与 TS 一致）：TS 的 `recordToolHistory` 用的是
+	// `harnessResult.content`（**原始**，不带 note），只有 `onToolResult`
+	// 收到 `finalContent`。Go 侧对应：`recordTrajectory` / `observeToolResult`
+	// 是内部记录（用原始 content），`result.Content` 回灌进消息历史（带 note）。
+	//
+	// **为什么追加在尾部**（TS 注释原文）：结果尾部 = 对话历史末尾 →
+	// **冻结前缀不变**（前缀缓存友好）。
+	//
+	// **只在工具成功时贴**（TS：`!harnessResult.isError`）：失败的编辑结果
+	// 本身已是反馈，再贴 TDD 提示是噪音。
+	if tddSuggestNote != "" && !result.IsError {
+		result.Content = result.Content + "\n\n[TDD] " + tddSuggestNote
+	}
 	return result
 }
 

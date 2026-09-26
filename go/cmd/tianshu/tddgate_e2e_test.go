@@ -162,7 +162,23 @@ func TestCLIEndToEndTddGateDefaultDoesNotBlock(t *testing.T) {
 			break
 		}
 	}
-	// 观察 2：**第 4 个文件真被改了**（拦截未生效的正面证据）。
+	// 观察 2：**应出现 suggest 附注**（`[TDD] ` 前缀）——第七十三刀补的通道。
+	//
+	// 达阈值区域（第 4 次编辑时 edits=3 >= threshold=3）应贴附注。
+	// 这是「suggest 通道真的经真实 CLI 生效」的正面证据——只断言「不拦」
+	// 无法区分「通道工作」与「通道整个缺失」。
+	foundNote := false
+	for _, b := range bodies {
+		if strings.Contains(b, "[TDD] ") {
+			foundNote = true
+			break
+		}
+	}
+	if !foundNote {
+		t.Errorf("默认（suggest）档在达阈值区域应出现 `[TDD] ` 附注，实得 %d 轮请求均无\nCLI 输出：%s",
+			len(bodies), out)
+	}
+	// 观察 3：**第 4 个文件真被改了**（suggest 不阻止编辑）。
 	data, err := os.ReadFile(filepath.Join(root, "d.ts"))
 	if err != nil {
 		t.Fatalf("读 d.ts 失败：%v", err)
