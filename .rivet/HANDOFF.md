@@ -408,6 +408,43 @@ Go CLI **有**工作区外读写场景——`pathgrants.go` 存在、门链的 p
 - **`computer_use` 仍未移植**——`RequiresUnconditionalApproval` 的另一分支
   （`js_eval`/`browser_adopt`/`sequence`）仍不可达。
 
+#### ★ 第八十一刀的**独立审查**（自动审查超时未跑，故补做）
+
+`e315e126` 的自动审查**超时未运行**（advisory 记录）。这是本会话最大的一刀
+（13 文件 1140 行），故用对抗式 verifier 补审。**它推翻了/补充了以下四点**：
+
+**① 假绿（HIGH，已修）**：`requestpathaccess_wiring_test.go` 与
+`acceptance_requestpathaccess_test.go` 都在 **skip 档**验证「授权后落盘」。
+但 skip 档门链对 `write_file` **首触即授** → **即使工具是空操作也会落盘**。
+**独立复现**：skip 档下**完全不调** `request_path_access`，写工作区外文件仍落盘。
+→ 我上一轮声称的「验收 PASS」含**假绿成分**（`effectiveGrants` 修复部分有效，
+`request_path_access` 工具本身的贡献**不可归因**）。
+**修**：新增 `grant_attribution_test.go` —— 用 **auto-safe 档**（无路径自动授予、
+写工具放行）做归因：B1 未授权被拦 → B2 授权 → B3 落盘，**唯一归因于该授权**。
+
+**② 授权面不完整（MEDIUM，已修）**：`fileinfo.go` / `diff.go` /
+`file_tools.go`(glob) / `grep.go` 四处 `pathsafe.Validate(..., nil)` **硬传 nil**
+——已授权的工作区外目录对它们仍被拒，与 `request_path_access` 的成功文案
+「文件工具与 bash 现在可以在此读写路径」**不符（过度承诺）**。
+**修**：四处接 `effectiveGrants(p, nil)`（这 4 个工具无构造时 grants）。
+→ 全仓 `pathsafe.Validate` 调用点 **12 处全部接上**。
+**验证**：`TestGrantAttributionGlobGrepSeeGrants`（①未授权拦 → ②授 → ③放行命中）。
+
+**③ 状态表被证伪（MEDIUM，已订正）**：`approval_gate.go` 的状态表仍称
+`request_path_access` 未注册、`unconditionalApproval` 分支「实际不可达」。
+本刀注册后该分支**已可达**（manual 经 `needsApproval`、auto-safe 经 `isHighRisk`）。
+**修**：订正该表 + 补「Go 侧与 TS 的行为差异」说明（见 ④）。
+
+**④ 档位语义差异（HIGH，**判定为既有架构缺口，非本刀缺陷**）**：
+`request_path_access` 在 manual/auto-safe 档被**硬拒**，只在 skip 档可用。
+核实 TS 侧（`tool-pipeline.ts:1213-1343`）：`shouldAsk=true` 后走
+`onApprovalRequired` **弹审批**，用户批准后 `grantPath(...)` 授权。
+**Go 侧无交互审批通道** → 硬拒。语义是「不可用」而非「待批准」。
+**这是既有的架构缺口**（Go CLI 无弹窗），非本工具引入；
+且 `RequiresUnconditionalApproval` 对它的恒 true 判定**与 TS 一致**（忠实移植）。
+**诚实标注**：该工具在 Go 侧**实际只在 skip 档可用**，而 skip 档本身已对文件工具
+首触即授——**它的独立价值被削平**。已记入下条「遗留」。
+
 ### 本会话新增文件全表（`git log --diff-filter=A e866fad8^..HEAD`）
 
 ```

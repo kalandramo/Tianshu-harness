@@ -64,7 +64,8 @@ func (t *grepTool) Execute(_ context.Context, p *CallParams) (contract.Result, e
 	if root == "" {
 		root = t.Cwd
 	} else {
-		vr := pathsafe.Validate(t.Cwd, root, pathsafe.ModeRead, nil)
+		// 同 fileinfo：接会话授权（第八十一刀订正）。
+		vr := pathsafe.Validate(t.Cwd, root, pathsafe.ModeRead, &pathsafe.Options{Grants: effectiveGrants(p, nil)})
 		if !vr.OK {
 			return contract.Result{Content: vr.Error, IsError: true}, nil
 		}

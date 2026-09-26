@@ -189,7 +189,9 @@ func (t *fileInfoTool) Execute(_ context.Context, p *CallParams) (contract.Resul
 		return contract.Result{Content: "错误：path 参数必填", IsError: true}, nil
 	}
 
-	validated := pathsafe.Validate(p.Cwd, inputPath, pathsafe.ModeRead, nil)
+	// **接会话授权**（第八十一刀订正）：此前硬传 nil → 已授权的工作区外路径
+	// 对这些工具仍被拒，与 request_path_access 的成功文案不符（过度承诺）。
+	validated := pathsafe.Validate(p.Cwd, inputPath, pathsafe.ModeRead, &pathsafe.Options{Grants: effectiveGrants(p, nil)})
 	if !validated.OK {
 		// 对账 TS：项目外但**存在**的路径给出提示而非硬错（供 import_resource 引入）。
 		resolved := inputPath

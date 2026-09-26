@@ -114,19 +114,32 @@
 //	pathGrantNeed             outOfWorkspaceFilePaths        ✅ 已接线（loop.go，先于本门）
 //	bashWriteRequiresApproval requiresBashWriteApproval      ✅ 第六十三刀接线
 //	                                                          （`bashWriteNeedsApproval`）
-//	unconditionalApproval     requiresUnconditionalApproval  ⚠️ 判定已接线（经
-//	                                                          AssessToolRisk 置 high），
-//	                                                          但 Go 侧无触发它的工具：
-//	                                                          `request_path_access` /
-//	                                                          `computer_use` 均**未注册**
-//	                                                          （实测：23 个工具中无此二者）
-//	                                                          → **分支实际不可达**
+//	unconditionalApproval     requiresUnconditionalApproval  ✅ **第八十一刀起可达**
+//	                                                          （此前记为「不可达」——
+//	                                                          见下方订正说明）
 //	yoloBypassesUnconditional skipAllApproval（=YOLO 档）   ✅ 语义等价：TS 让 YOLO
 //	                                                          豁免 unconditional 门；
-//	                                                          Go 侧该门本就不可达
-//	                                                          （上一行），故无差别。
-//	                                                          但**条件表达式里它是
-//	                                                          独立输入**，故列出
+//	                                                          Go 侧由本函数首行
+//	                                                          `skip 档 return 放行` 等价
+//	                                                          实现。但**条件表达式里它
+//	                                                          是独立输入**，故列出
+//
+//	**订正（第八十一刀，独立审查发现）**：上表此前记 `request_path_access` /
+//	`computer_use` 均未注册 → unconditionalApproval 分支**实际不可达**。该记录
+//	在第八十一刀后**已失效**：
+//
+//	  - `request_path_access` **已注册**（`default_registry.go`），且
+//	    `RequiresUnconditionalApproval` 对它恒返回 true（`approval_risk.go`）。
+//	  - 故该分支**现在可达**：manual 档经 `needsApproval` 拦、auto-safe 档经
+//	    `isHighRisk` 拦（实测：两档下工具调用 isError=true 且不产生授权）。
+//	  - `computer_use` **仍未注册**，其分支（js_eval / browser_adopt / sequence）
+//	    仍不可达。
+//
+//	**Go 侧与 TS 的行为差异（诚实标注）**：TS 在 auto-safe 档下 `shouldAsk=true`
+//	后走 `onApprovalRequired` **弹审批**，用户批准后 `grantPath(...)` 授权
+//	（`tool-pipeline.ts:1343`）。Go 侧**无交互审批通道**，故 auto-safe/manual 档
+//	下该工具被**硬拒**——语义是「不可用」而非「待批准」。
+//	**这是既有的架构缺口**（Go CLI 无弹窗），非本工具引入。
 //	protectionMode            doomLoop + destructiveGit      ❌ 无 doom-loop 会话态
 //	                                                          （`DoomLoop` 零生产文件）
 //	                                                          **第六十九刀称量：

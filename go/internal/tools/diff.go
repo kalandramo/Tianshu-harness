@@ -172,7 +172,8 @@ func (t *diffTool) Execute(ctx context.Context, p *CallParams) (contract.Result,
 		args = append(args, "--")
 		args = append(args, ownedPaths...)
 	} else if path, ok := p.Input["path"].(string); ok && path != "" {
-		validated := pathsafe.Validate(p.Cwd, path, pathsafe.ModeRead, nil)
+		// 同 fileinfo：接会话授权（第八十一刀订正）。
+		validated := pathsafe.Validate(p.Cwd, path, pathsafe.ModeRead, &pathsafe.Options{Grants: effectiveGrants(p, nil)})
 		if !validated.OK {
 			return contract.Result{Content: "错误：" + validated.Error, IsError: true}, nil
 		}
