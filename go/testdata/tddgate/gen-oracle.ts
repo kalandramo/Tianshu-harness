@@ -109,4 +109,6 @@ const out = cases.map(c => ({
 }))
 
 writeFileSync(new URL('./oracle.json', import.meta.url), JSON.stringify({ generatedBy: 'go/testdata/tddgate/gen-oracle.ts', cases: out }, null, 2) + '\n')
-console.log(`ORACLE_OK ${out.length} cases`)
+// 生成器不打印进度（与 shellsplit / selfkill / evidence 三个既有生成器一致）。
+// 成功判据是 oracle.json 落盘且用例数非零——Go 侧测试会断言这一点
+// （`loadTddOracle` 在 0 用例时 Fatal），无需 stdout 回执。
