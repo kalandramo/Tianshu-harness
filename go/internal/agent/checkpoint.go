@@ -46,6 +46,33 @@ type CheckpointDeps struct {
 	//
 	// 对账 TS `buildTaskAnchorAppendix`。**必须置于 appendix 区**
 	// （候选末尾）——绝不进冻结前缀，否则前缀缓存失效。
+	//
+	// ## ⚠️ **有意不接**（第七十五刀称量，勿重复勘探）
+	//
+	// **生产路径恒 nil**——`main.go` 未注入。这不是遗漏，是**称量后的决定**。
+	//
+	// **为什么不做**：它需要整个 `TaskContract` 子系统（TS `src/context/
+	// task-contract.ts` 500+ 行：`extractTaskContract` 的中文启发式正则、
+	// `classifyTurnMode`、`advanceContractStatus`、`renderTaskAnchor`），
+	// **且需要一个「活动契约」的维护者**——TS 侧是 `loop.ts` 的
+	// `this.taskContract`（turn 流程维护），**Go 侧 turn 流程无此概念**
+	// （`grep -riE 'activeContract|taskContract|TurnMode'` 在生产代码零命中）。
+	//
+	// 接上去也**没有契约可渲染**。强行造出来就是下一个「声明但无人消费」
+	// （本仓库已栽过 `NeedsApproval` / `pressureResult` / `protectionMode`）。
+	//
+	// **它还是跨子系统的**（实测 `grep -rln TaskContract src/ | grep -v test`
+	// → **16+ 个模块**）：`loop.ts` / `turn-orchestrator.ts` / `turn-step-producer.ts` /
+	// `bootstrap.ts` / `loop-factory.ts` / `task-planner.ts` / `plan-mode-advisor.ts` /
+	// `cognitive-ledger.ts` / `plan-task.ts` / `collab-branches.ts` /
+	// `intent-retrieval-route*.ts` / `reasoning-effort-controller.ts` 等。
+	// **不是「压缩路径的一个字段」**——是 turn 流程的横切基础设施。
+	//
+	// **什么时候该做**：当 Go 侧出现**契约生命周期**（task-mode 判定 + 状态推进）
+	// 这一需求时——那时本字段与三个下游消费方一并接。**现在不做**。
+	//
+	// 字段与消费点（`checkpoint.go` 的 `replaceWithCheckpoint`）**保留**：
+	// 它们是 TS 契约的完整映射，且测试用它们验证「nil 时跳过」的分支。
 	TaskAnchor func() string
 
 	// Preflight 在替换前修复历史（如孤儿 tool_call）。返回修复后的消息。

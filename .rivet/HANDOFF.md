@@ -230,10 +230,37 @@ go/testdata/shellsplit/gen-oracle.ts + oracle.json
 | `canAutoApprove` | 256 组穷举 0 差异，**完全冗余** → 不做 |
 | `unconditionalApproval` | 需先移植 `request_path_access` / `computer_use`，而 Go CLI 无该场景 → 不做 |
 | sensorium 链 | 两个直接消费者一个冗余、一个无消费者 → 不做 |
+| **`CheckpointDeps.TaskAnchor`** | **造子系统，不是接线** → 不做（第七十五刀称量，详见下） |
 
-### 卡点 4：`go/HANDOFF.md` 未记录第六十一刀起
+#### `TaskAnchor` 的称量（第七十五刀，**勿重复勘探**）
 
-本会话 20 个提交**没有写入** `go/HANDOFF.md`（该文件停在第六十刀）。**本文档即是那段的记录**。
+**发现**：`go/PLAN.md:180` 标它是「半落地」的悬空字段。核实后**确认悬空**
+（`checkpoint.go` 声明 + 消费点齐全，但 `main.go` 从未注入 → 生产恒 nil）。
+
+**但缺口比文档描述大得多**——它不是「接一个字段」：
+
+- `TaskContract` 在 Go 侧**类型都不存在**（`internal/context/` 无 `taskcontract.go`，
+  `grep -riE 'activeContract|taskContract|TurnMode'` 生产代码零命中）。
+- TS 侧 `src/context/task-contract.ts` **570 行**（含 `extractTaskContract` 的
+  中文启发式正则、`classifyTurnMode`、`advanceContractStatus`、`renderTaskAnchor`）。
+- **16+ 个 TS 模块**消费 `TaskContract`（`loop.ts`/`turn-orchestrator.ts`/
+  `bootstrap.ts`/`cognitive-ledger.ts`/`plan-task.ts`…）——是 turn 流程的
+  **横切基础设施**，不是压缩路径的局部字段。
+- **最关键**：它需要**契约生命周期的维护者**（TS 是 `loop.ts` 的
+  `this.taskContract`，由 turn 流程维护）——**Go 侧 turn 流程无此概念**。
+  **接上去也没有契约可渲染**。
+
+**结论**：强行做就是下一个「声明但无人消费」（`NeedsApproval`/`pressureResult`/
+`protectionMode` 的同型）。**判据**：当 Go 侧出现「契约生命周期（task-mode 判定 +
+状态推进）」这一需求时，本字段与三个下游一并接。
+
+**已落盘**：`checkpoint.go` 的 `TaskAnchor` 字段注释已标明「有意不接 + 理由 +
+何时该做」——下个人读代码即可见，无需再勘探。
+
+### 卡点 4：~~`go/HANDOFF.md` 未记录第六十一刀起~~ → **已解决**（`304f8a51`）
+
+`go/HANDOFF.md` 已回填「第六十一刀起」章节（169 行，覆盖本会话 23 提交）。
+**核实方式**：`grep -c '第六十一刀起' go/HANDOFF.md` → 3（标题 + 交叉引用）。
 
 ---
 
