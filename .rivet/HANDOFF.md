@@ -1,203 +1,230 @@
-# 交接文档 — Go 重写天枢运行时（Windows 设备接力）
+# 交接文档 — Go 重写天枢运行时（macOS 会话 · 审批门 / 认知状态 / hooks）
 
-> 生成时间：2026-09-20（当日末次更新）· 本会话在 `D:\code\Tianshu-harness`（Windows 10.0.26200）
-> 分支：`go-runtime` · HEAD：`516a226` · 今日共 **16 个提交**
+> 生成时间：2026-09-26 · 设备：macOS（Darwin 25.6.0，作者 moweilong）
+> 仓库：`/Users/moweilong/Workspace/go/src/github.com/kalandramo/Tianshu-harness`
+> 分支：`go-runtime` · HEAD：`c7f91de8` · 工作树 **clean**
+> 本会话共 **20 个提交**（`e866fad8`..`c7f91de8`），全部在 `go-runtime` 分支
 > 本文自包含——读者无需本会话任何上下文。
 
 ---
 
 ## 任务目标
 
-**一句话目标**：把 TypeScript 版天枢运行时**字节等价**地移植成 Go，保证在 Windows 上可编译、可运行、行为与 TS 版一致。
+**一句话目标**：把 TypeScript 版天枢运行时（`src/`）**行为等价**地移植成 Go（`go/`），逐刀推进、每刀独立验证。
 
-**背景**：这是跨设备接力。Go 重写最初在另一台设备（macOS，作者 moweilong）上推进，本会话在 Windows 接手。接力点提交是 `bff55c5`。**本仓库原本没有 `go/` 目录**——是接手时通过快进才出现的。
-
-**权威文档（先读这两份，本文只是索引）**：
-- `go/HANDOFF.md`（1906 行）—— Go 子项目的详细技术交接（每刀都有专章）
-- `go/PLAN.md`（85822 字节）—— 架构欠账清单
+**本会话实际推进的三条线**（前序会话已完成压缩/session-split 主线，见 `go/HANDOFF.md` 第六十刀）：
+1. **审批门接线**——修「配置字段存在但零调用者」导致的 fail-open 静默执行
+2. **认知状态子系统称量**——核实「该不该做」，三次判定「不该做」
+3. **hooks 隔离缺陷**——修 `internal/hooks` 全量并发时间歇失败
 
 **非目标**：
+- 不重写 TS 版（`src/` 下代码一行未动）。
 - 不追求「功能更多」——只追求**与 TS 版行为等价**。任何偏离 TS 语义的「优化」都是缺陷。
-- 不重写 TS 版（`src/` 下代码不动）。
-- 本会话**不碰** `go/` 以外的模块。
+- 不碰 `go/` 以外的模块。
 
-**硬约束**：前缀缓存工程是核心指标——冻结 system prompt 必须**字节稳定**，任何进入冻结前缀的字符串（如 `<environment os="...">` 行）差一个字节就会让缓存命中率崩掉。
+**硬约束**：前缀缓存工程是核心指标——冻结 system prompt 必须**字节稳定**。任何进入冻结前缀的字符串（如 `<environment os="...">` 行、handoff 文本）差一个字节就会让缓存命中率崩掉。
+
+---
+
+## 拓扑（先读这段，否则会搞错上下文）
+
+`go-runtime` 分支上，**两段会话接力**：
+
+| 会话 | 设备 | 提交区间 | 主题 |
+|---|---|---|---|
+| 前序 | Windows（`D:\code\Tianshu-harness`） | 至 `516a226`（2026-09-20） | Windows 可移植性 + 压缩/session-split 主线 |
+| 中间 | macOS | `516a226`..`6c6904e9`（483 提交，其中 102 触及 `go/`） | 第三十一刀..第六十刀（volatile / 动态 appendix / terse / plan-mode 等） |
+| **本会话** | macOS | `e866fad8`..`c7f91de8`（20 提交） | 审批门 / 认知状态称量 / hooks |
+
+**关键数字（实测）**：`git rev-list --count 516a226..HEAD` = **483**；`-- go/` 限定 = **102**。
+
+**权威文档**：
+- `go/HANDOFF.md`（**7018 行**，每刀一个专章）——覆盖到**第六十刀**（2026-09-24）。**本会话（第六十一刀起）尚未写入该文件**。
+- `go/PLAN.md`——架构欠账清单。
+
+**注意**：本文档路径是 `.rivet/HANDOFF.md`，**被 git 跟踪**（上一版提交 `4ecab8b2`）。本次为覆盖写，旧版（20584 字节，Windows 会话的 16 刀详细记录）仍可从 git 取回：
+
+```
+git show 4ecab8b2:.rivet/HANDOFF.md
+```
+
+旧版的**技术细节**并非丢失——已核实 `go/HANDOFF.md` 保留了 Windows 可移植性内容（`Windows`/`win32`/`GBK`/`代码页` 关键词命中 77 处，`WaitDelay`/`代码页`/`936` 命中 7 处）。本文档「坑」1–15 是那批记录的**提炼索引**，细节仍以 `go/HANDOFF.md` 为准。
 
 ---
 
 ## 已完成
 
-今日（`bff55c5..HEAD`）共 **16 个提交**，全部在 `go-runtime` 分支。分两段：**Windows 可移植性**（1–5）与 **压缩/session split 主线**（6–16）。
+### 第 0 段：修测试基线（起点是「非 Windows 上 30 个测试红」）
 
-### 第一段：Windows 可移植性（起点是 `go build` exit=1 的硬阻塞）
+#### `e866fad8` rawstore grant 路径符号链接规范化（macOS 授权静默失效）
+macOS 上 `/var` 是 `/private/var` 的符号链接，`hasPathPrefix` 比较未规范化 → 授权判定失败。修 `internal/…/rawstore.go`。
 
-#### 1. `6ac0a49` Windows 原生可移植性（19 文件，+469/−99）
+#### `aa53e594` 修测试基线的 6 族 Windows 平台假设——非 Windows 上从 **30 红到全绿**
+根因是测试夹具假设 Windows 语义（路径分隔符、`.exe`、mode 位等），在 macOS 上不成立。
 
-三处根因：
+#### `53c4436e` ShellKind 注入化
+`DetectShellKind` 偷读 `runtime.GOOS` → win32 渲染路径不可测。归位为 `HostEnv.ShellKind` 字段注入。
 
-- **Unix-only syscall**：`syscall.Setpgid` / `syscall.Kill` / `SIGKILL` 在 Windows 不存在。修法：build tag 拆分——`internal/tools/proctree.go`（公共）、`proctree_unix.go`、`proctree_windows.go`（Windows 走 `taskkill /F /T /PID`）。
-- **路径语义缺口（fail-open 安全洞）**：Go 的 `filepath.IsAbs("/etc/passwd")` 返回 **false**，而 Node 的 `path.win32.isAbsolute("/etc/passwd")` 返回 **true**——会让根相对路径被静默重基进工作区。修法在 `internal/pathsafe/pathsafe.go:179` 的 `resolveUnder`（复刻 Node 语义）。
-- **trust 权限 mode 位**：Windows 上恒为 666。
+#### `da228164` 解除纯函数 win32 语义测试的不必要门控
+**教训**：门控（`if runtime.GOOS == "windows" { t.Skip }`）是**覆盖损失**——纯函数在任意平台都可测，不该门控。
 
-**WaitDelay 缺陷（超时形同虚设）**：孙进程继承管道写端句柄，`taskkill` 杀进程后句柄未释放，`cmd.Wait()` 阻塞到 EOF。设 500ms 超时实测卡 **19–20 秒**。修法：`cmd.WaitDelay = 2s` → 实测 2.0s。
+#### `00decb97` 移植 `git_scout` 只读 git 史实侦察工具（工具集 21 → 22）
+新增 `go/internal/tools/gitscout.go`（457 行）+ `gitscout_test.go`。`gitScoutSafe`（`gitscout.go:189`）是只读白名单守卫。
 
-**测试夹具 4 类平台假设**：手拼 JSON 嵌 Windows 路径（`\U` 非法转义，**21 处**改 `json.Marshal`）、`.exe` 后缀、mode 位、EOL 默认。
+### 第 1 段：审批门系列（核心成果——修 5 处 fail-open）
 
-#### 2. `5ceb39d` shell 探测移植（7 文件，+1104/−14）
+**共性根因**：TS 侧有的门，Go 侧「字段/函数存在但零调用者」→ 静默 fail-open。
 
-**关键核实**：TS 的 `src/tools/bash.ts:514` 用 `getShellCommand()` **实际 spawn shell**，而 Go 首版硬编码 `exec.Command("bash", ...)`——在**没装 Git Bash 的 Windows 上功能完全不可用**。
+#### `1c500373` 接线档位审批门——修 4 个写工具在 manual 档静默执行
+`Registry.NeedsApproval` **零调用者** → 4 个写工具（write_file / edit_file / …）在 `manual` 档**静默执行**。
+**首版实测即错**：`auto-safe` 档必须用 `isHighRisk` 而非 `needsApproval`——否则 `write_file` 在 auto-safe 下不可用（TS 语义是 auto-safe 放行低风险写）。
 
-新建 `internal/platform/platform.go`（对账 `src/platform.ts`）：`ResolveShellCommand`（Git Bash→pwsh→powershell→cmd.exe）+ `ResolveGitBashPath`（五级探测，**排除 WSL**，bundled PortableGit 最后）。oracle 30 用例。
+#### `b94bf8ce` 接线 bash 写命令审批门——修 manual 档下 `mkdir/cp/重定向` 静默执行
+新增 `BashCommandMayWrite`（`internal/agent/…`）。**一处错误声称已修正**：硬闸门（`isDestructiveCommand`）与本门（`BashCommandMayWrite`）**命令集只有部分交集**——`mkdir` **不在**硬闸门内（我最初误以为在）。
 
-**oracle 抓到的假绿**：TS 的 `deps.env` 是 `NodeJS.ProcessEnv` **对象**而非取值函数，首版传函数导致所有 env 用例**静默产出 null**。
+#### `bcc86951` 修**我上一刀引入的回归** + 补 allowlist 全工具面生效
+`skipAllApproval` 短路未复刻 → **skip 档下 bash 写命令全被拦 → headless 死锁**。
+**我的纪律错误（记录）**：用 `git checkout` 恢复变异测试**丢掉了本轮全部修改**——项目规则明令禁止。已重新应用，后改**副本文件**做变异。
 
-#### 3. `85b8ade` DetectHostEnv 字节不等价（5 文件，+200/−13）
+#### `6d70f6e0` 接线 `permissions.bash.denylist`——修用户黑名单被静默忽略
+`PermissionConfig` **连 `bash` 字段都没有** → 用户 denylist 被 `json.Unmarshal` 静默丢弃。
+新增 `go/internal/agent/permissions_shellsplit.go`（163 行）：`splitShellSegments:53` + `IsBashCommandDenied:153`。
+**平台无关 oracle**：`go/testdata/shellsplit/`。
+**发现**：既有 `internal/…/approvalrisk/oracle.json` **不可重现于 macOS**——含 `pathGrant` 平台相关段，是 Windows 基准，故**不重跑**。
 
-`<environment os="...">` 这一行**进冻结前缀**。实测：Node 输出 `Windows_NT 10.0.26200`；Git Bash 的 `uname` 输出 `MINGW64_NT-10.0-26200 3.6.9-...`——**不相等**。修法：`internal/prompt/hostenv_windows.go` 改用 Win32 `RtlGetVersion`（`syscall.NewLazyDLL`，零依赖）。
+#### `9cbf5707` 接线 `permissions.bash.allowlist`
+新增 `go/internal/agent/permissions_bashallow.go`（246 行）：`segmentMatchesAllowEntry:116` 有 **5 道 fail-closed 守卫**（环境赋值严格剥离 / wrapper 洗白 / 解释器内联代码等）。
+**两处测试期望错**（`grep -c` / `node -c`），用 `npx tsx` 探针实测 TS 真实行为定案。
+**M1 首次红 1 = 覆盖缺口**，补 allowlist 语料后红 9。
 
-#### 4. `9a70e14` run_tests 的 Windows spawn（6 文件，+698/−5）
+#### `97b6e67a` 接线 selfKill 自身进程树保护（称量见 `75112524`）
+新增 `go/internal/agent/self_preservation.go`（192 行）：`currentProcessTree:91` + `IsSelfDestructiveKill:166`。
+**称量修正**：TS 挡两类，Go 侧**只移植 PID 类**。实测进程树 `SELF=72921 PPID=72918`，`72918 COMM=/tmp/ts-probe`——**agent 就是 bash 命令的直接父进程**，`kill <该 pid>` 杀 agent 自己。
+**修正**：镜像名类不是「不适用」而是「**收益低**」（Go 确有 `pkill tianshu` 对应物，只是无该习惯性动机）。
+**已知盲区（诚实标注）**：`kill $PPID` / `$(echo 1000)` **不拦**——静态字符串分析无法求值（**TS 侧实测同样全 false**，非移植缺陷）。
+**RED 反证最强证据**：移除接线 → 测试进程 **`signal: terminated`**（自杀命令真的执行）。
+**测试卫生**：`npx kill-port` 耗时 **107.88s**（真去拉包）→ 改本地命令 **0.01s**。
 
-`internal/tools/testspawn.go` + `quoteCmdArg:81`。**探针实测的注入面**：Go 自动引号**只在含空白时触发**，不含空白的 `& | ( ^ %` **全裸露**（`&` 可执行注入、`%PATH%` 可展开）；且**引号挡不住 `%`**。顺带修 `run_tests.go:558` 的 `buildCmd` 硬编码 `bash -c`。
+#### `0be170c1` / `1ed6ef11` / `e4a29ae7` / `51a9563c` 状态表对账（4 个 docs 提交）
+`go/internal/agent/approval_gate.go` 内的状态表注释：`1ed6ef11` 修 6 处过期声称 + `registry.go` 3 处 + **1 处我自己的事实错误**（`loop.go` 把「Go 实际顺序」写成「TS 顺序」）。
+`e4a29ae7` **自我纠错**：我上一刀刚立「不写行号」规矩，同刀内又写了失效锚点（`pathGrant 988→997`）。5 处漂移、3 处准确，**全部改函数名引用**。
+`51a9563c` 回答「是否已完善」= **否**，补 4 处缺口（B' 节 `permissionsOverlay` 来源缺失、C 节 `shouldAsk` 之后两段漏列、`yoloBypassesUnconditional`、行号不准确）。
 
-#### 5. `b4b9c69` 控制台输出乱码（7 文件，+529/−8）
+### 第 2 段：认知状态子系统——三次称量，**均判定「不该做」**
 
-本机代码页 **936（GBK）**：`cmd /c "echo 中文"` 输出 `d6 d0 ce c4...`。Go 比 TS 更小心的三处：`transform.Bytes` 每次重置状态（须持有 `Transformer`）；单块 `utf8.Valid` **不能区分「残缺」与「非法」**；GBK 转换器对不完整序列返回 `nSrc=0`（须累积重试）。新增依赖 `golang.org/x/text`。
+这一段的产出是**否决**（记录在 `approval_gate.go` 状态表 D/E 节），价值在于**避免造无消费者的机制**。
 
-### 第二段：压缩 / session split 主线
+#### `d2246fc8` protectionMode 称量——接线后**行为完全不变**，故不做
+- 破坏性 git（`git reset --hard` 等）**已在 `destructivePatterns`** → 硬闸门任何档位都拦，接线后该路径行为不变。
+- 次要产出（`Level`→`Medium`）**无人消费**（`isHighRiskCall` 只看 `Level == RiskHigh`）。
+- 真正的 doom-loop 终止**已有** `wedge_guard.go`（`loop.go` 的 `observeBatch`/`shouldTerminate`）。
 
-#### 6. `64ca6a4` reclaim gate（9 文件，+1426/−10）
+#### `62b2d345` pressureResult 链称量——**已完整实现但零实例化**，故不接线
+- `compact.PressureMonitor` 已实现（含 `Suggestion` 字段 + oracle 绿 `TestPressureCheckParity`）——**零实例化**。
+- 其独立消费者 `turn-intent`（`thrashingSuggestion`）Go 侧**不存在**（`TurnIntent` 标识符在生产代码零出现），且还依赖 `strategy` + `sensorium` + `pheromones` + `recentToolHistory`（**四项皆缺**）。
+- **顺带探针实测**：`canAutoApprove` **完全冗余**——256 组穷举（档位 × 风险级 × 置信度 × sensorium 有无 × needsApproval）**0 组差异**。
+- **结论**：sensorium 的两个直接消费者**一个冗余、一个无消费者**。
 
-`internal/compact/profile.go`（`WindowBandFor:22`、`DeriveCompactionProfile:58`）+ `reclaim.go`（`EstimateReclaim:113`、`ShouldCommitReclaim:143`）。五条分支顺序敏感；`floorMul` 用整数运算避免浮点截断。
+#### `1b9c8ed8` TDD gate 编辑计数（**唯一实际落地的子系统件**）
+- **称量修正任务定义**：Go 侧**已有** `session.Manager.TrackFileModified` / `RecordVerification`（`loop.go` 的 `observeToolResult` 已接线），缺的只是 `editsSinceLastTest`（相对计数，验证即归零）。故新增 `evidenceTracker` 为**薄计数器**，避免双重真相源。
+- 新增 `go/internal/agent/evidence.go`（237 行）：`TrackFileModified:149` / `TrackVerification:168` / `GateState:184` / `HasVerificationDebt:212`。
+- **修的既有缺陷**：`observeToolResult` 开头 `if res.IsError { return }`，但 `run_tests` 失败时 `IsError: exitCode != 0` → 早退把失败验证挡住 → `hasFailedTests` **恒 false**。修法：早退排除 `run_tests`。
+- **实测踩坑**：`session.RecordVerification` 是**同 target 替换**语义，TS 的 `verifications` 是**追加数组**（oracle `two-verifies` 期望 2、替换语义得 1）→ tracker 自持追加计数。
+- 54 子用例 + 变异反证 3 个 + RED 反证 + 2 条不变量。
+- **接线**：`loop.go:321` `l.evidence = newEvidenceTracker()`；写入端 `loop.go:1219/1226`（TrackFileModified）、`loop.go:1250`（TrackVerification）。
+- **⚠ 读取端零消费（有意披露）**：`GateState()` / `HasVerificationDebt()` 在**生产代码零引用**（仅测试引用）。`loop.go:196` 的注释**明确写了**「目前**无 gate 拦截消费方**——本刀只建立追踪与派生，拦截是独立的一刀（避免造无消费者的门）」。**这不是缺陷，是显式披露**。
 
-**测试构造坑**：`BlocksUnprofitable` 首版走了**放行**分支（实测回收 10479 > 地板 8192）——根因是没算清截断目标 `ToolResultMaxTokens = floor(window × 0.3)`。
+### 第 3 段：`c7f91de8` 修 hooks 间歇失败根因
 
-#### 7. `1af223a` 缓存顾问延迟（8 文件，+1176/−2）
+**症状**：`go test ./...` 时 `internal/hooks` 间歇 FAIL（约 1/3），失败信息「脚本应执行成功，实得 `""`」。
 
-新包 `internal/cache`：`warmth.go`（`SessionWarmthTracker`）+ `advisor.go`（`NewAdvisor:97`、`ShouldDelayCompact:124`，protection = hitRate × (1−pressure) ≥ 0.45）。
+**我上一轮的归因是错的（记录修正）**：曾推测是「测试间通过全局 trust 文件互相污染」。核实后**否定**：
+- `t.Setenv` 在包内是**串行安全**的（本包无 `t.Parallel`）
+- 全量跑是**每包独立进程**，跨包不共享环境变量
+- 失败耗时 **5.01s** = `DefaultTimeoutMs` 的**指纹**
+- 单包连跑 18 次**全绿**（负载低时不触发）
 
-**三个结构性发现**：① `!decision.Force` 守卫是**死分支**（force 的 Tier 恒为 `ceiling(4)`）——M1 红 0 处是**等价变异**；② `CompactBoundary.RecentHitRate` 与 `Advisor.RecentHitRate` 是**两个独立输入**；③ `MaxTokens≥1M` 走独立 LLM 阶梯。
+**真正的根因（探针实测确证）**，两条：
 
-#### 8. `1b3a552` session split 判定层（8 文件，+940/−3）
+1. **产品缺陷**：`internal/hooks/user_hooks.go` 的 `runOne` 最后一行是 `Output: strings.TrimSpace(out)`——超时时 `out` 是**空串**（脚本还没输出就被杀），而 `ErrTimeout`（`user_hooks.go:295`）**没写进 `Output`**。后果：调用方看到「hook 失败」但**不知道为什么**，无法区分「脚本不存在」「超时」「退出码非零」。
+   **探针证据**：把 `timeoutMs` 降到 1ms，产出 `Ok=false Output=""`——与全量失败的形态**逐字一致**。
+2. **测试缺陷**：执行真实脚本的测试**未声明超时**，依赖产品默认值 `DefaultTimeoutMs = 5000`（`user_hooks.go:74`）。`go test ./...` 并行时 CPU/IO 争抢 → 起 `sh` 进程变慢 → 撞超时。
 
-`internal/compact/sessionsplit.go`：`ShouldSessionSplit:82`（窗口 < 500K **优先于** ratio < 0.86）+ 最小 `BuildSessionHandoff:121`。**范围有意收窄**：执行层依赖当时 Go 侧全无的 task-state / trajectory / artifact store。
+**修法**：
+- 产品侧：`err != nil` 时把错误文本并入 `Output`（**保留已有 out**——非零退出码场景下脚本 stderr 是有效诊断信息）。
+- 测试侧：给执行真实脚本的测试显式声明 `timeoutMs:30000`（`user_hooks_test.go`）。**不改 `DefaultTimeoutMs`**——那是产品默认值，影响真实用户。
+- 新增 `go/internal/hooks/hook_timeout_test.go`（137 行）：`TestHookTimeoutReportsReason:40` / `TestHookNonZeroExitReportsReason:80` / `TestHookTimeoutDoesNotBlockForever:112`。
 
-**oracle 两处坑**：把非判定路径的数据混进 golden；记录时机错误（成功后历史已替换，首版记到 3098 而非判定时的 499000）。
+**验证**：RED 反证（修前 `TestHookTimeoutReportsReason` 红）；变异 M1 回退错误写入 → 红 1；全量 **×6 全绿**（修复前约 1/3 失败）；`-race` hooks 包绿；vet/gofmt 干净；无探针残留。
+**诚实标注**：M2 变异（去掉测试的 `timeoutMs` 回到 5s）3 次全量**未复现**——**弱证据**（原复现率约 1/3，3 次不中概率约 30%）。修复正当性不依赖 M2，基于已确证根因。
 
-#### 9. `222cbc4` 修复 session split 的悬空（3 文件，+177/−2）
+### 本会话新增文件全表（`git log --diff-filter=A e866fad8^..HEAD`）
 
-**上一刀漏报的真实缺口**：`TrySessionSplit` 落地时**没有生产调用方**——`type-without-consumer`（悬空代码），而当时的交付报告**没有指出**，还错误声称「已通过用户级行为验收」。
+```
+go/internal/agent/approval_skip_allow_wiring_test.go
+go/internal/agent/bash_allowlist_wiring_test.go
+go/internal/agent/bash_denylist_wiring_test.go
+go/internal/agent/evidence.go                      (237 行)
+go/internal/agent/evidence_test.go
+go/internal/agent/evidence_wiring_test.go
+go/internal/agent/permissions_bashallow.go         (246 行)
+go/internal/agent/permissions_bashallow_test.go
+go/internal/agent/permissions_shellsplit.go        (163 行)
+go/internal/agent/permissions_shellsplit_test.go
+go/internal/agent/self_preservation.go             (192 行)
+go/internal/agent/self_preservation_test.go
+go/internal/agent/selfkill_wiring_test.go
+go/internal/config/permissions_bash_test.go
+go/internal/hooks/hook_timeout_test.go             (137 行)
+go/internal/tools/gitscout.go                      (457 行)
+go/internal/tools/gitscout_test.go
+go/testdata/evidence/gen-oracle.ts + oracle.json
+go/testdata/selfkill/gen-oracle.ts + oracle.json
+go/testdata/shellsplit/gen-oracle.ts + oracle.json
+```
 
-**发现方式**：grep 消费方，确认 `loop.go` 只调 `MaybeCompact`——而 TS 的调用序是**先 split、再 maybeCompact**（`src/agent/compact-boundary-coordinator.ts:121,128`）。**修复**：接到 `maybeCompactAtBoundary` 内（当前 `loop.go:921`），置于 `MaybeCompact` **之前**（顺序有意义：split 的判定依据是历史占用）。
-
-**执行层未移植下的三点诚实处理**：不替换历史、发可见事件（文案含「执行层未移植」）、不阻断常规压缩。
-
-#### 10. `1bcd57b` task-state + trajectory + todo-deps（14 文件，+3522/−68）
-
-四个新文件（全部对账 TS 逐字）：
-- `internal/compact/trajectory.go` ← `src/agent/trajectory.ts`（`TrajectoryRecorder`）
-- `internal/prompt/tododeps.go` ← `src/tools/todo-deps.ts`（依赖检测/排序）
-- `internal/compact/taskstate.go` ← `src/agent/task-state.ts`（`ExtractTaskState`/`TaskStateFromTodos`）
-- `internal/compact/handoff.go` ← `buildStructuredHandoff`（**9 章节完整版**）
-
-**接线**：`loop.go:921` → `TrySessionSplit` → `compact_boundary.go:453` → `BuildSessionHandoffWithState` → `ExtractTaskState`/`TaskStateFromTodos` → `DetectDependencies`。`Loop.Trajectory` 在 `executeTool` 记录（**含失败**——失败轨迹是 handoff 错误章节的唯一来源）。
-
-**三条关键对账**：① **UTF-16 截断**（TS `slice(0,60)` 按 code unit，中文截 60 字符 vs Go 字节切的 20 字符；变异 M1 使测试红）；② **裸数字依赖提示词**（「基于 1」算边，「还剩 1 个测试」不算；变异 M2 使测试红）；③ oracle 改为 `{input, output}` 数据驱动（首版只存 output，Go 测试需手工重建输入——重建不一致即假绿）。
-
-#### 11. `11e0d3b` 修复 handoff 失败行（3 文件，+58/−4）
-
-**交付门禁的 YELLOW 提示「`inputSummary` 无读取方」不是噪音**。核实后确认 TS 的错误行是
-`- [Turn N] failed: <tool> <target>: <summary> (<errorClass>)`（`compaction-controller.ts:229,671`），首版漏了 `: <summary>` 段——**handoff 文本与 TS 不等价**（handoff 会进后续请求前缀）。
-
-#### 12. `1f3ae5a` artifact store（14 文件，+2392/−2）
-
-新包 `internal/artifact`（`types.go` / `store.go` / `threshold.go`），对账 TS `src/artifact/`。同时**消掉了 `context_collapse.go` 里「Go 侧当前无 artifact 生产端」的已记录欠账**。
-
-**三处接线**：L1 拦截（`loop.go:613` 的 `executeTool` 调 `interceptResultForArtifact`）；`read_section` 工具（`default_registry.go:40`）；CLI 装配（`main.go:202`）。
-
-**关键约束（TS 记录的真实事故）**：`l0WrappedTools`（read_file/read_section/grep/bash）**不得被 L1 重复包装**——否则无限嵌套（`[artifact:新ID] → read_section → ...`）＋ grep/bash 的**尾部**标记被漏检导致 double-save。Go 侧工具尚无 L0 包装，保留该集合是契约完整性。
-
-#### 13. `8a83f82` replaceWithCheckpoint（11 文件，+1125/−46）——**验收面转 met**
-
-新增 `internal/agent/checkpoint.go`；`session/listener.go` 的 `OnReplace` 从**「未实现占位」改为真的全量原子重写**（对账 `compactOai`）+ `persist.rewriteTranscript`（tmp + rename）。
-
-**核心语义**：① 锚保留（前 `CacheAnchorMessages`(2) 条逐字节不动）；② **尾随未消费 user 保护**（原文保留、不进归档）；③ 摘要角色（有尾随原文时用 assistant，防 volatileBlock 双份注入）；④ reclaim gate（不提交则不碰历史）；⑤ **审计行保留**（compact_start/end/model_switch 从不进内存，不保留会静默销毁审计轨迹）。
-
-**自 `1b3a552` 起一直 blocked 的验收面转 met**——`sessionsplit_e2e_test.go` 四条锁定。
-
-**行为变更影响了 4 条既有测试**（断言随之反转），其中 `TestListenerReplaceUnimplemented` 在首轮全量跑时**真的 panic 了**（旧断言假设 error handler 收到错误）。
-
-#### 14. `1e28b38` CheckpointDeps.Preflight（7 文件，+969/−1）
-
-`internal/context/writeevidence.go` + `resumepreflight.go`（对账 `src/context/`）。
-
-**与既有 `session.RepairOrphanToolCalls` 的区别（关键）**：后者**剔除**孤儿，本函数**拉回 + 合成**。TS 注释明确「id 存在性检查必要但不充分」——结果可能**存在**却位于中间的 user/assistant 之后，有匹配 id 但**邻接**破坏。
-
-**本刀发现的真实 bug（非本刀引入）**：`session.NormalizeOaiMessage` 的条件是 `m.ToolCalls == nil`——**漏掉了从 JSON 读回的空数组**。探针实测：`json.Unmarshal` 对 `"tool_calls": []` 产出**非 nil 空切片**（`nil=false len=0`），而那恰恰是该函数存在的理由。已修，并让 `sameMessages` 把 nil vs 空切片差异算作「不同」。
-
-#### 15. `f1705eb` CheckpointDeps.ArchiveDiscarded（7 文件，+1012）
-
-`internal/context/compactarchive.go` + `recallmarker.go` + `archiveassembly.go`。
-
-**序列化契约（必须稳定——read_section 按行定位）**：每条消息用固定 divider `--- turn:N role:ROLE ---`；**sections 按消息切分**（不是按轮）——单条 assistant 可跨几十行、单条 tool 结果可几万字符。turn 从 0 起、每条 user 递增一次。
-
-**recall-eviction**：被召回的 compact-history 块若原样重新归档会让内容在 artifact 间**重复累积**（抵消压缩）——折叠为一行指针。
-
-**fail-soft 四条早退**（对账 TS「compaction must never be blocked by archival」）。
-
-#### 16. `516a226` read_section 的 compact-history 流式分支（3 文件，+313）
-
-在 **2MB 守卫之前**插入快速路径（`readsection.go:210-242`）：只对行范围生效、走 `ReadLineRange` 流式、前置 `[recalled <id> <section>]` 标记。**顺序是关键**——长线程归档常超上限，会让归档自己的目录项无法召回（「存得下、取不回」）。
-
-**依赖方向**：新引入 `tools → context`（无环），以 `ctxstore` 别名导入。
-
----
-
-### 验证基线（当日末次真实工具输出）
+### 验证基线（本会话末次**真实工具输出**）
 
 | 命令 | 结果 |
-|------|------|
-| `go build ./...` | exit=0 |
-| `go vet ./...` | exit=0 |
-| `gofmt -l .` | 零违规 |
-| `go test ./... -count=1`（连跑 3 次） | **22 包 ok、0 FAIL**（`go list ./...` 报 23 个包，含无测试的） |
-| 探针残留检查（`find internal -name 'zz_*' -o -name '*_dbg*'`） | 零残留 |
+|---|---|
+| `cd go && go test ./... -count=1` | **26 包 ok、0 FAIL**（`go list ./...` = 27 包，含无测试的） |
+| `cd go && go vet ./...` | exit=0 |
+| `cd go && gofmt -l .` | 零违规 |
+| `cd go && go test -race ./internal/hooks/ -count=1` | ok（7.6s） |
+| 工作树 `git status --short` | **clean** |
+| 探针残留 `find . -name 'zz_probe*'` | 0 |
 
-工作区状态：干净，仅 `.rivet/skills/` 为 untracked（非本会话产物）。
-
-**注意**：`package-lock.json` 曾因 `npm install` 变动（3.19.0→3.21.1），**未纳入任何提交**。
-
-**变异反证总表**（每条都实测让对应测试变红）：M1（字节截断/M4 尾随user保护/M5 审计行/M6 漏检缺失结果/M7 丢弃而非拉回/M8 turn递增/M9 recall-eviction/M10 流式分支/M11 召回标记）。
+**⚠ 已知未复现的失败**：本会话早期曾见 `-race` 3 FAIL，**之后多次重跑未复现，归因未知**。若下个会话遇到，从头查。
 
 ---
 
 ## 当前卡点
 
-### 卡点 1：~~session split 执行层未移植~~ → **已全部解决**
+### 卡点 1：`evidenceTracker` 的读取端零消费（TDD gate 拦截未做）
 
-原卡点（判定层完成但无法替换历史）已由第 10–16 刀**完整闭环**：
+- **状态**：追踪与派生**已就位**（`evidence.go` 全部函数 + 写入端接线），**读取端零生产消费**。
+- **已排除**：不是「忘了接线」——`loop.go:196` 注释**显式披露**「无 gate 拦截消费方，拦截是独立的一刀」。这是**有意的范围切分**。
+- **待做**：TDD gate 的**拦截**——在 `loop.go` 的 `executeTool`（或合适的门链位置）读 `HasVerificationDebt()`（阈值 3，见 `evidence.go:212`），对「连续 3 次未验证的代码编辑」施加约束。
+- **不确定项**：拦截的**具体动作**（拒绝？警告？注入提示？）——需对账 TS 侧 `src/agent/` 的 TDD gate 实现。**未知**，开工前先 grep TS。
 
-```
-判定（1b3a552）→ 前置：task-state/trajectory（1bcd57b）+ artifact store（1f3ae5a）
-→ 执行：replaceWithCheckpoint（8a83f82）→ 增强：preflight（1e28b38）+ archive（f1705eb）
-→ 召回：read_section 流式分支（516a226）
-```
+### 卡点 2：`registry.go` 前置③（写工具 `RequiresApproval` 语义订正）仍未做
 
-**这条主线的验收面已 met**（`sessionsplit_e2e_test.go`：历史真的变短、锚逐字节保留、handoff 内容就位、落盘生效）。
+- **位置**：`go/internal/tools/registry.go:368-385` 的注释块，③ 标 ❌ **仍未做**。
+- **问题**：`NeedsApproval`（`registry.go:381`）与 `decideApprovalGate` **各判一次档位**（重复判定）。4 处写工具的 `RequiresApproval` 仍是 `ApprovalMode != skip` 形态，与 TS 的 `() => true` + pipeline 中和**不等价**。
+- **性质**：**行为当前正确**（两处都处理 skip），是**结构性隐患**，非当前缺陷。
 
-### 卡点 2：`CheckpointDeps` 最后一个增强未接
+### 卡点 3：状态表剩余 ⚠️ 项（均判定不做，除非需求出现）
 
-- **`TaskAnchor`** ← 需 `getActiveContract` + `renderTaskAnchor`（两个小模块，未移植）
+| 项 | 称量结论 |
+|---|---|
+| `protectionMode` | 接线后行为不变 → 不做（`d2246fc8`） |
+| `canAutoApprove` | 256 组穷举 0 差异，**完全冗余** → 不做 |
+| `unconditionalApproval` | 需先移植 `request_path_access` / `computer_use`，而 Go CLI 无该场景 → 不做 |
+| sensorium 链 | 两个直接消费者一个冗余、一个无消费者 → 不做 |
 
-它让压缩后的历史带一份权威任务契约（objective/constraints/success），防止摘要漂移后模型失去目标锚。**这是当前最高优先级**——`CheckpointDeps` 三个字段里唯一未接的。
+### 卡点 4：`go/HANDOFF.md` 未记录第六十一刀起
 
-### 卡点 3：其余未接线模块（详见 `go/PLAN.md` 架构欠账）
-
-- **LLM 重写路径**（partial-llm / full-llm / checkpoint）——需 `summaryClient` 抽象（真实 API 调用）
-- **`resolveCompactionEconomics` 装配层**——依赖 `classifyCostModel` + provider cache defaults
-- **`Advisor.onTurnEnd`**——喂 behaviorLearner / ghostRegistry / recallMetrics
-- **`summarize.go`**（`src/artifact/summarize.ts`，407 行）——按扩展名提取 sections。**当前保存时 `sections` 恒为空**（对账 TS 的实际调用 `tool-pipeline.ts:607` 也传 `[]`），只影响 read_section 的片段名提示质量
-- **read_section 的 `file_path` 分支**——依赖 `getFileReadMtime`（陈旧性告警）与 `computeModelReadCap`（按窗口/提供商算读上限）。**当前 `readSectionMaxChars` 用 `ToolArtifactThreshold("read_file", ...)` 近似**——这是已知偏差
-- **`promptEngine.resetAppendixBaseline`**、**`recordCompactEvent`**
+本会话 20 个提交**没有写入** `go/HANDOFF.md`（该文件停在第六十刀）。**本文档即是那段的记录**。
 
 ---
 
@@ -205,26 +232,23 @@
 
 按优先级排列，每条可立即执行：
 
-1. **移植 `TaskAnchor`**（卡点 2，当前最高优先级）
+1. **TDD gate 拦截**（卡点 1，当前最高优先级）
    ```
-   grep -n 'getActiveContract\|renderTaskAnchor' /d/code/Tianshu-harness/src/ -r
+   cd /Users/moweilong/Workspace/go/src/github.com/kalandramo/Tianshu-harness
+   grep -rn "hasVerificationDebt\|verificationDebt\|TDD gate\|editsSinceLastTest" src/agent/ | head -20
    ```
-   先定位 TS 侧这两个函数的实现与契约来源（`ActiveContract` 的 objective/constraints/success 从哪来），再决定 Go 侧最小移植面。完成后接到 `main.go` 的 `loop.CheckpointDeps.TaskAnchor`。
+   先定位 TS 侧拦截的**动作与阈值**，再在 `go/internal/agent/loop.go` 的门链（`loop.go:867-1063` 那一段）接入。判据：新增测试能打红「无拦截」的实现。
 
-2. **`summarize.go`**（artifact sections 提取）
-   对账 `src/artifact/summarize.ts`（407 行，按 ts/py/rs 等扩展名分派）。它只影响 read_section 的片段名质量，不影响召回功能——**可独立做**。
+2. **`registry.go` 前置③**（卡点 2）
+   对账 TS 的 `() => true` + pipeline 中和语义，订正 4 处写工具的 `RequiresApproval`。消除重复判定。
 
-3. **`computeModelReadCap` + `getFileReadMtime`** → 补 read_section 的 `file_path` 分支
-   同时消掉 `readSectionMaxChars` 的已知近似偏差。
+3. **工具缺口**（`go/HANDOFF.md:6958`「建议的第一刀」）
+   `related_tests` + `leave_mark`——两个都是**浅依赖**（纯文件名 glob 推导 / 写标记文件，`filediff`+`pathsafe` 已具备），可一轮做完、产出可独立验证。
+   注意：`go/HANDOFF.md:6958` 之后的内容有**过期修正轨迹**，读时要看「修正后」段落。
 
-4. **`resolveCompactionEconomics` 装配层**
-   依赖 `classifyCostModel` + provider cache defaults，先定位 TS 侧实现在 `src/compact/` 下的位置。
+4. **若要继续认知状态线**：从 `turn-intent` **反向切入**（它是唯一有明确外部价值的节点——给用户方向提示），而非从 sensorium 这个中间层开始造。见 `approval_gate.go` 状态表 E 节。
 
-5. **`Advisor.onTurnEnd`**
-   喂 behaviorLearner / ghostRegistry / recallMetrics——先确认这三个消费者在 Go 侧的移植状态。
-
-6. **LLM 重写路径**（最后做）
-   需 `summaryClient` 抽象 + 真实 API 调用。建议先做一个可注入的 fake client 完成结构移植，真实调用留到有 API key 的环境。
+5. **把本会话 20 刀写入 `go/HANDOFF.md`**（补第六十一刀起）——保持「每刀一个专章」的既有格式。
 
 ---
 
@@ -232,19 +256,34 @@
 
 **绝对不要再踩**——每条一句话说清后果：
 
-1. **手拼 JSON 字符串嵌 Windows 路径 → `\U` 非法转义，JSON 解析失败**。21 处已改用 `json.Marshal`；新增夹具一律走它。
-2. **`cmd.Wait()` 在孙进程继承管道写端时会阻塞到 EOF → 超时形同虚设**（设 500ms 实测卡 19–20s）。杀进程后必须设 `cmd.WaitDelay`。
+### 本会话新增（第十六条起）
+
+16. **批量 sed 替换测试文件会破坏测试意图**——`TestDefaultTimeoutAppliesWhenUnset` 的注释明写「不设 timeoutMs 走默认 5000」，我批量加了 30000 导致它等满 30s 而红。**改测试前逐个看注释里的意图声明**。
+17. **hook 超时的 `Output` 曾是空串**（`strings.TrimSpace(out)` 吞掉 `ErrTimeout`）——调用方无法区分失败类型。**任何「失败但 Output 为空」的路径都是缺陷**。
+18. **用 `git checkout` 恢复变异测试会丢掉本轮全部修改**——项目规则明令禁止。**改副本文件做变异**（`cp 源 副本` → 改副本 → 测 → 恢复）。
+19. **并发负载下 `DefaultTimeoutMs = 5000` 对「起 sh 进程的 hook 脚本」太紧**——`go test ./...` 并行时撞超时（复现率约 1/3）。**超时的指纹是耗时 ≈ 超时值**（5.01s）。
+20. **全量失败归因别急着赖「环境污染」**——先看**耗时指纹**与**探针形态**（把超时压到 1ms 复现失败形态，逐字比对）。我上一轮就是误判为 trust 污染。
+21. **既有 `approvalrisk/oracle.json` 含平台相关段（Windows 基准）**——在 macOS 上**不可重现**，**不要盲目重跑**。
+22. **`session.RecordVerification` 是「同 target 替换」语义**，TS 的 `verifications` 是**追加数组**——直接用会得 1 而非 oracle 期望的 2。**移植前先读语义，别只看签名**。
+23. **`observeToolResult` 开头 `if res.IsError { return }` 会挡住 `run_tests` 的失败**（`IsError: exitCode != 0`）——`hasFailedTests` 曾恒 false。**早退守卫要排除「失败也是有效信号」的工具**。
+24. **探针必须清理**——本会话用过 `.rivet/scratch/` 与 `zz_probe_*`，交付前 `find . -name 'zz_probe*'` 应返回 0。
+25. **「字段/函数存在但零调用者」是本仓库的高频缺陷模式**——`NeedsApproval`、`PermissionConfig.bash`、`TrySessionSplit` 都栽过。**落地新符号后必须 grep 消费方**；反之，声称「已有某能力」前也要 grep 调用点。
+
+### 前序会话的坑（**仍然有效**，Windows 可移植性相关）
+
+1. **手拼 JSON 字符串嵌 Windows 路径 → `\U` 非法转义，JSON 解析失败**。夹具一律走 `json.Marshal`。
+2. **`cmd.Wait()` 在孙进程继承管道写端时会阻塞到 EOF → 超时形同虚设**（设 500ms 实测卡 19–20s）。必须设 `cmd.WaitDelay`。
 3. **Go `filepath.IsAbs("/etc/passwd")=false` 而 Node `path.win32.isAbsolute`=true → 根相对路径被静默重基进工作区（fail-open 安全洞）**。路径校验必须复刻 Node 语义。
 4. **Git Bash 的 `uname` 输出与 Node `os` 模块不一致 → 进冻结前缀的那行字节不等价 → 前缀缓存命中率崩掉**。`<environment>` 行必须走 Win32 API。
-5. **Go 自动引号只在含空白时触发 → 不含空白的 `& | ( ^ %` 全裸露**；且**引号挡不住 `%`**。Windows 命令行参数必须自己 quote。
+5. **Go 自动引号只在含空白时触发 → 不含空白的 `& | ( ^ %` 全裸露**；且**引号挡不住 `%`**。
 6. **本机代码页 936（GBK）→ 直读控制台输出乱码**。必须流式解码；`transform.Bytes` 每次重置状态（要持有 `Transformer`）。
-7. **TS 的 `String.slice` 按 UTF-16 code unit 计数**——中文场景字节切会截半字符（60 字符 vs 20 字符）。Go 移植必须用 UTF-16 语义。
-8. **Go 的 `json.Unmarshal` 对 `"x": []` 产出非 nil 空切片**（`nil=false len=0`）——判空数组必须用 `len()==0` 且区分 nil，否则漏掉从文件读回的形态（`NormalizeOaiMessage` 曾因此失效）。
-9. **「红 0 处」有四种成因**，别急着宣布「等价」：①等价变异（如 `!decision.Force` 死分支）②真测试缺口 ③**编译失败伪装**（去掉 import 使用后 build failed）④用例集取值点密度不足。
-10. **变异反证必须核实变异真的落地**——M11 首版用 python 脚本替换时**静默未生效**，测试没红一度被误判为「测试有漏洞」。改用 edit_file 后正常变红。
+7. **TS 的 `String.slice` 按 UTF-16 code unit 计数**——中文场景字节切会截半字符。
+8. **Go 的 `json.Unmarshal` 对 `"x": []` 产出非 nil 空切片**（`nil=false len=0`）——判空数组必须用 `len()==0` 且区分 nil。
+9. **「红 0 处」有四种成因**，别急着宣布「等价」：①等价变异 ②真测试缺口 ③**编译失败伪装** ④用例集取值点密度不足。
+10. **变异反证必须核实变异真的落地**——python 脚本替换可能**静默未生效**。改用 `edit_file`。
 11. **断言「不该发生 X」的测试必须验证 X 的可达性**——否则只是恒真断言。
 12. **落地新导出符号后必须 grep 消费方**——`TrySessionSplit` 首版是悬空代码，交付报告漏报还错误声称已验收。
-13. **实现落地会让「未移植占位」的断言与事实相反**——这类测试必须随之反转或删除，否则会 panic 或假红（`TestListenerReplaceUnimplemented` 首轮全量跑时真的 panic）。
+13. **实现落地会让「未移植占位」的断言与事实相反**——这类测试必须随之反转或删除，否则 panic 或假红。
 14. **交付门禁的「字段无读取方」YELLOW 提示可能是真缺陷**——`ResultSummary` 无消费方暴露了 handoff 失败行漏 summary 段。
 15. **`npm install` 会改 `package-lock.json`（3.19.0→3.21.1）→ 不要把它卷进 Go 相关提交**。
 
@@ -252,24 +291,23 @@
 
 ## 环境事实（供下个会话核对）
 
-- 平台：Windows 10.0.26200
-- Shell：Git Bash（POSIX）
+- 平台：macOS（Darwin 25.6.0）
+- 仓库根：`/Users/moweilong/Workspace/go/src/github.com/kalandramo/Tianshu-harness`
+- Go module：`github.com/kalandramo/tianshu/go`（`go/` 子目录）
 - Node：24.18.0（`package.json` engines 声明 >=24）
-- Go：1.27
-- 代码页：936（GBK）
-- Go module：`github.com/kalandramo/tianshu/go`
-- 仓库双 remote：`origin`（私有镜像）、`tianshu`（公开仓库，**绝不直接 push**——历史不同步会被拒）
-- 分支：`go-runtime`
-- 当前 HEAD：`516a226`
-- `go/internal/` 包列表：agent api apierr artifact cache client compact context contract filediff pathsafe platform prompt recovery retry session syntaxcheck tools trust
+- 分支：`go-runtime` · HEAD：`c7f91de8` · 工作树 clean
+- 仓库双 remote：`origin`（私有镜像）、`tianshu`（公开仓库，**绝不直接 push**——历史不同步会被拒；正确流程见项目 `AGENTS.md` 的 `scripts/sync-to-public.sh`）
+- `go/internal/` 包列表（27 个，`go list ./...`）：agent api apierr artifact cache client compact config context contract filediff hooks pathsafe platform prompt recovery retry session syntaxcheck tools trust …
+- **测试命令**：`cd go && go test ./... -count=1`（本会话基线 26 包 ok / 0 FAIL）
 
 ---
 
 ## 权威文档索引（按需下钻）
 
 | 想了解 | 读 |
-|--------|-----|
-| 每刀的完整技术细节 | `go/HANDOFF.md`（1906 行，每刀一个专章） |
+|---|---|
+| 每刀的完整技术细节（第一..六十刀） | `go/HANDOFF.md`（**7018 行**，每刀一个专章） |
 | 架构欠账清单 | `go/PLAN.md` |
-| session split 主线 | `go/HANDOFF.md` 的「replaceWithCheckpoint」「artifact store」「Preflight」「ArchiveDiscarded」「read_section 流式分支」五章 |
-| Windows 可移植性 | `go/HANDOFF.md` 前五刀 + 本文「坑」1–6 |
+| 审批门的状态表与称量结论 | `go/internal/agent/approval_gate.go` 的 A/B/B'/C/D/E 节（`approval_gate.go:34,108,151,180,204,232`） |
+| 本会话的 20 刀 | 本文档 + `git log e866fad8^..c7f91de8` |
+| Windows 可移植性的完整记录 | 本文档「坑」1–15 + `go/HANDOFF.md` 前五刀 |
