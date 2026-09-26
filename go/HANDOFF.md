@@ -6955,6 +6955,175 @@ terseness、planmode 判定层，多数处于「已实现待接线」状态）�
 **动手前必须 grep 核实依赖**——连续十一刀的估价全部被证伪或偏轻。
 
 
+## 第六十一刀起：审批门接线 / 认知状态称量 / TDD gate（2026-09-25 ~ 09-26）
+
+> **本段由 macOS 会话回填**（HEAD `59c970e6`，2026-09-26）。
+>
+> **本文档的三段来源**（按提交日期核实，非推测）：
+> 1. 第一..三十刀——**macOS 会话**（`go/HANDOFF.md:119` 自述「此前所有开发在 macOS 上完成」）
+> 2. Windows 可移植性修复——**Windows 会话**（2026-09-20，`6ac0a49` 等）
+> 3. 第三十一..六十刀——**macOS 会话**（`203bfc55` 09-22 起，`550a153e` 09-24 止）
+> 4. **本段（第六十一刀起）——macOS 会话**（`e866fad8` 09-25 起，`59c970e6` 09-26 止）
+>
+> **编号说明（重要）**：本段**共 23 个提交**，但**无法可靠地逐刀编号**——
+> 提交信息里的「第N刀」多为**引用前序刀**而非自指。例：`9cbf5707`
+> （allowlist 接线）提到「第六十五刀」是指它引用的 **deny 侧**（`6d70f6e0`），
+> 不是它自己。**明确自指的只有 3 个**：`abcfc8a7`（第七十二刀）、
+> `59c970e6`（第七十三刀）、`bcc86951`（自称修「第六十三刀引入的回归」）。
+>
+> 故本段**以提交哈希为主锚点**，标题的「第六十一刀起」只是标明接续位置，
+> **不表示有 13 刀**。
+
+**本段共 23 个提交**（`6c6904e9`..`59c970e6`，全部在 `go/` 下）。
+
+### 起点：修测试基线（非 Windows 上 30 红）
+
+| 提交 | 内容 |
+|---|---|
+| `e866fad8` | rawstore grant 路径符号链接规范化——修 macOS 授权静默失效（`/var`→`/private/var`） |
+| `aa53e594` | 修测试基线的 6 族 Windows 平台假设——非 Windows 上从 **30 红到全绿** |
+| `53c4436e` | `ShellKind` 注入化——`DetectShellKind` 偷读 `runtime.GOOS` 使 win32 渲染不可测 |
+| `da228164` | 解除纯函数 win32 语义测试的不必要门控（**门控是覆盖损失**）+ 闭合两处审查缺口 |
+| `00decb97` | 移植 `git_scout`（工具集 **21 → 22**）——`internal/tools/gitscout.go`（457 行） |
+
+### 主线一：审批门接线（修 5 处 fail-open）
+
+**共性根因**：TS 侧有的门，Go 侧「字段/函数存在但**零调用者**」→ 静默 fail-open。
+
+| 提交 | 修的缺口 |
+|---|---|
+| `1c500373` | **档位审批门**——`Registry.NeedsApproval` 零调用者 → 4 个写工具在 `manual` 档**静默执行** |
+| `b94bf8ce` | **bash 写命令门**——manual 档下 `mkdir`/`cp`/重定向静默执行 |
+| `bcc86951` | 修**上一刀引入的回归**（skip 档下 bash 写命令全被拦 → headless 死锁）+ allowlist 全工具面 |
+| `6d70f6e0` | `permissions.bash.denylist`——`PermissionConfig` **连 `bash` 字段都没有** → 用户 denylist 被 `json.Unmarshal` 静默丢弃 |
+| `9cbf5707` | `permissions.bash.allowlist`——`segmentMatchesAllowEntry` 有 **5 道 fail-closed 守卫** |
+| `97b6e67a` | **selfKill 自身进程树保护**——`internal/agent/self_preservation.go`（192 行） |
+
+**三处关键实测发现**（都是「首版想当然」被推翻）：
+
+1. **`auto-safe` 档必须用 `isHighRisk` 而非 `needsApproval`**（`1c500373` 首版实测即错）——否则 `write_file` 在 auto-safe 下不可用。
+2. **硬闸门与本门命令集只有部分交集**（`b94bf8ce` 修正）——`mkdir` **不在** `isDestructiveCommand` 内，故硬闸门**不能**覆盖 bash 写门。
+3. **agent 就是 bash 命令的直接父进程**（`97b6e67a` 实测进程树 `SELF=72921 PPID=72918`，`72918 COMM=/tmp/ts-probe`）——`kill <该 pid>` 杀 agent 自己。
+
+**已知盲区（诚实标注，非移植缺陷）**：`kill $PPID` / `$(echo 1000)` **不拦**——静态字符串分析无法求值（**TS 侧实测同样全 false**）。
+
+**称量修正**（`75112524`）：selfKill 的镜像名类不是「不适用」而是「**收益低**」——Go 确有 `pkill tianshu` 对应物，只是无该习惯性动机。
+
+### 主线二：认知状态子系统——三次称量，**均判定「不该做」**
+
+产出是**否决**（记录在 `internal/agent/approval_gate.go` 状态表 D/E 节）。
+
+| 提交 | 称量结论 |
+|---|---|
+| `d2246fc8` | **protectionMode**——接线后**行为完全不变**，故不做。破坏性 git 已在 `destructivePatterns`（硬闸门任何档位都拦）；次要产出（`Level`→`Medium`）无人消费；doom-loop 终止已有 `wedge_guard.go` |
+| `62b2d345` | **pressureResult 链**——`compact.PressureMonitor` **已完整实现但零实例化**；其独立消费者 `turn-intent` Go 侧不存在。**顺带实测 `canAutoApprove` 完全冗余**——256 组穷举 0 差异 |
+| `1b9c8ed8` | **TDD gate 编辑计数**（唯一实际落地的子系统件）——见下 |
+
+**`1b9c8ed8` 的两处修正**：
+
+- **任务定义修正**：Go 侧**已有** `TrackFileModified`/`RecordVerification`（`observeToolResult` 已接线），缺的只是 `editsSinceLastTest`（相对计数，验证即归零）。故 tracker 为**薄计数器**，避免双重真相源。
+- **修的既有缺陷**：`observeToolResult` 开头 `if res.IsError { return }`，但 `run_tests` 失败时 `IsError: exitCode != 0` → 早退把失败验证挡住 → `hasFailedTests` **恒 false**。修法：早退排除 `run_tests`。
+- **实测踩坑**：`session.RecordVerification` 是**同 target 替换**语义，TS 的 `verifications` 是**追加数组**（oracle `two-verifies` 期望 2、替换语义得 1）→ tracker 自持追加计数。
+
+### 主线三：状态表对账（4 个 docs 提交）
+
+`1ed6ef11` 修 6 处过期声称 + `registry.go` 3 处 + **1 处我自己的事实错误**（`loop.go` 把「Go 实际顺序」写成「TS 顺序」）。
+`e4a29ae7` **自我纠错**：上一刀刚立「不写行号」规矩，同刀内又写了失效锚点（`pathGrant 988→997`）。5 处漂移、3 处准确，**全部改函数名引用**。
+`51a9563c` 回答「是否已完善」= **否**，补 4 处缺口（B' 节 `permissionsOverlay` 来源缺失、C 节 `shouldAsk` 之后两段漏列、`yoloBypassesUnconditional`、行号不准确）。
+`0be170c1` 补全状态表——补漏列的守卫分支 + 修正 3 行过期/不精确状态。
+
+### 主线四：hooks 隔离缺陷（`c7f91de8`）
+
+**症状**：`go test ./...` 时 `internal/hooks` 间歇 FAIL（约 1/3）。
+
+**首次归因错误（记录修正）**：曾判为「全局 trust 文件污染」。核实后**否定**——`t.Setenv` 包内串行安全、全量跑是每包独立进程、失败耗时 **5.01s** 是 `DefaultTimeoutMs` 的**指纹**、单包连跑 18 次全绿。
+
+**真正的根因（探针实测确证）**，两条：
+
+1. **产品缺陷**：`runOne` 最后一行 `Output: strings.TrimSpace(out)`——超时时 `out` 是**空串**，而 `ErrTimeout`（`user_hooks.go:295`）**没写进 `Output`**。探针证据：把超时降到 1ms，产出 `Ok=false Output=""`，与全量失败形态**逐字一致**。
+2. **测试缺陷**：执行真实脚本的测试未声明超时，依赖产品默认值 5s。
+
+**修法**：产品侧把错误文本并入 `Output`（保留已有 out）；测试侧显式声明 `timeoutMs:30000`。**不改 `DefaultTimeoutMs`**（产品默认值，影响真实用户）。
+
+**验证**：RED 反证 + 变异 M1 红 1 + 全量 **×6 全绿**（修复前约 1/3 失败）。
+
+### 主线五：TDD gate（第七十二、七十三刀）
+
+| 提交 | 内容 |
+|---|---|
+| `abcfc8a7` | **接线 TDD gate**（第七十二刀）——修「追踪有、拦截无」 |
+| `6ca114da` | 修正 oracle 生成器输出 + 纠正提交信息里的用例数错误 |
+| `59c970e6` | **补 suggest 提示通道**（第七十三刀）——推翻「需要 immune 通道」的误判 |
+
+**`abcfc8a7`（第七十二刀）**：
+
+- 新增 `internal/agent/tddgate.go`（249 行）：`EvaluateTddGate` 纯决策函数（8 分支顺序敏感）+ `parseTddGateEnv` + `editTools` + `isTddTestFile`，4 段文案逐字对账。
+- **oracle 逐值对账**：`testdata/tddgate/`（**33 用例**，allow 13 / suggest 10 / block 10），从 TS 真实执行生成。
+- **接线**：`loop.go` 门链末尾（bash 写门之后）+ `cmd/tianshu/main.go` 装配层填 `RIVET_TDD_GATE`。
+- **oracle 当场抓到手写必错的差异**：`src/foo_test.go` 在 enforce 下是 **block** 而非 suggest——`tdd-gate.ts` 的 `isTestFile`（只认 `.test.`/`.spec.`/`__tests__`）与 `evidence.go` 的 `testFileRe`（含 `_test.`/`test_`）是**两个不同正则**。
+
+**`59c970e6`（第七十三刀）——推翻上一刀的误判**：
+
+上一刀我写「suggest 需要 immune/advisory 通道」。**核实后推翻**——TS 的 `tddSuggestNote` **根本不走 immune 通道**，而是**追加到工具结果 content 尾部**（`tool-pipeline.ts:1748-1750`）：
+
+```ts
+if (tddSuggestNote && !harnessResult.isError) {
+  finalContent = `${finalContent}\n\n[TDD] ${tddSuggestNote}`
+}
+```
+
+immune 通道只属于**另一个**函数 `buildTddGateHint`（每轮边界主动提示）。两者**互补，不是同一件事**。
+
+**实现要点**（4 处精确对账）：
+- 附注区域：`suggest && message && (hasFailedTests || edits >= threshold)`——**只在「enforce 会拦」的区域贴**，探索窗口与测试文件 RED 步骤保持安静
+- 只在成功时贴（`!isError`）
+- 格式 `${content}\n\n[TDD] ${note}`
+- 时机在 `recordTrajectory`/`observeToolResult` **之后**——内部记录用原始 content
+- 用**编辑前**的 gateState（对账 TS 在 `:891` 取快照）
+
+**缓存友好**：追加在尾部 = 对话历史末尾 → **冻结前缀不变**。
+
+**未移植（有意）**：`checkTddGate`（任务起步提示）与 `buildTddGateHint`（每轮边界提示）——走 `ImmuneContextHint` → `formatImmuneContext`，Go 侧该通道不存在。
+
+### 本段验证基线（`59c970e6` 末次真实输出）
+
+| 命令 | 结果 |
+|---|---|
+| `cd go && go test ./... -count=1` | **26 包 ok、0 FAIL**（`go list ./...` = 27 包） |
+| `cd go && go vet ./...` | exit=0 |
+| `cd go && gofmt -l .` | 零违规 |
+| `cd go && go test -race ./internal/agent/ -count=1` | ok |
+| 探针残留 `find . -name 'zz_probe*'` | 0 |
+| 工作树 | clean |
+
+**本段新增 35 个文件**（`git diff --diff-filter=A 6c6904e9..HEAD -- go/`）：5 个 oracle 数据集（evidence / selfkill / shellsplit / tddgate）、9 个 `internal/agent` 生产文件 + 测试、`gitscout.go`、`tddgate_e2e_test.go` 等。**注册工具数 23**（`grep -c 'r.Register(' internal/tools/default_registry.go`）。
+
+### ★ 本段的关键教训（13 条，自包含）
+
+> **编号说明**：本文档（`go/HANDOFF.md`）各刀章节里的「本刀踩到的坑」是**分散**的，
+> 没有独立的编号坑清单。下面 13 条是本段自己的清单，编号 16–28 只是**承接
+> `.rivet/HANDOFF.md` 的「## 坑」1–15 的序号空间**，避免与那 15 条撞号。
+>
+> **两处编号不严格对应**（实测核对）：`.rivet/HANDOFF.md` 的坑清单只到 **25 号**
+> （16–25，写于本会话前半段），其 24/25 是「探针必须清理」「零调用者模式」；
+> 而本段 24–27 是 TDD gate 两刀（第七十二、七十三刀）的产物，
+> **`.rivet/HANDOFF.md` 未收录**。**本段 16–28 自包含**，不依赖另一份文档。
+
+16. **批量替换测试文件会破坏测试意图**——`TestDefaultTimeoutAppliesWhenUnset` 注释明写「不设 timeoutMs 走默认 5000」，批量加 30000 导致它等满 30s 而红。**改测试前逐个看注释里的意图声明**。
+17. **hook 超时的 `Output` 曾是空串**（`strings.TrimSpace(out)` 吞掉 `ErrTimeout`）——调用方无法区分失败类型。**任何「失败但 Output 为空」的路径都是缺陷**。
+18. **用 `git checkout` 恢复变异测试会丢掉本轮全部修改**——项目规则明令禁止。**改副本文件做变异**。
+19. **并发负载下 `DefaultTimeoutMs = 5000` 对「起 sh 进程的 hook 脚本」太紧**——超时的**指纹是耗时 ≈ 超时值**（5.01s）。
+20. **全量失败归因别急着赖「环境污染」**——先看**耗时指纹**与**探针形态**。
+21. **既有 `approvalrisk/oracle.json` 含平台相关段（Windows 基准）**——在 macOS 上**不可重现**，**不要盲目重跑**。
+22. **`session.RecordVerification` 是「同 target 替换」语义**，TS 的 `verifications` 是**追加数组**——直接用会得 1 而非 oracle 期望的 2。
+23. **`observeToolResult` 开头 `if res.IsError { return }` 会挡住 `run_tests` 的失败**——`hasFailedTests` 曾恒 false。
+24. **断言「拦截生效」必须断言命中的具体文案**——空 registry 下放行也返回 `IsError=true`（「工具未找到」），移除接线测试照样绿。
+25. **负面用例（断言「不该发生 X」）必须带阳性对照**——否则接线被移除时该断言恒真。
+26. **内核读 `os.Getenv` 会让「装配层漏填」不可测**——e2e 设了子进程 env 后内核仍生效，变异反证红 0。配置应经 `Config` 注入（装配层读 env），内核只收原始值。
+27. **变异反证前必须核实「变异落地且编译通过」**——删掉代码块会让局部变量「声明未使用」→ build failed → `grep -c '^--- FAIL'` 返回 0（测试根本没跑）→ 误判为「红 0 处=覆盖缺口」。用 `_ = 变量` 保留声明。
+28. **「字段/函数存在但零调用者」是本仓库的高频缺陷模式**——`NeedsApproval`、`PermissionConfig.bash`、`TrySessionSplit`、`EvidenceStateFromSession` 都栽过。落地新符号后必须 grep 消费方。
+
+
 ## 建议的第一刀
 
 **（2026-09-22 修正：本节原建议「接 `internal/session`」——该断言已过期，
