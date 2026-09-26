@@ -129,11 +129,9 @@
 //	                                                          独立输入**，故列出
 //	protectionMode            doomLoop + destructiveGit      ❌ 无 doom-loop 会话态
 //	                                                          （`DoomLoop` 零生产文件）
-//	                                                          **且需先判定收益**：它防
-//	                                                          「doom-loop 期间破坏性 git
-//	                                                          操作」——Go 侧破坏性 git
-//	                                                          已由硬闸门拦（任何档位），
-//	                                                          故增量收益可能很小
+//	                                                          **第六十九刀称量：
+//	                                                          接线后行为不变，故不做**
+//	                                                          ——见下「protectionMode 称量」
 //	allowlisted               isToolAllowed(allowRules)      ✅ 第六十四刀接线
 //	                                                          （档位门内豁免，全工具面）
 //	                                                          注：`bashWriteNeedsApproval`
@@ -189,7 +187,6 @@
 //	                          自动放行 5 个写工具
 //
 // **headless override 的差异是设计选择，不是缺口**：
-//
 //   - TS 在 `deps.config.headless` 下对 `HEADLESS_AUTO_APPROVE_WRITE_TOOLS`
 //     （`edit_file`/`write_file`/`hash_edit`/`apply_patch`/`ast_edit`）
 //     **自动放行**——因为 sidecar/worker 场景无人可答，挂起会耗尽 turn 预算。
@@ -201,15 +198,33 @@
 //     **更保守**。若将来引入 sidecar/worker（无人可答但需推进），再评估是否
 //     需要自动放行。**当前行为是有意选择，非缺陷。**
 //
-// **剩余三项的共性是「要先造子系统」，不是接线**（与前面几刀性质不同）：
+// ## D. 剩余项的性质与称量结论（第六十九刀）
+//
+// **三项的共性是「要先造子系统」，不是接线**（与前面几刀性质不同）：
 //
 //	protectionMode     需 doom-loop 会话态（状态机 + 检测逻辑）
 //	canAutoApprove     需 sensorium 置信度（认知状态，Go 侧仅注释/字符串表）
 //	unconditional…     需先移植触发它的工具（request_path_access / computer_use）
 //
-// 故它们**不是"补一行调用"能闭合的**——每条都要先称量收益（例：protectionMode
-// 防的破坏性 git 已由硬闸门拦，增量收益待测）。接入时按上表逐条补，并更新
-// 状态列与日期。
+// **protectionMode 的称量结论：接线后行为不变，故不做**（第六十九刀实测）：
+//
+//   - 它的作用是「doom-loop 期间**破坏性 git** 需批准」。而
+//     `git reset --hard` / `git checkout --` / `git restore` 等**已在
+//     `destructivePatterns`**（`bash.go`）→ **硬闸门在任何档位都拦**。
+//     接线后该路径**行为完全不变**。
+//   - 它的次要产出（非破坏性工具在 doom-loop 下 `Reasons` 加文案、`Level`
+//     升至 Medium）**无人消费**——`isHighRiskCall` 只看 `Level == RiskHigh`，
+//     Medium 不触发任何门。
+//   - 真正的 doom-loop **终止**已有实现：`wedge_guard.go`（`loop.go` 的
+//     `observeBatch`/`shouldTerminate`）在「同一批次反复全错」达 3 次时
+//     终止 run——那是比「提升风险等级」更彻底的处置。
+//
+// 故接线 `doomLoopLevel` 会造出**声明但无人消费**的机制（`NeedsApproval`
+// 曾经的形态）。**除非将来出现「doom-loop 期间的非破坏性工具需额外审批」
+// 这一需求**，否则不做。
+//
+// `canAutoApprove` / `unconditionalApproval` 同理需先称量收益——接入时
+// 按上表逐条补，并更新状态列与日期。
 //
 // # 已知欠账（`registry.go` 的前置③，**仍未做**）
 //
