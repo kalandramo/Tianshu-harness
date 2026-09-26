@@ -43,9 +43,9 @@
 //	bashDenied        isBashCommandDenied         ✅ 第六十五刀接线
 //	                  (bashDenyPrefixes)            （`permissions_shellsplit.go`
 //	                                                + PermissionConfig.Bash）
-//	selfKill          isSelfDestructiveKill       ⚠️ 第六十七刀称量：**部分适用**
-//	                  (selfProcessTree())           ——PID 类真实存在，镜像名类
-//	                                                不适用；未接线（见下节）
+//	selfKill          isSelfDestructiveKill       ✅ 第六十八刀接线（**仅 PID 类**）
+//	                  (selfProcessTree())           镜像名类有意不移植（见下节）
+//	                                                已知盲区：动态求值 PID 不拦
 //
 // **`bashDenied` 与 `denied` 的差距**：`denied` 走 `IsToolDenied`——它能匹配
 // `{tool:"bash", params:{command:"rm -rf*"}}` 这类**参数模式**规则，故用户写的

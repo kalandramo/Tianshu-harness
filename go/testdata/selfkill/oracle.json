@@ -1,0 +1,297 @@
+{
+  "tree": {
+    "selfPid": 1000,
+    "ancestorPids": [
+      999,
+      998
+    ]
+  },
+  "pidCases": [
+    {
+      "label": "kill-self",
+      "cmd": "kill 1000",
+      "result": true
+    },
+    {
+      "label": "kill-ancestor1",
+      "cmd": "kill 999",
+      "result": true
+    },
+    {
+      "label": "kill-ancestor2",
+      "cmd": "kill 998",
+      "result": true
+    },
+    {
+      "label": "kill-with-sig",
+      "cmd": "kill -9 1000",
+      "result": true
+    },
+    {
+      "label": "kill-with-sigterm",
+      "cmd": "kill -TERM 1000",
+      "result": true
+    },
+    {
+      "label": "kill-unrelated",
+      "cmd": "kill 12345",
+      "result": false
+    },
+    {
+      "label": "kill-unrelated-sig",
+      "cmd": "kill -9 12345",
+      "result": false
+    },
+    {
+      "label": "kill-multi-first-match",
+      "cmd": "kill 12345 1000",
+      "result": true
+    },
+    {
+      "label": "kill-multi-last-match",
+      "cmd": "kill 1000 12345",
+      "result": true
+    },
+    {
+      "label": "kill-multi-none",
+      "cmd": "kill 111 222 333",
+      "result": false
+    },
+    {
+      "label": "kill-sig-then-self",
+      "cmd": "kill -15 -9 1000",
+      "result": true
+    },
+    {
+      "label": "kill-noninteger",
+      "cmd": "kill 1000.5",
+      "result": false
+    },
+    {
+      "label": "kill-nonnumeric",
+      "cmd": "kill abc",
+      "result": false
+    },
+    {
+      "label": "kill-mixed-token",
+      "cmd": "kill 1000abc",
+      "result": false
+    },
+    {
+      "label": "kill-zero",
+      "cmd": "kill 0",
+      "result": false
+    },
+    {
+      "label": "kill-negative-group",
+      "cmd": "kill -9 -1000",
+      "result": false
+    },
+    {
+      "label": "kill-no-args",
+      "cmd": "kill",
+      "result": false
+    },
+    {
+      "label": "kill-leading-space",
+      "cmd": "   kill 1000",
+      "result": true
+    },
+    {
+      "label": "not-kill-prefixed",
+      "cmd": "killall 1000",
+      "result": false
+    },
+    {
+      "label": "not-kill-suffixed",
+      "cmd": "killer 1000",
+      "result": false
+    },
+    {
+      "label": "not-kill-in-arg",
+      "cmd": "echo kill 1000",
+      "result": false
+    },
+    {
+      "label": "not-kill-in-arg2",
+      "cmd": "grep kill 1000",
+      "result": false
+    },
+    {
+      "label": "taskkill-pid-self",
+      "cmd": "taskkill /PID 1000",
+      "result": true
+    },
+    {
+      "label": "taskkill-pid-ancestor",
+      "cmd": "taskkill /PID 999",
+      "result": true
+    },
+    {
+      "label": "taskkill-double-slash",
+      "cmd": "taskkill //PID 1000",
+      "result": true
+    },
+    {
+      "label": "taskkill-f-flag",
+      "cmd": "taskkill /F /PID 1000",
+      "result": true
+    },
+    {
+      "label": "taskkill-quoted-pid",
+      "cmd": "taskkill /PID \"1000\"",
+      "result": true
+    },
+    {
+      "label": "taskkill-unrelated",
+      "cmd": "taskkill /PID 12345",
+      "result": false
+    },
+    {
+      "label": "taskkill-im-only",
+      "cmd": "taskkill /IM notepad.exe",
+      "result": false
+    },
+    {
+      "label": "semi-hidden",
+      "cmd": "echo hi; kill 1000",
+      "result": true
+    },
+    {
+      "label": "and-hidden",
+      "cmd": "ls && kill 1000",
+      "result": true
+    },
+    {
+      "label": "or-hidden",
+      "cmd": "ls || kill 1000",
+      "result": true
+    },
+    {
+      "label": "pipe-hidden",
+      "cmd": "cat f | kill 1000",
+      "result": true
+    },
+    {
+      "label": "newline-hidden",
+      "cmd": "ls\nkill 1000",
+      "result": true
+    },
+    {
+      "label": "cmdsubst-hidden",
+      "cmd": "echo $(kill 1000)",
+      "result": true
+    },
+    {
+      "label": "backtick-hidden",
+      "cmd": "echo `kill 1000`",
+      "result": true
+    },
+    {
+      "label": "chain-second-unrelated",
+      "cmd": "ls && kill 12345",
+      "result": false
+    },
+    {
+      "label": "benign-ls",
+      "cmd": "ls -la",
+      "result": false
+    },
+    {
+      "label": "benign-echo-num",
+      "cmd": "echo 1000",
+      "result": false
+    },
+    {
+      "label": "benign-npx-killport",
+      "cmd": "npx kill-port 3000",
+      "result": false
+    },
+    {
+      "label": "benign-git",
+      "cmd": "git status",
+      "result": false
+    },
+    {
+      "label": "empty",
+      "cmd": "",
+      "result": false
+    },
+    {
+      "label": "only-spaces",
+      "cmd": "   ",
+      "result": false
+    }
+  ],
+  "imageCases": [
+    {
+      "label": "taskkill-im-node",
+      "cmd": "taskkill /IM node.exe",
+      "result": true
+    },
+    {
+      "label": "taskkill-im-node-slash",
+      "cmd": "taskkill //IM node.exe",
+      "result": true
+    },
+    {
+      "label": "taskkill-im-node-quoted",
+      "cmd": "taskkill /IM \"node.exe\"",
+      "result": true
+    },
+    {
+      "label": "pkill-node",
+      "cmd": "pkill node",
+      "result": true
+    },
+    {
+      "label": "pkill-f-node",
+      "cmd": "pkill -f node",
+      "result": true
+    },
+    {
+      "label": "killall-node",
+      "cmd": "killall node",
+      "result": true
+    },
+    {
+      "label": "wmic-node-delete",
+      "cmd": "wmic process where name=\"node.exe\" delete",
+      "result": true
+    },
+    {
+      "label": "semi-hidden-pkill",
+      "cmd": "echo hi; pkill node",
+      "result": true
+    }
+  ],
+  "guardTree": {
+    "selfPid": 0,
+    "ancestorPids": [
+      -5,
+      0
+    ]
+  },
+  "guardCases": [
+    {
+      "label": "guard-kill-zero",
+      "cmd": "kill 0",
+      "result": false
+    },
+    {
+      "label": "guard-kill-negative",
+      "cmd": "kill -5",
+      "result": false
+    },
+    {
+      "label": "guard-kill-zero-and-negative",
+      "cmd": "kill 0 -5",
+      "result": false
+    },
+    {
+      "label": "guard-kill-mixed",
+      "cmd": "kill 12345 0",
+      "result": false
+    }
+  ]
+}

@@ -180,6 +180,13 @@ type Loop struct {
 	// **消费者**：`executeTool` 的 `pathGrantNeed` 分支（skip 档授予 / 其他档拦）。
 	// nil 时不授予也不拦（最小可跑路径——但出界写仍被 pathsafe 拦在工作区外）。
 	pathGrants *pathGrantStore
+	// selfTree 是本进程的自身 + 祖先 PID（自身进程树保护用）。
+	//
+	// **在构造时快照**（对账 TS `selfProcessTree()` 的缓存语义）：PID 在
+	// 进程生命周期内不变，每轮重读是浪费；且快照让门控成为纯判定。
+	//
+	// **消费者**：`executeTool` 的 selfKill 门（`kill $PPID` 类命令）。
+	selfTree selfKillProcessTree
 	// hookState 是跨轮累积的 hook 快照状态。
 	//
 	// **为什么需要**：部分快照字段是**任务级**而非窗口级（如 TouchedTSFiles
@@ -295,6 +302,11 @@ func New(cfg Config, cl *client.Client, reg *tools.Registry) *Loop {
 	//
 	// 对账 TS 的包级 `_grants`——Go 侧实例化以避免 sidecar 多会话串授权。
 	l.pathGrants = newPathGrantStore()
+	// 自身进程树快照（selfKill 门用）。
+	//
+	// 对账 TS `selfProcessTree()` 的**缓存语义**——PID 在进程生命周期内不变。
+	// 构造时读一次，门控内是纯判定（可测，不引入 IO）。
+	l.selfTree = currentProcessTree()
 	if cfg.SessionID != "" {
 		l.State = session.New(cfg.SessionID)
 		// 会话持久化：落盘到 <cwd>/.rivet/sessions/<id>.jsonl。
@@ -861,6 +873,30 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 		(IsToolDenied(tc.name, p.Input, l.cfg.Permissions.Deny) ||
 			bashDeniedFor(l.cfg.Permissions, tc)) {
 		return contract.Result{Content: DeniedRuleReason(tc.name), IsError: true}
+	}
+
+	// ── 自身进程树保护（第六十八刀接线）──
+	//
+	// 对账 TS `tool-pipeline.ts:1136-1143` 的 `selfKill` 分支。**Go 侧此前
+	// 完全没有这一环**——`IsSelfDestructiveKill` 的对应实现不存在。
+	//
+	// **为什么需要**：bash 工具用 `exec.Command` 启动 shell，故 agent 就是
+	// 命令的**直接父进程**（实测：`SELF=72921 PPID=72918`，`72918 COMM=/tmp/ts-probe`）。
+	// shell 里 `kill $PPID` 直接杀掉 agent 自己 → **当前 turn 中断**。
+	//
+	// **为什么独立于权限门（不与 deny 门合并）**：TS 注释写明它是
+	// 「Always on, independent of config/approval mode」——**不是用户配的
+	// 边界**，而是运行时自我保护。故即使 `Permissions == nil`（无配置）
+	// 也须生效，且不受档位影响（skip 档也不例外）。
+	//
+	// **只覆盖 PID 类**（`kill <自身/祖先 pid>` / `taskkill /PID <n>`）；
+	// 镜像名类（`pkill node`）**有意不移植**——理由见
+	// `self_preservation.go` 文件头「有意差异」。
+	if tc.name == "bash" {
+		if cmd, ok := tc.input["command"].(string); ok &&
+			IsSelfDestructiveKill(cmd, l.selfTree) {
+			return contract.Result{Content: selfKillBlockReason(), IsError: true}
+		}
 	}
 
 	// ── 审批硬闸门（第五十刀接线）──
