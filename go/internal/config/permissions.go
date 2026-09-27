@@ -27,70 +27,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"runtime"
 
 	"github.com/kalandramo/tianshu/go/internal/agent"
+	"github.com/kalandramo/tianshu/go/internal/rivetpath"
 )
 
+// 路径解析已下沉到叶子包 `internal/rivetpath`（第九十七刀 W5）。
+//
+// # 为什么要下沉
+//
+// `internal/config` 含 `LoadPermissions`（依赖 `internal/agent`），而
+// `agent → hooks → tools`。任何 `tools` 下的代码若要读配置，就会形成
+// `tools → config → agent → hooks → tools` 的**导入环**（W5 实测撞上）。
+//
+// 把**纯路径解析**（零项目内依赖）下沉后，需要路径的包 import `rivetpath`
+// 即可，不再拉进 `config` 的整条依赖链。
+//
+// 本文件保留同名包装函数，**外部 API 逐字不变**（`cmd/tianshu/main.go`
+// 等既有调用方无需改动）。
+
 // DefaultRivetHome 返回平台默认的 .rivet 数据根（忽略 RIVET_HOME）。
-//
-// 对账 TS `defaultRivetHome()`（`paths.ts:27-32`）：
-//
-//	if (process.platform === 'win32') {
-//	  return join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), '.rivet')
-//	}
-//	return join(homedir(), '.rivet')
-//
-// **Windows 分支是易错点**：TS 在 win32 上用 `%LOCALAPPDATA%\.rivet`，
-// 而**不是** `~/.rivet`。若 Go 侧统一用 home，Windows 用户配置永远读不到。
-// `%LOCALAPPDATA%` 未设时回退到 `<home>\AppData\Local`（与 TS 一致）。
-func DefaultRivetHome() string {
-	if runtime.GOOS == "windows" {
-		if local := os.Getenv("LOCALAPPDATA"); local != "" {
-			return filepath.Join(local, ".rivet")
-		}
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, "AppData", "Local", ".rivet")
-		}
-		return filepath.Join(".rivet")
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".rivet")
-	}
-	return ".rivet"
-}
+func DefaultRivetHome() string { return rivetpath.DefaultRivetHome() }
 
 // RivetHome 返回当前生效的数据根（RIVET_HOME 优先，否则平台默认）。
-//
-// 对账 TS `rivetHome()`（`paths.ts:35-37`）：
-//
-//	return process.env.RIVET_HOME || defaultRivetHome()
-func RivetHome() string {
-	if home := os.Getenv("RIVET_HOME"); home != "" {
-		return home
-	}
-	return DefaultRivetHome()
-}
+func RivetHome() string { return rivetpath.RivetHome() }
 
 // UserConfigPath 返回用户全局配置文件的路径。
-//
-// 对账 TS `userConfigPath()`（`paths.ts:40-63`）：
-//
-//	const fromEnv = process.env.RIVET_CONFIG_PATH
-//	if (fromEnv) return fromEnv
-//	return join(rivetHome(), 'config.json')
-//
-// **有意省略的部分**：TS 在 `RIVET_HOME` 指向新位置但那里没有 config.json
-// 时，会向 stderr 打一条「旧配置还在默认位置」的提示。那是**桌面端 UX
-// 辅助**（引导用户迁移），Go 侧 CLI 无对应场景，省略。此差异不影响
-// 路径解析语义——本函数返回值与 TS 逐字节一致。
-func UserConfigPath() string {
-	if p := os.Getenv("RIVET_CONFIG_PATH"); p != "" {
-		return p
-	}
-	return filepath.Join(RivetHome(), "config.json")
-}
+func UserConfigPath() string { return rivetpath.UserConfigPath() }
 
 // userConfigFile 是配置文件的 JSON 形态（只取本包需要的字段）。
 //

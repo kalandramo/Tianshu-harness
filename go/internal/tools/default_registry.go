@@ -149,6 +149,14 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// 轻量（不爬全站）：sitemap 阶梯 + 种子页链接 + site: 搜索三路汇合。
 	// **搜索路当前不可用**（依赖 web_search 后端链，见 webmap.go 文件头披露）。
 	r.Register(WebMap(cwd))
+	// web_search：Web 搜索（第九十七刀 · W5）。
+	//
+	// **为什么需要**：模型对「训练截止后发生变化的内容」「不认识的首字母大写
+	// 名称」需要实时信息，而不是凭记忆编造（description 明写这层意图）。
+	//
+	// 后端链来自 `search.backends` 配置（默认 [bing, duckduckgo]——零配置可用，
+	// 覆盖国内 cn.bing.com 与海外 DDG）；Brave/Tavily/博查需 API key。
+	r.Register(WebSearch())
 	r.Register(RunTests(cwd))
 
 	// ── 任务 ──
