@@ -41,6 +41,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/artifact"
 	"github.com/kalandramo/tianshu/go/internal/compact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
+	"github.com/kalandramo/tianshu/go/internal/filehistory"
 	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 	"github.com/kalandramo/tianshu/go/internal/tools"
 )
@@ -233,7 +234,79 @@ func (l *Loop) buildToolCallParams(tc toolCall) *tools.CallParams {
 		// **typed-nil 防护**：`l.pathGrants` 是 `*pathGrantStore`——nil 时
 		// 必须返回真 nil 接口（同 Jobs 的坑）。
 		Grants: grantCheckerOrNil(l.pathGrants),
+		// FileHistory / TrackFileEdit：文件历史（第一百零二刀）。
+		//
+		// **两者成对**：`TrackFileEdit` 是写入侧的登记钩子（写工具成功调用），
+		// `FileHistory` 是 `undo` 工具的读取面。它们共享同一实例——
+		// 否则 undo 会读到一个空历史（写工具写进了另一个实例）。
+		//
+		// **typed-nil 防护**：`l.FileHistory` 是 `*filehistory.History`，
+		// nil 时必须传 nil 回调（否则闭包捕获 typed-nil 并在调用时 panic，
+		// 同 Jobs / Grants 的坑）。
+		TrackFileEdit: l.trackFileEditFunc(),
+		FileHistory:   l.fileHistoryFunc(),
 	}
+}
+
+// trackFileEditFunc 返回写入侧的历史登记钩子（nil = 不跟踪）。
+//
+// 闭包里带上**当前调用的 tool_use id**——这正是本刀修的数据源：
+// `trackEdit(path, id)` 按 id 分组快照（见 filehistory 包注释）。
+func (l *Loop) trackFileEditFunc() func(string, string) {
+	if l.FileHistory == nil {
+		return nil
+	}
+	return func(absPath, toolUseID string) {
+		// **best-effort**：历史登记失败不影响已完成的写入（对账 TS 的
+		// `try { trackEdit(...) } catch {}` 语义——历史是附加能力）。
+		//
+		// id 为空时用固定哨兵：退化为一轮一个快照（历史仍可用，只是粒度粗）。
+		if toolUseID == "" {
+			toolUseID = "write"
+		}
+		_ = l.FileHistory.TrackEdit(absPath, toolUseID)
+	}
+}
+
+// fileHistoryFunc 返回 undo 工具读取的历史面（nil = 不可用）。
+func (l *Loop) fileHistoryFunc() func() tools.UndoHistory {
+	if l.FileHistory == nil {
+		return nil
+	}
+	return func() tools.UndoHistory { return undoHistoryAdapter{h: l.FileHistory} }
+}
+
+// undoHistoryAdapter 把 `filehistory.History` 适配成 `tools.UndoHistory`。
+//
+// # 为什么需要适配（而不是让 tools 直接 import filehistory）
+//
+// 两包各自定义同形但**不同名**的类型（`filehistory.DiffStats` vs
+// `tools.UndoDiffStats`），Go 的隐式接口满足要求方法签名逐字一致，
+// 故无法直接赋值。这与 LSP 的 `lspNavigatorAdapter` 是同一取舍：
+// **收益是依赖方向正确**（工具内核不反向依赖子系统），
+// 代价是每次返回一次字段拷贝（预览统计只有几个标量，可忽略）。
+type undoHistoryAdapter struct {
+	h *filehistory.History
+}
+
+func (a undoHistoryAdapter) LatestSnapshotID() (string, bool) {
+	return a.h.LatestSnapshotID()
+}
+
+func (a undoHistoryAdapter) GetDiffStats(targetMessageID string) (*tools.UndoDiffStats, bool) {
+	stats, ok := a.h.GetDiffStats(targetMessageID)
+	if !ok || stats == nil {
+		return nil, ok
+	}
+	return &tools.UndoDiffStats{
+		FilesChanged: stats.FilesChanged,
+		Insertions:   stats.Insertions,
+		Deletions:    stats.Deletions,
+	}, true
+}
+
+func (a undoHistoryAdapter) Rewind(targetMessageID string) ([]string, error) {
+	return a.h.Rewind(targetMessageID)
 }
 
 // grantCheckerOrNil 把可能为 nil 的 *pathGrantStore 转成**真 nil 接口**。

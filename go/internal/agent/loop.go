@@ -27,6 +27,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/client"
 	"github.com/kalandramo/tianshu/go/internal/compact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
+	"github.com/kalandramo/tianshu/go/internal/filehistory"
 	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"github.com/kalandramo/tianshu/go/internal/session"
@@ -214,6 +215,12 @@ type Loop struct {
 	// **消费者**：`executeTool` 的 `pathGrantNeed` 分支（skip 档授予 / 其他档拦）。
 	// nil 时不授予也不拦（最小可跑路径——但出界写仍被 pathsafe 拦在工作区外）。
 	pathGrants *pathGrantStore
+	// FileHistory 是本会话的文件历史（按 tool_use id 分组的多快照）。
+	//
+	// **为什么由 Loop 持有**（对账 TS：`bootstrap` 期创建 `FileHistory` 实例并
+	// 经 `getFileHistory` 注入 undo 工具）：它与 SessionID 绑定，
+	// 且需要 cwd（备份根）。nil = 无会话上下文（工具报「文件历史不可用。」）。
+	FileHistory *filehistory.History
 	// selfTree 是本进程的自身 + 祖先 PID（自身进程树保护用）。
 	//
 	// **在构造时快照**（对账 TS `selfProcessTree()` 的缓存语义）：PID 在
@@ -363,6 +370,13 @@ func New(cfg Config, cl *client.Client, reg *tools.Registry) *Loop {
 	//
 	// 对账 TS 的包级 `_grants`——Go 侧实例化以避免 sidecar 多会话串授权。
 	l.pathGrants = newPathGrantStore()
+	// 文件历史（第一百零二刀）：与 SessionID + cwd 绑定。
+	//
+	// 备份落在 `<cwd>/.rivet/file-history/<sessionId>/`——与 recovery 的
+	// `.rivet/backups/` 分开（见 filehistory 包注释）。
+	if cfg.SessionID != "" {
+		l.FileHistory = filehistory.New(cfg.Cwd, cfg.SessionID)
+	}
 	// 自身进程树快照（selfKill 门用）。
 	//
 	// 对账 TS `selfProcessTree()` 的**缓存语义**——PID 在进程生命周期内不变。

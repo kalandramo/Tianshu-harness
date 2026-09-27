@@ -521,6 +521,10 @@ func (t *hashEditTool) applyEdit(
 	if p.OnFileWrite != nil {
 		p.OnFileWrite(absPath)
 	}
+	// 登记文件历史快照（第一百零二刀）——与 write_file 同语义（写盘成功后）。
+	if p.TrackFileEdit != nil {
+		p.TrackFileEdit(absPath, p.ToolUseID)
+	}
 
 	// 恢复计数：带哈希且行号相对声明位置变了的锚点数。
 	// 注意 anchors 此时已是**恢复后**的锚点，故需与原始声明比较——

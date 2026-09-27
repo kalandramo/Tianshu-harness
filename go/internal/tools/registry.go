@@ -124,6 +124,17 @@ type CallParams struct {
 	SessionTurnCount int
 	// OwnedFiles 是当前任务拥有的文件（用于作用域写入）。
 	OwnedFiles []string
+	// TrackFileEdit 在写工具**成功改动**某文件后登记一次快照（nil = 不跟踪）。
+	//
+	// **为什么是回调而非工具直接调 filehistory**：`tools` 是工具内核，
+	// 反向依赖具体子系统会让依赖方向倒置（同 `FileHistory` / `LspNavigator`）。
+	//
+	// **签名带 toolUseID**（而非让实现方去猜）：写工具本来就持有
+	// `p.ToolUseID`，直接传出去比让装配层维护一个「当前调用 id」的
+	// per-Loop 可变字段**安全得多**（后者在并发工具调用下会串号）。
+	//
+	// 对账 TS：`tool-pipeline` 在写工具成功后调 `fileHistory.trackEdit(path, id)`。
+	TrackFileEdit func(absPath, toolUseID string)
 	// FileHistory 返回本会话的文件历史（nil = 不可用）。
 	//
 	// **为什么是回调**（对账 TS `createUndoTool(getFileHistory)`）：历史实例
