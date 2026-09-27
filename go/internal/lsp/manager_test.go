@@ -228,6 +228,24 @@ func (f *fakeServer) notifMethods() []string {
 	return append([]string(nil), f.notifications...)
 }
 
+// waitNotificationCount 等到某个通知**累计出现至少 n 次**。
+//
+// **为什么需要它**：`notifications` 是**累积**的（从不清空），
+// 故 `waitNotification` 在「第二次等同一个方法」时会**立刻命中上一次的记录**
+// ——测试会误以为新一轮触发已发生。需要区分「第 N 次」时用本方法。
+func (f *fakeServer) waitNotificationCount(t *testing.T, method string, n int) {
+	t.Helper()
+	waitFor(t, 2e9, "收到第 "+itoa(n)+" 次通知 "+method, func() bool {
+		c := 0
+		for _, m := range f.notifMethods() {
+			if m == method {
+				c++
+			}
+		}
+		return c >= n
+	})
+}
+
 // waitNotification 等到某个通知出现。
 func (f *fakeServer) waitNotification(t *testing.T, method string) {
 	t.Helper()

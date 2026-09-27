@@ -50,38 +50,102 @@ func (m *manager) getFileDiagnostics(filePath string, timeoutMS int) []LspDiagno
 	if m == nil {
 		return nil
 	}
+	// ★ `opened` 必须用 **URI** 作键读——`ensureDocument` 写的是
+	// `openedDocs[uriForFile(...)]`（URI 键），曾在此误用绝对路径作键，
+	// 于是**永远读到 false** → 每次都重走「刚打开」分支 →
+	// 内容变化时不会重新触发（拿到的永远是首次诊断）。
+	fileURI := uriForFile(filePath, m.cwd)
 	m.mu.Lock()
 	rpc := m.rpc
 	ready := m.ready
-	opened := m.openedDocs[absFromCwd(filePath, m.cwd)]
+	opened := m.openedDocs[fileURI]
 	m.mu.Unlock()
 	if rpc == nil || !ready {
 		return nil
 	}
 
-	uri := uriForPath(absFromCwd(filePath, m.cwd))
+	// ★ 必须与 `ensureDocument` / `ChangeFile` 用**同一个** URI 构造函数。
+	//
+	// 曾经此处用 `uriForPath(绝对路径)` 而 `ensureDocument` 用
+	// `uriForFile(路径, cwd)` —— 两者虽在 macOS 下多半产出相同字符串，
+	// 但只要有一处差异，`lastSentText[uri]` 与 `diags` 的键就会**对不上**：
+	// `ensureDocument` 写的键读不到，于是每次都判「内容变了」→ 清缓存 →
+	// 又因 `justOpened` 不发 didChange → **拿不到诊断**。
+	// 统一到一个函数是唯一稳妥的做法。
+	uri := uriForFile(filePath, m.cwd)
+
+	// 先读当前文本（后续「是否变了」与「发什么」都用它）。
+	text, ok := readDocumentText(absFromCwd(filePath, m.cwd))
+	if !ok {
+		text = "" // 文件不在磁盘上 → 空文本，让 server 清陈旧诊断
+	}
 
 	// 文档未打开 → 先打开（didOpen 会让 server 开始分析并推送）。
 	// 对账 TS `ensureDocument(filePath)`。
+	//
+	// ★ **didOpen 之后就等它推送**，不叠 didChange：didOpen 已把内容告知
+	// server（`ensureDocument` 会记录 `lastSentText`），再发同内容 didChange
+	// 对 gopls 是空操作。
+	//
+	// ⚠️ **不要在这里 `return`**（曾经这么写，造成缺陷）：那会跳过下面的
+	// 「内容变了要重新触发」判断——于是「首次 didOpen → 用户又改一次 →
+	// 再取诊断」会**永远返回第一次的陈旧诊断**。
+	// 正确做法是让 didOpen 只负责「打开」，是否/如何触发统一由下方决定。
+	justOpened := false
 	if !opened {
 		m.ensureDocument(filePath)
+		justOpened = true
 	}
 
-	// ── ① 清缓存（**必须在触发之前**）──
-	// 对账 TS `manager.ts:352` 的 `diagnosticCache.delete(uri)`，
-	// 注释逐字：「Clear stale cache BEFORE notify — avoid racing server
-	// publishDiagnostics」。
+	// ── ① 判断内容是否真的变了（**真实 gopls 验证出的必需判据**）──
+	//
+	// ★ 与 TS 有**有意偏离**，理由是实测：gopls 对**内容未变**的
+	// `didChange` **不重新分析、不推送**（探针实测：didOpen 推送后，
+	// 同内容 didChange 5s 内零推送）。
+	//
+	// TS 的做法是「无条件 delete + didChange」，在 tsserver 下可行；
+	// 在 gopls 下会导致：首次 didOpen 的推送被自己清掉、同内容 didChange
+	// 又不触发 → **缓存清了却填不回来**（实测三次调用各等满 10s 全空）。
+	//
+	// 故：**内容未变且有缓存 → 直接用**；否则清缓存 + 重新触发。
+	m.mu.Lock()
+	prev, seenBefore := m.lastSentText[uri]
+	m.mu.Unlock()
+
+	unchanged := seenBefore && prev == text
+	if unchanged && m.diags.has(uri) {
+		return m.diags.get(uri)
+	}
+	// 刚 didOpen（ensureDocument 已记录 lastSentText）→ 它自己会触发推送，
+	// 不必再发 didChange。
+	if justOpened {
+		return waitForDiagnostics(m, uri, timeoutMS)
+	}
+
+	// ── ② 清缓存（**必须在触发之前**）──
+	// 对账 TS `manager.ts:352`：「Clear stale cache BEFORE notify — avoid
+	// racing server publishDiagnostics」（顺序反了会自己清掉刚到的推送）。
 	m.diags.delete(uri)
 
-	// ── ② 触发 didChange（携带**真实文件内容**）──
+	// ── ③ 触发 didChange（携带**真实文件内容**）──
 	//
-	// 对账 TS `manager.ts:354-357` 的注释：
-	// 「Read actual file content — empty text would tell tsserver the file is
-	// empty (false green)」——**这是关键**：若发空内容，server 会认为文件
-	// 是空的、报无诊断，于是我们拿到「假绿」。
-	m.notifyDidChange(rpc, filePath, uri)
+	// 对账 TS `manager.ts:354-357`：「Read actual file content — empty text
+	// would tell tsserver the file is empty (false green)」——**关键**：
+	// 若发空内容，server 会认为文件是空的、报无诊断，于是拿到「假绿」。
+	m.mu.Lock()
+	m.lastSentText[uri] = text
+	m.mu.Unlock()
+	m.notifyDidChangeWithText(rpc, uri, text)
 
-	// ── ③ 等推送到达（有界）──
+	// ── ④ 等推送到达（有界）──
+	return waitForDiagnostics(m, uri, timeoutMS)
+}
+
+// waitForDiagnostics 轮询等待某 uri 的推送到达（有界）。
+//
+// 抽成函数是因为**两条触发路径共用它**（didOpen 路径 / didChange 路径）——
+// 等待语义必须一致，否则出现「一条路径立刻返回、另一条等满超时」的偏差。
+func waitForDiagnostics(m *manager, uri string, timeoutMS int) []LspDiagnostic {
 	timeout := timeoutMS
 	if timeout <= 0 {
 		timeout = DefaultDiagnosticTimeoutMS
@@ -113,6 +177,15 @@ func (m *manager) notifyDidChange(rpc *RPC, filePath, uri string) {
 		// 对账 TS：`// File may not exist on disk — use empty text as last resort`
 		text = ""
 	}
+	m.notifyDidChangeWithText(rpc, uri, text)
+}
+
+// notifyDidChangeWithText 发送 didChange（文本由调用方给定）。
+//
+// **为什么把文本作为参数**：`getFileDiagnostics` 需要先读一次文本用于
+// 「内容是否变了」的判断，再发同一个文本——分两次读会有 TOCTOU 缝隙
+// （两次读之间文件可能被改），且多一次磁盘 I/O。
+func (m *manager) notifyDidChangeWithText(rpc *RPC, uri, text string) {
 	params := map[string]any{
 		"textDocument":   map[string]any{"uri": uri, "version": time.Now().UnixMilli()},
 		"contentChanges": []any{map[string]any{"text": text}},

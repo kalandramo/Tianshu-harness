@@ -61,9 +61,13 @@ func TestGetFileDiagnostics_ReceivesPush(t *testing.T) {
 
 	// 假 server 收到 didChange 后推送诊断（模拟真实 server 行为）。
 	// ★ 必须在**另一个 goroutine** 里推——`getFileDiagnostics` 会阻塞等待。
+	// ★ 首次调用走 **didOpen** 路径（文档未打开 → ensureDocument → 直接等推送）。
+	//
+	// **为什么不是 didChange**：didOpen 已把当前内容告知 server，
+	// 再叠同内容 didChange 对真实 server（gopls）是空操作——
+	// 故新逻辑在 didOpen 路径**不发** didChange，直接等 didOpen 触发的推送。
 	go func() {
-		fs.waitNotification(t, "textDocument/didChange")
-		// 稍等让清缓存动作发生在推送之前（对账 TS 的顺序要求）
+		fs.waitNotification(t, "textDocument/didOpen")
 		time.Sleep(20 * time.Millisecond)
 		feedDiagnostics(t, fs, uri, []LspDiagnostic{
 			{Range: Range{Start: Position{Line: 4}}, Severity: 1, Message: "undefined: foo"},
@@ -104,7 +108,7 @@ func TestGetFileDiagnostics_EmptyPushCountsAsAnswer(t *testing.T) {
 	uri := uriForPath(file)
 
 	go func() {
-		fs.waitNotification(t, "textDocument/didChange")
+		fs.waitNotification(t, "textDocument/didOpen")
 		time.Sleep(20 * time.Millisecond)
 		feedDiagnostics(t, fs, uri, nil) // 空数组
 	}()
@@ -179,5 +183,70 @@ func TestDiagCache_DistinguishesEmptyFromMissing(t *testing.T) {
 	c.delete(uri)
 	if c.has(uri) {
 		t.Error("delete 后 has 应为 false（触发新一轮等待）")
+	}
+}
+
+// TestGetFileDiagnostics_ContentChangeRetriggers —— ★ 内容变了必须重新触发。
+//
+// # 为什么这条必需（防我刚改的逻辑开新洞）
+//
+// 新逻辑是「内容未变 → 用缓存；内容变了 → 清缓存 + didChange」。
+// 若判据写错（一律用缓存），第二次编辑新引入的错误**永远不会显示**——
+// 那正是最初 undo 时序倒置那类「静默失效」。
+//
+// 本用例模拟「文件被改后再次取诊断」：必须看到 didChange 被发出。
+func TestGetFileDiagnostics_ContentChangeRetriggers(t *testing.T) {
+	cwd := t.TempDir()
+	file := filepath.Join(cwd, "a.go")
+	if err := os.WriteFile(file, []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fs := newFakeServer()
+	m := newManager(func() Transport { return fs.clientSide() }, cwd, nil)
+	t.Cleanup(func() {
+		m.Dispose()
+		fs.mu.Lock()
+		fs.kill()
+		fs.mu.Unlock()
+	})
+	if err := m.Initialize(); err != nil {
+		t.Fatal(err)
+	}
+	uri := uriForPath(file)
+
+	// 第一次：didOpen 路径，推一条诊断
+	go func() {
+		fs.waitNotification(t, "textDocument/didOpen")
+		time.Sleep(20 * time.Millisecond)
+		feedDiagnostics(t, fs, uri, []LspDiagnostic{{Severity: 1, Message: "first"}})
+	}()
+	first := m.getFileDiagnostics(file, 3000)
+	if len(first) != 1 || first[0].Message != "first" {
+		t.Fatalf("首次应得 first，实得 %+v", first)
+	}
+
+	// 改文件内容 → 第二次取诊断必须重新触发（didChange）
+	if err := os.WriteFile(file, []byte("package a\n\nvar X = undefinedY\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		// ★ 用**计数**判据（notifications 是累积的，存在判据会命中旧记录）
+		fs.waitNotificationCount(t, "textDocument/didChange", 1)
+		time.Sleep(20 * time.Millisecond)
+		feedDiagnostics(t, fs, uri, []LspDiagnostic{{Severity: 1, Message: "second"}})
+	}()
+	second := m.getFileDiagnostics(file, 3000)
+	if len(second) != 1 || second[0].Message != "second" {
+		t.Fatalf("★ 内容变了应重新触发并拿到新诊断，实得 %+v（判据可能一律用缓存了）", second)
+	}
+
+	// 内容**未**变 → 第三次应直接复用缓存（不发 didChange，立刻返回）
+	start := time.Now()
+	third := m.getFileDiagnostics(file, 5000)
+	if el := time.Since(start); el > 500*time.Millisecond {
+		t.Errorf("内容未变应直接用缓存（用了 %v），不该等推送", el)
+	}
+	if len(third) != 1 || third[0].Message != "second" {
+		t.Errorf("内容未变应复用缓存，实得 %+v", third)
 	}
 }

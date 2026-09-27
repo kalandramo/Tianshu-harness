@@ -102,6 +102,21 @@ type manager struct {
 	ready        bool
 	openedDocs   map[string]bool
 
+	// lastSentText 记录上次**发给 server** 的文档文本（按 URI）。
+	//
+	// # ★ 为什么必须有它（真实 gopls 验证出的必需状态）
+	//
+	// gopls 对「内容未变」的 `didChange` **不重新分析、不推送**——
+	// 实测：didOpen 推送诊断后，发一个同内容的 didChange，5s 内无任何推送。
+	//
+	// 若照 TS 那样无条件 `delete(uri)` + didChange，就会出现：
+	// ① 首次 didOpen 的推送被自己清掉 ② 同内容的 didChange 不再触发推送
+	// → **缓存清了却填不回来**，诊断永远为空（实测三次调用各等满 10s 全空）。
+	//
+	// 有了本字段即可精确判断「是否需要重新触发」：只有**内容真的变了**
+	// 才清缓存 + 发 didChange；内容没变则沿用缓存里的有效诊断。
+	lastSentText map[string]string
+
 	// diags 是服务端推送的诊断缓存（对账 TS `diagnosticCache`）。
 	//
 	// **为什么在 manager 上而非全局**：每个语言服务器（gopls/pyright/…）
@@ -128,13 +143,14 @@ func newManager(spawn spawnFn, cwd string, opts *managerOptions) *manager {
 		}
 	}
 	return &manager{
-		cwd:         cwd,
-		opts:        o,
-		openedDocs:  map[string]bool{},
-		diags:       newDiagCache(),
-		onDidOpen:   o.onDidOpen,
-		onDidChange: o.onDidChange,
-		spawn:       spawn,
+		cwd:          cwd,
+		opts:         o,
+		openedDocs:   map[string]bool{},
+		diags:        newDiagCache(),
+		lastSentText: map[string]string{},
+		onDidOpen:    o.onDidOpen,
+		onDidChange:  o.onDidChange,
+		spawn:        spawn,
 	}
 }
 
@@ -297,6 +313,16 @@ func (m *manager) ensureDocument(filePath string) {
 
 	uri := uriForFile(filePath, m.cwd)
 	m.mu.Lock()
+	// ★ 记录「已发给 server 的文本」——与 didChange 路径共用同一状态。
+	//
+	// **为什么必须在 didOpen 时也记**（真实 gopls 验证出的必需项）：
+	// didOpen 会触发 server 分析并推送诊断；若此处不记，
+	// `getFileDiagnostics` 的「内容是否变了」判据会认为「从未发过」，
+	// 于是**清掉刚推来的诊断**并再发一个同内容的 didChange——
+	// 而 gopls 对同内容 didChange **不重推** → 诊断永远为空。
+	if m.lastSentText != nil {
+		m.lastSentText[uri] = text
+	}
 	if m.openedDocs[uri] {
 		m.mu.Unlock()
 		return

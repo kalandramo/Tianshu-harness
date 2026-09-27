@@ -215,10 +215,20 @@ func (m *multiManager) newEntryLocked(def *LspServerDef) *lspEntry {
 		languageIDFor: func(fp string) string { return LanguageIDForFile(def, fp) },
 	}
 	spawn := func() Transport {
-		if m.opts.spawnFor == nil {
-			return nil
+		// ★ 回落到真实 spawn（对账 TS `spawnFor ?? ((def,c) => defaultLspSpawn(def,c))`，
+		// `multi-manager.ts:71`）。
+		//
+		// **原本此处 `spawnFor == nil` 直接返回 nil transport** —— 而生产
+		// 装配从不传 `spawnFor`（只有测试传），故**整个 LSP 子系统在生产中
+		// 从未通电**：Initialize 恒失败于
+		// "LSP server spawn failed: no stdio pipes"。
+		//
+		// 注入缝保留（测试要模拟 spawn 失败），但缺省不再是「不可用」而是
+		// 「真启动」——这正是 TS 的语义。
+		if m.opts.spawnFor != nil {
+			return m.opts.spawnFor(def, m.cwd)
 		}
-		return m.opts.spawnFor(def, m.cwd)
+		return defaultLspSpawn(def, m.cwd)
 	}
 	mgr := newManager(spawn, m.cwd, opts)
 

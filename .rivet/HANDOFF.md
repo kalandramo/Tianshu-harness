@@ -1264,6 +1264,85 @@ dry_run 不能这么做，故在内存内容上**预测**（文案也不同：
 
 **验证**：5 用例（含语法预警真实触发）；变异 M43（去掉早退）→ 红 3。
 
+## 第一百零三刀续二：真实 gopls 端到端验收（★ 发现并修复两层真实缺陷）
+
+**用户级验收驱动**（不再只靠假件测试）——本机实际装有
+`gopls v0.23.0`（在 `~/Workspace/go/bin`，不在默认 PATH）。
+
+### ★★ 缺陷 1：生产环境**从不启动任何语言服务器**
+
+```
+multi_manager.go  newEntryLocked
+	spawn := func() Transport {
+		if m.opts.spawnFor == nil { return nil }   ← 生产从不传 spawnFor
+		return m.opts.spawnFor(def, m.cwd)
+	}
+```
+
+`spawnFor` **只有测试传**（`multi_manager_test.go:90,509`），`main.go` 走
+`NewNavigator(cwd)` → `newMultiManager(cwd, nil)` → `spawnFor == nil` → spawn
+恒返回 nil → `Initialize` 恒失败：
+
+```
+"LSP server spawn failed: no stdio pipes (check PATH / npx)"
+```
+
+**后果**：整个 LSP 子系统（goto/refs/**诊断**）在生产中**从未通电**。
+`IsReady()` 返回 true 是**误导的**——它只探测「PATH 上有没有该二进制」
+（`probeWhich`），不测「能否真的启动」。
+
+**修复**：
+1. `platform.go` 新增 `defaultLspSpawn`（`exec.Command` + 三管道）
+   + `procTransport`（把 stdin/stdout 接成 `Transport`；`Close` 杀进程防孤儿）
+2. `newEntryLocked` 的 spawn **回落到真实实现**（对账 TS 的
+   `spawnFor ?? ((def,c) => defaultLspSpawn(def,c))`，`multi-manager.ts:71`）
+
+**验证**：`ensure` 从「秒退回 nil」变为 235ms 成功；`Initialize` 无错误。
+
+### ★★ 缺陷 2：`openedDocs` 的键类型不一致
+
+`ensureDocument` 写 `openedDocs[uriForFile(...)]`（**URI 键**），
+而我在 `getFileDiagnostics` 读 `openedDocs[absFromCwd(...)]`（**绝对路径键**）
+→ **永远读到 false** → 每次都走「刚打开」分支 → 内容变了也不会重新触发
+→ **拿到的永远是首次诊断**。
+
+**这一条是真实 gopls 端到端才暴露的**（假件测试因触发序列不同而未覆盖）。
+新增回归测试 `TestGetFileDiagnostics_ContentChangeRetriggers` 锁住，
+变异 M44（改回绝对路径键）→ 红 1。
+
+### 另外两处（gopls 行为与 tsserver 不同，促成有意偏离）
+
+3. **gopls 对内容未变的 `didChange` 不重新分析、不推送**（探针实测：
+   didOpen 推送后，同内容 didChange 5s 内零推送）。TS 的「无条件
+   delete + didChange」在 tsserver 下可行，在 gopls 下会让
+   「首次 didOpen 的推送被自己清掉、同内容 didChange 又不触发」→
+   **缓存清了填不回来**。故改为：内容未变 → 用缓存；变了 → 清 + 重触发。
+4. **`ensureDocument` 必须记录 `lastSentText`**——否则上述判据认为
+   「从未发过」，同样清掉刚到的诊断。
+
+### 验收结果（用户级，真实 gopls）
+
+| # | 用户动作 | 可观察结果 | 状态 |
+|---|---|---|---|
+| A | 编辑引入 `undefinedSymbolXyz` | 正文出现 `[LSP Diagnostics]` + `ERROR L6: undefined: undefinedSymbolXyz`（gopls 真实产出） | ✅ |
+| B | 编辑传 `dry_run: true` | 磁盘字节不变 + 以「预览（dry_run）」开头 + 真实 diff | ✅ |
+| C | 对语法错误文件传 `dry_run` | 含「若应用将出现语法错误」+ 磁盘不变 | ✅ |
+
+全量 `go test ./...` **exit=0 / 0 FAIL / 30 包**（含真 gopls e2e）。
+
+### 本段新增的坑（第 62 条起）
+
+62. **「探测可用」≠「实际可用」**：`IsReady()` 只 `probeWhich`（PATH 上有没有
+    该二进制），而 spawn 走的是**另一个**缝（`spawnFor`），后者为 nil 时
+    恒失败。**判据**：任何 `XxxIsReady / XxxAvailable` 都要追问「它检查的是
+    哪个条件？与实际使用路径的条件是同一个吗？」
+63. **`map` 的键必须来自同一个构造函数**：`openedDocs` 用 URI 键、
+    读取处用绝对路径键 → **永远 miss** 且**不报错**（Go 的 map 读缺失键
+    返回零值）。同一张表的所有读写点必须共用同一个键构造函数。
+64. **假件测试的触发序列可能与真实 server 不同**：假 server「收到 didChange
+    就推」，真 gopls「内容没变就不推」。故**假件测协议时序、真 server 测
+    端到端行为**——两者不可互替。本段两个缺陷都只有真 gopls 能暴露。
+
 ## 下一步（第一百零三刀后）
 
 **LSP 诊断回流已完成**（工具数 42——本刀不新增工具）。剩余候选：
