@@ -137,6 +137,12 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// 它是  三层（SSRF / HTTP 抓取 / HTML→MD）+ 缓存 +
 	// fetch-core 的**消费者**——那些层此前零生产消费者，本刀让它们全部接线。
 	r.Register(WebFetch(cwd))
+	// web_crawl：从种子 URL 整站爬取（第九十五刀 · W3-5b）。
+	//
+	// **为什么需要**：模型「把这个文档站读完」的场景——批量获取各页正文。
+	// 复用 crawl BFS 内核（第九十四刀）+ sitemap 阶梯 + fetch 内核。
+	// **artifact 落盘未接**（见 webcrawl.go 文件头披露）。
+	r.Register(WebCrawl(cwd))
 	r.Register(RunTests(cwd))
 
 	// ── 任务 ──

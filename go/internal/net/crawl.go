@@ -190,10 +190,24 @@ func wwwVariant(normalizedURL string) string {
 	return strings.Replace(normalizedURL, "://", "://www.", 1)
 }
 
-// crawlWith 是 BFS 引擎的主入口（对账 TS `crawl`）。
+// Crawl 是 BFS 引擎的公开入口（对账 TS `crawl`）。
 //
-// **为什么导出名是 `crawlWith` 而非 `crawl`**：与 TS 的 `crawl` 同名会让
-// 测试可读性下降（`crawl(...)` 无上下文）。此处语义等价。
+// 供 `internal/tools` 的 web_crawl / web_map 消费。
+func Crawl(seedURL string, fetcher CrawlFetcher, opts CrawlOptions) CrawlResult {
+	return crawlWith(seedURL, fetcher, opts)
+}
+
+// DenialReasonText 返回拒绝原因的中文文案（对账 TS `DENIAL_REASON_TEXT`）。
+//
+// 未知原因返回原值（不 panic——上游可能给出未来新增的原因）。
+func DenialReasonText(reason string) string {
+	if t, ok := denialReasonText[reason]; ok {
+		return t
+	}
+	return reason
+}
+
+// crawlWith 是 BFS 引擎的内部实现（对账 TS `crawl`）。
 func crawlWith(seedURL string, fetcher CrawlFetcher, opts CrawlOptions) CrawlResult {
 	maxPages := opts.MaxPages
 	if maxPages <= 0 {
