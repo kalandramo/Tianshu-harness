@@ -19,13 +19,13 @@ import (
 // 两者缺一不可：假件测不出「真实 server 的推送格式与预期不符」这类问题。
 
 // lspAdapter 把真 Navigator 适配成 agent.LspDiagnostics（与 main.go 同构）。
-type lspAdapter struct{ nav *lsp.Navigator }
-
-func (a *lspAdapter) IsReady() bool                  { return a.nav.IsReady() }
-func (a *lspAdapter) ChangeFile(p string)            { a.nav.ChangeFile(p) }
-func (a *lspAdapter) HasServerForFile(p string) bool { return a.nav.HasServerForFile(p) }
-func (a *lspAdapter) GetFileDiagnostics(p string, ms int) []lsp.LspDiagnostic {
-	return a.nav.GetFileDiagnostics(p, ms)
+// ★ 用**生产同一个**适配器（订正自审查 #8）。
+//
+// 原先这里有一份与 `cmd/tianshu/main.go` 逐字同构的副本，代价是
+// 「生产侧漂移不会被 e2e 覆盖」——测试验证的是测试那份。现共用
+// `NavigatorDiagnostics`。
+func newLspAdapter(nav *lsp.Navigator) LspDiagnostics {
+	return NavigatorDiagnostics(nav)
 }
 
 // requireGopls 报告真实 gopls 是否可用。
@@ -124,7 +124,7 @@ func main() {
 	}
 
 	// 走生产注入路径
-	l := &Loop{LspDiagnostics: &lspAdapter{nav: nav}}
+	l := &Loop{LspDiagnostics: newLspAdapter(nav)}
 	tc := toolCall{name: "edit_file", input: map[string]any{"file_path": file}}
 	// 给 gopls 充分的分析时间（冷启动 + 增量分析）
 	out := l.injectLspDiagnostics(tc, res)
@@ -167,7 +167,7 @@ func TestE2E_RealGopls_CleanFileYieldsNoDiagnostics(t *testing.T) {
 		t.Fatalf("编辑失败：%v %s", err, res.Content)
 	}
 
-	l := &Loop{LspDiagnostics: &lspAdapter{nav: nav}}
+	l := &Loop{LspDiagnostics: newLspAdapter(nav)}
 	out := l.injectLspDiagnostics(toolCall{name: "edit_file", input: map[string]any{"file_path": file}}, res)
 	if strings.Contains(out.Content, "[LSP Diagnostics]") {
 		t.Errorf("干净文件不该贴诊断段（否则是假通过）：\n%s", out.Content)
@@ -182,7 +182,7 @@ func TestE2E_RealGopls_CleanFileYieldsNoDiagnostics(t *testing.T) {
 // 「预览（dry_run）」开头且声明未写入。
 //
 // 这是本轮修复的核心缺陷的验收：修复前，dry_run=true 会**直接落盘**。
-func TestE2E_RealGopls_DryRunDoesNotWriteOnDisk(t *testing.T) {
+func TestE2E_DryRunDoesNotWriteOnDisk(t *testing.T) {
 	dir, file := newGoProject(t, "package main\n\nfunc main() {}\n")
 
 	before, err := os.ReadFile(file)
@@ -227,7 +227,7 @@ func TestE2E_RealGopls_DryRunDoesNotWriteOnDisk(t *testing.T) {
 //
 // 这条验证 dry_run 的核心价值：**在写盘前知道会坏**。常规路径是
 // 「写盘后检查、失败回滚」，dry_run 不能这么做。
-func TestE2E_RealGopls_DryRunPredictsSyntaxError(t *testing.T) {
+func TestE2E_DryRunPredictsSyntaxError(t *testing.T) {
 	// 起点是**语法错误**的文件（缺右花括号）
 	dir, file := newGoProject(t, "package main\n\nfunc main() {\n")
 	before, _ := os.ReadFile(file)
@@ -265,14 +265,15 @@ func TestE2E_RealGopls_DryRunPredictsSyntaxError(t *testing.T) {
 // 本用例断言「无 gopls 时必须失败」，把该机制本身钉住：
 // 将来有人把 `Fatalf` 改回 `Skip`，这里会红。
 func TestE2E_RequireGopls_FailsWithoutGopls(t *testing.T) {
-	// 无 gopls 的环境下，requireGopls 必须让测试失败。
-	// 有 gopls 时它正常返回——此时本用例无意义，跳过。
+	// ★ **无条件执行**（订正自审查 #6）。
+	//
+	// 本用例是**源码级断言**，不 spawn gopls、不依赖环境——原先加
+	// `if gopls 存在 { t.Skip }` 等于让它在**最需要它的机器上**
+	// （装了 gopls 的 CI/开发机）静默跳过，正是它要防的假绿形态。
 	if _, err := exec.LookPath("gopls"); err == nil {
-		t.Skip("本机有 gopls——该用例只验证「无 gopls 时不许静默跳过」")
+		t.Log("本机有 gopls——但本用例是源码断言，条件不变，继续执行")
 	}
-	// 用一个子测试捕获「requireGopls 会 Fatal」这件事。
-	// Go 的 testing 无法在同一测试内断言 Fatal，故用子测试 + 恢复不可行；
-	// 改为**源码级断言**：确认存在 Fatalf 分支且无「无 gopls 就 Skip」的分支。
+	// 源码级断言：确认存在 Fatalf 分支且保留 RIVET_LSP_E2E 逃生阀。
 	src, err := os.ReadFile("lspdiag_e2e_test.go")
 	if err != nil {
 		t.Fatal(err)

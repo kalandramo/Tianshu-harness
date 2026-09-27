@@ -34,14 +34,21 @@ import (
 //
 // 生产实现由 `cmd/tianshu` 的适配器提供（转发 `lsp.Navigator`）。
 type LspDiagnostics interface {
-	// IsReady 报告 LSP 子系统是否可用。
-	IsReady() bool
 	// GetFileDiagnostics 取文件级诊断（best-effort，可能空）。
 	GetFileDiagnostics(filePath string, timeoutMS int) []lsp.LspDiagnostic
 	// ChangeFile 通知 server 文件已在磁盘上被改。
 	ChangeFile(filePath string)
 	// HasServerForFile 报告该文件是否有注册的语言服务器。
 	HasServerForFile(filePath string) bool
+	// ⚠️ **本接口刻意不含 `IsReady()`**（订正自审查 #3）。
+	//
+	// 曾有一个 `IsReady() bool` 成员：它有声明、有生产实现，但
+	// `injectLspDiagnostics` **从不调用**——死接口方法。而它的存在会误导
+	// 后来者以为「注入前会先检查就绪」，实际判据走的是
+	// `HasServerForFile`（PATH 探测）+ `GetFileDiagnostics` 的 best-effort。
+	//
+	// **若将来要加就绪门**：应加在**调用点**并说明它检查的是哪个条件
+	//（`probeWhich` 的 PATH 探测 ≠ 「能真的 spawn」——见 HANDOFF 坑 62）。
 }
 
 // injectLspDiagnostics 在写工具执行成功后注入 `[LSP Diagnostics]` 段。
@@ -128,6 +135,16 @@ func (l *Loop) injectLspDiagnostics(tc toolCall, res contract.Result) contract.R
 		if base == "" {
 			base = res.Content
 		}
+		// ⚠️ **当前无生产消费者**（审查 #4 核实）。
+		//
+		// `UIContent` 的消费语义在 `internal/agent/turnbudget.go` 的
+		// `DisplayContent(uiContent, result)`，但该函数**只被测试调用**——
+		// Go 侧尚未移植 TUI/server 工具卡管线（TS 的消费者是
+		// `tool-pipeline.ts:1578`）。
+		//
+		// 故这行写入目前只影响测试与将来的渲染层。保留它是为**语义完整**
+		// （诊断确实应同时给模型与 UI 两个视角），而非当前有收益。
+		// 与 HANDOFF 已记的「UIContent 待 TUI 管线」同源，不重复登记。
 		res.UIContent = base + "\n\n[LSP Diagnostics]\n" + filtered.UIText
 	}
 	return res
@@ -199,4 +216,38 @@ func extractPatchTargetPaths(diff string) []string {
 		}
 	}
 	return out
+}
+
+// NavigatorDiagnostics 把 `internal/lsp.Navigator` 适配成 `LspDiagnostics`。
+//
+// # 为什么这个适配器在 `internal/agent` 而非 `cmd/tianshu`
+//
+// 原先生产装配（`cmd/tianshu/main.go`）与 e2e 测试各自写了一份**逐字同构**
+// 的适配器。两份的代价是：**生产侧漂移不会被 e2e 覆盖**——测试验证的是
+// 「测试那份」，而真实跑的是另一份。收敛到一处即消除该漂移面。
+//
+// # 为什么不能直接把 `*lsp.Navigator` 赋给 `LspDiagnostics`
+//
+// `LspDiagnostics` 要求返回 `[]lsp.LspDiagnostic`——`Navigator` 的方法签名
+// 恰好如此（本包直接 import `internal/lsp` 的类型，故无需字段拷贝）。
+// 但 `Navigator` 的方法集**大于**接口要求（还有 GotoDefinition 等），
+// 故理论上可直接赋值；保留显式适配器是为了**收窄可见面**：
+// agent 层只看到诊断相关的三个方法，不暴露导航能力。
+func NavigatorDiagnostics(nav *lsp.Navigator) LspDiagnostics {
+	if nav == nil {
+		return nil
+	}
+	return &navigatorDiagnostics{nav: nav}
+}
+
+type navigatorDiagnostics struct{ nav *lsp.Navigator }
+
+func (a *navigatorDiagnostics) ChangeFile(filePath string) { a.nav.ChangeFile(filePath) }
+
+func (a *navigatorDiagnostics) HasServerForFile(filePath string) bool {
+	return a.nav.HasServerForFile(filePath)
+}
+
+func (a *navigatorDiagnostics) GetFileDiagnostics(filePath string, timeoutMS int) []lsp.LspDiagnostic {
+	return a.nav.GetFileDiagnostics(filePath, timeoutMS)
 }
