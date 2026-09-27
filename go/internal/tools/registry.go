@@ -123,18 +123,28 @@ type CallParams struct {
 	// SessionTurnCount 是当前会话轮次（启用渐进式超时策略）。
 	SessionTurnCount int
 	// OwnedFiles 是当前任务拥有的文件（用于作用域写入）。
+	//
+	// # ⚠️ 生产路径上**恒为空**（第一百零二刀审查发现）
+	//
+	// 全 go 树的赋值只出现在测试字面量——**没有任何生产写入方**。
+	// 上游的源是 TS 的 `deps.ownershipLedger?.getOwnedFiles()`
+	// （`tool-pipeline.ts:834`），而 **`ownershipLedger` 子系统 Go 侧未移植**
+	// （`grep ownershipLedger go/internal/` 零命中）。
+	//
+	// **后果**：所有 `len(p.OwnedFiles) > 0` 的分支在生产恒不进入——
+	// 受影响者至少三处：`git.go:236,371`（作用域提交）、`diff.go:161`
+	// （current_task_only）、`undo.go:240`（归属告警）。
+	// 前两处会**静默退化为「全量」**（提交/展示所有改动文件）——
+	// 在本仓库的多会话共享工作区里，那可能把别的会话的文件一并卷入。
+	//
+	// **为什么不"顺手接一个源"**：可选的源要么语义不符（
+	// `evidence.GateState` 的 `FilesModified` 是**计数**，TS 的
+	// `filesModified` 是**集合**），要么要移植整个 `ownershipLedger` 子系统。
+	// 硬接会让「归属」这个安全语义**看起来生效而实际错误**——比恒空更危险
+	// （恒空至少是 fail-loud 的：告警不输出，而错误归属会输出**错的**告警）。
+	//
+	// **正确处置**：移植 `ownershipLedger` 时接线（另立计划）。
 	OwnedFiles []string
-	// TrackFileEdit 在写工具**成功改动**某文件后登记一次快照（nil = 不跟踪）。
-	//
-	// **为什么是回调而非工具直接调 filehistory**：`tools` 是工具内核，
-	// 反向依赖具体子系统会让依赖方向倒置（同 `FileHistory` / `LspNavigator`）。
-	//
-	// **签名带 toolUseID**（而非让实现方去猜）：写工具本来就持有
-	// `p.ToolUseID`，直接传出去比让装配层维护一个「当前调用 id」的
-	// per-Loop 可变字段**安全得多**（后者在并发工具调用下会串号）。
-	//
-	// 对账 TS：`tool-pipeline` 在写工具成功后调 `fileHistory.trackEdit(path, id)`。
-	TrackFileEdit func(absPath, toolUseID string)
 	// FileHistory 返回本会话的文件历史（nil = 不可用）。
 	//
 	// **为什么是回调**（对账 TS `createUndoTool(getFileHistory)`）：历史实例

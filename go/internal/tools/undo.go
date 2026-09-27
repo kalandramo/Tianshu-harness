@@ -236,6 +236,15 @@ func relForUndo(cwd, abs string) string {
 // ★ **`OwnedFiles` 为空 → 返回空**（不做归属检查）。这点至关重要：
 // 空表示「无归属信息」（测试直调、非任务上下文），照常比较会把**所有文件**
 // 都判成「不属于本任务」，每份预览都带误导性告警。
+//
+// # ⚠️ 生产路径上该告警**永不输出**（第一百零二刀审查发现）
+//
+// `OwnedFiles` 无生产写入方（依赖未移植的 `ownershipLedger`，详见
+// `registry.go` 该字段的注释）。故本函数在生产恒返回 nil——
+// 即 undo 的归属告警是**休眠接线**。
+//
+// **这不影响 undo 的核心功能**（撤销本身不依赖归属），但意味着
+// 「并行会话误伤」这条防线**当前不在岗**。移植 `ownershipLedger` 后自动生效。
 func undoUnownedFiles(p *CallParams, files []string) []string {
 	if p == nil || len(p.OwnedFiles) == 0 {
 		return nil

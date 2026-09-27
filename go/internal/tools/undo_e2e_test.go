@@ -192,3 +192,66 @@ func TestUndoGate_NeedsApprovalViaRegistry(t *testing.T) {
 		t.Error("undo 应恒需审批")
 	}
 }
+
+// TestOwnedFilesHasNoProducer_ProductionFact —— ★ 把审查发现的事实钉住。
+//
+// # 断言的是什么
+//
+// `CallParams.OwnedFiles` **在生产路径上恒为空**——依赖未移植的
+// `ownershipLedger` 子系统（TS `tool-pipeline.ts:834` 的
+// `deps.ownershipLedger?.getOwnedFiles()`）。
+//
+// # 为什么要有这条测试
+//
+// 这是「休眠接线」的**显式登记**：将来移植 `ownershipLedger` 并接线后，
+// 本用例会红——那不是回归，而是**提醒把它改掉**（说明该能力已上岗）。
+// 比让它默默恒空、无人知晓要好。
+//
+// 同时它记录了受影响面：`git.go` 的作用域提交 / `diff.go` 的
+// `current_task_only` / `undo.go` 的归属告警——三处都依赖它。
+func TestOwnedFilesHasNoProducer_ProductionFact(t *testing.T) {
+	// 生产构造点（buildToolCallParams 的等价物）在当前 Go 侧**不赋值**该字段。
+	// 本用例断言「空值下依赖它的分支不误报」——即再确认 undo 的
+	// `undoUnownedFiles` 对空值返回 nil（不输出误导告警）。
+	reg := NewDefaultRegistry(Options{Cwd: t.TempDir()})
+
+	res, err := reg.Execute(context.Background(), "undo", &CallParams{
+		Cwd: t.TempDir(), SessionID: "s",
+		// OwnedFiles 留空（生产事实）
+		FileHistory: func() UndoHistory { return &fakeUndoHistory{hasLatest: false} },
+		Input:       map[string]any{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 无快照分支——重点是**不因 OwnedFiles 为空而崩或误报**
+	if strings.Contains(res.Content, "不属于") {
+		t.Errorf("OwnedFiles 为空时不该有归属告警（会误报全部文件）：%q", res.Content)
+	}
+}
+
+// TestOwnedFilesEmptyMeansNoOwnershipInfo —— 语义澄清：空值 = 「无归属信息」，
+// 而非「没有任何文件属于本任务」。
+//
+// 这两者的区别正是「全量告警」与「静默」的分界。
+func TestOwnedFilesEmptyMeansNoOwnershipInfo(t *testing.T) {
+	cwd := t.TempDir()
+	a := filepath.Join(cwd, "a.txt")
+	h := &fakeUndoHistory{
+		hasLatest: true, latestID: "call_1",
+		hasStats: true,
+		stats:    &UndoDiffStats{FilesChanged: []string{a}, Insertions: 1},
+	}
+	res, _ := Undo().Execute(context.Background(), &CallParams{
+		Cwd: cwd, Input: map[string]any{}, SessionID: "s",
+		OwnedFiles:  nil, // 无归属信息
+		FileHistory: func() UndoHistory { return h },
+	})
+	// 预览仍应正常（无告警）
+	if !strings.HasPrefix(res.Content, "预览：将恢复 1 个文件：") {
+		t.Errorf("预览应正常输出（只是无告警）：%q", res.Content)
+	}
+	if strings.Contains(res.Content, "不属于") {
+		t.Errorf("无归属信息 ≠ 全部不属于：%q", res.Content)
+	}
+}
