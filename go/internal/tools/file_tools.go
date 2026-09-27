@@ -309,6 +309,24 @@ func (t *editFileTool) Execute(_ context.Context, p *CallParams) (contract.Resul
 		updated = strings.Replace(text, oldStr, newStr, 1)
 	}
 
+	// ── dry_run：只预览，**绝不写盘** ──
+	//
+	// 对账 TS `edit.ts:188-190`（每个分支都有这个早退）：
+	//
+	//	if (dryRun) {
+	//	  return buildDryRunPreview(params.cwd, filePath, freshContent, newContent)
+	//	}
+	//
+	// ★ **必须插在 `TrackFileChange` / `os.WriteFile` 之前**。
+	// 此前 Go 侧声明了 `dry_run` 参数却从不读取——`dry_run: true` 时
+	// **文件直接落盘**（模型预期预览、实际已改）。这是本刀修的既有缺陷。
+	//
+	// 早退位置在 `updated` 计算之后：预览需要「应用后」的内容来做
+	// diff 与语法检查，但不需要（也不允许）碰磁盘。
+	if boolArg(p.Input, "dry_run") {
+		return buildDryRunPreview(t.Cwd, vr.Path, text, updated), nil
+	}
+
 	// **写入前备份**（供回滚）
 	if _, err := t.Stack.TrackFileChange(t.Cwd, recovery.FileChangeRecord{
 		FilePath:   relForRecovery(t.Cwd, vr.Path),
@@ -333,6 +351,57 @@ func (t *editFileTool) Execute(_ context.Context, p *CallParams) (contract.Resul
 		Content:       msg,
 		ChangedRanges: computeEditChangedRanges(string(data), updated),
 	}, nil
+}
+
+// buildDryRunPreview 构造 dry_run 的预览结果（**不写盘**）。
+//
+// 对账 TS `edit.ts:454-479` 的 `buildDryRunPreview`：
+//
+//	① 语法检查（**若应用会否出现错误**——这是 dry_run 的主要价值）
+//	② diff（无变化时给占位文案）
+//	③ changedRanges
+//	④ content 格式：`预览（dry_run）<path> — 未写入任何更改：\n\n<diff>`
+//
+// # 与已落地路径的差别（重要）
+//
+// 常规路径的语法检查在**写盘之后**做，失败则回滚。dry_run 不能这么做
+// （不能先写再回滚）——它直接在**内存里的 after 内容**上检查。
+// 故此处的检查是**预测性**的（「若应用将出现语法错误：…」），
+// 不能复用写后检查的文案。
+func buildDryRunPreview(cwd, absPath, before, after string) contract.Result {
+	var warn string
+	chk := syntaxcheck.Check(absPath, after)
+	switch {
+	case chk.Fatal != "":
+		warn = "若应用将出现语法错误：" + chk.Fatal
+	case chk.Warning != "":
+		warn = chk.Warning
+	}
+
+	// diff 与 changedRanges 都是 best-effort（对账 TS 的 try/catch）：
+	// 失败不该让预览失败——预览的核心价值是「未写盘 + 语法预警」。
+	diff := filediff.BuildFileDiff(relLabel(cwd, absPath), before, after, 0)
+	ranges := computeEditChangedRanges(before, after)
+
+	body := diff
+	if body == "" {
+		body = "（无文本变更）"
+	}
+	// 路径用 relLabel（与 Go 侧其他消息「已写入 %s」「已编辑 %s」一致）——
+	// 对账 TS 用 `filePath` 原样（模型多传绝对路径），relLabel 在本仓库
+	// cwd 内会给出更短、更一致的相对形式。
+	content := fmt.Sprintf("预览（dry_run）%s — 未写入任何更改：\n\n%s", relLabel(cwd, absPath), body)
+	if warn != "" {
+		content += "\n\n" + warn
+	}
+
+	return contract.Result{
+		Content: content,
+		// 对账 TS：`uiContent: diff || undefined`——有 diff 才给 UI 覆盖，
+		// 否则回落到 Content（`contract.Result.UIContent` 的缺省语义）。
+		UIContent:     diff,
+		ChangedRanges: ranges,
+	}
 }
 
 // computeEditChangedRanges 算编辑波及的 AFTER 行区间（供 LSP 诊断区域收敛）。
