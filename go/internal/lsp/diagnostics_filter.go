@@ -120,11 +120,20 @@ func FilterDiagnosticsForEdit(
 	// 后者对 `severity == 0` 会过滤，而 TS 的 `0 <= 2` 会保留——
 	// 方向恰好相反，且与本文件自述的「降级路径朝多给一侧倒」矛盾。
 	//
-	// **零值语义差异（已知）**：LSP 的 `severity` 是可选字段，JSON 缺失时
-	// Go 得 `0`、TS 得 `undefined`。TS 的 `undefined <= 2` 为 false（过滤），
-	// 而 Go 的 `0 <= 2` 为 true（保留）。差异方向是**多给**（保留一条
-	// severity 未知的诊断），符合本文件的降级原则，故接受。
-	// （LSP 规范下 severity 缺失罕见；真出现时多显示一条无害。）
+	// # 零值语义（第一百零四刀**实测**，非推测）
+	//
+	// LSP 的 `severity` 是可选字段。实测两个事实：
+	//
+	//  1. **gopls 正常推送时总是带 `severity`**（实测其原始 JSON：
+	//     `"severity":1`，值类型为数字）。故「缺失」在 gopls 下罕见——
+	//     这一点此前是推测，现已验证。
+	//  2. 若某 server 真的省略该字段，Go 反序列化得 `severity == 0`
+	//     （实测：JSON 无 severity → 结构体字段为 0）→ 本函数**保留**它
+	//     → `formatDiagnosticLine` 按「非 1 即 WARNING」标为 `WARNING`。
+	//
+	// 即：偏离方向是**多给**且**标签可能不准**（未知严重级被显示成 WARNING），
+	// 但**不隐藏**任何诊断。符合本文件的降级原则，接受。
+	// 代价已明确：一条 severity 未知的诊断会被误标为 WARNING——比静默丢弃好。
 	relevant := make([]LspDiagnostic, 0, len(diagnostics))
 	for _, d := range diagnostics {
 		if d.Severity <= 2 {

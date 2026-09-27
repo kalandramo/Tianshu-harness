@@ -106,9 +106,26 @@ func (l *Loop) injectLspDiagnostics(tc toolCall, res contract.Result) contract.R
 		res.Content = res.Content + "\n\n[LSP Diagnostics]\n" + filtered.ModelText
 	}
 	if filtered.UIText != "" {
+		// 对账 TS `tool-pipeline.ts:1609-1610`：
+		//
+		//	if (uiText && rawToolResult) {
+		//	  rawToolResult.uiContent = `${uiBase}\n\n[LSP Diagnostics]\n${uiText}`
+		//	}
+		//
+		// 其中 `uiBase = rawToolResult?.uiContent ?? finalContent`（:1605）。
+		//
+		// # 与 TS 的差异（已核清，非遗漏）
+		//
+		// TS 的 `rawToolResult` 判据是**防御性的**：它只在工具成功返回时被赋值
+		// （`tool-pipeline.ts:1535` 的 `rawToolResult = r`），而本注入块本身就在
+		// `!harnessResult.isError` 分支内——两者几乎重合。故该判据在 TS 下
+		// 极少为假。
+		//
+		// Go 的 `contract.Result` 是**值类型**，没有「结果对象不存在」这个状态，
+		// 故无对应判据可加。这里改为按 TS 的 uiBase 语义处理：
+		// 有 `UIContent` 就续接（保留工具自己的 UI 呈现），否则以 `Content` 为底。
 		base := res.UIContent
 		if base == "" {
-			// 对账 TS：`const uiBase = rawToolResult?.uiContent ?? finalContent`
 			base = res.Content
 		}
 		res.UIContent = base + "\n\n[LSP Diagnostics]\n" + filtered.UIText

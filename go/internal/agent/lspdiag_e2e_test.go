@@ -28,11 +28,28 @@ func (a *lspAdapter) GetFileDiagnostics(p string, ms int) []lsp.LspDiagnostic {
 	return a.nav.GetFileDiagnostics(p, ms)
 }
 
-// requireGopls 报告真实 gopls 是否可用（不可用则跳过，标明原因）。
+// requireGopls 报告真实 gopls 是否可用。
+//
+// # ★ 默认**失败**而非跳过（第一百零四刀）
+//
+// 本组是唯一能暴露「真实 server 行为与假件不同」的用例——上一刀的三个缺陷
+// （生产从不 spawn / `openedDocs` 键不一致 / gopls 不重推同内容 didChange）
+// **全都只有真实 gopls 能暴露**。
+//
+// 若在无 gopls 时静默 `t.Skip`，「全量 0 FAIL」在这些用例**全部跳过**时
+// 同样成立——那是**假绿**：验收报告说通过，实际最关键的一层根本没跑。
+//
+// 故：默认 `t.Fatal` 要求装 gopls；确实无法安装的机器用
+// `RIVET_LSP_E2E=0` **显式**豁免（豁免要留痕，不能靠环境静默决定）。
 func requireGopls(t *testing.T) {
 	t.Helper()
+	if os.Getenv("RIVET_LSP_E2E") == "0" {
+		t.Skip("RIVET_LSP_E2E=0：显式豁免真实 LSP 端到端（需自行确保别处覆盖）")
+	}
 	if _, err := exec.LookPath("gopls"); err != nil {
-		t.Skip("跳过真实端到端：PATH 上没有 gopls（假件测试仍覆盖协议时序）")
+		t.Fatalf("★ 需要真实 gopls 才能验证本组用例（PATH 上未找到）。" +
+			"装 gopls（`go install golang.org/x/tools/gopls@latest`）" +
+			"或显式设 RIVET_LSP_E2E=0 豁免——**不要静默跳过**。")
 	}
 }
 
@@ -85,7 +102,10 @@ func main() {
 	defer nav.Dispose()
 
 	if !nav.IsReady() {
-		t.Skip("gopls 存在但 LSP 子系统未就绪（可能是版本/环境问题）")
+		// ★ 不跳过：`requireGopls` 已确认 gopls 在 PATH 上，
+		// 此时子系统未就绪 **是真实故障**（版本/环境问题），
+		// 跳过会把它伪装成「环境不满足」而放过。
+		t.Fatalf("gopls 在 PATH 上但 LSP 子系统未就绪——这是真实故障，不是环境缺失")
 	}
 
 	reg := tools.NewDefaultRegistry(tools.Options{Cwd: dir})
@@ -132,7 +152,7 @@ func TestE2E_RealGopls_CleanFileYieldsNoDiagnostics(t *testing.T) {
 	}
 	defer nav.Dispose()
 	if !nav.IsReady() {
-		t.Skip("LSP 未就绪")
+		t.Fatalf("gopls 在 PATH 上但 LSP 子系统未就绪——真实故障，不跳过")
 	}
 
 	reg := tools.NewDefaultRegistry(tools.Options{Cwd: dir})
@@ -232,4 +252,44 @@ func TestE2E_RealGopls_DryRunPredictsSyntaxError(t *testing.T) {
 		t.Errorf("★ 报了语法错误也不该写盘\n 改前 %q\n 改后 %q", before, after)
 	}
 	t.Logf("验收 C 通过——预览正文：\n%s", res.Content)
+}
+
+// TestE2E_RequireGopls_FailsWithoutGopls —— ★ 防「假绿」的元测试。
+//
+// # 为什么需要一条测试来测「测试的失败行为」
+//
+// 上一刀的真实缺陷（生产不 spawn / 键不一致）**全都只有真实 gopls 能暴露**。
+// 若 `requireGopls` 在无 gopls 时静默 `t.Skip`，那么 CI 上「全量 0 FAIL」
+// 在这些用例**全部跳过**时同样成立——验收报告说通过，最关键的一层却没跑。
+//
+// 本用例断言「无 gopls 时必须失败」，把该机制本身钉住：
+// 将来有人把 `Fatalf` 改回 `Skip`，这里会红。
+func TestE2E_RequireGopls_FailsWithoutGopls(t *testing.T) {
+	// 无 gopls 的环境下，requireGopls 必须让测试失败。
+	// 有 gopls 时它正常返回——此时本用例无意义，跳过。
+	if _, err := exec.LookPath("gopls"); err == nil {
+		t.Skip("本机有 gopls——该用例只验证「无 gopls 时不许静默跳过」")
+	}
+	// 用一个子测试捕获「requireGopls 会 Fatal」这件事。
+	// Go 的 testing 无法在同一测试内断言 Fatal，故用子测试 + 恢复不可行；
+	// 改为**源码级断言**：确认存在 Fatalf 分支且无「无 gopls 就 Skip」的分支。
+	src, err := os.ReadFile("lspdiag_e2e_test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+	start := strings.Index(body, "func requireGopls(")
+	if start < 0 {
+		t.Fatal("找不到 requireGopls")
+	}
+	rest := body[start:]
+	if end := strings.Index(rest[1:], "\nfunc "); end > 0 {
+		rest = rest[:end+1]
+	}
+	if !strings.Contains(rest, "t.Fatalf") {
+		t.Errorf("★ requireGopls 必须在无 gopls 时 t.Fatalf（而非静默跳过）")
+	}
+	if !strings.Contains(rest, `RIVET_LSP_E2E`) {
+		t.Errorf("★ 应保留 RIVET_LSP_E2E=0 显式逃生阀（豁免要留痕）")
+	}
 }
