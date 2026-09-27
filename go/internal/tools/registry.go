@@ -192,11 +192,156 @@ type CallParams struct {
 type Registry struct {
 	tools map[string]Tool
 	order []string // 注册顺序（用于确定性遍历）
+
+	// defaultToolTimeout 是**未声明** Timeout 的工具（返回 0）所用的兜底值。
+	//
+	// 零值 = 用 `DefaultToolTimeout`（120s，对账 TS `DEFAULT_TOOL_TIMEOUT_MS`）。
+	// 测试用 `SetDefaultToolTimeout` 注入短值，避免真等 2 分钟。
+	defaultToolTimeout time.Duration
 }
+
+// DefaultToolTimeout 是**未声明** `Timeout` 的工具所用的超时。
+//
+// 对账 TS `tool-pipeline.ts:129` 的 `DEFAULT_TOOL_TIMEOUT_MS = 120_000`。
+//
+// # 为什么必须有默认值
+//
+// TS `tool-pipeline.ts:1501`：`toolDef?.timeoutMs?.(params) ?? DEFAULT_TOOL_TIMEOUT_MS`
+// ——工具**没声明**超时 ≠ 无超时。`web_fetch` / `web_map` 等正属此类
+// （TS 侧 grep 确认未声明 `timeoutMs`）。
+//
+// 若把「未声明」当作「无限等待」，一个挂死的工具会**冻住整个回合**
+// （TS 注释 `:725-728` 写的 2026-09-08 写后挂起事故）。
+const DefaultToolTimeout = 120 * time.Second
 
 // NewRegistry 创建空注册表。
 func NewRegistry() *Registry {
 	return &Registry{tools: make(map[string]Tool)}
+}
+
+// SetDefaultToolTimeout 覆盖未声明工具的兜底超时（测试用）。
+//
+// 非正值不生效——防止误传 0 把兜底取消掉（那就是本刀要防的挂死）。
+func (r *Registry) SetDefaultToolTimeout(d time.Duration) {
+	if d > 0 {
+		r.defaultToolTimeout = d
+	}
+}
+
+// executeWithToolTimeout 在工具级超时下执行工具。
+//
+// 对账 TS `withToolTimeout`（`tool-pipeline.ts:311-338`）：
+//
+//	// Guard against NaN/Infinity/negative timeout (e.g. parameter misplacement bugs)
+//	if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) timeoutMs = DEFAULT_TOOL_TIMEOUT_MS
+//	const timer = setTimeout(() => { timeoutController?.abort(); reject(new Error(
+//	  `Tool ${toolName} timed out after ${timeoutMs / 1000}s ${TOOL_TIMEOUT_RECOVERY_HINT}`)) }, timeoutMs)
+//
+// # 与 TS 的差异（Go 的并发模型决定，语义等价）
+//
+// TS 用 `Promise.race` + `setTimeout` 让**外层 Promise 拒绝**，同时
+// `timeoutController.abort()` 把取消**级联**给底层操作。
+// Go 直接在 `ctx` 上设 deadline——`Execute` 内的 select 会立刻看到 `Done()`，
+// **级联天然成立**，不需要额外的 race。
+//
+// # 超时后仍等待结果返回
+//
+// 超时触发时返回**超时错误**（而不是空结果）。但底层 goroutine 可能仍在
+// 收尾——本实现**不等它**，与 TS 的 `Promise.race` 一致（TS 也不等被
+// 超时抛弃的那个 Promise）。ctx 取消会让守规矩的工具自行退出。
+func (r *Registry) executeWithToolTimeout(
+	ctx context.Context, tool Tool, name string, p *CallParams,
+) (contract.Result, error) {
+	// **nil ctx 防御**（接线引入的回归）：
+	// `context.WithTimeout(nil, …)` 会 panic。而 `Registry.Execute` 的既有
+	// 调用方**有传 nil 的**（`acceptance_exportfile_test.go:31` 等测试捷径），
+	// 且各工具自己在 `Execute` 里做了 `if ctx == nil { ctx = context.Background() }`
+	// ——即 nil 在此层是**被接受的输入**。
+	//
+	// 故本层必须与工具层同样容忍 nil，否则接线把「可用」变成「panic」。
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	timeout := r.effectiveToolTimeout(tool, p)
+
+	// 无超时可用（理论上不会走到：effectiveToolTimeout 恒返回正值）
+	if timeout <= 0 {
+		return tool.Execute(ctx, p)
+	}
+
+	tctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	type outcome struct {
+		result contract.Result
+		err    error
+	}
+	ch := make(chan outcome, 1)
+	go func() {
+		res, err := tool.Execute(tctx, p)
+		ch <- outcome{result: res, err: err}
+	}()
+
+	select {
+	case o := <-ch:
+		// 工具正常返回。若同时恰好超时，以结果为准（与 TS 的 race 语义一致：
+		// 先 settle 的赢；此处结果已到，说明它先完成）。
+		return o.result, o.err
+	case <-tctx.Done():
+		// 区分「工具超时」与「父 ctx 取消」——两者都触发 Done()，
+		// 但只有前者是我们的超时。父取消时回传父的 error（保持原语义）。
+		if ctx.Err() != nil {
+			return contract.Result{}, ctx.Err()
+		}
+		return contract.Result{}, &ToolTimeoutError{
+			Tool:    name,
+			Timeout: timeout,
+		}
+	}
+}
+
+// ToolTimeoutError 报告工具级超时。
+//
+// 对账 TS 的文案：
+//
+//	`Tool ${toolName} timed out after ${timeoutMs / 1000}s ${TOOL_TIMEOUT_RECOVERY_HINT}`
+//
+// 秒数用 `%g`（TS 的 `timeoutMs / 1000` 是浮点除法——50ms → `0.05`）。
+type ToolTimeoutError struct {
+	Tool    string
+	Timeout time.Duration
+}
+
+func (e *ToolTimeoutError) Error() string {
+	return fmt.Sprintf("Tool %s timed out after %gs %s",
+		e.Tool, e.Timeout.Seconds(), ToolTimeoutRecoveryHint)
+}
+
+// ToolTimeoutRecoveryHint 对账 TS `TOOL_TIMEOUT_RECOVERY_HINT`（`tool-pipeline.ts:308-309`）。
+//
+// **逐字对账**（进模型上下文）：TS 原文
+//
+//	'— 底层执行可能仍在后台继续（worker 写入已落盘）。检查 git status / 会话
+//	 checkpoint；可用 executePlanWaves fromWave=N 续跑或 deliver 已完成的波次'
+//
+// 注意 TS 以 `—` 开头（前一个空格由格式化模板给出：`…after ${n}s ${HINT}`）。
+const ToolTimeoutRecoveryHint = "— 底层执行可能仍在后台继续（worker 写入已落盘）。" +
+	"检查 git status / 会话 checkpoint；可用 executePlanWaves fromWave=N 续跑或 deliver 已完成的波次"
+
+// effectiveToolTimeout 解析某次调用该用多长的超时。
+//
+// 对账 TS `toolDef?.timeoutMs?.(params) ?? DEFAULT_TOOL_TIMEOUT_MS`。
+// 工具返回 0（未声明）时用兜底值。
+func (r *Registry) effectiveToolTimeout(tool Tool, p *CallParams) time.Duration {
+	d := tool.Timeout(p)
+	if d > 0 {
+		return d
+	}
+	if r.defaultToolTimeout > 0 {
+		return r.defaultToolTimeout
+	}
+	return DefaultToolTimeout
 }
 
 // Register 注册工具（同名覆盖）。
@@ -338,7 +483,17 @@ func (r *Registry) Execute(ctx context.Context, name string, p *CallParams) (con
 		return contract.Result{}, fmt.Errorf("Tool %s is disabled", resolvedName)
 	}
 
-	result, err := tool.Execute(ctx, p)
+	// ── 工具级超时（第九十九刀）──
+	//
+	// 对账 TS `tool-pipeline.ts:1501` + `withToolTimeout`（`:311`）：
+	//
+	//	const toolTimeout = toolDef?.timeoutMs?.(params) ?? DEFAULT_TOOL_TIMEOUT_MS
+	//	… await withToolTimeout(execution, tu.name, toolTimeout, …)
+	//
+	// **为什么必须包在 ctx 上**（对账 TS 注释 P0/H1）：超时要**级联下去**
+	// 中止底层操作（子进程 / fetch），而不只是让外层 Promise 拒绝——
+	// 否则工具内部的 goroutine/连接会继续跑，形成泄漏。
+	result, err := r.executeWithToolTimeout(ctx, tool, resolvedName, p)
 	if err != nil {
 		return result, err
 	}
