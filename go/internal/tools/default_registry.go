@@ -125,6 +125,12 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// **门链早已预留**： 的 open_path 授权分支
 	// 在本刀前就存在，本刀让它首次有真实消费者。
 	r.Register(OpenPath(cwd))
+	// capability：只读能力索引（第八十五刀 · W2-2）。
+	//
+	// **为什么需要**：模型需要知道本机有哪些外部 CLI 可用（ffmpeg/jq/rg...）
+	// 以及缺失时怎么装——否则会盲目尝试不存在的命令。
+	// 依赖 （which）+ （env）+ 读 。
+	r.Register(Capability(cwd))
 	r.Register(RunTests(cwd))
 
 	// ── 任务 ──
