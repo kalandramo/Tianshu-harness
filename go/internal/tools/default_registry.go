@@ -131,6 +131,12 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// 以及缺失时怎么装——否则会盲目尝试不存在的命令。
 	// 依赖 （which）+ （env）+ 读 。
 	r.Register(Capability(cwd))
+	// web_fetch：抓取 URL 转文本（第九十三刀 · W3-4d）。
+	//
+	// **为什么需要**：模型读文档/API 参考/issue 页面的主通道。
+	// 它是  三层（SSRF / HTTP 抓取 / HTML→MD）+ 缓存 +
+	// fetch-core 的**消费者**——那些层此前零生产消费者，本刀让它们全部接线。
+	r.Register(WebFetch(cwd))
 	r.Register(RunTests(cwd))
 
 	// ── 任务 ──

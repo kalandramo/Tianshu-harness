@@ -161,3 +161,58 @@ func TestAccOpenPathViaProductionRegistry(t *testing.T) {
 	}
 	t.Logf("不存在路径被正确拒绝：%s", res.Content)
 }
+
+// ── web_fetch（第九十三刀）─────────────────────────────────────────────
+
+// TestAccWebFetchViaProductionRegistry —— web_fetch 走生产装配验收。
+//
+// **为什么重要**：本工具是 `internal/net` 全部五层（SSRF / HTTP 抓取 /
+// HTML→MD / 缓存 / fetch-core）的**首个生产消费者**——此前那些层
+// 「零生产消费者」（第八十八刀审查指出）。本测试验证接线真的接通了。
+//
+// **不触网**：用非法 URL / 不支持协议触发内核错误路径——足以证明接线。
+func TestAccWebFetchViaProductionRegistry(t *testing.T) {
+	reg := NewDefaultRegistry(Options{Cwd: t.TempDir()})
+
+	tool, ok := reg.Get("web_fetch")
+	if !ok {
+		t.Fatal("web_fetch 应在生产注册表中")
+	}
+	if !tool.RequiresApproval(nil) {
+		t.Error("web_fetch 应恒需审批（发起网络请求）")
+	}
+	if !tool.ConcurrencySafe() {
+		t.Error("web_fetch 应并发安全（只读抓取）")
+	}
+
+	// ① 非法 URL → 内核的「无效 URL」文案（证明走到了 net 层）
+	res, err := reg.Execute(nil, "web_fetch", &CallParams{
+		Input: map[string]any{"url": "not a url\n"},
+	})
+	if err != nil {
+		t.Fatalf("不应返回 error：%v", err)
+	}
+	if !res.IsError || !strings.Contains(res.Content, "无效 URL") {
+		t.Errorf("应透传内核错误，实得 %q", res.Content)
+	}
+
+	// ② 不支持协议 → 内核的协议文案
+	res2, _ := reg.Execute(nil, "web_fetch", &CallParams{
+		Input: map[string]any{"url": "file:///etc/passwd"},
+	})
+	if !res2.IsError || !strings.Contains(res2.Content, "不支持的协议") {
+		t.Errorf("应透传协议错误，实得 %q", res2.Content)
+	}
+
+	// ③ 批量上限在生产路径同样生效
+	urls := make([]any, 11)
+	for i := range urls {
+		urls[i] = "https://example.com/"
+	}
+	res3, _ := reg.Execute(nil, "web_fetch", &CallParams{Input: map[string]any{"urls": urls}})
+	if !res3.IsError || !strings.Contains(res3.Content, "一次最多抓取 10 个 URL") {
+		t.Errorf("批量上限应生效，实得 %q", res3.Content)
+	}
+
+	t.Log("web_fetch 已接线到 internal/net 全层（错误文案来自内核）")
+}
