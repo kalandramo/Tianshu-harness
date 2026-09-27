@@ -162,10 +162,9 @@ func TestInjectLspDiagnostics_NoRangesFallbackWholeFile(t *testing.T) {
 	}
 }
 
-// TestExtractPatchTargetPaths —— diff 头解析（只认 `+++ `）。
+// TestExtractPatchTargetPaths —— diff 头解析（`+++ ` 为主，删除回退 `--- `）。
 //
-// 对账 TS `patchTargetPaths` + `extractWriteFilePaths` 的路径形态。
-// ★ 只认 `+++ `（新奇侧）——`--- ` 是旧路径，删除时可能是 /dev/null。
+// 对账 TS `patchTargetPaths`（`src/agent/pre-write-claims.ts:18-35`）。
 func TestExtractPatchTargetPaths(t *testing.T) {
 	diff := "--- a/old.go\n+++ b/new.go\n@@ -1 +1 @@\n-x\n+y\n"
 	got := extractPatchTargetPaths(diff)
@@ -173,14 +172,59 @@ func TestExtractPatchTargetPaths(t *testing.T) {
 		t.Errorf("应解析出 new.go（去掉 b/ 前缀）：%+v", got)
 	}
 
-	// 多文件 + 去重 + 跳过 /dev/null
-	diff2 := "+++ b/a.go\n+++ b/b.go\n+++ /dev/null\n+++ b/a.go\n"
+	// 多文件 + 去重
+	diff2 := "+++ b/a.go\n+++ b/b.go\n+++ b/a.go\n"
 	got2 := extractPatchTargetPaths(diff2)
 	if len(got2) != 2 || got2[0] != "a.go" || got2[1] != "b.go" {
-		t.Errorf("应得 [a.go b.go]（去重、跳 /dev/null）：%+v", got2)
+		t.Errorf("应得 [a.go b.go]（去重）：%+v", got2)
 	}
 
 	if len(extractPatchTargetPaths("没有补丁头的文本")) != 0 {
 		t.Error("无 +++ 头应得空")
+	}
+}
+
+// TestExtractPatchTargetPaths_DeletionFallsBackToMinusHeader —— ★ V2（第一百零五刀）。
+//
+// # 为什么必须回退取 `--- ` 头
+//
+// 纯删除补丁的新奇侧是 `+++ /dev/null`（文件没了）。若只认 `+++ `，
+// **被删文件永远解析不出来** → `ChangeFile` 不通知 → server 与缓存里
+// 该文件的陈旧诊断**永久保留**（用户会持续看到已删文件的错误）。
+//
+// TS 在 `src/agent/pre-write-claims.ts:29-32` 明确处理这个回退：
+//
+//	// Deletion (`+++ /dev/null`): the removed file is the preceding --- header.
+//	const minus = /^--- (?:a\/)?(.+)$/.exec(lines[i - 1] ?? '')
+//
+// 判别力：去掉回退分支 → 本例红（返回空）。
+func TestExtractPatchTargetPaths_DeletionFallsBackToMinusHeader(t *testing.T) {
+	// 纯删除：`+++ /dev/null`，被删文件在前一行的 `--- a/x.go`
+	del := "--- a/x.go\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-package x\n"
+	got := extractPatchTargetPaths(del)
+	if len(got) != 1 || got[0] != "x.go" {
+		t.Errorf("★ 纯删除应回退取 `--- ` 头得 x.go，实得 %+v（失去通知 = 陈旧诊断永久保留）", got)
+	}
+
+	// 混合：一处修改 + 一处删除
+	mixed := "--- a/keep.go\n+++ b/keep.go\n@@ -1 +1 @@\n-a\n+b\n" +
+		"--- a/gone.go\n+++ /dev/null\n@@ -1 +0,0 @@\n-g\n"
+	got2 := extractPatchTargetPaths(mixed)
+	if len(got2) != 2 {
+		t.Fatalf("混合补丁应得 2 个路径，实得 %+v", got2)
+	}
+	seen := map[string]bool{}
+	for _, p := range got2 {
+		seen[p] = true
+	}
+	if !seen["keep.go"] || !seen["gone.go"] {
+		t.Errorf("应同时含 keep.go 与 gone.go，实得 %+v", got2)
+	}
+
+	// `/dev/null` 本身绝不作为路径出现
+	for _, p := range got2 {
+		if p == "/dev/null" || p == "" {
+			t.Errorf("不该出现占位路径：%+v", got2)
+		}
 	}
 }

@@ -159,24 +159,44 @@ func (l *Loop) writeToolPaths(tc toolCall) []string {
 
 // extractPatchTargetPaths 从补丁文本里取目标路径。
 //
-// 复用 `prompt.ExtractPatchTargetPaths` 的语义（只看 `+++ ` 头）。
-// 此处独立实现是为避免 agent → prompt 的循环（prompt 已依赖 agent 侧的
-// 一些类型）。逻辑极简：逐行找 `+++ ` 前缀。
+// 对账 TS `patchTargetPaths`（`src/agent/pre-write-claims.ts:18-35`）：
+// 以 `+++ `（新奇侧）为准；**纯删除时回退到前一行的 `--- `（旧侧）**。
+//
+// # ★ 为什么必须处理删除（第一百零五刀）
+//
+// 纯删除补丁的新奇侧是 `+++ /dev/null`（文件已不存在）。若只认 `+++ `，
+// 被删文件**永远解析不出来** → `ChangeFile` 不通知 → server 与该文件的
+// 诊断缓存里，陈旧诊断**永久保留**——用户会持续看到已删文件的错误。
+//
+// TS 注释逐字：「Deletion (`+++ /dev/null`): the removed file is the
+// preceding --- header.」故此处按同样的回退取值。
 func extractPatchTargetPaths(diff string) []string {
 	var out []string
 	seen := map[string]bool{}
-	for _, line := range strings.Split(diff, "\n") {
-		if !strings.HasPrefix(line, "+++ ") {
-			continue
-		}
-		p := strings.TrimSpace(strings.TrimPrefix(line, "+++ "))
-		// 去掉 git 的 `a/`、`b/` 前缀与 `/dev/null`
-		p = strings.TrimPrefix(p, "b/")
+	add := func(p string) {
+		p = strings.TrimSpace(p)
 		if p == "" || p == "/dev/null" || seen[p] {
-			continue
+			return
 		}
 		seen[p] = true
 		out = append(out, p)
+	}
+
+	lines := strings.Split(diff, "\n")
+	for i, line := range lines {
+		if !strings.HasPrefix(line, "+++ ") {
+			continue
+		}
+		// 新奇侧路径（去掉 git 的 `b/` 前缀）。
+		p := strings.TrimPrefix(strings.TrimSpace(strings.TrimPrefix(line, "+++ ")), "b/")
+		if p != "" && p != "/dev/null" {
+			add(p)
+			continue
+		}
+		// ★ 删除（`+++ /dev/null`）：被删文件是**前一行**的 `--- ` 头。
+		if i > 0 && strings.HasPrefix(lines[i-1], "--- ") {
+			add(strings.TrimPrefix(strings.TrimSpace(strings.TrimPrefix(lines[i-1], "--- ")), "a/"))
+		}
 	}
 	return out
 }
