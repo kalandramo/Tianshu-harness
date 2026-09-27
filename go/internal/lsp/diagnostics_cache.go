@@ -2,7 +2,6 @@ package lsp
 
 import (
 	"encoding/json"
-	"strings"
 	"sync"
 )
 
@@ -110,12 +109,4 @@ func (m *manager) handlePublishDiagnostics(raw json.RawMessage) {
 		return
 	}
 	m.diags.set(p.URI, p.Diagnostics)
-}
-
-// uriToCacheKey 把 LSP URI 规范成缓存键。
-//
-// 对账 TS：两侧都用 `fileToUri(filePath, cwd)` 生成 URI，故键必须**逐字
-// 一致**。TS 的 URI 形如 `file:///abs/path`（**不做百分号编码以外的转义**）。
-func uriToCacheKey(uri string) string {
-	return strings.TrimSpace(uri)
 }

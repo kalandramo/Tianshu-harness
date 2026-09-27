@@ -50,10 +50,22 @@ func (m *manager) getFileDiagnostics(filePath string, timeoutMS int) []LspDiagno
 	if m == nil {
 		return nil
 	}
-	// ★ `opened` 必须用 **URI** 作键读——`ensureDocument` 写的是
-	// `openedDocs[uriForFile(...)]`（URI 键），曾在此误用绝对路径作键，
-	// 于是**永远读到 false** → 每次都重走「刚打开」分支 →
-	// 内容变化时不会重新触发（拿到的永远是首次诊断）。
+	// ★ 键必须与 `ensureDocument` / `ChangeFile` 一致——**全都是 URI**。
+	//
+	// 曾经此处用绝对路径作键（`openedDocs[absFromCwd(...)]`），而
+	// `ensureDocument` 用 URI 作键 → **永远读到 false**（Go 的 map 读缺失键
+	// 返回零值且不报错）→ 每次都走「刚打开」分支 → 内容变了也不重新触发。
+	//
+	// # 真不变量（订正自审查 C2）
+	//
+	// 原文注释称两个 URI 构造函数「在 macOS 下多半产出相同字符串」——
+	// **不准确**：`uriForPath(absPath)` 与 `uriForFile(fp, cwd)` 的实现
+	// **逐字等价**（都是 `ToSlash` + 补前导 `/` + `url.URL{Scheme:"file"}`），
+	// 传入绝对路径时**恒等**。
+	//
+	// 真正的不变量是：**本文件涉及的所有 map 键都必须是 URI**
+	// （`openedDocs` / `diags` / `lastSentText` 三张表同键空间）。
+	// 用错键**不会报错**，只会静默 miss——故这里显式写明。
 	fileURI := uriForFile(filePath, m.cwd)
 	m.mu.Lock()
 	rpc := m.rpc
@@ -132,9 +144,8 @@ func (m *manager) getFileDiagnostics(filePath string, timeoutMS int) []LspDiagno
 	// 对账 TS `manager.ts:354-357`：「Read actual file content — empty text
 	// would tell tsserver the file is empty (false green)」——**关键**：
 	// 若发空内容，server 会认为文件是空的、报无诊断，于是拿到「假绿」。
-	m.mu.Lock()
-	m.lastSentText[uri] = text
-	m.mu.Unlock()
+	//
+	// `lastSentText` 的同步在 `notifyDidChangeWithText` 内部完成（收口）。
 	m.notifyDidChangeWithText(rpc, uri, text)
 
 	// ── ④ 等推送到达（有界）──
@@ -163,29 +174,56 @@ func waitForDiagnostics(m *manager, uri string, timeoutMS int) []LspDiagnostic {
 	}
 }
 
-// notifyDidChange 发送 didChange 通知（携带磁盘上的真实内容）。
+// recordSentText 记录「已发给 server 的文档文本」（按 URI）。
 //
-// 抽成独立方法是为了让 `ChangeFile`（无等待）与 `getFileDiagnostics`
-// （有等待）**共用同一段触发逻辑**——两者的 didChange 载荷必须完全一致，
-// 否则 server 看到的文档版本会漂移。
+// # ★ 核心不变量（第一百零四刀）
 //
-// 对账 TS `manager.ts:354-357`。
-func (m *manager) notifyDidChange(rpc *RPC, filePath, uri string) {
-	text, ok := readDocumentText(absFromCwd(filePath, m.cwd))
-	if !ok {
-		// 文件不在磁盘上（如刚被删）→ 用空文本，让 server 清掉陈旧诊断。
-		// 对账 TS：`// File may not exist on disk — use empty text as last resort`
-		text = ""
+//	对任一 uri，`lastSentText[uri]` 必须恒等于「server 缓冲中该文档的内容」。
+//
+// **所有改变 server 文档缓冲的路径都必须经此函数**（当前有两条：
+// `ensureDocument` 的 didOpen、`notifyDidChangeWithText` 的 didChange；
+// 后者又被 `ChangeFile` 与 `getFileDiagnostics` 共用）。
+//
+// # 违反它会怎样
+//
+// `getFileDiagnostics` 用 `lastSentText[uri] == 当前磁盘文本` 判断
+// 「是否需重新触发」：
+//
+//   - 表**落后**于 server（本刀修的缺陷）→ 误判「内容变了」→ 清掉刚推来的
+//     有效缓存 → 而重复 didChange 对 gopls 是空操作 → **拿不到诊断**
+//   - 表**超前**于 server → 误判「未变」→ 用陈旧缓存 → 返回过期诊断
+//
+// 两种都是「不报错但结果错」。故不变量由**结构**（单一入口）保证，
+// 而非依赖每个调用点「记得写」。
+//
+// ⚠️ **调用方不得已持有 `m.mu`**：本函数自己加锁，而 Go 的 `sync.Mutex`
+// **不可重入**——锁内调它会**自锁死**（本刀实测过一次）。
+// 需要在锁内更新时，用内联赋值（见 `ensureDocument`）。
+func (m *manager) recordSentText(uri, text string) {
+	m.mu.Lock()
+	if m.lastSentText != nil {
+		m.lastSentText[uri] = text
 	}
-	m.notifyDidChangeWithText(rpc, uri, text)
+	m.mu.Unlock()
 }
 
-// notifyDidChangeWithText 发送 didChange（文本由调用方给定）。
+// notifyDidChangeWithText 发送 didChange（文本由调用方给定）并同步判据状态。
 //
-// **为什么把文本作为参数**：`getFileDiagnostics` 需要先读一次文本用于
-// 「内容是否变了」的判断，再发同一个文本——分两次读会有 TOCTOU 缝隙
-// （两次读之间文件可能被改），且多一次磁盘 I/O。
+// ★ **这是所有「改变 server 文档缓冲」路径的唯一收口点**——它内部调
+// `recordSentText`，故调用方无需记得更新 `lastSentText`。
+//
+// # 为什么必须收口（第一百零四刀的根因）
+//
+// `lastSentText` 必须恒等于「server 缓冲内容」，否则 `getFileDiagnostics`
+// 的「内容是否变了」判据会误判。此前有三条路径改 server 缓冲，只有两条
+// 更新该表——`ChangeFile` 漏了，于是留下残余静默失效（写工具改盘 →
+// ChangeFile 发新内容 → `lastSentText` 仍旧 → 取诊断时误清刚推来的缓存）。
+// 把同步放进本函数，让不变量由**结构**保证，而非靠「记得写」。
+//
+// `text` 作为参数传（而非内部读盘）是为了避免 TOCTOU：调用方需要先读一次
+// 用于「内容是否变了」的判断，再发同一个文本——分两次读会有缝隙。
 func (m *manager) notifyDidChangeWithText(rpc *RPC, uri, text string) {
+	m.recordSentText(uri, text)
 	params := map[string]any{
 		"textDocument":   map[string]any{"uri": uri, "version": time.Now().UnixMilli()},
 		"contentChanges": []any{map[string]any{"text": text}},

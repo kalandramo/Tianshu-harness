@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"os"
 	"strings"
 
 	"github.com/kalandramo/tianshu/go/internal/contract"
@@ -163,16 +162,4 @@ func extractPatchTargetPaths(diff string) []string {
 		out = append(out, p)
 	}
 	return out
-}
-
-// readFileTextOrEmpty 读文件文本（失败返回空串）。
-//
-// 供 `ChangeFile` 之外的路径使用；读不到时返回空——与 TS 的
-// 「File may not exist on disk — use empty text as last resort」一致。
-func readFileTextOrEmpty(path string) string {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return string(b)
 }

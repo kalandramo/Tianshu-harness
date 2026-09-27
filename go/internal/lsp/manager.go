@@ -180,6 +180,15 @@ func (m *manager) Initialize() error {
 
 	m.mu.Lock()
 	m.openedDocs = map[string]bool{}
+	// ★ 新 server 没有任何文档状态与诊断——三张表必须**一起**清空。
+	//
+	// 只清 `openedDocs` 会留下两个陈旧源：
+	//   - `lastSentText` 仍认为「该内容已发给 server」→ `getFileDiagnostics`
+	//     判「未变」→ **跳过 didOpen**（而新 server 根本没这个文档）
+	//   - `diags` 里留着**旧 server** 的诊断 → 返回陈旧结果
+	// 两者都是「不报错但结果错」的形态（第一百零四刀修复目标之一）。
+	m.diags = newDiagCache()
+	m.lastSentText = map[string]string{}
 	m.mu.Unlock()
 
 	tr := m.spawn()
@@ -313,13 +322,18 @@ func (m *manager) ensureDocument(filePath string) {
 
 	uri := uriForFile(filePath, m.cwd)
 	m.mu.Lock()
-	// ★ 记录「已发给 server 的文本」——与 didChange 路径共用同一状态。
+	// ★ 记录「已发给 server 的文本」。
 	//
 	// **为什么必须在 didOpen 时也记**（真实 gopls 验证出的必需项）：
 	// didOpen 会触发 server 分析并推送诊断；若此处不记，
 	// `getFileDiagnostics` 的「内容是否变了」判据会认为「从未发过」，
 	// 于是**清掉刚推来的诊断**并再发一个同内容的 didChange——
 	// 而 gopls 对同内容 didChange **不重推** → 诊断永远为空。
+	//
+	// ⚠️ **此处直接赋值而非调 `recordSentText`**：本函数此刻**已持有
+	// `m.mu`**，而 `recordSentText` 自己会加锁——Go 的 `sync.Mutex`
+	// **不可重入**，调它会**自锁死**（本刀实测：测试挂起 20s 超时）。
+	// 故锁内用内联赋值、锁外用 `recordSentText`，两者语义一致。
 	if m.lastSentText != nil {
 		m.lastSentText[uri] = text
 	}
@@ -440,18 +454,18 @@ func (m *manager) ChangeFile(filePath string) {
 
 	text, ok := readDocumentText(absFromCwd(filePath, m.cwd))
 	if !ok {
-		return // 保持 server 现有缓冲
+		return // 保持 server 现有缓冲（对账 TS）
 	}
 
-	params := map[string]any{
-		"textDocument":   map[string]any{"uri": uri, "version": time.Now().UnixMilli()},
-		"contentChanges": []any{map[string]any{"text": text}},
-	}
-	raw, _ := json.Marshal(params)
-	if m.onDidChange != nil {
-		m.onDidChange(raw)
-	}
-	_ = rpc.Notify("textDocument/didChange", params)
+	// ★ 经统一收口发送（`notifyDidChangeWithText` 内部同步 `lastSentText`）。
+	//
+	// **为什么必须走收口而非内联**：`lastSentText` 必须恒等于「server 缓冲
+	// 内容」——那是 `getFileDiagnostics` 判断「是否需重新触发」的依据。
+	// 内联发送会绕过该同步，导致：写工具改盘 → 本函数把新内容发给 server
+	// （缓冲已新）→ 但 `lastSentText` 还是旧的 → 随后取诊断时误判「内容
+	// 变了」→ 清掉**刚推来的**有效缓存。
+	// 本刀（第一百零四刀）修的正是这条路径。
+	m.notifyDidChangeWithText(rpc, uri, text)
 }
 
 // Dispose 释放资源（对账 TS `dispose()`）。
