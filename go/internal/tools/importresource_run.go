@@ -132,6 +132,21 @@ func (t *importResourceTool) Execute(ctx context.Context, p *CallParams) (contra
 // （对账 TS 的 `/^https?:\/\//`），此处是 `i` 标志。
 var httpSchemeRe = regexp.MustCompile(`(?i)^https?://`)
 
+// importURLFetchTimeoutMs 是 URL 分支的抓取超时（对账 TS `timeoutMs: 60_000`）。
+//
+// **为什么显式常量**：`HTTPFetchGuarded` 的默认是 **15s**（`httpfetch.go:56`）——
+// 漏传 `Options` 会让 15~60 秒的下载在 Go 侧超时而 TS 侧成功（提交后审查发现）。
+const importURLFetchTimeoutMs = 60_000
+
+// copyNote 是导入方式说明（进模型上下文）。
+//
+// **为什么是复制而非符号链接**（Go 侧修正，见本文件头的「与 TS 的差异」）：
+// 符号链接虽然省磁盘，但 `pathsafe.Validate` 会 `EvalSymlinks` 解析到源路径
+// （工作区外）→ `read_file`/`grep` 读它时被判越界拒绝 → 摘要里
+// 「该资源现可通过项目内路径访问」的承诺**是假的**。
+// 复制则让产物**真的**是工作区内的普通文件。
+const copyNote = "（已复制到工作区内——可被 read_file、grep、glob 直接读取）"
+
 // ── 分支 3：本地路径 ────────────────────────────────────────────────────
 
 // handleLocalImport 对账 TS `handleLocalImport`（`:224-262`）。
@@ -170,34 +185,29 @@ func (t *importResourceTool) handleLocalImport(
 	_ = os.RemoveAll(targetPath)
 
 	if info.IsDir() {
-		// 对账 TS：目录走 junction（Windows）/符号链接——**不复制到磁盘**
-		if err := os.Symlink(resolved, targetPath); err != nil {
-			// 符号链接不可用（如 Windows 无权限）→ 退化为复制（对账 TS 同款兜底思路）
-			if err := copyDir(resolved, targetPath); err != nil {
-				return contract.Result{
-					Content: "错误：导入目录失败：" + err.Error(), IsError: true,
-				}
+		// **复制而非符号链接**（Go 侧修正，见下方 grantImported 的说明）。
+		if err := copyDir(resolved, targetPath); err != nil {
+			return contract.Result{
+				Content: "错误：导入目录失败：" + err.Error(), IsError: true,
 			}
-			r := buildImportResult(source, targetPath, cwd, importStats{Type: "directory", Files: countFiles(resolved, 3)}, store)
-			return finalizeImport(r, "（以复制方式——符号链接不可用）")
 		}
-		r := buildImportResult(source, targetPath, cwd, importStats{Type: "directory", Files: countFiles(resolved, 3)}, store)
-		return finalizeImport(r, "（以 junction 链接——未复制到磁盘）")
+		n := countFiles(resolved, 3)
+		r := buildImportResult(source, targetPath, cwd,
+			importStats{Type: "directory", Files: &n}, store)
+		return finalizeImport(r, copyNote)
 	}
 
-	// 文件：先试 symlink，失败则复制（对账 TS 同序）
-	if err := os.Symlink(resolved, targetPath); err != nil {
-		if err := copyFile(resolved, targetPath); err != nil {
-			return contract.Result{
-				Content: "错误：导入文件失败：" + err.Error(), IsError: true,
-			}
+	// 文件：**复制**（不走 symlink——理由见 grantImported 的注释）
+	if err := copyFile(resolved, targetPath); err != nil {
+		return contract.Result{
+			Content: "错误：导入文件失败：" + err.Error(), IsError: true,
 		}
 	}
 	size := int64(0)
 	if st, err := os.Stat(resolved); err == nil {
 		size = st.Size()
 	}
-	return buildImportResult(source, targetPath, cwd, importStats{Type: "file", Size: size}, store)
+	return buildImportResult(source, targetPath, cwd, importStats{Type: "file", Size: &size}, store)
 }
 
 // ── 分支 1：GitHub ──────────────────────────────────────────────────────
@@ -265,8 +275,12 @@ func (t *importResourceTool) handleGitHubImport(
 	}
 
 	// 浅 clone 后显式 checkout（对账 TS：`--` 消歧）
+	// 对账 TS：`if (ref && existsSync(join(targetPath, '.git')))`——缺守卫时
+	// 对一个非 git 目录跑 checkout 会产出噪声错误。
 	if ref != "" {
-		_ = runGit(gitCmd, []string{"checkout", ref, "--"}, targetPath, 10_000)
+		if _, err := os.Stat(filepath.Join(targetPath, ".git")); err == nil {
+			_ = runGit(gitCmd, []string{"checkout", ref, "--"}, targetPath, 10_000)
+		}
 	}
 
 	effectivePath := targetPath
@@ -288,9 +302,13 @@ func (t *importResourceTool) handleGitHubImport(
 		}
 	}
 
-	st := importStats{Type: "directory", Files: countFiles(targetPath, 3)}
+	// 对账 TS：**恒传 `files`**，且从无 `size` 字段——
+	// `{ type: ls?.isFile() ? 'file' : 'directory', files: await countFiles(targetPath, 3) }`
+	// 故 file 情形也输出「文件数：约 N」。此前 Go 侧覆盖成 `{file, size}` 丢了 files。
+	files := countFiles(targetPath, 3)
+	st := importStats{Type: "directory", Files: &files}
 	if info, err := os.Lstat(effectivePath); err == nil && !info.IsDir() {
-		st = importStats{Type: "file", Size: info.Size()}
+		st.Type = "file"
 	}
 	display := "github.com/" + gh.Owner + "/" + gh.Repo
 	if gh.Subpath != "" {
@@ -331,9 +349,12 @@ func isExecNotFound(err error) bool {
 func (t *importResourceTool) handleURLImport(
 	ctx context.Context, cwd, importDir, rawURL string, store *artifact.Store,
 ) contract.Result {
+	// 对账 TS：`basename(parsed.pathname) || 'downloaded-content'`——
+	// JS 的 `basename('/')` 返回 `'/'`（**truthy**，故会被保留）。
+	// Go 的 `filepath.Base("/")` 也返回 `"/"`，但**只有空串与 `.` 才算 falsy**。
 	filename := "downloaded-content"
 	if u, err := url.Parse(rawURL); err == nil {
-		if b := filepath.Base(u.Path); b != "" && b != "." && b != "/" {
+		if b := filepath.Base(u.Path); b != "" && b != "." {
 			filename = b
 		}
 	}
@@ -342,8 +363,9 @@ func (t *importResourceTool) handleURLImport(
 
 	fetch := t.fetch
 	if fetch == nil {
+		opts := importURLFetchOptions()
 		fetch = func(ctx context.Context, u string) (*tnet.Result, error) {
-			return tnet.HTTPFetchGuarded(ctx, u, tnet.Deps{}, tnet.Options{})
+			return tnet.HTTPFetchGuarded(ctx, u, tnet.Deps{}, opts)
 		}
 	}
 	res, err := fetch(ctx, rawURL)
@@ -371,17 +393,22 @@ func (t *importResourceTool) handleURLImport(
 			Content: "错误：写入失败：" + err.Error(), IsError: true,
 		}
 	}
+	n := int64(len(res.Bytes))
 	return buildImportResult(rawURL, targetPath, cwd,
-		importStats{Type: "file", Size: int64(len(res.Bytes))}, store)
+		importStats{Type: "file", Size: &n}, store)
 }
 
 // ── 结果组装 ────────────────────────────────────────────────────────────
 
 // importStats 对账 TS `buildResult` 的 `stats` 参数。
+//
+// **为什么用指针**：TS 的判定是 `stats.size !== undefined`（**字段有无**），
+// 不是「值非零」——故 `Size *int64` / `Files *int` 才能精确对账：
+// 一个**真的为 0 字节**的文件也该输出「大小：0.0 KB」。
 type importStats struct {
 	Type  string // "file" | "directory"
-	Size  int64
-	Files int
+	Size  *int64
+	Files *int
 }
 
 // importResult 对账 TS `buildResult` 的返回形状。
@@ -397,12 +424,12 @@ func buildImportResult(
 	relPath := relPosix(cwd, localPath)
 
 	header := "已导入：" + source + "\n本地路径：" + relPath + "\n类型：" + stats.Type
-	if stats.Type == "file" {
-		// 对账 TS：`(stats.size / 1024).toFixed(1)` —— 一位小数
-		header += fmt.Sprintf("\n大小：%.1f KB", float64(stats.Size)/1024)
+	// 对账 TS：`if (stats.size !== undefined)` —— **字段有无**判定，非「值非零」
+	if stats.Size != nil {
+		header += fmt.Sprintf("\n大小：%.1f KB", float64(*stats.Size)/1024)
 	}
-	if stats.Type == "directory" {
-		header += fmt.Sprintf("\n文件数：约 %d", stats.Files)
+	if stats.Files != nil {
+		header += fmt.Sprintf("\n文件数：约 %d", *stats.Files)
 	}
 
 	var preview string
@@ -587,4 +614,13 @@ func copyDir(src, dst string) error {
 		}
 		return copyFile(path, target)
 	})
+}
+
+// importURLFetchOptions 构造 URL 分支的抓取选项。
+//
+// **为什么抽出来**：超时是否真的传到 `HTTPFetchGuarded` 是审查发现的问题
+// （曾漏传 → 用 15s 默认 → 15~60s 的下载失败）。抽成函数后测试能直接断言
+// **构造出的 Options**，而不是只读常量（后者是恒真断言，抓不到漏传）。
+func importURLFetchOptions() tnet.Options {
+	return tnet.Options{TimeoutMs: tnet.IntPtr(importURLFetchTimeoutMs)}
 }

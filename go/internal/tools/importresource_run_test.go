@@ -9,6 +9,7 @@ import (
 
 	"github.com/kalandramo/tianshu/go/internal/artifact"
 	tnet "github.com/kalandramo/tianshu/go/internal/net"
+	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 )
 
 // importresource_run_test.go —— 工具本体三分支（第一百刀 · W3）。
@@ -173,9 +174,9 @@ func TestImportResourceLocalDirectory(t *testing.T) {
 	if !strings.Contains(content, "文件数：约") {
 		t.Errorf("应报文件数，实得：\n%s", content)
 	}
-	// 非 Windows 上应走符号链接（不复制）
-	if !strings.Contains(content, "junction 链接") && !strings.Contains(content, "复制方式") {
-		t.Errorf("应说明链接/复制方式，实得：\n%s", content)
+	// **Go 侧修正**：一律复制（不再走符号链接）——说明文案必须反映这一点
+	if !strings.Contains(content, "已复制到工作区内") {
+		t.Errorf("应说明已复制，实得：\n%s", content)
 	}
 	importDir := filepath.Join(cwd, ".rivet", "external")
 	entries, _ := os.ReadDir(importDir)
@@ -187,9 +188,12 @@ func TestImportResourceLocalDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 非 Windows 上应是符号链接（未复制）
-	if info.Mode()&os.ModeSymlink == 0 {
-		t.Log("（当前环境未走符号链接——可能是 Windows 或无权限，已退化为复制）")
+	// ★ 必须是**真目录**（复制语义）——若是 symlink 说明又回到了旧行为
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Error("导入目录应是复制出的真目录（symlink 会让 read_file 读不到）")
+	}
+	if !info.IsDir() {
+		t.Errorf("应是目录，实得 %v", info.Mode())
 	}
 }
 
@@ -696,5 +700,382 @@ func TestImportResourceNonSensitiveMissingPathReportedAsMissing(t *testing.T) {
 	}
 	if !strings.Contains(content, "路径不存在") {
 		t.Errorf("不敏感的缺失路径应报「路径不存在」，实得 %q", content)
+	}
+}
+
+// ── ★ 导入后授权（本刀验收发现的真问题）─────────────────────────────────
+
+// TestImportResourceGrantsImportedDir —— **导入后授权导入目录**。
+//
+// # 为什么需要（本刀用户级验收发现的真问题）
+//
+// 摘要里承诺「该资源现可通过项目内路径访问……请使用 read_file、grep、glob
+// 配合此路径」。但 `pathsafe.Validate` 会 `EvalSymlinks` 解析导入用的符号链接
+// → 发现真实路径在工作区外 → **拒绝**。
+//
+// **实测证据**（验收时）：`read_file` 读 `.rivet/external/note-xxx.md` 报
+// 「Path outside project directory」——**摘要的承诺是假的**。
+//
+// **TS 侧同样有此缺陷**（`import-resource.ts` 既无 grantPath、也无豁免名单，
+// 而 `path-validate.ts:39,50` 同样 realpath）——故这是**修正而非忠实移植**。
+func TestImportResourceGrantsImportedDir(t *testing.T) {
+	cwd := t.TempDir()
+	srcDir := t.TempDir()
+	src := filepath.Join(srcDir, "note.md")
+	if err := os.WriteFile(src, []byte("内容"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// **Go 侧修正（复制语义）**：不再需要授权——产物已在工作区内。
+	// 授权回调**不该**被调用（若被调用，说明还在用 symlink 路径）。
+	granted := []string{}
+	tool := ImportResource(cwd)
+	r, err := tool.Execute(context.Background(), &CallParams{
+		Input:     map[string]any{"source": src},
+		GrantPath: func(root string, _ GrantMode, _ string) { granted = append(granted, root) },
+	})
+	if err != nil || r.IsError {
+		t.Fatalf("err=%v content=%q", err, r.Content)
+	}
+	if len(granted) != 0 {
+		t.Errorf("复制语义下**不该需要授权**（产物已在工作区内），实得授权 %v", granted)
+	}
+	// 且产物必须是真文件（非 symlink）
+	entries, _ := os.ReadDir(filepath.Join(cwd, ".rivet", "external"))
+	if len(entries) != 1 {
+		t.Fatalf("应有 1 项，实得 %d", len(entries))
+	}
+	info, err := os.Lstat(filepath.Join(cwd, ".rivet", "external", entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Error("产物应是真文件（复制），不是符号链接")
+	}
+}
+
+// TestImportResourceDoesNotGrantSourcePath —— **不授源路径**（安全边界）。
+//
+// 源可能是用户的任意目录（甚至 `$HOME`）；授它等于绕过工作区边界。
+// 本工具只该授权**导入目录**。
+func TestImportResourceDoesNotGrantSourcePath(t *testing.T) {
+	cwd := t.TempDir()
+	srcDir := t.TempDir()
+	src := filepath.Join(srcDir, "x.txt")
+	if err := os.WriteFile(src, []byte("y"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	granted := []string{}
+	_, err := ImportResource(cwd).Execute(context.Background(), &CallParams{
+		Input:     map[string]any{"source": src},
+		GrantPath: func(root string, _ GrantMode, _ string) { granted = append(granted, root) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range granted {
+		if strings.Contains(g, srcDir) {
+			t.Errorf("**不该授权源路径**（%q），实得授权列表 %v", srcDir, granted)
+		}
+	}
+}
+
+// TestImportResourceNoGrantOnError —— 失败时**不授权**。
+//
+// 授权一个「什么都没导入」的目录是无意义的（且扩大攻击面）。
+func TestImportResourceNoGrantOnError(t *testing.T) {
+	cwd := t.TempDir()
+	granted := []string{}
+	_, err := ImportResource(cwd).Execute(context.Background(), &CallParams{
+		Input:     map[string]any{"source": "/definitely/not/here.txt"},
+		GrantPath: func(root string, _ GrantMode, _ string) { granted = append(granted, root) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 失败（路径不存在）→ 不该授权
+	if len(granted) != 0 {
+		t.Errorf("导入失败时不该授权，实得 %v", granted)
+	}
+}
+
+// TestImportResourceNilGrantPathTolerated —— 无 GrantPath 回调时不 panic。
+//
+// 测试与直接构造 CallParams 的调用方可能不传它。
+func TestImportResourceNilGrantPathTolerated(t *testing.T) {
+	cwd := t.TempDir()
+	srcDir := t.TempDir()
+	src := filepath.Join(srcDir, "a.txt")
+	if err := os.WriteFile(src, []byte("b"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := ImportResource(cwd).Execute(context.Background(), &CallParams{
+		Input: map[string]any{"source": src},
+	})
+	if err != nil || r.IsError {
+		t.Errorf("无 GrantPath 时应正常工作：err=%v content=%q", err, r.Content)
+	}
+}
+
+// TestImportResourceThenReadFileEndToEnd —— ★ **闭环**：导入 → 授权 → read_file 真能读。
+//
+// 这是本工具存在的意义，也是上面那条缺陷的**用户可见判据**。
+// 用手写的 GrantChecker 模拟会话授权存储（不走 agent 包，避免 import 环）。
+func TestImportResourceThenReadFileEndToEnd(t *testing.T) {
+	cwd := t.TempDir()
+	srcDir := t.TempDir()
+	src := filepath.Join(srcDir, "note.md")
+	if err := os.WriteFile(src, []byte("外部内容"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// **复制语义下无需授权**——不给 Grants、不给 GrantPath，
+	// 若 read_file 仍能读到，才真正证明「产物在工作区内」。
+	reg := NewDefaultRegistry(Options{Cwd: cwd})
+	p := &CallParams{Input: map[string]any{"source": src}}
+
+	// ① 导入（带授权回调）
+	r, err := reg.Execute(context.Background(), "import_resource", p)
+	if err != nil || r.IsError {
+		t.Fatalf("① 导入失败：err=%v content=%q", err, r.Content)
+	}
+	// 从摘要提取路径
+	idx := strings.Index(r.Content, ".rivet/external/")
+	if idx < 0 {
+		t.Fatalf("① 摘要应给出路径，实得 %q", r.Content)
+	}
+	rel := r.Content[idx:]
+	if nl := strings.IndexAny(rel, "\n"); nl >= 0 {
+		rel = rel[:nl]
+	}
+
+	// ② 用 read_file 读（走同一 registry 的 Grants）
+	abs := filepath.Join(cwd, rel)
+	r2, err := reg.Execute(context.Background(), "read_file",
+		&CallParams{Input: map[string]any{"file_path": abs}})
+	if err != nil {
+		t.Fatalf("② read_file 不该返回 error：%v", err)
+	}
+	if r2.IsError {
+		t.Fatalf("② **导入后 read_file 应能读到**（这是本工具的意义）—— 实得错误：%q\n"+
+			"若失败，说明「导入后授权」没生效", r2.Content)
+	}
+	if !strings.Contains(r2.Content, "外部内容") {
+		t.Errorf("② 应读到原文，实得 %q", r2.Content)
+	}
+}
+
+// fakeGrantChecker 是最小的 pathsafe.GrantChecker 实现（模拟会话授权存储）。
+type fakeGrantChecker struct{ roots *[]string }
+
+func (f *fakeGrantChecker) under(path string, mode pathsafe.Mode) bool {
+	// **必须对两侧做 realpath**——`pathsafe.Validate` 给的是 realpath 后的路径
+	// （macOS 上 `/var` → `/private/var`），用未解析的 root 比会永远对不上。
+	realPath := path
+	if r, err := filepath.EvalSymlinks(path); err == nil {
+		realPath = r
+	}
+	for _, root := range *f.roots {
+		realRoot := root
+		if r, err := filepath.EvalSymlinks(root); err == nil {
+			realRoot = r
+		}
+		rel, err := filepath.Rel(realRoot, realPath)
+		if err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *fakeGrantChecker) IsReadGranted(path, _ string) bool {
+	return f.under(path, pathsafe.ModeRead)
+}
+func (f *fakeGrantChecker) IsWriteGranted(path, _ string) bool {
+	return f.under(path, pathsafe.ModeWrite)
+}
+
+// ── 提交后审查的 4 条发现（第一百刀续 · 逐条补回归）───────────────────
+
+// TestImportResourceURLTimeoutIs60s —— ★ 审查发现 1：URL 分支超时应为 60s。
+//
+// 对账 TS `handleUrlImport`：`fetchFn(url, undefined, { timeoutMs: 60_000 })`。
+// Go 侧 `HTTPFetchGuarded` 的默认是 **15s**（`httpfetch.go:56`）——
+// 曾漏传 `Options`，导致 15~60 秒的下载在 Go 侧超时、TS 侧成功。
+//
+// **本测试直接断言传给 fetch 的超时值**（不打网络）。
+func TestImportResourceURLTimeoutIs60s(t *testing.T) {
+	// ★ 断言**构造出的 Options**（而非只读常量）——后者是恒真断言，
+	// 抓不到「漏传 Options」这个真实缺陷（变异 M-B 曾红 0）。
+	opts := importURLFetchOptions()
+	if opts.TimeoutMs == nil {
+		t.Fatal("URL 分支必须**显式传超时**——Go 默认是 15s，TS 是 60s")
+	}
+	if *opts.TimeoutMs != 60_000 {
+		t.Errorf("URL 分支超时应为 60_000ms（对账 TS），实得 %d", *opts.TimeoutMs)
+	}
+}
+
+// TestImportResourceCopyNotSymlink —— ★ 复制语义的核心不变量。
+//
+// # 为什么这条最重要
+//
+// symlink 会让 `pathsafe.Validate` 的 `EvalSymlinks` 解析到工作区外 →
+// `read_file` 拒绝。复制则让产物真的是工作区内的普通文件。
+//
+// **代价（用户已知情选择）**：源文件更新后导入物**不会**跟着变。
+func TestImportResourceCopyNotSymlink(t *testing.T) {
+	cwd := t.TempDir()
+	srcDir := t.TempDir()
+	src := filepath.Join(srcDir, "doc.txt")
+	if err := os.WriteFile(src, []byte("原始内容"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	content, isErr := runImport(t, ImportResource(cwd), map[string]any{"source": src})
+	if isErr {
+		t.Fatalf("应成功，实得 %q", content)
+	}
+
+	importDir := filepath.Join(cwd, ".rivet", "external")
+	entries, _ := os.ReadDir(importDir)
+	if len(entries) != 1 {
+		t.Fatalf("应有 1 项，实得 %d", len(entries))
+	}
+	target := filepath.Join(importDir, entries[0].Name())
+
+	// ① 必须是真文件（非符号链接）
+	info, err := os.Lstat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("产物必须是真文件（复制），不是符号链接")
+	}
+	if !info.Mode().IsRegular() {
+		t.Errorf("应是普通文件，实得 %v", info.Mode())
+	}
+
+	// ② 内容与源一致
+	got, err := os.ReadFile(target)
+	if err != nil || string(got) != "原始内容" {
+		t.Errorf("内容应为原始内容：err=%v got=%q", err, got)
+	}
+
+	// ③ **复制语义的代价**：改源不影响副本（显式验证，让代价可见）
+	if err := os.WriteFile(src, []byte("改后的内容"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(target)
+	if string(after) != "原始内容" {
+		t.Errorf("复制语义下副本不该随源变化（这是已知代价），实得 %q", after)
+	}
+}
+
+// TestImportResourceGitHubFileStatsKeepsFiles —— ★ 审查发现 2。
+//
+// 对账 TS `handleGitHubImport` 末尾：
+//
+//	{ type: ls?.isFile() ? 'file' : 'directory', files: await countFiles(targetPath, 3) }
+//
+// **恒传 `files`**，且**从无 `size`**——故 file 情形也输出「文件数：约 N」。
+// 此前 Go 侧覆盖成 `{file, size}` 丢了 files。
+//
+// 用纯函数层验证（不打真实 clone）：构造一个 file 型的 stats 走 buildImportResult。
+func TestImportResourceGitHubFileStatsKeepsFiles(t *testing.T) {
+	cwd := t.TempDir()
+	importDir := filepath.Join(cwd, ".rivet", "external")
+	if err := os.MkdirAll(importDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 一个真实文件，模拟 GitHub subpath 指向单文件的情形
+	target := filepath.Join(importDir, "readme.md")
+	if err := os.WriteFile(target, []byte("# t"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 对账 TS：file 型 stats **也带 files**
+	n := 3
+	r := buildImportResult("github.com/o/r/blob/main/readme.md", target, cwd,
+		importStats{Type: "file", Files: &n}, nil)
+
+	if !strings.Contains(r.Content, "文件数：约 3") {
+		t.Errorf("GitHub file 情形应输出「文件数：约 3」（对账 TS 恒传 files），实得：\n%s", r.Content)
+	}
+	if strings.Contains(r.Content, "大小：") {
+		t.Errorf("GitHub 分支**不该**输出大小（TS 从无 size 字段），实得：\n%s", r.Content)
+	}
+}
+
+// TestImportResourceZeroByteFileShowsSize —— stats 用**指针**的理由。
+//
+// 对账 TS 的 `stats.size !== undefined`（字段有无）。若 Go 侧用零值判定，
+// 一个**真的 0 字节**文件会被当成「未设置」而不输出大小。
+func TestImportResourceZeroByteFileShowsSize(t *testing.T) {
+	cwd := t.TempDir()
+	importDir := filepath.Join(cwd, ".rivet", "external")
+	if err := os.MkdirAll(importDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(importDir, "empty.txt")
+	if err := os.WriteFile(target, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	zero := int64(0)
+	r := buildImportResult("/tmp/empty.txt", target, cwd,
+		importStats{Type: "file", Size: &zero}, nil)
+
+	if !strings.Contains(r.Content, "大小：0.0 KB") {
+		t.Errorf("0 字节也应输出大小（字段有无判定），实得：\n%s", r.Content)
+	}
+}
+
+// TestImportResourceTrailingSlashURLKeepsFilename —— ★ 审查发现 4②。
+//
+// 对账 TS：`basename(parsed.pathname) || 'downloaded-content'`——
+// JS 的 `basename('/')` 返回 `'/'`（**truthy**，故保留）。
+// Go 侧此前排除了 `"/"` → 回退成 downloaded-content，与 TS 不一致。
+func TestImportResourceTrailingSlashURLKeepsFilename(t *testing.T) {
+	cwd := t.TempDir()
+	var sawTarget bool
+	fetch := func(context.Context, string) (*tnet.Result, error) {
+		return &tnet.Result{Status: 200, Bytes: []byte("x")}, nil
+	}
+	content, isErr := runImport(t, ImportResourceWithDeps(cwd, fetch),
+		map[string]any{"source": "https://host/"})
+	if isErr {
+		t.Fatalf("应成功，实得 %q", content)
+	}
+	entries, _ := os.ReadDir(filepath.Join(cwd, ".rivet", "external"))
+	if len(entries) != 1 {
+		t.Fatalf("应有 1 项，实得 %d", len(entries))
+	}
+	// 对账 TS：尾斜杠时 filename 保留 "/"，故目标名里含下划线后接替换后的 "_"
+	// （`sanitizeImportName("/")` → `_`）
+	name := entries[0].Name()
+	sawTarget = strings.HasSuffix(name, "__") || strings.Contains(name, "_")
+	if !sawTarget {
+		t.Errorf("尾斜杠 URL 的目标名应符合 TS 语义，实得 %q", name)
+	}
+}
+
+// TestImportResourceUsageMessageMentionsCopy —— 摘要应说明「已复制」（新文案）。
+func TestImportResourceUsageMessageMentionsCopy(t *testing.T) {
+	cwd := t.TempDir()
+	srcDir := t.TempDir()
+	src := filepath.Join(srcDir, "a.txt")
+	if err := os.WriteFile(src, []byte("b"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	content, isErr := runImport(t, ImportResource(cwd), map[string]any{"source": src})
+	if isErr {
+		t.Fatalf("应成功，实得 %q", content)
+	}
+	// 文件导入走 buildImportResult（不含 copyNote）；目录导入才带 copyNote。
+	// 两者都该保留「可用其他工具访问」的指引。
+	if !strings.Contains(content, "该资源现可通过项目内路径访问") {
+		t.Errorf("应保留可用路径指引，实得：\n%s", content)
 	}
 }

@@ -30,6 +30,22 @@ import (
 // 「请用 import_resource」——`go/internal/net/fetchcore_test.go:253` 断言了这一点。
 // 该断言在本刀之前就存在，即**门链早已为这个未移植的工具预留了位置**。
 //
+// # ★ Go 侧对 TS 的一处修正：导入物**复制**而非符号链接
+//
+// TS 用 `symlink(resolved, targetPath, 'file')` 把外部资源「放进」工作区
+// （省磁盘）。但 `pathsafe.Validate`（TS 的 `path-validate.ts:50`）会
+// `realpath` 解析符号链接 → 得到**工作区外**的真实路径 → **拒绝访问**。
+//
+// **实测**（本刀验收）：导入后用 `read_file` 读 `.rivet/external/note-xxx.md`
+// 报「Path outside project directory」——即摘要里
+// 「该资源现可通过项目内路径访问……请使用 read_file、grep、glob 配合此路径」
+// 这句承诺**在 TS 侧是假的**（核实：TS 既无 grantPath 也无豁免名单）。
+//
+// **Go 侧改为复制**：产物是工作区内的**普通文件**，读得到。
+// 代价（用户已知情选择）：磁盘占用 + 源更新不同步。
+//
+// **不这么做的话，本工具的存在意义为零**——「导入」的全部价值就是「导入后能用」。
+//
 // # 本文件范围（Wave 1）
 //
 // 只含**纯函数**（无 IO）：`parseGitHubURL` / `subpathEscapesContainer` /
