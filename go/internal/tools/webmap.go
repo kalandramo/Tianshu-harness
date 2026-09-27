@@ -9,6 +9,7 @@ import (
 
 	"github.com/kalandramo/tianshu/go/internal/contract"
 	tnet "github.com/kalandramo/tianshu/go/internal/net"
+	"github.com/kalandramo/tianshu/go/internal/search"
 )
 
 // webmap.go —— `web_map` 工具（第九十六刀 · W3-5c）。
@@ -24,14 +25,17 @@ import (
 // 过滤：同域 → 可选子域 → 按路径前缀 → 去重。
 // `search` 存在时**纯词频 cosine 重排**。
 //
-// # 有意收窄（诚实披露）
+// # 第三路来源的接线状态（第九十七刀 W6 更新）
 //
-// **第三路来源（site: 搜索）当前不可用**——它依赖 `web_search` 的后端链
-// （`web-search/*.ts` 1085 行），Go 侧未移植。
+// 第九十六刀本工具落地时，第三路来源（`site:host` 搜索）依赖尚未移植的
+// `web_search` 后端链，当时**如实披露为不可用**并预留了
+// `WebMapSearchBackend` 接口 + `WebMapWithBackends` 构造器。
 //
-// 这**不是静默失败**：`search` 参数会触发「（无可用后端）」的如实报告，
-// 且**不阻塞前两路**（对账 TS 的 `try/catch` 语义）。
-// 待 `web_search` 落地后，只需给 `WebMapDeps.SearchBackends` 注入实现即可接通。
+// 第九十七刀 W6 已兑现该接口：`WebMap(cwd)` 默认从全局配置构造后端链
+// （适配器见 `webmap_search.go`）。三路来源**全部接通**。
+//
+// 若配置的后端链全不可用，`search` 参数仍会如实报告「（无可用后端）」——
+// 这**不是静默失败**，且**不阻塞前两路**（对账 TS 的 `try/catch` 语义）。
 
 // 常量（对账 TS）。
 const (
@@ -56,8 +60,15 @@ type WebMapSearchResult struct {
 	URL   string
 }
 
-// WebMap 创建 `web_map` 工具。
-func WebMap(cwd string) Tool { return &webMapTool{cwd: cwd} }
+// WebMap 创建 `web_map` 工具（**搜索路已接通**——见文件头的收窄说明更新）。
+//
+// 第九十七刀 W6 起，第三路来源（`site:host` 搜索）从全局配置构造后端链。
+// 若后端链全不可用（无 key 且默认链被改），`search` 参数仍会如实报告
+// 「（无可用后端）」——不是静默失败。
+func WebMap(cwd string) Tool {
+	cfg := search.LoadSearch()
+	return &webMapTool{cwd: cwd, backends: buildMapSearchBackends(cfg)}
+}
 
 // WebMapWithDeps 创建带**注入依赖**的 web_map（测试与未来配置层用）。
 func WebMapWithDeps(cwd string, deps tnet.FetchCoreDeps, opts tnet.FetchMarkdownOptions) Tool {

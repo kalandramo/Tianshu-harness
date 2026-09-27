@@ -1,11 +1,15 @@
 package tools
 
 import (
+	"context"
+	"errors"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tnet "github.com/kalandramo/tianshu/go/internal/net"
+	"github.com/kalandramo/tianshu/go/internal/search"
 )
 
 // webmap_test.go —— `web_map` 工具（第九十六刀 · W3-5c）。
@@ -400,5 +404,258 @@ func TestWebMapPathPrefixFilter(t *testing.T) {
 	// 种子自身在 /docs/ → 应保留（前缀匹配自身）
 	if !strings.Contains(r.Content, "https://example.com/docs/") {
 		t.Errorf("应含种子自身，实得：\n%s", r.Content)
+	}
+}
+
+// ── W6：第三路来源（search）接通验证 ────────────────────────────────────
+
+// fakeMapSearchBackend 是测试用搜索后端。
+type fakeMapSearchBackend struct {
+	name     string
+	results  []WebMapSearchResult
+	err      error
+	gotQuery string
+	gotCount int
+}
+
+func (f *fakeMapSearchBackend) Name() string { return f.name }
+func (f *fakeMapSearchBackend) Search(query string, count int) ([]WebMapSearchResult, error) {
+	f.gotQuery = query
+	f.gotCount = count
+	return f.results, f.err
+}
+
+// mapSearchFixture 构造一个走搜索路的 web_map。
+func mapSearchFixture(t *testing.T, backends ...WebMapSearchBackend) Tool {
+	t.Helper()
+	seedHTML := `<html><body><main><p>` + strings.Repeat("正文。", 50) + `</p></main></body></html>`
+	doer := func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/" {
+			return crawlTestResponse(200, "text/html; charset=utf-8", seedHTML), nil
+		}
+		return crawlTestResponse(404, "text/plain", ""), nil
+	}
+	return WebMapWithBackends(t.TempDir(),
+		tnet.FetchCoreDeps{
+			Lookup: func(host string) (tnet.ResolvedAddress, error) {
+				return tnet.ResolvedAddress{Address: "93.184.216.34", Family: 4}, nil
+			},
+			Doer: doer,
+		},
+		tnet.FetchMarkdownOptions{},
+		backends,
+	)
+}
+
+// TestWebMapSearchSourceConnected —— **第三路来源真的接通**（W6 核心验收）。
+func TestWebMapSearchSourceConnected(t *testing.T) {
+	b := &fakeMapSearchBackend{name: "bing-search", results: []WebMapSearchResult{
+		{Title: "站内文档", URL: "https://example.com/docs/from-search"},
+	}}
+	tool := mapSearchFixture(t, b)
+
+	r, err := tool.Execute(nil, &CallParams{Input: map[string]any{
+		"url": "https://example.com/", "search": "关键词",
+	}})
+	if err != nil {
+		t.Fatalf("不应返回 error：%v", err)
+	}
+	if r.IsError {
+		t.Fatalf("应成功，实得 %q", r.Content)
+	}
+	// 搜索路产出的 URL 应出现在结果里
+	if !strings.Contains(r.Content, "/docs/from-search") {
+		t.Errorf("搜索路结果应被收集，实得：\n%s", r.Content)
+	}
+	// 摘要应标注搜索来源与后端名
+	if !strings.Contains(r.Content, "搜索 ×1（bing-search）") {
+		t.Errorf("来源分布应标注搜索后端名，实得：\n%s", r.Content)
+	}
+	// **查询应拼上 site: 操作符**（对账 TS）
+	if !strings.Contains(b.gotQuery, "site:example.com") {
+		t.Errorf("应拼 site:host，实得 %q", b.gotQuery)
+	}
+	// 应传 limit 作为 count
+	if b.gotCount != 100 {
+		t.Errorf("应传默认 limit=100，实得 %d", b.gotCount)
+	}
+}
+
+// TestWebMapSearchChainOrderPriority —— 首个返回非空结果的后端胜出。
+func TestWebMapSearchChainOrderPriority(t *testing.T) {
+	empty := &fakeMapSearchBackend{name: "empty-backend"}
+	win := &fakeMapSearchBackend{name: "win-backend", results: []WebMapSearchResult{
+		{Title: "T", URL: "https://example.com/from-win"},
+	}}
+	later := &fakeMapSearchBackend{name: "later-backend", results: []WebMapSearchResult{
+		{Title: "T", URL: "https://example.com/from-later"},
+	}}
+	tool := mapSearchFixture(t, empty, win, later)
+
+	r, _ := tool.Execute(nil, &CallParams{Input: map[string]any{
+		"url": "https://example.com/", "search": "kw",
+	}})
+	// 空结果的后端应被跳过，第二个胜出
+	if !strings.Contains(r.Content, "/from-win") {
+		t.Errorf("第二个后端应胜出，实得：\n%s", r.Content)
+	}
+	// **链序短路**：第三个不该被调用
+	if later.gotQuery != "" {
+		t.Error("胜出后应短路，后续后端不该被调用")
+	}
+	if !strings.Contains(r.Content, "（win-backend）") {
+		t.Errorf("应标注胜出后端，实得：\n%s", r.Content)
+	}
+}
+
+// TestWebMapSearchBackendErrorFallsThrough —— 后端报错时继续到下一个。
+func TestWebMapSearchBackendErrorFallsThrough(t *testing.T) {
+	failing := &fakeMapSearchBackend{name: "boom", err: errors.New("HTTP 503")}
+	win := &fakeMapSearchBackend{name: "ok-backend", results: []WebMapSearchResult{
+		{Title: "T", URL: "https://example.com/recovered"},
+	}}
+	tool := mapSearchFixture(t, failing, win)
+
+	r, _ := tool.Execute(nil, &CallParams{Input: map[string]any{
+		"url": "https://example.com/", "search": "kw",
+	}})
+	if !strings.Contains(r.Content, "/recovered") {
+		t.Errorf("后端报错应落空到下一个，实得：\n%s", r.Content)
+	}
+}
+
+// TestWebMapSearchAllBackendsFailStillHonest —— 全失败仍如实报告，不阻塞前两路。
+func TestWebMapSearchAllBackendsFailStillHonest(t *testing.T) {
+	f1 := &fakeMapSearchBackend{name: "a", err: errors.New("boom")}
+	f2 := &fakeMapSearchBackend{name: "b"}
+	tool := mapSearchFixture(t, f1, f2)
+
+	r, _ := tool.Execute(nil, &CallParams{Input: map[string]any{
+		"url": "https://example.com/", "search": "kw",
+	}})
+	if r.IsError {
+		t.Fatalf("搜索路失败不该让整个工具报错，实得 %q", r.Content)
+	}
+	// 无胜出后端 → 如实报「无可用后端」
+	if !strings.Contains(r.Content, "无可用后端") {
+		t.Errorf("应如实报告，实得：\n%s", r.Content)
+	}
+	// 标题行仍应在（前两路不受影响）
+	if !strings.Contains(r.Content, "站点地图：") {
+		t.Errorf("前两路不该被阻塞，实得：\n%s", r.Content)
+	}
+}
+
+// TestWebMapSearchOnlyWhenSearchGiven —— 不给 search 时**不触发**搜索路。
+func TestWebMapSearchOnlyWhenSearchGiven(t *testing.T) {
+	b := &fakeMapSearchBackend{name: "s", results: []WebMapSearchResult{
+		{Title: "T", URL: "https://example.com/x"},
+	}}
+	tool := mapSearchFixture(t, b)
+
+	r, _ := tool.Execute(nil, &CallParams{Input: map[string]any{"url": "https://example.com/"}})
+	if b.gotQuery != "" {
+		t.Errorf("无 search 时不该调用搜索后端，实得 query=%q", b.gotQuery)
+	}
+	// 摘要里不该出现搜索段
+	if strings.Contains(r.Content, "搜索 ×") {
+		t.Errorf("无 search 时不该有搜索段，实得：\n%s", r.Content)
+	}
+}
+
+// TestSearchBackendAdapterMapsFields —— 适配器只取 Title/URL 两项。
+func TestSearchBackendAdapterMapsFields(t *testing.T) {
+	b := &fakeSearchBackend{name: "x", available: true, results: []search.Result{
+		{Title: "T1", URL: "https://a.com/", Snippet: "S1", SiteName: "站点", PublishedAt: "2026"},
+	}}
+	a := &searchBackendAdapter{inner: b, timeoutMs: 1000}
+	got, err := a.Search("q", 5)
+	if err != nil {
+		t.Fatalf("不应出错：%v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("实得 %d", len(got))
+	}
+	if got[0].Title != "T1" || got[0].URL != "https://a.com/" {
+		t.Errorf("实得 %#v", got[0])
+	}
+	if a.Name() != "x" {
+		t.Errorf("Name 应透传，实得 %q", a.Name())
+	}
+}
+
+// TestSearchBackendAdapterPropagatesError —— 适配器透传错误（供链落空）。
+func TestSearchBackendAdapterPropagatesError(t *testing.T) {
+	b := &fakeSearchBackend{name: "x", available: true, err: errors.New("boom")}
+	a := &searchBackendAdapter{inner: b, timeoutMs: 1000}
+	if _, err := a.Search("q", 5); err == nil {
+		t.Error("应透传错误")
+	}
+}
+
+// fakeSearchBackend 是适配器测试用的 search.Backend。
+type fakeSearchBackend struct {
+	name      string
+	available bool
+	results   []search.Result
+	err       error
+}
+
+func (f *fakeSearchBackend) Name() string      { return f.name }
+func (f *fakeSearchBackend) IsAvailable() bool { return f.available }
+func (f *fakeSearchBackend) Search(context.Context, string, int) ([]search.Result, error) {
+	return f.results, f.err
+}
+
+// TestBuildMapSearchBackendsFromConfig —— 从配置构造适配器链。
+func TestBuildMapSearchBackendsFromConfig(t *testing.T) {
+	cfg := search.SearchConfig{
+		Backends:        []string{"bing", "duckduckgo", "brave"},
+		BraveAPIKeyEnv:  "ABSENT",
+		TavilyAPIKeyEnv: "ABSENT",
+		BochaAPIKeyEnv:  "ABSENT",
+		TimeoutMs:       1000,
+	}
+	got := buildMapSearchBackends(cfg)
+	if len(got) != 3 {
+		t.Fatalf("应构造 3 个适配器，实得 %d", len(got))
+	}
+	if got[0].Name() != "bing" || got[1].Name() != "duckduckgo" || got[2].Name() != "brave" {
+		t.Errorf("链序应保序，实得 %s/%s/%s", got[0].Name(), got[1].Name(), got[2].Name())
+	}
+}
+
+// TestWebMapDefaultConstructorWiresSearchBackends —— **默认构造函数必须接通搜索路**。
+//
+// # 为什么补这条（变异反证 M1' 红 0 暴露的覆盖缺口）
+//
+// 上面所有 web_map 测试都走 `WebMapWithBackends(...)`（显式注入后端），
+// **从不经过 `WebMap(cwd)` 这个生产用的默认构造函数**。于是「默认构造漏接
+// 搜索后端」这个回归不会被任何测试抓到——生产代码回退到「第三路永远不可用」
+// 而测试全绿。
+//
+// 本测试直接断言默认构造出的工具**确实带了后端链**。
+// 测试与产品代码同包，可访问未导出字段。
+func TestWebMapDefaultConstructorWiresSearchBackends(t *testing.T) {
+	t.Setenv("RIVET_CONFIG_PATH", filepath.Join(t.TempDir(), "absent.json"))
+
+	tool := WebMap(t.TempDir())
+	bt, ok := tool.(*webMapTool)
+	if !ok {
+		t.Fatalf("WebMap 应返回 *webMapTool，实得 %T", tool)
+	}
+	if len(bt.backends) == 0 {
+		t.Fatal("默认构造函数必须接通搜索后端链——否则 `search` 参数永远报「无可用后端」")
+	}
+	// 默认配置是 [bing, duckduckgo] 两个零配置后端
+	if len(bt.backends) < 2 {
+		t.Errorf("默认链应有 bing+duckduckgo，实得 %d 个", len(bt.backends))
+	}
+	names := make([]string, 0, len(bt.backends))
+	for _, b := range bt.backends {
+		names = append(names, b.Name())
+	}
+	if names[0] != "bing" || names[1] != "duckduckgo" {
+		t.Errorf("默认链序应为 bing/duckduckgo，实得 %v", names)
 	}
 }
