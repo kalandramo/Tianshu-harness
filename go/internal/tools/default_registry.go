@@ -95,6 +95,12 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// **为什么需要它**：门链在非 skip 档遇到工作区外路径时直接拒绝
 	// （「无提示通道」）。没有本工具，模型无法做目录级/批量/bash 场景的授权。
 	r.Register(RequestPathAccess(cwd))
+	// export_file：把资产导出到工作区之外（第八十二刀）。
+	//
+	// **为什么需要它**：write_file 面向工作区内，而用户常要求「放到桌面/下载」。
+	// TS 侧注释明说它「面向用户可见的外部输出」——bash 重定向是反面做法。
+	// 依赖全是平台能力（fs/path/expandHome/DetectSensitiveFile），Go 侧全有。
+	r.Register(ExportFile(cwd))
 	r.Register(RunTests(cwd))
 
 	// ── 任务 ──
