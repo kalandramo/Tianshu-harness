@@ -243,3 +243,33 @@ func effectiveGrants(p *CallParams, fallback pathsafe.GrantChecker) pathsafe.Gra
 	}
 	return fallback
 }
+
+// ── 办公文档家族（第八十三刀）新增的 schema 构造器 ──
+
+// unionScalarItems 构造「元素为联合标量类型」的 items。
+//
+// 对账 TS `{ type: ['string', 'number', 'boolean', 'null'] }`——
+// JSON Schema 的**联合类型**（数组形式）。
+// 用于 create_spreadsheet 的 headers/rows 单元格。
+func unionScalarItems() *wire.OrderedMap {
+	return wire.NewOrderedMap().Set("type", []any{"string", "number", "boolean", "null"})
+}
+
+// wireArrType 构造「元素为某类型」的数组 items（无 description）。
+//
+// 对账 TS `{ type: 'array', items: <inner> }`——用于 create_spreadsheet 的
+// `rows`（元素是「单元格数组」）。
+func wireArrType(inner any) *wire.OrderedMap {
+	return wire.NewOrderedMap().Set("type", "array").Set("items", inner)
+}
+
+// wireArrItemsFirst 构造数组属性，键序 **type → items → description**。
+//
+// 与 `arrPropItemsFirst` 同序，但接受 `*wire.OrderedMap` 的 items
+// （而非仅 object 型）。对账 TS 的 `{ type: 'array', items: ..., description: ... }`。
+func wireArrItemsFirst(desc string, items any) *wire.OrderedMap {
+	return wire.NewOrderedMap().
+		Set("type", "array").
+		Set("items", items).
+		Set("description", desc)
+}
