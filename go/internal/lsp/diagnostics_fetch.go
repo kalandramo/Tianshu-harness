@@ -174,6 +174,26 @@ func waitForDiagnostics(m *manager, uri string, timeoutMS int) []LspDiagnostic {
 	}
 }
 
+// recordSentTextAndInvalidateDiags 记录「已发给 server 的文本」**并失效该 uri 的旧诊断**。
+//
+// # ★ 为什么必须成对（第一百零五刀 CRITICAL #1）
+//
+// `lastSentText[uri]` 与 `diags[uri]` 必须描述**同一份内容**：
+//
+//   - 只更新前者（W1 的 `ChangeFile` 就是这么错的）→ 后者被当成「新内容的
+//     诊断」而复用 → **返回陈旧诊断**。用户可见形态：第二次编辑后诊断
+//     滞后一轮，且是**确定性**的（不是竞态）。
+//   - 只清后者 → 前者判「内容未变」→ 跳过必要的重触发
+//
+// 故凡「把新内容发给 server」的路径都必须调本函数，而非裸的 `recordSentText`。
+//
+// **两个状态各自有锁**（`m.mu` 与 `diagCache` 的内部锁），故分两步、不嵌套。
+func (m *manager) recordSentTextAndInvalidateDiags(uri, text string) {
+	m.recordSentText(uri, text)
+	// 诊断在锁外清（diagCache 自带锁，避免锁嵌套）。
+	m.diags.delete(uri)
+}
+
 // recordSentText 记录「已发给 server 的文档文本」（按 URI）。
 //
 // # ★ 核心不变量（第一百零四刀）
@@ -223,7 +243,8 @@ func (m *manager) recordSentText(uri, text string) {
 // `text` 作为参数传（而非内部读盘）是为了避免 TOCTOU：调用方需要先读一次
 // 用于「内容是否变了」的判断，再发同一个文本——分两次读会有缝隙。
 func (m *manager) notifyDidChangeWithText(rpc *RPC, uri, text string) {
-	m.recordSentText(uri, text)
+	// ★ 成对更新：文本与诊断必须同步（见 recordSentTextAndInvalidateDiags）。
+	m.recordSentTextAndInvalidateDiags(uri, text)
 	params := map[string]any{
 		"textDocument":   map[string]any{"uri": uri, "version": time.Now().UnixMilli()},
 		"contentChanges": []any{map[string]any{"text": text}},

@@ -344,6 +344,11 @@ func (m *manager) ensureDocument(filePath string) {
 	m.openedDocs[uri] = true
 	m.mu.Unlock()
 
+	// ★ didOpen 同样「把当前内容告知 server」→ 旧诊断必须失效
+	// （第一百零五刀：与 lastSentText 成对更新，见
+	// `recordSentTextAndInvalidateDiags` 的说明）。锁外调（diagCache 自带锁）。
+	m.diags.delete(uri)
+
 	params := map[string]any{
 		"textDocument": map[string]any{
 			"uri":        uri,

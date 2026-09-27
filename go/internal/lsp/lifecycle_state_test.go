@@ -97,14 +97,21 @@ func TestChangeFile_UpdatesLastSentText(t *testing.T) {
 			newContent, after)
 	}
 
-	// ③ 关键后果：ChangeFile 已把新内容发给 server，故取诊断时
-	//    **不该再清缓存重触发**（应直接用 ChangeFile 触发的推送）。
+	// ③ ★ 旧诊断必须**已失效**（订正自第一百零五刀）。
 	//
-	// 当前实现下 `lastSentText` 是旧值 → 判「变了」→ `diags.delete(uri)`
-	// → 把 ChangeFile 刚触发的有效推送清掉 → 与后续 didChange 竞态。
-	if !m.diags.has(uri) {
-		t.Errorf("★ ChangeFile 已通知 server 新内容，取诊断时不该清掉缓存" +
-			"（当前实现因 lastSentText 未同步而误清）")
+	// **上一版这条断言是错的**（基于错误前提）：它写「不该清掉缓存」，
+	// 理由是「ChangeFile 已触发推送、缓存里已是新诊断」。但 server 推送是
+	// **异步**的——ChangeFile 返回时缓存里**还是旧诊断**。故：
+	//
+	//	不清缓存 → 取诊断时命中缓存 → **返回旧诊断**（滞后一轮，确定性错误）
+	//	清缓存   → 等待新推送（正确）
+	//
+	// 第一百零五刀的 `TestChangeFile_InvalidatesStaleDiags` 才是有判别力的
+	// 那条（它断言第二次编辑拿到的是**新**诊断）。此处保留较弱的
+	// 「已失效」断言，作为该不变量的直接检查。
+	if m.diags.has(uri) {
+		t.Errorf("★ ChangeFile 后旧诊断必须失效（它描述的是上一版内容），"+
+			"实测仍在缓存：%+v", m.diags.get(uri))
 	}
 }
 
