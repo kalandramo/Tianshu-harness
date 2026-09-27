@@ -1,4 +1,6 @@
 ---
+
+**执行状态：** 已闭环。Task 1,1,2,2,3,3 均已完成；验证通过；交付门检查：GREEN。
 rivet-options: [{"label":"W1：undo 快照层 + undo 工具（推荐）","description":"新包 go/internal/filehistory（按 tool_use id 分组多快照 + rewind + diff 预览）+ undo 工具 + 先修四处写工具传错 ToolCallID 的既有缺陷。三波，每波独立可验证"},{"label":"先只修数据源缺陷","description":"只修四个写工具的 ToolCallID 错传（改传 p.ToolUseID + 空 id 回退），不做 FileHistory 与 undo——先把地基摆正，undo 待下刀。范围最小、零新代码"},{"label":"改做 delegate 提示词缺口","description":"HANDOFF 第1 条是 undo；若你觉得「提示词引导不存在的工具」更优先，改为只改 go/internal/prompt/modeblocks.go:24 的文案（不建 11744 行派发内核）"}]
 ---
 
@@ -6,6 +8,8 @@ rivet-options: [{"label":"W1：undo 快照层 + undo 工具（推荐）","descri
 > **Model: deepseek-v4.1-flash (cheap)**
 
 > **Status: APPROVED** — 2026-09-27T06:47:25.475Z
+
+> **Status: EXECUTED** — 2026-09-27T07:07:31.516Z
 
 # Go undo 快照层 + undo 工具（第一百零二刀）
 
@@ -553,3 +557,22 @@ Go 的隐式接口满足要求签名逐字一致）。
 - `cd go && go test ./internal/agent/ -count=1 -run 'TestApprovalAssess'`
 - `cd go && go test ./... -count=1`（全量）
 - `cd go && gofmt -l . && go vet ./...`
+
+## 7. Execution closure
+
+已闭环：Task 1,1,2,2,3,3 均已完成并通过验证。
+
+最终验证记录：
+
+```bash
+cd go && go test ./internal/filehistory/ -count=1
+cd go && go test ./internal/tools/ -count=1 -run TestUndo
+cd go && go test ./internal/filehistory/ -race -count=1
+cd go && go test ./... -count=1
+cd go && gofmt -l .
+cd go && go vet ./...
+```
+
+交付门检查：GREEN。
+
+备注：W1-W3 全部完成。新建 filehistory 快照层（19 用例）+ undo 工具（24 用例含 4 端到端）+ 装配接线。顺带修既有缺陷：四处写工具 ToolCallID 传的是工具名而非真实 tool_use id。工具数 41→42，全量 0 FAIL / 30 包，-race 干净。计划里的非目标（withBackupRoot / cleanupOrphans）按计划未做。

@@ -1,4 +1,6 @@
 ---
+
+**执行状态：** 已闭环。Task 1,1,2,2,3,3,4 均已完成；验证通过；交付门检查：GREEN。
 rivet-options: [{"label":"W1 = LSP 导航（推荐）","description":"1111 行新代码，stdlib 自包含（不增依赖）；填 5 个门链消费点（最多）且零接线自动生效；导航能力支撑本项目最高频动作（改导出符号前查全部消费方）。含 3 条成本订正 + 1 处上游缺陷修正（rpc.ts 的 server→client 请求静默丢弃）"},{"label":"改做 undo 快照","description":"次优备选：成本可能更低——go/internal/recovery/stack.go（333 行）已就位，缺的只是 FileHistory 快照层（TS 346 行）；但消费点仅 1 处，且 approval_assess.go:305 已按名预置风险定级。给模型文件撤销安全网"},{"label":"先只修 delegate 的提示词缺口","description":"本计划已把「为什么不是 delegate 族」写清：11744 行派发内核 + Go 侧无子代理调 executeTool 的路径。若你要先修那处提示词缺口，我另写一份小刀计划（只改 modeblocks.go:24 的文案，不建内核）"}]
 ---
 
@@ -6,6 +8,8 @@ rivet-options: [{"label":"W1 = LSP 导航（推荐）","description":"1111 行�
 > **Model: deepseek-v4.1-flash (cheap)**
 
 > **Status: APPROVED** — 2026-09-27T05:52:34.210Z
+
+> **Status: EXECUTED** — 2026-09-27T06:37:56.138Z
 
 # Go 子系统移植排期 — W1：LSP 导航（goto/refs 最小闭环）
 
@@ -552,3 +556,22 @@ r.Register(lsp.FindReferencesTool(lspMgr))
 | W3 | tools.go + 注册 + 端到端 | 1 提交 | ~150 + ~250 行 |
 
 **每提交前**：`gofmt -w` → `go vet` → 相关测试 → `-race`（W2/W3）→ 全量 → `deliver_task`。
+
+## 7. Execution closure
+
+已闭环：Task 1,1,2,2,3,3,4 均已完成并通过验证。
+
+最终验证记录：
+
+```bash
+cd go && go test ./internal/lsp/ -count=1
+cd go && go test ./internal/tools/ -count=1 -run TestLsp
+cd go && go test ./internal/lsp/ -race -count=1
+cd go && go test ./... -count=1
+cd go && gofmt -l .
+cd go && go vet ./...
+```
+
+交付门检查：GREEN。
+
+备注：W1-W3 全部完成 + 装配接线 + 移植中发现并修 4 处上游缺陷。工具数 39→41，lsp 包 78 用例 + tools 17 用例全绿，-race 干净，全量 0 FAIL / 29 包。W4（诊断回流）有意搁置——独立于 goto/refs 且触达 agent/loop.go，风险面更大，待需要时另立计划。

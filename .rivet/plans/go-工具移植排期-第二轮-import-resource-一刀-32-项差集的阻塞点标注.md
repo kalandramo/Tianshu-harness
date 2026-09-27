@@ -1,6 +1,10 @@
 > **Model: deepseek-v4.1-flash (cheap)**
 
+**执行状态：** 已闭环。Task 1-4 均已完成；验证通过；交付门检查：GREEN。
+
 > **Status: APPROVED** — 2026-09-27T04:51:33.695Z
+
+> **Status: EXECUTED** — 2026-09-27T05:28:58.609Z
 
 # Go 工具移植排期（第二轮）—— 按「依赖面就位度」重排的候选清单
 
@@ -224,23 +228,23 @@ flowchart LR
 ## 验证清单
 
 **W1（纯函数）**
-- [ ] `parseGitHubURL`：`github.com/o/r`、https 全形、`/tree/{ref}/{subpath}`、`.git` 后缀、非 GitHub URL、缺 owner/repo
-- [ ] `subpathEscapesContainer`：词法穿越（`../`）、容器内符号链接外指、正常子路径、空子路径
-- [ ] `isSafeGitRef`：`-` 开头、含空白/控制字符、含 `~^:?*[\`、正常 ref、超长（>255）
+- [x] `parseGitHubURL`：`github.com/o/r`、https 全形、`/tree/{ref}/{subpath}`、`.git` 后缀、非 GitHub URL、缺 owner/repo
+- [x] `subpathEscapesContainer`：词法穿越（`../`）、容器内符号链接外指、正常子路径、空子路径
+- [x] `isSafeGitRef`：`-` 开头、含空白/控制字符、含 `~^:?*[\`、正常 ref、超长（>255）
 
 **W2（doc-extract）**
-- [ ] 引擎链顺序（按扩展名分派）
-- [ ] fail-open：全部引擎不可用时返回 `ok=false` + `suggestion`，**不返回 error**
-- [ ] `EXTRACTION_CAVEAT` 随文本返回
+- [x] 引擎链顺序（按扩展名分派）
+- [x] fail-open：全部引擎不可用时返回 `ok=false` + `suggestion`，**不返回 error**
+- [x] `EXTRACTION_CAVEAT` 随文本返回
 
 **W3（import_resource）**
-- [ ] 敏感门拒绝且不落盘（安全边界，对账 TS issue #135 的硬门）
-- [ ] 三分支各自端到端（走 `NewDefaultRegistry`）
-- [ ] definition 逐字对账（含 `PropOrder`/`required`）
-- [ ] 注册后 `go/internal/net/fetchcore_test.go:253` 的文案断言仍绿
+- [x] 敏感门拒绝且不落盘（安全边界，对账 TS issue #135 的硬门）
+- [x] 三分支各自端到端（走 `NewDefaultRegistry`）
+- [x] definition 逐字对账（含 `PropOrder`/`required`）
+- [x] 注册后 `go/internal/net/fetchcore_test.go:253` 的文案断言仍绿
 
 **W4（收尾）**
-- [ ] 全量 0 FAIL；工具数 39；gofmt/vet 干净；无探针残留
+- [x] 全量 0 FAIL；工具数 39；gofmt/vet 干净；无探针残留
 
 ## 瑶光反证
 
@@ -283,8 +287,24 @@ flowchart LR
 
 ## 回归清单（本次为纯新增，无既有行为改动）
 
-- [ ] Go 侧 38 个既有工具**全部保持注册**（`go/internal/tools/default_registry.go` 的 `r.Register` 计数从 39 递增，不减少）
-- [ ] `go test ./... -count=1` 基线 **28 包 ok / 0 FAIL** 保持
-- [ ] 既有工具的 definition 字节不变（前缀缓存字节稳定）
-- [ ] `exportFileRun` / `DetectSensitiveFile` / `HTTPFetchGuarded` / `ResolveGitCommand` / `UTF16Len` 的签名与语义**不被本刀修改**（只被复用）
-- [ ] `go/internal/net/fetchcore_test.go:253` 的 `import_resource` 文案断言**仍绿**（它本来就绿——本刀只是让它第一次有真实工具）
+- [x] Go 侧 38 个既有工具**全部保持注册**（`go/internal/tools/default_registry.go` 的 `r.Register` 计数从 39 递增，不减少）
+- [x] `go test ./... -count=1` 基线 **28 包 ok / 0 FAIL** 保持
+- [x] 既有工具的 definition 字节不变（前缀缓存字节稳定）
+- [x] `exportFileRun` / `DetectSensitiveFile` / `HTTPFetchGuarded` / `ResolveGitCommand` / `UTF16Len` 的签名与语义**不被本刀修改**（只被复用）
+- [x] `go/internal/net/fetchcore_test.go:253` 的 `import_resource` 文案断言**仍绿**（它本来就绿——本刀只是让它第一次有真实工具）
+
+## 7. Execution closure
+
+已闭环：Task 1-4 均已完成并通过验证。
+
+最终验证记录：
+
+```bash
+cd go && go test ./... -count=1
+cd go && gofmt -l .
+cd go && go vet ./...
+```
+
+交付门检查：GREEN。
+
+备注：W1-W4 全部完成 + 用户拍板的复制语义修正 + 提交后审查 4 条 HIGH 全部修复。工具数 38→39，全量 0 FAIL / 28 包。
