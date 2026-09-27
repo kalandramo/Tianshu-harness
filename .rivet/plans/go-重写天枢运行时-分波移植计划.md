@@ -51,6 +51,14 @@ related: []
 | `src/compact/` | 14 | 2,455 | 上下文压缩 |
 | `src/mcp/` | 15 | 2,372 | MCP 客户端 |
 | `src/lsp/` | 8 | 1,891 | 诊断回流 |
+
+> **订正（第一百零一刀实测）**：`src/lsp/` 实为 **2,064** 行（`wc -l` 逐文件相加），
+> 且**其中 953 行不属 LSP 导航**——`client.ts`（363）是 **tsc 类型检查执行器**、
+> `typecheck-cache.ts`（556）是 tsc 跨进程缓存门、`diagnostics.ts`（34）解析 tsc 文本输出。
+> 三者与 goto/refs 无依赖；且 Go 侧 `internal/tools/testspawn.go:139` 注释自述
+> **已对账移植** `lsp/client.ts::runTscSubprocess`。故 LSP 导航的真实缺口是 **1,111 行**。
+> 另：`lsp_diagnostics` **在 TS 侧不存在**（`grep "name: 'lsp_"` 只命中两个工具）——
+> 该字面量仅出现在 `advisory-readback.ts` 的工具名清单里，是幻影条目（详见 HANDOFF 第 10 段）。
 | `src/cache/` | 13 | 1,224 | 前缀缓存 |
 | `src/plan/` | 4 | 1,155 | Plan Mode |
 | **合计 `src/`** | **1,144** | **270,340** | 不含测试 |

@@ -2,9 +2,9 @@
 
 > 生成时间：2026-09-26（初版）· 最后更新：2026-09-27 · 设备：macOS（Darwin 25.6.0，作者 moweilong）
 > 仓库：`/Users/moweilong/Workspace/go/src/github.com/kalandramo/Tianshu-harness`
-> 分支：`go-runtime` · HEAD：`8bba0875` · 工作树 **clean**
-> 本会话共 **40 个提交**（`e866fad8^..8bba0875`，含起点），全部在 `go-runtime` 分支
-> **最新段**：第 9 段（`import_resource` + 一处上游缺陷的修正，第一百刀，工具数 **38 → 39**）
+> 分支：`go-runtime` · HEAD：`82410b69` · 工作树 **clean**
+> 本会话共 **45 个提交**（`e866fad8^..82410b69`，含起点），全部在 `go-runtime` 分支
+> **最新段**：第 10 段（LSP 导航子系统，第一百零一刀，工具数 **39 → 41**）
 > 本文自包含——读者无需本会话任何上下文。
 >
 > **更新轨迹**：`8d5c9853`（初版，20 提交，第七十一刀止）→ `f13a73c1`/`5609187d`/`b78a5b4d`/`903e9855`（增量补刀）→ `f760cb7b`（补齐至第七十九刀 + 修头部元数据 + 消矛盾）→ 第八十刀（job 子系统）→ 第八十一刀（`request_path_access` + 修授权形同虚设）→ **第八十二..九十七刀（工具移植 + web_search 全包，见「第 7 段」）**。
@@ -584,7 +584,7 @@ go/internal/agent/job_wiring_test.go               (9 条端到端)
 | `cd go && gofmt -l .` | 零违规 |
 | `cd go && go test ./internal/net/ -v` | **199 PASS** |
 | `cd go && go test ./internal/search/ -v` | **84 PASS** |
-| 工具数（`NewDefaultRegistry(...).Definitions()` **实测**） | **39** |
+| 工具数（`NewDefaultRegistry(...).Definitions()` **实测**） | **41** |
 | 工作树 `git status --short` | 仅 plan 文件未跟踪 |
 | 探针残留 `find . -name 'zz_*' -o -name '*.good'` | 0 |
 
@@ -825,7 +825,7 @@ grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test
 - 仓库根：`/Users/moweilong/Workspace/go/src/github.com/kalandramo/Tianshu-harness`
 - Go module：`github.com/kalandramo/tianshu/go`（`go/` 子目录）
 - Node：24.18.0（`package.json` engines 声明 >=24）
-- 分支：`go-runtime` · HEAD：`8bba0875` · 工作树 clean
+- 分支：`go-runtime` · HEAD：`82410b69` · 工作树 clean
 - 仓库双 remote：`origin`（私有镜像）、`tianshu`（公开仓库，**绝不直接 push**——历史不同步会被拒；正确流程见项目 `AGENTS.md` 的 `scripts/sync-to-public.sh`）
 - `go/internal/` 包（30 个，`go list ./...` 实测）：`cmd/tianshu` + `internal/{agent,api,api/sse,api/stablejson,api/wire,apierr,artifact,cache,client,compact,config,context,contract,filediff,hooks,net,pathsafe,plan,platform,prompt,recovery,retry,rivetpath,search,session,skills,syntaxcheck,tools,trust}`
 - **测试命令**：`cd go && go test ./... -count=1`（基线 28 包 ok / 0 FAIL）
@@ -894,7 +894,134 @@ Go 用零值会让 **0 字节文件不输出大小**。已改 `Size *int64` / `F
 
 ---
 
-## 下一步（第一百刀后）
+## 第 10 段：LSP 导航子系统（第一百零一刀 · W1–W3+装配）
+
+**区间**：`0068e815..82410b69`（5 提交）· **工具数 39 → 41**
+
+### 这是第一个「子系统级」移植（前一刀是工具级）
+
+判据不是「TS 有什么」，而是**「Go 侧已在等的消费者」**——即已移植的治理层
+有多少处按名引用该能力。全量扫描结果：
+
+| 候选子系统 | Go 侧消费点 | 数量 | 形态 |
+|---|---|---|---|
+| **LSP**（goto/refs） | `probe_discipline.go:84,85,97,98` + `advisory_readback.go:143,170` | **5** | 判定集 / 分类映射 |
+| delegate 族 | `planmode.go:69,76` + `context_collapse.go:98` + `registry.go:423,424` + `modeblocks.go:24` + `plan.go:209` | 6 | 允许集 / 别名表 / **提示词** |
+| 仓库索引 · 语义搜索 | `probe_discipline.go:80,81` | 2 | 判定集 |
+| monitor | `advisory.go:44`（常量） | 1 | **零消费方** |
+| undo | `approval_assess.go:305`（风险定级） | 1 | 风险表 |
+
+**★ 但数量不是唯一维度——形态决定「不做会不会坏」**：
+
+| 形态 | 不做时的行为 |
+|---|---|
+| 判定集条目 | **永不匹配**（无害） |
+| 允许集 / 别名表 | **永不匹配**（无害）——`CheckPlanMode` 是纯字符串 map 判断，**不校验工具是否注册**（实测 `planmode.go:236`） |
+| **提示词引导** | **真实缺口**——模型被引导去调不存在的工具 |
+
+故 **LSP 是「消费点最多 + 零接线 + 自包含」的那个**；delegate 族虽有 1 处真实
+缺口，但正解是建整个 worker 派发内核（≈11744 行），应另立计划。
+
+### ★ 本段最重要的产出：三处成本/归属订正（都推翻了文档）
+
+1. **LSP 真实缺口是 1111 行，不是 2064**。`src/lsp/client.ts`（363 行）名字像
+   LSP 客户端，**实为 tsc 类型检查执行器**（`runTypeCheck` / `runTscSubprocess`）；
+   真实 LSP spawn 在 `multi-manager.ts:65-80`。另 `typecheck-cache.ts`（556）
+   与 `diagnostics.ts`（34）属 tsc 链，且 Go 侧 `tools/testspawn.go:139` 注释
+   自述**已对账移植**。
+   → 修正 `.rivet/plans/go-重写天枢运行时-分波移植计划.md:53` 的「1891 行」
+   （实测 2064，且**其中 953 行不该算进来**）。
+2. **`lsp_diagnostics` 是幻影条目**。TS 侧从未定义该工具（`grep "name: 'lsp_"`
+   只命中两个）；`lsp_diagnostics` 字面量仅在 `advisory-readback.ts:102,114`
+   的工具名清单里。**Go 侧 `advisory_readback.go:143,170` 是对齐的，不做才是
+   parity**——原先把它算成一个缺口。
+3. **`languageIdForFile(def, filePath)` 的真实参数序是 def 在前**（调研报告
+   写成 `(filePath, def)`，与源码不符）。
+
+### 分波与产出
+
+| 波 | 提交 | 文件 | 行数 |
+|---|---|---|---|
+| W1 | `f22393af` | `lsp/rpc.go` + 测试 | 534 / 676 |
+| W2 | `5235f049` | `lsp/server_registry.go` + `lsp/manager.go` + `lsp/platform.go` + 测试 | 590 / 1207 |
+| W2.5 | `4a2a15ae` | `lsp/multi_manager.go` + 测试 | 322 / 586 |
+| W3 | `1633dd68` | `tools/lsptools.go` + 测试 + 注册 2 行 | 257 / 444 |
+| 装配 | `82410b69` | `lsp/navigator.go` + `cmd/tianshu/main.go` 接线 | 111 / 73 |
+
+**测试**：lsp 包 78 用例、tools 包 17 用例；`-race` 干净。
+
+### ★ 移植中发现并修的 4 处上游缺陷（显式偏离，均有测试）
+
+1. **`rpc.ts` 静默丢弃 server→client 请求**（`client/registerCapability` 等）。
+   TS 的分派只有三分支，而 JSON-RPC 2.0 要求请求必须有响应——真实
+   `typescript-language-server` 会挂等。Go 侧回 `MethodNotFound`。
+2. **`decodeMessages` 返回 `rest: string`** → `Buffer.from(rest,'utf8')` 在
+   **多字节字符中间**处置换为 U+FFFD → `JSON.parse` 失败 → `catch` **静默丢弃**
+   该响应（模型拿到空结果或等 45s 超时）。Go 侧全程 `[]byte`。
+3. **`initialize()` 重入泄漏旧 RPC**（`rpc = createRpcClient(...)` 直接重新赋值，
+   旧 proc 不杀）→ 同一 transport 两个 readLoop 抢字节 → 新握手 45s 超时。
+   TS 生产路径靠「dispose + 新建实例」绕过，但其注释把重入当支持路径。
+4. **进程死亡需显式置 `ready=false`**（TS 的 `proc.on('exit')`）——不接的话
+   崩溃的 server 被**永久当成 ready**，定义跳转静默失效且**永不恢复**。
+   Go 侧经 `WithDeathHandler` 接在 readLoop 终止分支。
+
+### 本段新增的坑（第 44 条起）
+
+44. **Go 的 `[]byte(string(b))` 是无损往返**（`string` 是字节容器、不做 UTF-8
+    校验），而 JS 的 `Buffer.from(x,'utf8')` 会把无效序列置换为 U+FFFD。
+    移植「按字符串缓冲」类缺陷时，**Go 侧要复刻缺陷必须显式 `strings.ToValidUTF8`**
+    ——该缺陷在 Go 里天然不存在（本段 M4 变异首版红 0 就是这个原因）。
+45. **TS 的 `Promise` 可被多次 await 且恒返回同一值；Go 的 `chan bool` 是一次性
+    消费**。移植「可重复读的完成信号」必须用「**关闭的 channel + 独立值字段**」，
+    否则重试/重启类路径静默失效（表现为「还没到就跳过分支」）。
+46. **并发下「分配 ID」与「写出帧」若不在同一临界区，出站帧序会与 ID 序不一致**
+    （实测 1,3,2）。TS 单线程里两者无 await 间隔故恒有序。用独立 `writeMu`
+    覆盖整段（**不能用状态锁兼任**——写管道阻塞时会卡死 reader 的 dispatch）。
+47. **`Dispose()` 里等 readLoop 退出会永久挂起**——transport 的 `Close` 未必能
+    中断阻塞中的 `Read`。挂了比泄漏一个 goroutine 更坏（调用方要等它才返回）。
+48. **变异的第三种假红：编译失败伪装**（`declared and not used`）。本段 M9
+    红 0 即此——测试根本没跑。用 `_ = v` 保住引用即可。
+49. **装配层是「实现已有但零消费」的最后一道缺口**。子系统全部实现 + 测试全绿，
+    但若 `cmd/main.go` 没注入，工具**永不出现**在模型可见列表。
+    用户级验收（走生产装配路径数工具数）是唯一能抓到它的判据。
+
+---
+
+## 下一步（第一百零一刀后）
+
+**LSP 导航已完成**（工具数 41）。剩余候选按「消费点形态」重排（见第 10 段的形态表）：
+
+1. **`undo` 快照 —— 次优候选，成本最低**。`internal/recovery/stack.go`（333 行）
+   **已就位**（四写工具都持 `recovery.DefaultStack()`，对账 `recovery-stack.ts` +
+   `recovery-journal.ts`）；缺的只是 **FileHistory 快照层**（TS `file-history.ts`
+   346 行——按 **tool_use id** keyed、支持按会话边界精确回滚 + diff stats +
+   `null` 哨兵语义）。消费点仅 1 处（`approval_assess.go:305` 已按名预置风险定级）。
+   **性质**：给模型文件撤销安全网，是真实的缺失能力（非「不做也不坏」）。
+2. **delegate 族的提示词缺口 —— 唯一的「真实缺口」形态**。
+   `prompt/modeblocks.go:24` 引导模型调用 `delegate_task`/`delegate_batch`，
+   而 Go 侧无此工具。**注意**：`CheckPlanMode` 不校验注册（纯字符串判断），
+   故失败发生在更下游的 `registry.Execute` → `ErrUnknownTool`。
+   最小的修法是**改那处提示词文案**（不建内核）；完整解是建 worker 派发内核
+   （≈11744 行），应另立计划。
+3. **monitor —— 建了会是休眠**：唯一消费方是 `advisory.go:44` 的常量；
+   `SessionJobs.OnEvent` 在 Go 侧**零生产订阅者**（休眠接线）。
+4. **仓库索引 / 语义搜索** —— 需 Meridian 图 + embedding（Go 侧零基础），规模不可控。
+5. **不可做**：`computer_use`（TS 侧是开源桩 + `src/pro/` 闭源实现）、
+   `sandbox_exec`（语义前提是「隔离的 Node.js 子进程」，与 Go 重写冲突）。
+
+**LSP 的 W4（诊断回流）已搁置**：`tool-pipeline.ts:1581-1607` 的 `[LSP Diagnostics]`
+注入（编辑后把诊断拼进工具结果，`modelText`/`uiText` 分离，`MODEL_INREGION_CAP=10`/
+`UI_DIAGNOSTIC_CAP=20`）**独立于 goto/refs** 且触达 `agent/loop.go`——风险面更大，
+待需要时另立计划。
+
+## 下一步（第一百刀后）——**已被上方「第一百零一刀后」取代，保留以示修正轨迹**
+
+> ⚠️ 本节内容已过期（LSP 已完成）。最新结论见上方「## 下一步（第一百零一刀后）」。
+
+<details>
+<summary>原内容（点击展开）</summary>
+
+
 
 **本节已按第一百刀的三路调研更新**——原「下一步」的候选均已在第 9 段完成归因。
 
@@ -916,6 +1043,10 @@ Go 用零值会让 **0 字节文件不输出大小**。已改 `Size *int64` / `F
 
 **判缺口的方法**（已验证有效）：`grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test`
 ——排除定义与测试后若零命中，才是真缺口；**不要照文件头注释判**（第七十八刀教训）。
+
+</details>
+
+---
 
 ## 下一步（第九十九刀后）——**已被上方「第一百刀后」取代，保留以示修正轨迹**
 
