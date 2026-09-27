@@ -38,12 +38,13 @@ import (
 // IP，**不存在 post-CONNECT 校验点**。Go 侧同理（`http.ProxyURL` 后由代理做
 // CONNECT 与解析）。**这是能力边界而非已修复项**。
 //
-// **② 系统代理解析（NO_PROXY / HTTPS_PROXY）未移植**（第八十八刀审查发现）：
-// TS 的 `resolveProxyForUrl`（proxy-resolver.ts，209 行）会读 `config.network.proxy`
-// 与 `NO_PROXY`/`HTTPS_PROXY`/`HTTP_PROXY` 环境变量，并支持逐跳解析。
-// Go 侧当前**只支持显式传入 `Options.ProxyURL`**——环境变量代理不会生效。
-// 这是**待补的缺口**，不是有意收窄；消费方（未来的 web_fetch）若需要环境代理
-// 语义，必须先移植 proxy-resolver。
+// **② 代理解析已补齐**（第九十七刀 W7）：`Options.ProxyURL` 为空时，
+// 回退到 `ResolveProxyForURL`（proxy.go）——它读 `config.network.proxy` >
+// `HTTPS_PROXY`/`HTTP_PROXY` 环境变量 > OS 系统代理（Windows 注册表 / macOS scutil），
+// 并支持 `NO_PROXY` 绕过。与 TS `resolveProxyForUrl` 同序。
+//
+// 此项此前是第八十八刀审查点名的**待补缺口**（当时 proxy-resolver 未移植）。
+// 现在逐跳解析已生效：代理按**每次请求的目标 URL** 解析（对账 TS 的逐请求语义）。
 //
 // **③ 多地址 DNS 记录的完整防护**：`defaultLookup` 只取第一个解析结果并预检它
 // （对账 TS `dns.lookup` 的 `all:false` 语义）。理论上「一个公共 + 一个私有」的
@@ -87,8 +88,18 @@ type Options struct {
 	MaxResponseBytes *int
 	MaxRedirects     *int
 	UserAgent        string
-	// ProxyURL：可选的 HTTP 代理。**见文件头的能力边界 ①②**。
+	// ProxyURL：**显式** HTTP 代理，优先于环境变量与 OS 系统代理。
+	//
+	// **见文件头的能力边界 ①**（代理模式下 SSRF 保证弱于直连）。
+	// 为空时回退到 `ResolveProxyForURL`（config > env > OS 系统代理）——
+	// 见文件头 ②。
 	ProxyURL string
+	// NoProxy：`NO_PROXY` 语义的绕过列表（逗号分隔，支持 `*` / `.` 前缀 / 精确匹配）。
+	// **仅影响回退解析路径**（ProxyURL 为空时）——显式 ProxyURL 不受其约束，
+	// 与既有行为保持一致。
+	//
+	// 留空时回退解析会读 `NO_PROXY` 环境变量。
+	NoProxy string
 }
 
 // IntPtr 返回 *int（供设置 Options 的数值字段）。
@@ -247,6 +258,9 @@ func buildClient(resolved ResolvedAddress, opts Options) (*http.Client, error) {
 		},
 	}
 
+	// 显式 ProxyURL 优先；为空时回退到统一代理解析（config > env > OS 系统代理）。
+	// **逐跳解析**：Proxy 是函数，按每次请求的目标 URL 决定——对账 TS
+	// 的逐请求 `resolveProxyForUrl`（NO_PROXY 需按 host 判定，不能一次算死）。
 	if opts.ProxyURL != "" {
 		proxyURL, err := url.Parse(opts.ProxyURL)
 		if err != nil {
@@ -254,6 +268,29 @@ func buildClient(resolved ResolvedAddress, opts Options) (*http.Client, error) {
 		}
 		client.Transport = &http.Transport{
 			Proxy:           http.ProxyURL(proxyURL),
+			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		}
+		return client, nil
+	}
+
+	// 无显式 ProxyURL → 回退到统一代理解析（第九十七刀 W7）。
+	//
+	// **逐跳**：`Proxy` 是函数，按每次请求的目标 URL 判定——`NO_PROXY`
+	// 必须按 host 决定，不能在建 client 时一次算死（对账 TS 的逐请求
+	// `resolveProxyForUrl`）。
+	//
+	// **与 DNS pin 互斥**：解析出代理时走此分支并**返回**，不再进 pin 分支——
+	// 代理自己做 CONNECT 与目标解析，客户端拿不到隧道对端 IP（见文件头 ①）。
+	proxyOpts := &ProxyResolverOptions{NoProxy: opts.NoProxy}
+	if IsConnectionPinningEnabled() {
+		client.Transport = &http.Transport{
+			Proxy: func(r *http.Request) (*url.URL, error) {
+				proxyURL := ResolveProxyForURL(r.URL.String(), proxyOpts)
+				if proxyURL == "" {
+					return nil, nil
+				}
+				return url.Parse(proxyURL)
+			},
 			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
 		}
 		return client, nil
