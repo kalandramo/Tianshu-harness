@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -418,6 +419,25 @@ func gitStashPop(p *CallParams) (contract.Result, error) {
 //
 // 对账 TS `getScopedCommitFiles`（git.ts:158-166）。**优先 `ownedFiles`
 // （基线后）而非 `sessionModifiedFiles`（基线前）**。
+//
+// # ★ 与 TS 的**显式差异**：过滤不存在的路径（第一百零八刀）
+//
+// TS 只做路径归一（`normalizeProjectRelativePath`），**不校验存在性**。
+// 后果链（实测）：
+//
+//	list 里可能含**已删除**的路径（plan-mode 草稿在 submit 成功后会被回收，
+//	而 `session.FileIndex` 的 `ModifiedByMe` 标记不会因删文件而清除）
+//	→ 该路径进 `git add --`
+//	→ `git add` 遇到不存在的 pathspec **整体失败**（exit=128，
+//	  `fatal: pathspec ... did not match any files`）——**连正常文件也提交不了**
+//
+// 即：上游行为会让「提交」这个功能**自身失效**。按项目纪律（见 HANDOFF
+// 的「忠实移植 ≠ 照搬缺陷」），Go 侧在此修正并记录差异，
+// 而不是以「对账 TS」为名复刻它。
+//
+// **副作用（可接受）**：全路径都不存在时返回空 → `gitCommit` 走
+// 「未提供会话归属文件」分支（fail-loud 报错），这比把死路径喂给
+// `git add` 撞 fatal 更可诊断。
 func getScopedCommitFiles(cwd string, ownedFiles, sessionModifiedFiles []string) []string {
 	source := ownedFiles
 	if len(source) == 0 {
@@ -426,6 +446,11 @@ func getScopedCommitFiles(cwd string, ownedFiles, sessionModifiedFiles []string)
 	var out []string
 	for _, f := range source {
 		if rel := normalizeProjectRelativePath(cwd, f); rel != nil {
+			// 存在性过滤（本刀补，见上方差异说明）。
+			// 用归一后的相对路径拼绝对路径去探——避免 cwd 与 f 形态不一致。
+			if _, err := os.Stat(filepath.Join(cwd, filepath.FromSlash(*rel))); err != nil {
+				continue
+			}
 			out = append(out, *rel)
 		}
 	}

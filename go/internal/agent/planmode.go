@@ -17,20 +17,25 @@
 // **排除理由**（对账跨会话教训「消费端先行」）：TUI 层符号在 Go 侧无渲染层
 // 消费方；`profileIs*` 属 profile-registry 模块（独立移植单元）。
 //
-// # ★ 本文件与「plan 模式机」的关系（重要，勿误读）
+// # ★ 本文件与「plan 模式机」的关系（重要）
 //
-// 本文件只提供**判定层**。**plan 模式状态机本身未移植**——`enterPlanMode` /
-// `exitPlanMode` 依赖 `PromptEngine`（TS 的 1694 行组装引擎，Go 侧架构不同）
-// 与写锁机制。故：
+// 本文件只提供**判定层**；模式机的其余部分（状态、门链、入口）在别处已接。
 //
-//   - `CheckPlanMode` 当前**无生产触发方**（`Config` 里没有 planModeState 字段）
-//   - 它是**为状态机就位做的准备**，不是「已启用的功能」
-//   - `internal/tools/plan.go` 的 `enter_mode`/`exit_mode` 仍是**诚实报错**
-//     （见该文件头部「与 TS 的差异」第 1 条）
+// **~~状态机本身未移植~~ → 第七十九刀已接线**（本节原文写于接线前，已失效）：
+//
+//   - `Loop.PlanModeState` / `Loop.ActivePlanFilePath` 字段已存在（`loop.go`）
+//   - `executeTool` 的**门链最前**已调 `CheckPlanMode`（对账 TS 顺序
+//     plan-mode(1062) → deny(1137)）
+//   - 入口回调 `CallParams.EnterPlanMode` / `ExitPlanMode` 已注入，
+//     `internal/tools/plan.go` 的 `enter_mode`/`exit_mode` 走**真状态机**
+//     （不再是诚实报错）
+//
+// **Go 侧的有意收窄**（仍成立）：TS 的 `enterPlanMode` 还做 Ask Mode 互斥、
+// `promptEngine` 同步、调研 advisory 注入——那些子系统 Go 侧不存在或未接线，
+// 故 Go 版只做「状态 + 草稿路径」两件核心事（见 `Loop.enterPlanMode`）。
 //
 // **为什么仍值得移植**：判定逻辑（白名单 + 路径例外 + 委派 profile 安全）
 // 是 plan 模式机里**唯一可独立测试**的部分，且 TS 侧有现成测试可对账。
-// 状态机就位后直接接线即可，无需再动本文件。
 package agent
 
 import (

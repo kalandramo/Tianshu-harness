@@ -210,7 +210,8 @@ func TestPlanSubmitExplicitPlanBeatsDraft(t *testing.T) {
 	dir := t.TempDir()
 	draftRel := writeDraft(t, dir, validPlanBody("草稿里的标题"))
 
-	explicit := strings.Replace(validPlanBody("显式传入的标题"), "显式传入的标题", "显式传入的标题", 1)
+	// 显式 plan 与草稿**内容不同**——否则「谁赢了」判不出来（先前误写成 no-op 替换）。
+	explicit := validPlanBody("显式传入的标题")
 	p := &CallParams{
 		Cwd:                dir,
 		Input:              map[string]any{"action": "submit", "title": "显式传入的标题", "plan": explicit},
@@ -227,6 +228,10 @@ func TestPlanSubmitExplicitPlanBeatsDraft(t *testing.T) {
 	}
 	if !strings.Contains(string(written), "显式传入的标题") {
 		t.Errorf("落盘内容应来自显式 plan：%q", string(written))
+	}
+	// ★ 真判别器：草稿标题**不得**出现在落盘内容里（若读了草稿就会污染）。
+	if strings.Contains(string(written), "草稿里的标题") {
+		t.Errorf("显式 plan 优先时不该混入草稿内容：%q", string(written))
 	}
 	// 未走草稿路径 → 草稿不该被回收（对账 TS：只有 submittedFromDraft 才删）。
 	if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(draftRel))); err != nil {
