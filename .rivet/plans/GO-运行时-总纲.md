@@ -6,11 +6,14 @@
 > | 项 | 值 |
 > |---|---|
 > | 分支 | `go-runtime` |
-> | HEAD | `00bd7c63`（合并 origin/main 后的同步点） |
+> | HEAD | `4f0a3e5a` |
 > | 上次同步 | `origin/main` @ `6dbf1e04`，领先 0（已完全同步） |
-> | 生成于 | 2026-09-27 |
+> | 实测于 | 2026-09-27（第 108 刀后） |
 >
 > **进度权威**：本文 §2 的实测数字 + `.rivet/HANDOFF.md`（2028 行，每刀一个专章，**只查细节**）。
+>
+> ⚠️ **§2 的数字是「实测于 `<HEAD>`」的快照**——状态文档的实测值天然短时效。
+> 引用前**先跑 §2 的复现命令自测**；若与文档不符，以自测为准并顺手订正本文件。
 
 ---
 
@@ -28,24 +31,31 @@
 
 ## 2. 当前真实进度（实测，非估计）
 
+> 实测于 `4f0a3e5a`（第 108 刀后）。**数字随每刀变动**——引用前先跑下方复现命令。
+
 | 维度 | Go | TS 对照 | 覆盖 |
 |---|---|---|---|
-| 生产代码行 | **65,910** | 288,211 | **23%** |
-| 测试代码行 | 74,129 | — | 测试 : 生产 = **1.12 : 1** |
-| 测试函数 | 2,388 | — | — |
+| 生产代码行 | **65,940** | 288,211 | **23%** |
+| 测试代码行 | 74,249 | — | 测试 : 生产 = **1.13 : 1** |
+| 测试函数 | 2,391 | — | — |
 | oracle 数据集 | 72 | — | 字节对账基线 |
 | internal 包 | 28 | src 顶层 36 目录 | 缺 20 个 |
 | 工具（CLI 装配） | **40**（无 LSP）/ 42（含 LSP） | full preset 目标 **51** | ~82% |
-| 提交数 | 1092（`go/` 触及 298） | — | — |
+| 提交数 | 1094（`go/` 触及 299） | — | — |
+| 计划文件 | 11 份（含本总纲） | — | 其中 10 份已收编，见 §9 |
 | 全量测试 | **exit=0 / 30 包 ok / 0 FAIL** | — | 32 含 2 无测试包 |
 
-**复现命令**（`cd go` 下）：
+**复现命令**（仓库根下直接粘贴）：
 ```bash
-find . -name '*.go' -not -name '*_test.go' -not -path './testdata/*' | xargs wc -l | tail -1
-grep -rh '^func Test' --include='*_test.go' . | wc -l
-ls testdata/ | wc -l
-go test ./... -count=1
+git rev-parse --short HEAD && git rev-list --count HEAD
+find go -name '*.go' -not -name '*_test.go' -not -path '*/testdata/*' | xargs wc -l | tail -1
+find go -name '*_test.go' | xargs wc -l | tail -1
+find src -name '*.ts' -not -name '*.test.ts' -not -path '*/__tests__/*' | xargs wc -l | tail -1
+grep -rh '^func Test' --include='*_test.go' go/ | wc -l
+ls go/testdata/ | wc -l && ls go/internal/*/ -d | wc -l
+cd go && go test ./... -count=1
 ```
+工具数需经 `Definitions()` 实测（`grep -c 'r.Register('` 含循环注册，不准）。
 
 **必须建立的认知**：不是「快完成了」，而是**地基已夯实、主体未动**。
 已完成的那 23% 是**纵深**的（每个子系统带 oracle + 变异反证），
@@ -75,15 +85,15 @@ request_path_access（含修的「授权形同虚设」跨模块缺陷）
 
 | TS 目录 | 行数 | 判定 |
 |---|---|---|
-| `tui/` | **45,447** | **需范围决策**（见 §6） |
-| `server/` | **26,957** | **需范围决策**（为桌面端 sidecar 服务） |
-| `repo/` | 4,295 | 需 Meridian 图 + Physarum（零基础） |
-| `memory/` | 3,221 | 需存储层 |
-| `mcp/` | 2,991 | stdio/SSE 协议层，自包含 |
-| `auth/` | 1,619 | API key + Codex OAuth PKCE |
-| `plugins/` | 1,275 | 清单加载 |
+| `tui/` | **45,447** | **移植，排最后**（§6 已决） |
+| `server/` | **26,957** | **移植，排最后**（§6 已决） |
+| `repo/` | 4,295 | 中间层，可推进（需 Meridian 图 + Physarum） |
+| `memory/` | 3,221 | 中间层，可推进（需存储层） |
+| `mcp/` | 2,991 | 中间层，可推进（stdio/SSE 协议层，自包含） |
+| `auth/` | 1,619 | 中间层，可推进（API key + Codex OAuth PKCE） |
+| `plugins/` | 1,275 | 中间层，可推进（清单加载） |
 | `cli/` | 910 | Go 有自己的 CLI 入口，形态不同 |
-| `workers/` | 840 | 依赖 delegate 派发内核 |
+| `workers/` | 840 | 依赖 delegate 派发内核（§6 第 3 段） |
 | `benchmark/` | 832 | 基准设施 |
 | `constellation/` | 726 | 依赖 work-order 体系 |
 | `utils/` | 656 | 工具函数 |
@@ -142,7 +152,9 @@ request_path_access（含修的「授权形同虚设」跨模块缺陷）
 
 ---
 
-## 7. 对账基线变更（本次合并引入，**必须知道**）
+## 7. 对账基线与**显式偏离**（必须知道）
+
+### 7.1 合并引入的基线变更
 
 `origin/main` 的 26 个提交动了 **213 个 `src/` 文件**，而 `src/` 是 parity 对账源。
 
@@ -151,14 +163,29 @@ request_path_access（含修的「授权形同虚设」跨模块缺陷）
 | `src/tools/plan.ts` | **未动** → 第 107 刀 parity 仍成立 |
 | `src/tools/types.ts` | **未动** → `ActivePlanFilePath` 对账仍成立 |
 | `src/agent/evidence.ts` | **未动** → `SessionModifiedFiles` 对账仍成立 |
-| `src/agent/tool-pipeline.ts` | **被改** → 第 106 刀依赖的 `:838` 行号需重核 |
-| `src/tools/git.ts` | **被改** → 第 106 刀依赖的 `:163` 语义需重核 |
+| `src/agent/tool-pipeline.ts` | **被改**（`1df9e6fd` sync）→ 第 106 刀依赖的 `:838` 行号需重核 |
+| `src/tools/git.ts` | **被改**（`1df9e6fd` sync）→ 第 106 刀依赖的 `:163` 语义需重核 |
 | `src/agent/` 累计 | 44 个文件被改 |
 | `src/tools/` 累计 | 29 个文件被改 |
 | `src/prompt/` 累计 | 5 个文件被改 |
 
 **动作**：任何「对账 TS 某行」的刀，改前先 `git log -1 --format=%h -- <file>` 确认该文件
 自上次对账以来未变；变了就重核行号与语义。
+
+### 7.2 ★ Go 侧的**显式偏离**（有意不照搬 TS 的缺陷）
+
+项目纪律：**忠实移植 ≠ 照搬缺陷**。当上游行为会让该功能**自身失效**时，
+Go 侧修正并在代码注释里写明偏离理由（下表的每一条都在源码里有对应注释与测试）。
+
+| 刀 | 位置 | 偏离内容 | 上游（TS）行为 |
+|---|---|---|---|
+| 第 100 | `import_resource` | 用**复制**而非符号链接放入工作区 | TS 用 symlink + `realpathSync` → 导入后 `read_file` 被路径校验拒绝（承诺是假的） |
+| 第 103 | `lsp/rpc.go` 等 4 处 | 回 `MethodNotFound` / 全程 `[]byte` / 显式置 ready=false | TS 静默丢弃 server→client 请求 / 多字节置换 U+FFFD / 崩溃 server 被永久当 ready |
+| **第 108** | `tools/git.go` `getScopedCommitFiles` | **过滤不存在的路径**（`os.Stat`） | TS `runGit(['add','--',...])` 不校验存在性 → 已删除路径（如回收后的 plan 草稿）会让 `git add` **整体失败**（exit=128），连正常文件也提交不了 |
+
+**最后一条的触发链**（实测复现）：`enter_mode` 建草稿 → `submit` 成功后回收草稿
+（`os.Remove`）→ 但该路径仍在 `sessionModifiedFiles`（`FileIndex.ModifiedByMe`
+不因删文件而清）→ 进 `git add --` → fatal。
 
 ---
 
