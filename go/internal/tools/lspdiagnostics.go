@@ -20,13 +20,26 @@ package tools
 // 但诊断触发只认 `write_file`/`edit_file`。这不是笔误——changeFile 是全量
 // 通知（`apply_patch` 也要通知，让 server 清理已删文件的过期诊断），
 // 而诊断只对「单 file_path 参数」的工具跑。
+//
+// ⚠️ **`ast_edit` 当前是「预留条目」**：TS 的 `WRITE_TOOL_NAMES`
+// （`write-tool-helpers.ts:42-47`）含它，因为 TS 有该工具；**Go 侧尚未移植
+// `ast_edit`**（`grep '"ast_edit"' go/internal/tools/` 只命中本行）。
+//
+// 保留它（而非删掉）是有意的：① 与 TS 名单逐字对齐，便于将来对账
+// ② 移植 `ast_edit` 时自动生效，不会漏。写它就等于「若该工具存在则通知」，
+// 不存在时是惰性条目、无副作用。
+//
+// **反例警示**：本函数曾误写 `apply_edit`——TS 名单里**没有**这个名字
+// （那是 `applypatch.go:134` 注释里提到的未移植通道）。
+// 幽灵条目的危害是「看起来对齐了、实际指向不存在的工具」，
+// 故任何新增条目都应先在 TS 的 `WRITE_TOOL_NAMES` 里找到出处。
 func WriteToolNames() map[string]bool {
 	return map[string]bool{
 		"write_file":  true,
 		"edit_file":   true,
 		"apply_patch": true,
 		"hash_edit":   true,
-		"apply_edit":  true,
+		"ast_edit":    true,
 	}
 }
 

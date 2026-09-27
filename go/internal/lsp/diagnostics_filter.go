@@ -113,10 +113,21 @@ func FilterDiagnosticsForEdit(
 	context int,
 ) DiagFilterResult {
 	// ── 入口过滤：只留 errors(1) + warnings(2) ──
+	//
 	// 对账 TS `client.ts:326`：`diagnostics.filter(d => d.severity <= 2)`
+	//
+	// ⚠️ **必须写成 `<= 2` 而非 `>= 1 && <= 2`**（审查发现，已订正）。
+	// 后者对 `severity == 0` 会过滤，而 TS 的 `0 <= 2` 会保留——
+	// 方向恰好相反，且与本文件自述的「降级路径朝多给一侧倒」矛盾。
+	//
+	// **零值语义差异（已知）**：LSP 的 `severity` 是可选字段，JSON 缺失时
+	// Go 得 `0`、TS 得 `undefined`。TS 的 `undefined <= 2` 为 false（过滤），
+	// 而 Go 的 `0 <= 2` 为 true（保留）。差异方向是**多给**（保留一条
+	// severity 未知的诊断），符合本文件的降级原则，故接受。
+	// （LSP 规范下 severity 缺失罕见；真出现时多显示一条无害。）
 	relevant := make([]LspDiagnostic, 0, len(diagnostics))
 	for _, d := range diagnostics {
-		if d.Severity >= 1 && d.Severity <= 2 {
+		if d.Severity <= 2 {
 			relevant = append(relevant, d)
 		}
 	}
@@ -201,11 +212,4 @@ func FilterDiagnosticsForEdit(
 	}
 
 	return DiagFilterResult{ModelText: strings.Join(parts, "\n"), UIText: uiText}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

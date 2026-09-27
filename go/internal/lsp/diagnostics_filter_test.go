@@ -225,3 +225,27 @@ func TestFilterDiagnosticsForEdit_MultiRange(t *testing.T) {
 		t.Errorf("夹在两 range 之间的应为区域外，实得 %q", got.ModelText)
 	}
 }
+
+// TestFilterDiagnosticsForEdit_SeverityZeroKept —— ★ 审查发现的边界订正。
+//
+// 原实现写 `severity >= 1 && severity <= 2`，对 `severity == 0` 会**过滤**；
+// 而 TS 是 `d.severity <= 2`，`0 <= 2` 为 true → **保留**。方向相反。
+//
+// # 为什么保留 0 是正确的（而非"照抄 TS 的 bug"）
+//
+// LSP 的 `severity` 是**可选字段**——缺失时 Go 的零值恰是 0。
+// 一条 severity 未知的诊断宁可多显示（本文件的降级原则：朝"多给"倒），
+// 不可静默吞掉。判别力：改回 `>= 1 &&` 本用例即红。
+func TestFilterDiagnosticsForEdit_SeverityZeroKept(t *testing.T) {
+	diags := []LspDiagnostic{
+		mkDiag(3, 0, "unknown severity"),
+		mkDiag(4, 3, "info — 应丢弃"),
+	}
+	got := FilterDiagnosticsForEdit(diags, []LineRange{{Start: 3, End: 4}}, DiagContextLines)
+	if !strings.Contains(got.ModelText, "unknown severity") {
+		t.Errorf("severity=0 应保留（TS 的 0<=2 为 true），实得 %q", got.ModelText)
+	}
+	if strings.Contains(got.ModelText, "info — 应丢弃") {
+		t.Errorf("severity=3 应丢弃（3<=2 为 false），实得 %q", got.ModelText)
+	}
+}

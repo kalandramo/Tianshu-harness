@@ -38,7 +38,10 @@ func TestShouldRunDiagnostics(t *testing.T) {
 // 若有人把两者统一，本用例会红——那时应确认那是有意的语义变更。
 func TestWriteToolNames_CoversChangeFileSurface(t *testing.T) {
 	names := WriteToolNames()
-	for _, want := range []string{"write_file", "edit_file", "apply_patch", "hash_edit", "apply_edit"} {
+	// ★ 名单必须与 TS `write-tool-helpers.ts:42-47` 逐字对齐：
+	// edit_file / write_file / hash_edit / ast_edit / apply_patch
+	// （曾误写 apply_edit——TS 里没有这个名字，是幽灵条目）
+	for _, want := range []string{"write_file", "edit_file", "apply_patch", "hash_edit", "ast_edit"} {
 		if !names[want] {
 			t.Errorf("changeFile 通知面应含 %q", want)
 		}
@@ -49,5 +52,31 @@ func TestWriteToolNames_CoversChangeFileSurface(t *testing.T) {
 	}
 	if ShouldRunDiagnostics("apply_patch", "a.go", true) {
 		t.Error("apply_patch 不该触发诊断（与通知面不同，这是 TS 原样语义）")
+	}
+	// ★ 反向断言：幽灵名必须不在名单里
+	if names["apply_edit"] {
+		t.Error("apply_edit 是幽灵条目（TS 的 WRITE_TOOL_NAMES 无此名），不该出现")
+	}
+}
+
+// TestWriteToolNames_MatchesTSList —— ★ 与 TS 名单的**逐字**对账。
+//
+// 判据来源：`src/tools/write-tool-helpers.ts:42-47` 的
+//
+//	export const WRITE_TOOL_NAMES = new Set([
+//	  'edit_file', 'write_file', 'hash_edit', 'ast_edit', 'apply_patch',
+//	])
+//
+// 本用例的判别力：任何条目增删（含幽灵名混入）都会红。
+func TestWriteToolNames_MatchesTSList(t *testing.T) {
+	names := WriteToolNames()
+	tsList := []string{"edit_file", "write_file", "hash_edit", "ast_edit", "apply_patch"}
+	if len(names) != len(tsList) {
+		t.Errorf("条目数应与 TS 一致：TS %d，Go %d（多=幽灵，少=遗漏）", len(tsList), len(names))
+	}
+	for _, n := range tsList {
+		if !names[n] {
+			t.Errorf("缺少 TS 名单里的 %q", n)
+		}
 	}
 }
