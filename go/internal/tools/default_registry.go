@@ -12,6 +12,13 @@ type Options struct {
 	Grants pathsafe.GrantChecker
 	// Extra 是额外注册的工具（装配注入层）。
 	Extra []Tool
+	// LspNavigator 是 LSP 导航能力（nil = 不注册 LSP 工具）。
+	//
+	// **为什么是可选的**（对账 TS 的 late-bound `getLspManager()`）：
+	// LSP 的装配需要 cwd 与 spawn 缝，属运行时设施；且 server 不可用时
+	// 工具**本就不该出现在模型可见列表**（`Enabled()` 短路）。
+	// 故 nil 是合法且预期的状态——不是「忘了注入」的隐患。
+	LspNavigator LspNavigator
 }
 
 // NewDefaultRegistry 装配默认工具集。
@@ -190,6 +197,21 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// plan：统一计划生命周期（submit / close）。enter_mode/exit_mode 依赖
 	// plan mode 状态机（Go 侧未移植）——工具内**诚实报错**而非假装成功。
 	r.Register(Plan())
+
+	// ── LSP 导航（条件注册）──
+	//
+	// 对账 TS `bootstrap.ts:1294-1295`：LSP 工具在 `initializeLsp()` 且
+	// `isReady()` 之后才注入；不可用时**不出现在模型可见的工具列表**。
+	//
+	// **本注册点的意义**：`go/internal/agent/probe_discipline.go:84,85,97,98`
+	// 与 `advisory_readback.go:143,170` **早已按名引用**这两个工具
+	// （判定集 / 分类映射），注释明写「判定集里的未知名字行为等价于不存在
+	// （永不匹配）——保留无害且**将来移植时自动生效**」。此处注册即是
+	// 「将来」——5 个消费点从「永不匹配」转为「生效」，**零接线成本**。
+	if opts.LspNavigator != nil {
+		r.Register(GotoDefinition(opts.LspNavigator))
+		r.Register(FindReferences(opts.LspNavigator))
+	}
 
 	// ── 装配注入 ──
 	for _, t := range opts.Extra {
