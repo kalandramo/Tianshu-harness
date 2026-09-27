@@ -198,6 +198,17 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// plan mode 状态机（Go 侧未移植）——工具内**诚实报错**而非假装成功。
 	r.Register(Plan())
 
+	// ── 撤销 ──
+	//
+	// 对账 TS `src/tools/undo.ts`。**恒注册**（用 Enabled() 恒 true 的门控，
+	// 与 LSP 工具的条件注册不同）——历史不可用时工具自己报
+	// 「文件历史不可用。」，而非从列表消失。这是 TS 的选择。
+	//
+	// **门链已在等**：`agent/approval_assess.go:305` 的
+	// `toolName == "rollback" || toolName == "undo"` → 恒 RiskHigh
+	// （此前 undo 名永不匹配；本行注册后生效，零接线成本）。
+	r.Register(Undo())
+
 	// ── LSP 导航（条件注册）──
 	//
 	// 对账 TS `bootstrap.ts:1294-1295`：LSP 工具在 `initializeLsp()` 且

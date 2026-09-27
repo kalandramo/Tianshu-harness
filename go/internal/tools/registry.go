@@ -124,6 +124,12 @@ type CallParams struct {
 	SessionTurnCount int
 	// OwnedFiles 是当前任务拥有的文件（用于作用域写入）。
 	OwnedFiles []string
+	// FileHistory 返回本会话的文件历史（nil = 不可用）。
+	//
+	// **为什么是回调**（对账 TS `createUndoTool(getFileHistory)`）：历史实例
+	// 在**会话建立后**才存在（late-bound），且 cwd 变更时需重建。
+	// 与 `EnterPlanMode` / `GrantPath` 同一注入模式。
+	FileHistory func() UndoHistory
 	// SessionModifiedFiles 是本会话已修改的文件。
 	SessionModifiedFiles []string
 	// Jobs 是本会话的后台任务注册表（bash 的 run_in_background 与 job 工具用）。
