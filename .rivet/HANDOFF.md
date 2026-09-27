@@ -2,11 +2,12 @@
 
 > 生成时间：2026-09-26（初版）· 最后更新：2026-09-27 · 设备：macOS（Darwin 25.6.0，作者 moweilong）
 > 仓库：`/Users/moweilong/Workspace/go/src/github.com/kalandramo/Tianshu-harness`
-> 分支：`go-runtime` · HEAD：`f760cb7b`（+ 第八十刀未提交）· 工作树 **clean**（第八十刀前）
-> 本会话共 **33 个提交**（`e866fad8^..f760cb7b`，含起点；第八十刀待提交后为 34），全部在 `go-runtime` 分支
+> 分支：`go-runtime` · HEAD：`de3d805f` · 工作树 **clean**（仅 plan 文件未跟踪）
+> 本会话共 **35 个提交**（`e866fad8^..de3d805f`，含起点），全部在 `go-runtime` 分支
+> **最新段**：第 7 段（工具移植 W1–W3 + web_search 全包，第八十二..九十七刀，新增 **34 提交**、工具数 **27 → 38**）
 > 本文自包含——读者无需本会话任何上下文。
 >
-> **更新轨迹**：`8d5c9853`（初版，20 提交，第七十一刀止）→ `f13a73c1`/`5609187d`/`b78a5b4d`/`903e9855`（增量补刀）→ `f760cb7b`（补齐至第七十九刀 + 修头部元数据 + 消矛盾）→ 第八十刀（job 子系统，见「第 5 段」）。
+> **更新轨迹**：`8d5c9853`（初版，20 提交，第七十一刀止）→ `f13a73c1`/`5609187d`/`b78a5b4d`/`903e9855`（增量补刀）→ `f760cb7b`（补齐至第七十九刀 + 修头部元数据 + 消矛盾）→ 第八十刀（job 子系统）→ 第八十一刀（`request_path_access` + 修授权形同虚设）→ **第八十二..九十七刀（工具移植 + web_search 全包，见「第 7 段」）**。
 
 ---
 
@@ -574,22 +575,24 @@ go/internal/tools/job_test.go                      (20 条)
 go/internal/agent/job_wiring_test.go               (9 条端到端)
 ```
 
-### 验证基线（末次**真实工具输出**，`fde51827` 时点）
+### 验证基线（末次**真实工具输出**，`de3d805f` 时点）
 
 | 命令 | 结果 |
 |---|---|
-| `cd go && go test ./... -count=1` | **26 包 ok、0 FAIL**（`go list ./...` = 27 包，含无测试的） |
+| `cd go && go test ./... -count=1` | **28 包 ok、0 FAIL**（`go list ./...` = 30 包，含无测试的） |
 | `cd go && go vet ./...` | exit=0 |
 | `cd go && gofmt -l .` | 零违规 |
-| `cd go && go test -race ./internal/agent/ ./internal/tools/ -count=1` | 两包均 ok（3.5s / 15.4s） |
-| 工具数（`internal/tools/default_registry.go` 显式 `Register`） | **25**（+1 处循环注册 `r.Register(t)`；第八十刀后为 26） |
-| 工作树 `git status --short` | **clean** |
-| 探针残留 `find . -name 'zz_probe*'` | 0 |
+| `cd go && go test ./internal/net/ -v` | **199 PASS** |
+| `cd go && go test ./internal/search/ -v` | **84 PASS** |
+| 工具数（`NewDefaultRegistry(...).Definitions()` **实测**） | **38** |
+| 工作树 `git status --short` | 仅 plan 文件未跟踪 |
+| 探针残留 `find . -name 'zz_*' -o -name '*.good'` | 0 |
 
-**⚠ 已知未复现的失败**：本会话早期曾见 `-race` 3 FAIL，**之后多次重跑未复现，归因未知**。若下个会话遇到，从头查。
+**⚠ 工具数口径**：`grep -cE 'r\.Register\('` 报 **39**（含 `r.Register(t)` 循环行）。
+**以 `Definitions()` 实测的 38 为准**。旧文档写 25/26/27 是各段时点数。
 
-**⚠ 工具数口径**：`grep -cE 'r\.Register\('` 会数到 **25**（含 `r.Register(t)` 循环行）。
-**24 个显式工具** + 1 处循环注册（`opts.Extra` 遍历）。旧文档写 22 是第七十七刀之前的数。
+**⚠ 已知未复现的失败**：会话早期曾见 `-race` 3 FAIL，**之后多次重跑未复现，归因未知**。若下个会话遇到，从头查。
+
 
 ---
 
@@ -822,10 +825,10 @@ grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test
 - 仓库根：`/Users/moweilong/Workspace/go/src/github.com/kalandramo/Tianshu-harness`
 - Go module：`github.com/kalandramo/tianshu/go`（`go/` 子目录）
 - Node：24.18.0（`package.json` engines 声明 >=24）
-- 分支：`go-runtime` · HEAD：`fde51827` · 工作树 clean
+- 分支：`go-runtime` · HEAD：`de3d805f` · 工作树 clean（仅 plan 文件未跟踪）
 - 仓库双 remote：`origin`（私有镜像）、`tianshu`（公开仓库，**绝不直接 push**——历史不同步会被拒；正确流程见项目 `AGENTS.md` 的 `scripts/sync-to-public.sh`）
-- `go/internal/` 包（27 个，`go list ./...` 实测）：`cmd/tianshu` + `internal/{agent,api,api/sse,api/stablejson,api/wire,apierr,artifact,cache,client,compact,config,context,contract,filediff,hooks,pathsafe,plan,platform,prompt,recovery,retry,session,skills,syntaxcheck,tools,trust}`
-- **测试命令**：`cd go && go test ./... -count=1`（基线 26 包 ok / 0 FAIL）
+- `go/internal/` 包（30 个，`go list ./...` 实测）：`cmd/tianshu` + `internal/{agent,api,api/sse,api/stablejson,api/wire,apierr,artifact,cache,client,compact,config,context,contract,filediff,hooks,net,pathsafe,plan,platform,prompt,recovery,retry,rivetpath,search,session,skills,syntaxcheck,tools,trust}`
+- **测试命令**：`cd go && go test ./... -count=1`（基线 28 包 ok / 0 FAIL）
 
 ---
 
@@ -835,7 +838,184 @@ grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test
 |---|---|
 | 每刀的完整技术细节（第一..七十六刀） | `go/HANDOFF.md`（**7217 行**，每刀一个专章） |
 | 架构欠账清单 | `go/PLAN.md` |
-| 审批门的状态表与称量结论 | `go/internal/agent/approval_gate.go` 的 A/B/B'/C/D/E 节（`approval_gate.go:34,108,151,180,204,232`） |
-| 本会话的 32 提交 | 本文档 + `git log e866fad8^..fde51827` |
-| 第七十七..七十九刀（`go/HANDOFF.md` **未记**） | 本文档「第 4 段」 |
+| 审批门的状态表与称量结论 | `go/internal/agent/approval_gate.go` 的 A/B/B'/C/D/E 节（**用节名定位，不用行号**——该文件持续增长） |
+| 本会话的 35 提交 | 本文档 + `git log e866fad8^..de3d805f` |
+| 第七十七..**九十七**刀 | 本文档「第 4 / 5 / 6 / 7 段」（`go/HANDOFF.md` 未记） |
 | Windows 可移植性的完整记录 | 本文档「坑」1–15 + `go/HANDOFF.md` 前五刀 |
+
+---
+
+## 下一步（第九十七刀后）
+
+**web_search 全包移植已完成**（第 7 段）。剩余候选按依赖面排序：
+
+1. **`semantic_search`**（仍不建议）——依赖 `semantic-index`（464 行）+ embedding provider，
+   **Go 侧零命中**。判据同第七十五刀：Go 侧有无该状态的**维护者**？无 → 造子系统。
+2. **`update_goal` / `session_vitals`**（仍不建议）——同上，Go 侧依赖全为 0。
+3. **`computer_use`**——`RequiresUnconditionalApproval` 的最后一个不可达分支
+   （`js_eval`/`browser_adopt`/`sequence`）。需先移植 browser 层，成本高。
+4. **`ast_edit`**——TS 侧有、Go 侧无。依赖 tree-sitter 绑定（`src/search/` 的
+   tree-sitter 路径）。**需先评估 Go 侧有无等价 AST 库**——若要走 cgo 绑定，
+   是一刀独立的称量。
+5. **架构缺口（非工具）**：`Tool.Timeout` 声明后 `internal/agent` **无统一读取点**
+   （第八十八刀审查指出）。本次新工具的 `Timeout()` 都是「写而无人读」。
+   接线它是**独立一刀**（涉及门链/超时策略）。
+
+**判缺口的方法**（已验证有效）：`grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test`
+——排除定义文件与测试后若零命中，才是真缺口；**不要照文件头注释判**（第七十八刀教训）。
+
+---
+
+## 权威文档索引（按需下钻）
+
+| 想了解 | 读 |
+|---|---|
+| 每刀的完整技术细节（第一..七十六刀） | `go/HANDOFF.md`（**7217 行**，每刀一个专章） |
+| 架构欠账清单 | `go/PLAN.md` |
+| 审批门的状态表与称量结论 | `go/internal/agent/approval_gate.go` 的 A/B/B'/C/D/E 节（**用节名定位，不用行号**） |
+| 本会话的 35 提交 | 本文档 + `git log e866fad8^..de3d805f` |
+| 第七十七..**九十七**刀（`go/HANDOFF.md` **未记**） | 本文档「第 4 / 5 / 6 / 7 段」 |
+| Windows 可移植性的完整记录 | 本文档「坑」1–15 + `go/HANDOFF.md` 前五刀 |
+
+### 第 7 段：工具移植 W1–W3（办公文档 / open_path / capability / internal/net / web_fetch + web_crawl + web_map / web_search 全包）（第八十二..九十七刀）
+
+**区间**：`fde51827..de3d805f`（**34 提交**，含本段末尾的删除补交）
+**工具数**：**27 → 38**（`grep -cE 'r\.Register\('` 报 39，含 1 处循环注册；`Definitions()` 实测 38）
+**验证**：全量 **exit=0 / 0 FAIL / 28 包 ok**；net 包 199 PASS、search 包 84 PASS
+
+#### 起点：第八十二刀纠正一次**循环论证**的称量
+
+`export_file` 此前被判「不做」（理由：Go 侧缺依赖）。**这个判据是循环论证**——
+我用 `grep 工具名` 在 Go 侧找命中，而**工具本身还没移植、必然零命中**。
+**正确判据**：读 TS 的**真实 import**，分三类——平台能力（Go stdlib 有）/
+项目内子系统（已移植）/ 项目内子系统（缺失）。
+
+**关键发现：门链早已在等工具**（休眠接线）——
+`approval_pathgrant.go:101-129` 已有 `export_file`/`create_document`/`open_path`
+三个授权分支；`threshold.go:80` 有 `"web_fetch": 1.0`；
+`probe_discipline.go:66-68` 注释明写「判定集里的未知名字行为等价于不存在——
+**保留无害且将来移植时自动生效**」。
+
+#### W1：办公文档 5 工具（`45feaf4c`/`7eb85853`/`a6441d0a`/`6d4211bd`）
+
+**推翻 scout 初判**：scout 称依赖 docx/exceljs/pdf-lib。**核实后零第三方库**——
+`.doc`/`.xls`/`.ppt` 都是「HTML 伪装」，`.pdf` 是「打印就绪的 HTML + @page」。
+全是 `exportFile` 下游。
+
+| 文件 | 行数 | 关键语义 |
+|---|---|---|
+| `createdocument.go` | 220 | content **不看 trim**（空串合法）；`escapeHTML` 的 `&` 必须最先替换 |
+| `createspreadsheet.go` | 288 | `.xls` 与 html 同渲染器；CSV/TSV 引号触发字符不同 |
+| `createpresentation.go` | 218 | **嵌套 object 数组**（首个用 `objPropMapOrdered`）；页码从 1 |
+| `createpdf.go` | 172 | content 是**原始 HTML 不转义**；且**看 trim**（与 document 相反） |
+| `createimage.go` | 161 | width/height 是 `number`；**两个不同文案** |
+
+#### W2：`9bb91a99` open_path + `18784100` capability
+
+- `openpath.go`（343 行）：三平台命令；**不用 `cmd /c start`**（元字符注入面）；
+  Windows 无处理程序时退化 reveal（issue #193）。
+- `capability.go`（533 行）：种子 registry 6 条；**package 检查器恒 false**
+  （Go 无 node_modules 语义，fail-closed）。
+
+#### W3 基础：`8e9cfbc2` ssrf + `63e83ddc` httpfetch + `1db127e9` htmltomd
+
+- `ssrf.go`（210 行）：IPv4 14 段 + IPv6 6 段；**四类内嵌 IPv4 镜像**
+  （mapped/translated/NAT64/6to4，issue #116 云元数据）。
+- `httpfetch.go`（322 行）：六层防护 + DNS pin（`DialContext`）。
+- `htmltomd.go`（689 行）：四层结构。
+
+**★ P0 缺陷（`ee117e40` 修复）**：`httpfetch.go:156` 在 `doer(req)` 返回后
+**立即 cancel**，而终态 body 在循环外读 → `http.Transport` 关闭连接 →
+**任何非瞬时 body 都失败**。**复现证据**：慢速 200KB body 报 `context canceled`。
+**修复**：body 读移进循环内。
+
+**★ 回归测试的教训**：第一版用 `buildClient` 直接往返**抓不到**（cancel 在内核内部）。
+正确做法是注入 **ctx-aware 假 body** 走完整 `HTTPFetchGuarded`。
+
+`ee117e40` 另修审查 6 项，含：① 截断口径不一致（`len()` 字节判、`UTF16Len` 裁 →
+中文下虚假提示「已按 200 字符截断」，探针复现：100 中文 = 300 字节/100 code unit）
+②③ errorKind 静默丢弃（内核算了、工具层零命中，而 `contract.Result.ErrorKind`
+**全仓零生产消费者**）④ 加 `WebFetchWithDeps` 注入入口。
+**自我修正**：我写过 `TestWebFetchErrorKindPropagated` **同义反复**（只测局部变量），
+删掉重写端到端版。
+
+#### W3 工具：`00e5e9c3` fetchcache + `8ceb2592` extractlinks + `54f80846` fetchcore + `1ebeb8a8` webfetch
+
+- `fetchcache.go`（211 行）：maxAge 缓存（best-effort，0=禁读仍写）。
+- `extractlinks.go`（183 行）：`DecodeBody` charset 判定顺序：头 > meta > utf-8。
+- `fetchcore.go`（339 行）：管线 + Jina 兜底。
+- `webfetch.go`（248 行）：三分支（批量 / actions / 单页）。
+
+#### W3 crawl/map：`370fd941` crawl + `9d380cf0` webcrawl + `308eb397` webmap
+
+**crawl 三个真 bug（第九十四刀）**：
+1. 收敛判据错 → **只抓 1 页**（探针：fetcher 返 2 链接但 `pages=1`）
+2. 页数超发（上限 3 产出 7）→ 需 `len(pages)+inFlight >= maxPages` 双重条件
+3. 测试位置索引假设错（goroutine 完成顺序不定）
+
+`web_map` 的三路来源（sitemap / 种子页链接 / `site:` 搜索）中，
+**第三路当时不可用**（依赖 web_search）——**如实披露**并预留
+`WebMapSearchBackend` 接口 + `WebMapWithBackends` 构造器。
+**第九十七刀 W6 已兑现**（见下）。
+
+#### 第九十七刀：web_search **全包移植**（W1–W7，7 提交）
+
+用户明确选择「整个包全移植（含 Brave/Tavily/Bing/Bocha）」。
+
+| 波次 | 提交 | 内容 |
+|---|---|---|
+| W1 | `f6791d8a` | `internal/net/proxy.go`（308 行）——proxy-resolver 移植 |
+| W2 | `1cc93505` | search 配置层 + 密钥四层回退链 |
+| W3 | `2b5189cc` | `internal/search` 核心——**跑题守卫** + 后端链 |
+| W4 | `96b53ffd` | 五个后端（DDG/Bing/Brave/Tavily/博查） |
+| W5 | `500855c1` | 工具本体 + 注册 + **导入环修复** |
+| W6 | `bd813707` | web_map 搜索路接通 |
+| W7 | `00f69f48` | httpfetch 接入 proxy-resolver |
+
+**★ W3 的认知核心——跑题守卫**（`relevance.go`）：
+防「HTTP 200 + 结构完好 + 内容无关」的 SERP 冒充答案（**模型无法自我察觉**）。
+判据：单查询词 → 零重叠；多查询词 → **覆盖 ≥2 个不同查询词的结果过半数**。
+三道同日防线：`site:` 操作符剔除、**同组多枚 bigram 只计一词**（防「量子计算」
+自重叠虚高）、**URL 不参与匹配**。测试用 TS 注释里的真实退化样本
+（`美国 AI 实验室 出逃 事件 7月 智能体` → 清一色「美国」页面）。
+
+**★ W4 的两条「写进注释的禁令」**（各有回归测试钉住）：
+- Bing **必须用浏览器 UA**（非浏览器 UA 返回降级/空 SERP）
+- Bing **绝不可传 `setlang` / 英文 `Accept-Language`**——cn.bing.com 对携带
+  任何英文语言标识的请求会**静默错路由**（HTTP 200 + 结构完好 + 内容无关）
+
+**★ W5 撞上并修复的真问题：导入环**
+`tools → config → agent → hooks → tools`（`config` 含 `LoadPermissions` 依赖 `agent`）。
+**修法**：① 新建叶子包 `internal/rivetpath`（纯路径解析，零项目内依赖）
+② `config` 的三个路径函数改薄委托（外部 API 逐字不变）
+③ search 配置层移入 `internal/search` ④ `tools` 只依赖 `search`。
+
+**★ 第九十七刀的诚实标注**：`secrets.json` 的**加密格式（AES-256-GCM 信封）不解密**
+——Go 侧不实现 `auth/secure-store.ts`（315 行 + OS 密钥库）。
+旧**明文**格式正常读；加密信封 → `ReadSecret` 返回未命中 → 回退链落到 env。
+**这是符合上游设计的收窄**（`secrets-store.ts` 文件头明写 `Reads are fail-open`），
+非静默失败——`SecretsIsEncrypted()` 让该降级**可诊断**。
+**代价**：桌面端 UI 存的 key 在 Go 侧读不到；CLI 用 env 不受影响。
+
+#### 本段新增文件（`git log --diff-filter=A fde51827..HEAD`，74 个）
+
+```
+go/internal/rivetpath/paths.go
+go/internal/net/{ssrf,httpfetch,htmltomd,extractlinks,fetchcache,fetchcore,sitemap,map,proxy,crawl}.go   (+ 各自 _test)
+go/internal/search/{types,relevance,chain,fetch,config,build,httpfetch,duckduckgo,bing,api}.go          (+ 各自 _test)
+go/internal/tools/{exportfile,createdocument,createspreadsheet,createpresentation,createpdf,createimage,
+                    openpath,capability,webfetch,webcrawl,webmap,webmap_search,websearch}.go            (+ 各自 _test)
+```
+
+#### 本段新增的坑（第 31 条起）
+
+31. **「工具不存在」不能证明「依赖不存在」**（第八十二刀）——用 `grep 工具名` 判依赖是**循环论证**。读 TS 的**真实 import**。
+32. **删除类改动不在测试的观测面内**（第九十七刀末）——W5 迁移后 `internal/config/search.go` 成孤儿重复代码，**全量测试一直绿**（两个不同 package 的同名符号不冲突，HEAD 可编译）。**commit 后必须核验 `git status --short`**，未提交的删除就是「交付不完整」。
+33. **Go 的中文 bigram 必须按 `rune` 切**——TS 按 UTF-16 code unit（BMP 内 CJK 与 rune 等价），Go 的 string 索引是 byte，直接切出乱码。
+34. **测试依赖「当前机器状态」时必须把探测点做成可注入包变量**（第九十七刀 W1）——OS 系统代理探测在「开发机本来没开代理」的机器上恒返回空，**kill switch 测试失去区分力**（M4 红 0）。修法是改产品代码（提可注入探测点）+ 加**反向对照**子用例。
+35. **「红 0」的成因有五类**（本段各踩过）：①等价变异（重写变异让它真改变行为）②真覆盖缺口 ③编译失败伪装（`declared and not used`）④**测试输入不对抗**（信封样本恰好缺 `version` 字段 → 被第二道判据拦住；只测正确算法名 → 判据放松照样过）⑤**环境依赖**（见坑 34）。
+36. **测试全覆盖「显式注入依赖」路径时，必须补一条走生产默认构造函数的测试**（第九十七刀 W6）——所有 web_map 测试都走 `WebMapWithBackends(...)`，从不走 `WebMap(cwd)`，于是「默认装配漏接线」不会被任何测试抓到。
+37. **变异脚本用 `python -c` 时，脚本内 Go 代码的双引号会与外层 shell 引号冲突** → `SyntaxError` → 表现为「编译=0 失败数=0」的**假红**。改用 **heredoc + `assert old in s`**。
+38. **`&T{...}.method` 是 Go 语法歧义**（解析为对 method 取值再取地址）——先赋值给变量再取方法值。
+39. **给既有函数加回退逻辑时，让既有优先级保持在最前、只在其为空时才走新路径**——既有的测试天然成为回归钉子（W7 的 `TestBuildClientExplicitProxyURLStillWins`）。
+40. **导入环排查要沿完整链条读错误**——把纯路径/纯类型下沉为**叶子包**是标准解法，比重构既有包省事。
