@@ -157,6 +157,16 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// 后端链来自 `search.backends` 配置（默认 [bing, duckduckgo]——零配置可用，
 	// 覆盖国内 cn.bing.com 与海外 DDG）；Brave/Tavily/博查需 API key。
 	r.Register(WebSearch())
+	// import_resource：导入工作区外资源（第一百刀）。
+	//
+	// **为什么需要**：read_file/grep 受 pathsafe 约束只能读工作区内。模型想看
+	// 用户桌面的设计稿、/tmp 的日志、GitHub 上的仓库时没有入口。本工具补上
+	// 这条通道，且**全程过敏感门**（对账 TS issue #135）。
+	//
+	// **门链早已在等它**：net/fetchcore.go 遇到二进制内容时的错误文案明写
+	// 「请用 import_resource」——net/fetchcore_test.go:253 断言了这一点，
+	// 该断言在本刀之前就存在。
+	r.Register(ImportResource(cwd))
 	r.Register(RunTests(cwd))
 
 	// ── 任务 ──
