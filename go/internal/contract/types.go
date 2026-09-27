@@ -50,8 +50,22 @@ type Definition struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	// Capability 是 MCP 服务器策略声明的能力（read/write/execute）。
-	// 非 MCP 工具留空。被 assessToolRisk 消费以给出准确的风险标注，
-	// 而非硬编码 'unknown'。
+	// 非 MCP 工具留空。
+	//
+	// # 生产者与消费者的**实际**状态（第一百一十刀订正，勿按旧注释判断）
+	//
+	// 本注释此前写「被 assessToolRisk 消费以给出准确的风险标注，而非硬编码
+	// 'unknown'」——**该断言与代码不符**，已订正：
+	//
+	//   - **生产者**：已接线（第一百一十刀 W2）。`mcp` 包的 `connectOne`
+	//     按 `ServerConfig.Policy.Tools[原始工具名]` 查出 capability 并填入
+	//     工具定义。此前该字段**零生产者**（恒为空串）。
+	//   - **消费者**：**仍为零**。`AssessToolRisk(toolName, input, doomLoopLevel)`
+	//     （`internal/agent/approval_assess.go:84`）的签名**不收** capability。
+	//
+	// 保留本字段是为了将来接线 MCP 策略分支（对账 TS
+	// `approval-risk.ts:675` 的 MCP 策略判定）。该分支未实现的实情记在
+	// `AssessToolRisk` 的文档注释里——**在那儿看才准**。
 	Capability string `json:"capability,omitempty"`
 	// InputSchema 是 JSON Schema 形态的入参定义。
 	// 注意：TS 版字段名为 input_schema（snake_case），此处用 Go 命名，

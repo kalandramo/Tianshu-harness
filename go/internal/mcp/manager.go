@@ -286,7 +286,20 @@ func (m *Manager) AllTools() []tools.Tool {
 	return out
 }
 
-// States 返回全部连接状态（供 UI/诊断）。
+// States 返回全部连接状态快照（按 serverID 排序，确定性）。
+//
+// # ★ 当前零生产消费者（第一百一十刀 finding #6 的诚实标注）
+//
+// **谁在调它**：目前**只有测试**。`cmd/tianshu` 的装配路径不读它——
+// Go 侧尚无 MCP 状态展示面（TS 侧由 TUI/REST 消费，那些是 Go 未移植的表面层）。
+//
+// **为什么保留而非删除**：它是「找出为什么某个 server 没连上」的唯一查询口
+// （`Status` + `Error` + `ErrorHint` 三件套），而 `connectOne` 在**所有**
+// 失败路径上都写了 state。删掉它会让失败信息无处可取——那时再补要重新
+// 梳理四条写入路径。故保留，但**在此明示它当前无人消费**，
+// 免得读者以为「调用前会检查就绪」（那正是「死接口方法」的典型误读）。
+//
+// 将来表面层（tui/server）移植时，本方法即为它的数据源。
 func (m *Manager) States() []ConnectionState {
 	m.mu.Lock()
 	defer m.mu.Unlock()

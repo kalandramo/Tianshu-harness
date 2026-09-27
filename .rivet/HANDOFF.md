@@ -564,6 +564,58 @@ server→client 回 MethodNotFound），**分帧须新写**。Go 侧零 MCP SDK�
 46. **`go build ./cmd/tianshu` 的产物落在 `go/tianshu`**（15MB）——未被 gitignore，
     会误入 `git status`。已补规则。
 
+### 第 8 段：修 MCP 装配的语义缺陷（第一百一十刀，3 提交 `061db449`→`5cc04040`）
+
+**起点**：第一百零九刀提交后审查报出 9 条 HIGH。**逐条核验后**：7 条成立
+（1 条比报告更严重）、1 条部分成立、1 条**不实**。
+
+| 波 | 提交 | 修的内容 | 用例 |
+|---|---|---|---|
+| W1 | `061db449` | `enabled` 三态（`*bool`+`EnabledOrDefault`）/ url 型明确拒绝 / `timeoutMs` 收口 | 70→83 |
+| W2 | `10c3263a` | capability 接线（`policy` 配置 → 工具审批） | 83→90 |
+| W3 | `5cc04040` | ctx 从调用方透传（Ctrl+C 可中断慢初始化） | e2e 2→5 |
+| W4 | 本次 | 文档订正（contract/approval_assess/States）+ 全量 | — |
+
+**九条核验结论**（报告自述「未经独立核验」，故逐条 grep/read 复核）：
+
+| # | 报告断言 | 判定 |
+|---|---|---|
+| 1 | `enabled` 零值语义与 TS 相反 | ✅ 真缺陷（`enabled: z.boolean().default(true)`） |
+| 2 | `url` 型 server 静默失效 | ✅ 真缺陷（`ServerConfig` 不收 url → 解码丢弃） |
+| 3 | `timeoutMs` 是死配置 | ✅ 真缺陷（`Config.Timeout()` 零生产调用方） |
+| 4 | `WrapOptions.Capability` 是死参数 | ✅ 真缺陷（恒空 → 所有 MCP 工具恒需批准） |
+| 5 | `contract.Definition.Capability` 悬空 + 注释过期 | ✅ 不实声明（两处注释） |
+| 6 | `States()`/`KillChildrenSync()` 零消费者 | ✅ 占位（保留合理，已标注） |
+| 7 | V10 覆盖缺口 | ✅ **真缺陷、且比报告更严重**——报告说「测试未覆盖」，实为**实现没有这条路径**（`buildLoop` 不收 ctx → signal ctx 与初始化类型上不相连） |
+| 8 | 用例数 70 vs 71 不符 | ❌ **不实**——71 含 `TestMain`（包级夹具入口，非用例）；本刀复现：91 func Test − 1 TestMain = 90 |
+| 9 | HANDOFF 数字未经复现 | ⚠️ 本刀重新实测并回填 |
+
+**关键方法（可复用）**：**审查报告的结论也要按外部来源核验**——
+不因格式完整/语气自信而采信。本刀 9 条里 1 条不实、1 条被低估严重性，
+若直接照单执行会「修一个不存在的数字问题」且「只补测试不修代码」。
+
+**本刀新增的坑（续第 46 条）**：
+
+47. **`Enabled bool` 承载「缺席≠false」的语义是类型选择错误**——TS 的
+    zod `.default(true)` 区分「键缺席」与「显式 false」，Go 的 `bool` 把两者
+    塌缩为 `false` → 用户照 TS 写配置被**静默关掉整个子系统**。
+    判据：遇到 schema 里有 `.default(X)` 且 X 非零值的字段，Go 侧必须用
+    指针/`Optional` 承载，并让访问器做唯一收口。
+48. **「收了字段才能拒绝它」**——`ServerConfig` 有意不收 `url`（因为它不实现
+    HTTP 传输），但**不收就无法识别**，于是 url 型 server 静默消失。
+    要为「不支持的能力」给出诊断，得先能在配置里**看见**它。
+49. **语义变更时旧测试红了，不要简单删断言**——本刀两条旧测试断言
+    「未配置时 `Enabled=false`」，那正是被推翻的旧语义。正确做法是问
+    「这条测试**真正想守**的是什么」（此处是「未配置不产生工具」），
+    然后改用**与实现细节正交**的判据（`Servers` 为空）重写，
+    并把该意图另钉在行为层（`TestManagerEmptyConfigProducesNoTools`）。
+50. **新加装配函数时把「谁有权取消我」显式化**——`assembleMcpTools` 初版
+    自造 `context.Background()`，于是调用方的 signal ctx 被**类型系统**挡住，
+    用户按 Ctrl+C 完全无效。这是「新的依赖没进签名」的典型。
+51. **变异反证也是 RED 证据**——W2 先写实现后补测试，无法取得自然的红灯；
+    用**回退变异**（把接线摘回缺陷状态）跑测试，红 4 且失败信息与缺陷描述
+    逐字对应，既补了 RED 证据又验证了判据。
+
 ### 本会话新增文件全表（`git log --diff-filter=A e866fad8^..HEAD`）
 
 ```

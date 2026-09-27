@@ -307,7 +307,18 @@ func AssessToolRisk(toolName string, input map[string]any, doomLoopLevel string)
 		level = RiskHigh
 	}
 
-	// MCP 工具风险（Go 侧无 mcp 包，只保留工具名识别与 low 升级）。
+	// MCP 工具风险（**只做工具名识别与 low 升级**）。
+	//
+	// # 未实现的分支（第一百一十刀订正）
+	//
+	// 本注释此前写「Go 侧无 mcp 包」——**已不成立**（mcp 包于第一百零九刀移植）。
+	// 但该包的存在**不改变本函数的现状**：MCP 策略分支（对账 TS
+	// `approval-risk.ts:675`）仍未接线，原因不在「包不存在」而在
+	// **本函数签名不收 capability**（见 `AssessToolRisk` 的文档注释，
+	// 可选输入里「declaredCapability」标注为 Go 侧无对应输入）。
+	//
+	// 故这里**只有**工具名识别（从 `mcp__<server>__<tool>` 提取 server 名）
+	// 与「未知则升为 low」——能力相关的风险升级尚未接入。
 	if m := mcpToolNameRe.FindStringSubmatch(toolName); m != nil {
 		reasons = append(reasons, `MCP tool from server "`+m[1]+`"`)
 		if level == RiskNone {
