@@ -245,7 +245,61 @@ func (l *Loop) buildToolCallParams(tc toolCall) *tools.CallParams {
 		// **typed-nil 防护**：`l.FileHistory` 是 `*filehistory.History`，
 		// nil 时必须传 nil 回调（否则闭包捕获 typed-nil 并在调用时 panic）。
 		FileHistory: l.fileHistoryFunc(),
+		// SessionModifiedFiles：本会话已改文件（`git commit` 的归属回退源）。
+		//
+		// 对账 TS `tool-pipeline.ts:838` 的
+		// `sessionModifiedFiles: [...deps.evidence.getState().filesModified]`。
+		//
+		// **为什么必须在此注入**：本构造点是 `CallParams` 的**唯一**装配点，
+		// 漏填即「字段有读取方、无写入方」——本字段此前正是如此
+		// （`internal/tools/git.go` 两处读它，全 go 树零赋值点）。
+		//
+		// **与 OwnedFiles 的分野**：本字段是 pre-baseline 近似（本会话碰过的
+		// 文件），精度低于 `OwnedFiles`（post-baseline 严格归属）。TS 亦如此
+		// ——`getScopedCommitFiles` 优先 `ownedFiles`、空才回退本字段。
+		//
+		// **形态**：返回 `[]string`，nil 与空切片在此行为等价（消费侧只用
+		// `len()` 与 `range`，无 typed-nil 解引用）——**不需要** `xxxOrNil()`
+		// 式包装（那是接口字段才有的坑，如 `Jobs` / `Grants`）。
+		SessionModifiedFiles: l.sessionModifiedFiles(),
 	}
+}
+
+// sessionModifiedFiles 返回本会话被写工具改过的文件路径（**集合**，非计数）。
+//
+// 对账 TS `tool-pipeline.ts:838`：`[...deps.evidence.getState().filesModified]`
+// ——TS 的 `filesModified` 是 `Set<string>`（`src/agent/evidence.ts:33`），
+// 插入序，元素为 `trackFileModified` 收到时的原始形态。
+//
+// Go 侧**同源**：`session.FileIndex` 是「保持插入序的文件记录表」
+// （`internal/session/state.go`），`ModifiedByMe` 即「被 edit/write 改过」。
+// 录入点与 TS 同形态——write/edit/hash_edit 传 `file_path`、apply_patch 传
+// `prompt.ExtractPatchTargetPaths(diff)` 的解析结果（见 `observeToolResult`）。
+//
+// **为什么需要它**：`CallParams.SessionModifiedFiles` 此前**有读取方零写入方**
+// （`internal/tools/git.go` 的 `gitCommit`/`gitStash` 读），导致
+// `getScopedCommitFiles` 的回退源恒空 → `git commit` 在有会话改动但无暂存时
+// **报错**，而 TS 会提交本会话文件。
+//
+// **为什么不复用它者**：`evidenceState.filesModified` 是**计数**
+// （`EvidenceStateFromSession` 返回 `int`）——语义不符，当集合用会产出
+// **错的**提交范围（比恒空更危险）。`OwnedFiles` 是另一量（post-baseline
+// 归属），需未移植的 `ownershipLedger`，本轮不动。
+//
+// **顺序**：FileIndex 与 TS 的 `Set` 同为插入序 → `git add -- <files>` 参数序一致。
+func (l *Loop) sessionModifiedFiles() []string {
+	if l.State == nil {
+		return nil
+	}
+	snap := l.State.Snapshot()
+	keys := snap.FileIndex.Keys()
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if v, ok := snap.FileIndex.Get(k); ok && v.ModifiedByMe {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // fileHistoryFunc 返回 undo 工具读取的历史面（nil = 不可用）。
