@@ -101,6 +101,23 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// TS 侧注释明说它「面向用户可见的外部输出」——bash 重定向是反面做法。
 	// 依赖全是平台能力（fs/path/expandHome/DetectSensitiveFile），Go 侧全有。
 	r.Register(ExportFile(cwd))
+	// create_document：办公文档家族之一（第八十三刀 · W1-1）。
+	//
+	// **为什么**：TS 侧它属 desktopTools 层（用户要求「放到桌面/下载」的文档）。
+	// 依赖只有  + 纯字符串渲染——是 export_file 的**下游**，
+	// 复用其敏感门与 50MB 上限。**门链早已预留**（approval_pathgrant.go:101
+	// 的  分支），本刀让它首次有真实消费者。
+	r.Register(CreateDocument(cwd))
+	// create_spreadsheet：办公文档家族之二（W1-2）。
+	//  是「以 .xls 扩展名保存的 HTML 表格」（TS 注释明说），与 html 同渲染器。
+	r.Register(CreateSpreadsheet(cwd))
+	// create_presentation / create_pdf / create_image：办公文档家族之三/四/五（W1-3/4/5）。
+	// 三者同为 export_file 的下游——`.ppt`/`.xls`/`.doc` 都是「HTML 伪装」格式
+	// （TS 注释明说），`.pdf` 是「打印就绪的 HTML + @page」靠浏览器打印。
+	// 零第三方库。
+	r.Register(CreatePresentation(cwd))
+	r.Register(CreatePdf(cwd))
+	r.Register(CreateImage(cwd))
 	r.Register(RunTests(cwd))
 
 	// ── 任务 ──
