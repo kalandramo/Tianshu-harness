@@ -38,7 +38,30 @@ const maxFetchURLs = 10
 // WebFetch 创建 `web_fetch` 工具。
 func WebFetch(cwd string) Tool { return &webFetchTool{cwd: cwd} }
 
-type webFetchTool struct{ cwd string }
+// WebFetchWithDeps 创建带**注入依赖**的 `web_fetch` 工具。
+//
+// # 为什么需要它（第八十八刀审查发现）
+//
+// 首版的配置面相对 TS **收窄且未披露**：TS 的 `WebFetchOptions`
+// （`jinaBaseUrl` / `cacheMaxAgeMs` / `extractMainContent` / 超时等）从
+// `config.fetch.*` 注入，Go 侧**无任何入口**——工具构造后配置面完全固定。
+//
+// 本函数提供**最小的注入通道**（测试与未来配置层用）：
+//   - `deps`：HTTP 依赖（Doer / Lookup）
+//   - `opts`：内核选项（超时 / 缓存 / 主内容提取 / Jina 地址）
+//
+// **仍属收窄**：TS 还支持 `enablePlaywright` / `renderTimeoutMs` /
+// `renderWaitMs` / `actions`——那些依赖 Playwright 层，Go 侧未移植（见文件头）。
+func WebFetchWithDeps(cwd string, deps tnet.FetchCoreDeps, opts tnet.FetchMarkdownOptions) Tool {
+	opts.Cwd = cwd
+	return &webFetchTool{cwd: cwd, deps: deps, opts: opts}
+}
+
+type webFetchTool struct {
+	cwd  string
+	deps tnet.FetchCoreDeps
+	opts tnet.FetchMarkdownOptions
+}
 
 func (t *webFetchTool) Definition() contract.Definition {
 	// actions 的嵌套 schema：items 是 object，含 type 枚举与 7 个可选字段。
@@ -90,6 +113,12 @@ func (t *webFetchTool) Definition() contract.Definition {
 }
 
 func (t *webFetchTool) Execute(ctx context.Context, p *CallParams) (contract.Result, error) {
+	// **容错**：nil ctx 在 Go 里不合法（`context.WithTimeout(nil, …)` 会 panic）。
+	// 生产路径由 loop 保证非 nil，但直接调用（测试/嵌入）可能传 nil——
+	// 静默回退 Background 比 panic 更合适。
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	rawURL, _ := p.Input["url"].(string)
 	urlsRaw, hasURLs := p.Input["urls"]
 	_, hasActions := p.Input["actions"]
@@ -139,12 +168,26 @@ func (t *webFetchTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 
 	out := t.fetchOne(ctx, rawURL)
 	if !out.OK {
-		return contract.Result{Content: out.Error, IsError: true}, nil
+		// **透传结构化失败分类**（对账 TS `tool.ts:209` 的 `...(outcome.errorKind ? ...)`）。
+		//
+		// 审查发现：此前内核算出的 ErrorKind（429/5xx → api_error）被**静默丢弃**，
+		// 而 `contract.Result.ErrorKind`（types.go:169）全仓零生产消费者——
+		// 「实现已有但零消费」的又一处。此处接线。
+		res := contract.Result{Content: out.Error, IsError: true}
+		if out.ErrorKind != "" {
+			kind := out.ErrorKind
+			res.ErrorKind = &kind
+		}
+		return res, nil
 	}
 
 	markdown := out.Markdown
 	note := ""
-	if truncateTo >= 0 && len(markdown) > truncateTo {
+	// **判定与执行必须同口径**（第八十八刀审查发现的真缺陷）：
+	// 首版用 `len(markdown)`（字节）判定、`UTF16Len` 执行——中文下 300 字节
+	// 对应 100 code unit，`len > 200` 进入分支但 `UTF16Len(100) <= 200` 不裁，
+	// 于是输出「已按 200 字符截断」的**虚假提示**。探针已复现。
+	if truncateTo >= 0 && UTF16Len(markdown) > truncateTo {
 		markdown = truncateToChars(markdown, truncateTo)
 		note = fetchTruncationNote(truncateTo)
 	}
@@ -180,7 +223,8 @@ func (t *webFetchTool) executeBatch(ctx context.Context, urls []any, truncateTo 
 		}
 		markdown := out.Markdown
 		note := ""
-		if truncateTo >= 0 && len(markdown) > truncateTo {
+		// 同口径判定（见单页分支的说明）
+		if truncateTo >= 0 && UTF16Len(markdown) > truncateTo {
 			markdown = truncateToChars(markdown, truncateTo)
 			note = fetchTruncationNote(truncateTo)
 		}
@@ -207,7 +251,9 @@ func (t *webFetchTool) executeBatch(ctx context.Context, urls []any, truncateTo 
 
 // fetchOne 调用共享内核（对账 TS 的 `fetchMarkdown`）。
 func (t *webFetchTool) fetchOne(ctx context.Context, rawURL string) tnet.FetchMarkdownOutcome {
-	return tnet.FetchMarkdown(ctx, rawURL, tnet.FetchCoreDeps{}, tnet.FetchMarkdownOptions{Cwd: t.cwd})
+	opts := t.opts
+	opts.Cwd = t.cwd
+	return tnet.FetchMarkdown(ctx, rawURL, t.deps, opts)
 }
 
 // RequiresApproval 恒 true（对账 TS `() => true`）——发起网络请求。

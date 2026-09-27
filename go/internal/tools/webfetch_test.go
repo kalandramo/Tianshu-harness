@@ -1,10 +1,15 @@
 package tools
 
 import (
+	"context"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	tnet "github.com/kalandramo/tianshu/go/internal/net"
 )
 
 // webfetch_test.go —— `web_fetch` 工具（第九十三刀 · W3-4d）。
@@ -269,3 +274,210 @@ func runWebFetch(t *testing.T, input map[string]any) struct {
 // 确保 os/filepath 被引用（保留给未来的落盘测试）。
 var _ = os.ReadFile
 var _ = filepath.Join
+
+// ── 第八十八刀审查修复的回归测试 ────────────────────────────────────────
+
+// TestWebFetchTruncationSameUnit —— **截断判定与执行同口径**（真缺陷回归）。
+//
+// # 缺陷描述（探针已复现）
+//
+// 首版用 `len(markdown)`（**字节**）判定、`UTF16Len`（**code unit**）执行。
+// 100 个中文 = 300 字节 / 100 code unit：`len > 200` 进入截断分支，
+// 但 `UTF16Len(100) <= 200` 使 `truncateToChars` 原样返回——
+// 结果输出「已按 200 字符截断」的**虚假提示**。
+//
+// # 修复后
+//
+// 判定改用 `UTF16Len`——两者同口径，提示与实际一致。
+func TestWebFetchTruncationSameUnit(t *testing.T) {
+	// ① 中文 100 字（300 字节 / 100 code unit），阈值 200 → **不该截**
+	md100 := strings.Repeat("中", 100)
+	if UTF16Len(md100) > 200 {
+		t.Fatalf("测试前提错误：UTF16Len 应 <= 200，实得 %d", UTF16Len(md100))
+	}
+	if len(md100) <= 200 {
+		t.Fatalf("测试前提错误：字节长度应 > 200，实得 %d", len(md100))
+	}
+	// 修复后的判据：UTF16Len > 200 才截 → 此处**不进分支**
+	if UTF16Len(md100) > 200 {
+		t.Error("100 个中文的 UTF16Len(100) 不应触发 200 阈值截断")
+	}
+
+	// ② 中文 300 字（900 字节 / 300 code unit），阈值 200 → **该截**
+	md300 := strings.Repeat("中", 300)
+	if UTF16Len(md300) <= 200 {
+		t.Fatal("测试前提错误：UTF16Len 应 > 200")
+	}
+	out := truncateToChars(md300, 200)
+	if UTF16Len(out) != 200 {
+		t.Errorf("应截到恰好 200 code unit，实得 %d", UTF16Len(out))
+	}
+
+	// ③ 边界：恰好等于阈值 → 不截
+	mdExact := strings.Repeat("中", 200)
+	if UTF16Len(mdExact) > 200 {
+		t.Error("恰好等于阈值不应触发截断")
+	}
+}
+
+// TestWebFetchTruncationNoteHonest —— 提示与实际一致（中文场景）。
+//
+// 这条是缺陷的**端到端形式**：若判定口径错，会出现「提示截断但内容完整」。
+func TestWebFetchTruncationNoteHonest(t *testing.T) {
+	// 模拟修复后的分支逻辑
+	check := func(md string, limit int) (bool, string) {
+		if limit >= 0 && UTF16Len(md) > limit {
+			return true, fetchTruncationNote(limit)
+		}
+		return false, ""
+	}
+
+	// 100 中文 / 阈值 200 → 不截、无提示
+	truncated, note := check(strings.Repeat("中", 100), 200)
+	if truncated || note != "" {
+		t.Errorf("不该截（UTF16 100 <= 200），实得 truncated=%v note=%q", truncated, note)
+	}
+
+	// 300 中文 / 阈值 200 → 截、有提示
+	truncated, note = check(strings.Repeat("中", 300), 200)
+	if !truncated || note == "" {
+		t.Errorf("该截，实得 truncated=%v note=%q", truncated, note)
+	}
+	if note != "（已按 200 字符截断）" {
+		t.Errorf("提示文案不符，实得 %q", note)
+	}
+}
+
+// TestWebFetchErrorKindPropagatedE2E —— **errorKind 端到端透传**（走真实 Execute）。
+//
+// 审查发现：内核算出的 ErrorKind（429/5xx → api_error）被工具层静默丢弃。
+// 修复后本测试**走完整路径**验证：注入 Doer 返回 429 → Execute → 检查
+// `contract.Result.ErrorKind`。
+//
+// （首版我写了个只测局部变量的同义反复测试——那是假测试，已替换。）
+func TestWebFetchErrorKindPropagatedE2E(t *testing.T) {
+	tool := WebFetchWithDeps(t.TempDir(),
+		tnet.FetchCoreDeps{
+			Lookup: func(host string) (tnet.ResolvedAddress, error) {
+				return tnet.ResolvedAddress{Address: "93.184.216.34", Family: 4}, nil
+			},
+			Doer: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: 429,
+					Header:     http.Header{"Content-Type": []string{"text/plain"}},
+					Body:       io.NopCloser(strings.NewReader("rate limited")),
+				}, nil
+			},
+		},
+		tnet.FetchMarkdownOptions{},
+	)
+
+	r, err := tool.Execute(context.Background(), &CallParams{Input: map[string]any{"url": "https://example.com/x"}})
+	if err != nil {
+		t.Fatalf("不应返回 error：%v", err)
+	}
+	if !r.IsError {
+		t.Fatalf("429 应报错，实得 %q", r.Content)
+	}
+	if !strings.Contains(r.Content, "HTTP 429") {
+		t.Errorf("内容应含 HTTP 429，实得 %q", r.Content)
+	}
+	// **关键断言**：结构化失败字段被透传
+	if r.ErrorKind == nil {
+		t.Fatal("★ 429 应透传 ErrorKind（修复前此处为 nil）")
+	}
+	if *r.ErrorKind != "api_error" {
+		t.Errorf("ErrorKind 应为 api_error，实得 %q", *r.ErrorKind)
+	}
+}
+
+// TestWebFetchErrorKindNotSetFor404 —— 404 **不带** api_error（对照）。
+func TestWebFetchErrorKindNotSetFor404(t *testing.T) {
+	tool := WebFetchWithDeps(t.TempDir(),
+		tnet.FetchCoreDeps{
+			Lookup: func(host string) (tnet.ResolvedAddress, error) {
+				return tnet.ResolvedAddress{Address: "93.184.216.34", Family: 4}, nil
+			},
+			Doer: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: 404,
+					Header:     http.Header{"Content-Type": []string{"text/plain"}},
+					Body:       io.NopCloser(strings.NewReader("not found")),
+				}, nil
+			},
+		},
+		tnet.FetchMarkdownOptions{},
+	)
+	r, _ := tool.Execute(context.Background(), &CallParams{Input: map[string]any{"url": "https://example.com/x"}})
+	if !r.IsError {
+		t.Fatal("404 应报错")
+	}
+	if r.ErrorKind != nil {
+		t.Errorf("404 不应带 ErrorKind，实得 %q", *r.ErrorKind)
+	}
+}
+
+// TestWebFetchTruncationE2E —— **截断端到端**（走真实 Execute，中文场景）。
+//
+// 这是审查缺陷的**用户可见形式**：修复前 100 个中文 + 阈值 200 会输出
+// 「已按 200 字符截断」但内容完整。
+func TestWebFetchTruncationE2E(t *testing.T) {
+	// 100 个中文正文（300 字节 / 100 code unit）
+	body := strings.Repeat("中", 100)
+	tool := WebFetchWithDeps(t.TempDir(),
+		tnet.FetchCoreDeps{
+			Lookup: func(host string) (tnet.ResolvedAddress, error) {
+				return tnet.ResolvedAddress{Address: "93.184.216.34", Family: 4}, nil
+			},
+			Doer: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: 200,
+					Header:     http.Header{"Content-Type": []string{"text/plain; charset=utf-8"}},
+					Body:       io.NopCloser(strings.NewReader(body)),
+				}, nil
+			},
+		},
+		tnet.FetchMarkdownOptions{},
+	)
+
+	r, err := tool.Execute(context.Background(), &CallParams{Input: map[string]any{
+		"url": "https://example.com/x", "maxCharacters": float64(200),
+	}})
+	if err != nil {
+		t.Fatalf("不应返回 error：%v", err)
+	}
+	if r.IsError {
+		t.Fatalf("应成功，实得 %q", r.Content)
+	}
+	// **关键**：100 code unit <= 200 → 不该有截断提示
+	if strings.Contains(r.Content, "已按 200 字符截断") {
+		t.Errorf("★ 内容未被截断却输出了截断提示（口径不一致的缺陷）：\n%s", r.Content)
+	}
+
+	// 对照：300 个中文（300 code unit）> 200 → 该截且有提示
+	body300 := strings.Repeat("中", 300)
+	tool2 := WebFetchWithDeps(t.TempDir(),
+		tnet.FetchCoreDeps{
+			Lookup: func(host string) (tnet.ResolvedAddress, error) {
+				return tnet.ResolvedAddress{Address: "93.184.216.34", Family: 4}, nil
+			},
+			Doer: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: 200,
+					Header:     http.Header{"Content-Type": []string{"text/plain; charset=utf-8"}},
+					Body:       io.NopCloser(strings.NewReader(body300)),
+				}, nil
+			},
+		},
+		tnet.FetchMarkdownOptions{},
+	)
+	r2, _ := tool2.Execute(context.Background(), &CallParams{Input: map[string]any{
+		"url": "https://example.com/x", "maxCharacters": float64(200),
+	}})
+	if r2.IsError {
+		t.Fatalf("应成功，实得 %q", r2.Content)
+	}
+	if !strings.Contains(r2.Content, "已按 200 字符截断") {
+		t.Errorf("300 code unit 应触发截断提示，实得：\n%s", r2.Content)
+	}
+}
