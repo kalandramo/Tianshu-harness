@@ -71,7 +71,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	loop, mcpMgr := buildLoop(app, *jsonOut)
+	loop, mcpMgr := buildLoop(ctx, app, *jsonOut)
 	// MCP 子进程回收：必须在进程退出前（否则 npx 起的 server 变孤儿常驻）。
 	// 对账 TS `bootstrap.ts:1393` 的 `killChildrenSync?.()`。
 	if mcpMgr != nil {
@@ -219,7 +219,15 @@ func loadConfig(model, baseURL, approval string, maxTurns int, systemPrompt stri
 // 必须在**进程退出前**显式 `Shutdown()`——否则 npx 起的 server 会变孤儿常驻。
 // 回收时机由调用方（`main`）掌握，故此处把所有权交出去。
 // 未配置 MCP 时返回 `nil`（调用方须判空）。
-func buildLoop(app *appConfig, jsonOut bool) (*agent.Loop, *mcp.Manager) {
+//
+// # ctx 参数（第一百一十刀 W3，修 finding #7）
+//
+// **为什么必须传 ctx**：MCP 初始化会 spawn 子进程并等握手，慢 server
+// （npx 首次拉包可达数十秒）会一直阻塞。若此处用自造的
+// `context.Background()`，用户在等待时按 Ctrl+C **没有任何效果**——
+// signal ctx 与初始化路径在类型上不相连。
+// 传入调用方的 signal ctx 后，`Initialize` 的 `select` 能感知取消并立即返回。
+func buildLoop(ctx context.Context, app *appConfig, jsonOut bool) (*agent.Loop, *mcp.Manager) {
 	cl := client.New(app.Client)
 	// ── LSP 导航装配 ──
 	//
@@ -251,7 +259,7 @@ func buildLoop(app *appConfig, jsonOut bool) (*agent.Loop, *mcp.Manager) {
 	// 未配置 MCP 的用户占绝大多数，其请求体的 `tools` 段必须**逐字节不变**
 	// ——否则会破坏既有前缀缓存。故 `Enabled` 为假或无 server 时
 	// **完全不进入** MCP 路径（连 `SpawnStdio` 都不碰）。
-	mcpTools, mcpMgr := assembleMcpTools(app.Agent.Cwd)
+	mcpTools, mcpMgr := assembleMcpTools(ctx, app.Agent.Cwd)
 
 	reg := tools.NewDefaultRegistry(tools.Options{
 		Cwd:          app.Agent.Cwd,
@@ -860,32 +868,61 @@ func convertLspLocations(in []lsp.Location) []tools.LspLocation {
 //
 // 返回的 manager 由调用方负责 `Shutdown()`（见 `main` 的退出路径）——
 // 但注意本函数返回的 manager 可能是 nil（未配置时），调用方须判空。
-func assembleMcpTools(cwd string) ([]tools.Tool, *mcp.Manager) {
+//
+// # ctx（第一百一十刀 W3）
+//
+// `ctx` 是**调用方的生命周期上下文**（`main` 的 `signal.NotifyContext`）。
+// 本函数从它派生出带预算的初始化 ctx——**不再自造 `context.Background()`**，
+// 否则 Ctrl+C 无法中断慢启动（见 `buildLoop` 的说明）。
+//
+// # 被拒绝的 server（第一百一十刀 W1 的产物在此消费）
+//
+// `cfg.Unsupported` 里是被语义检查拒绝的 server（如 url 型）。
+// **必须打印**——静默丢弃正是原缺陷（用户配了、没生效、无任何提示）。
+func assembleMcpTools(ctx context.Context, cwd string) ([]tools.Tool, *mcp.Manager) {
 	cfg, err := mcp.LoadConfigFromFile(rivetpath.UserConfigPath())
 	if err != nil {
 		// 配置坏——与 LoadPermissionsOrNil 同款静默降级。
 		fmt.Fprintf(os.Stderr, "MCP 配置读取失败（已跳过 MCP 工具）：%v\n", err)
 		return nil, nil
 	}
+
+	// 诊断输出：被拒绝的 server 逐条告知用户。
+	//
+	// **放在 enabled / len(Servers) 早退之前**——用户可能只配了 url 型
+	// server（全部被拒 → `Servers` 为空），此时若不先打印，他会看到
+	// 「什么都没发生」而完全不知道为什么。
+	for _, u := range cfg.Unsupported {
+		fmt.Fprintf(os.Stderr, "MCP server %q 已跳过：%s\n", u.ID, u.Reason)
+	}
+
 	if !cfg.EnabledOrDefault() || len(cfg.Servers) == 0 {
-		// 未配置：完全不建 manager（零开销、不改请求体）
+		// 未配置（或全部被拒）：完全不建 manager（零开销、不改请求体）
 		return nil, nil
 	}
 
 	mgr := mcp.NewManager(cfg, cwd)
 
-	// 用带超时的 ctx：配置里的 timeoutMs 是**单次调用**超时，
+	// 初始化预算：配置里的 timeoutMs 是**单次调用**超时，
 	// 而这里是整体连接预算。给足余量（多个 server 并发，取单次超时 + 5s 握手余量）。
+	//
+	// **从调用方 ctx 派生**（而非 Background）——这样 Ctrl+C 与预算两者任一
+	// 都可结束等待，取先到者。
 	budget := time.Duration(cfg.TimeoutMS+5000) * time.Millisecond
 	if cfg.TimeoutMS <= 0 {
 		budget = time.Duration(mcp.DefaultTimeoutMS+5000) * time.Millisecond
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	initCtx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 
-	if err := mgr.Initialize(ctx); err != nil {
+	if err := mgr.Initialize(initCtx); err != nil {
 		// 超时/取消：已连上的 server 仍可用（部分成功），只是不等剩下的。
-		fmt.Fprintf(os.Stderr, "MCP 初始化未完成：%v\n", err)
+		// 区分「用户取消」与「超时」——前者是用户意图，不该刷错误信息。
+		if ctx.Err() != nil {
+			fmt.Fprintln(os.Stderr, "MCP 初始化已被取消。")
+		} else {
+			fmt.Fprintf(os.Stderr, "MCP 初始化未完成：%v\n", err)
+		}
 	}
 
 	found := mgr.AllTools()
