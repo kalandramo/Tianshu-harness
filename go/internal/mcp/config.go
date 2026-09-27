@@ -70,5 +70,53 @@ func LoadConfigFromFile(path string) (Config, error) {
 	if cfg.Servers == nil {
 		cfg.Servers = map[string]ServerConfig{}
 	}
-	return cfg, nil
+	return validate(cfg), nil
+}
+
+// validate 做跨字段语义检查，把「配了但本实现不支持 / 配错了」的 server 挑出来。
+//
+// 对账 TS 的 refine（`src/mcp/config.ts:59-67`）：
+//
+//	`command` 与 `url` 必须二选一（既有且仅有其一）
+//
+// **为什么不返回 error**（第一百一十刀 finding #2 的方案取舍）：
+// 一个 url 型 server 不该把同配置里的 stdio server 一起废掉——
+// 这违反 `Manager.Initialize` 的既有原则「单点失败不阻塞其余」
+// （`manager.go` 的 `connectOne` 注释）。故此处**只摘掉出问题的那个**，
+// 并把 (ID, 原因) 记进 `Unsupported` 供装配层打印诊断。
+//
+// 被摘掉的 server **不留在 `Servers`**：留着它会让 `Manager` 尝试连接
+// 并在 `State` 里记一条 `command is empty` 的错误——那个错误信息
+// 对用户毫无指引（他不知道是自己写了 url）。
+func validate(cfg Config) Config {
+	for id, sc := range cfg.Servers {
+		// disabled 的 server 不校验：用户明确禁用了它，
+		// 报「需 command 或 url」反而是噪声（他根本没打算用它）。
+		if sc.Disabled {
+			continue
+		}
+		switch {
+		case sc.Command == "" && sc.URL != "":
+			cfg.Unsupported = append(cfg.Unsupported, UnsupportedServer{
+				ID: id,
+				Reason: `url 型 server（HTTP/SSE 传输）在 Go 侧尚未实现，` +
+					`本 server 已跳过。若该能力必需，请用 stdio 型（"command"）替代。`,
+			})
+			delete(cfg.Servers, id)
+		case sc.Command == "" && sc.URL == "":
+			cfg.Unsupported = append(cfg.Unsupported, UnsupportedServer{
+				ID:     id,
+				Reason: `缺少 "command"（stdio 型）或 "url"（HTTP 型）——两者必须有其一。`,
+			})
+			delete(cfg.Servers, id)
+		case sc.Command != "" && sc.URL != "":
+			cfg.Unsupported = append(cfg.Unsupported, UnsupportedServer{
+				ID: id,
+				Reason: `"command" 与 "url" 不可同时给出——` +
+					`stdio 型与 HTTP 型互斥（对账 TS 的 refine 约束）。`,
+			})
+			delete(cfg.Servers, id)
+		}
+	}
+	return cfg
 }

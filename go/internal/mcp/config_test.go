@@ -44,7 +44,7 @@ func TestLoadConfigFromFileBasic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取失败：%v", err)
 	}
-	if !cfg.Enabled {
+	if !cfg.EnabledOrDefault() {
 		t.Error("enabled 应为 true")
 	}
 	fs, ok := cfg.Servers["fs"]
@@ -89,28 +89,61 @@ func TestLoadConfigTopLevelNotNested(t *testing.T) {
 // TestLoadConfigMissingFile —— 文件不存在 = 未配置（正常，非错误）。
 //
 // 对账 `internal/config/permissions.go` 的既有语义：`os.IsNotExist` → `(nil, nil)`。
+//
+// **断言已随第一百一十刀 W1 修正**（原断言「Enabled 应为 false」基于旧语义）：
+// 新语义下「未配置」= `Enabled == nil` → `EnabledOrDefault()` 为 **true**
+// （对齐 TS `.default(true)`）。真正让「未配置不产生工具」成立的判据是
+// **`Servers` 为空**——两个维度正交：
+//   - `EnabledOrDefault()` 管「用户是否明令关闭」
+//   - `len(Servers) == 0` 管「有没有东西可连」
+//
+// 故此处断言后者（前者另由 `TestConfigEnabledDefaultsTrue` 系列覆盖）。
 func TestLoadConfigMissingFile(t *testing.T) {
 	cfg, err := LoadConfigFromFile(filepath.Join(t.TempDir(), "nope.json"))
 	if err != nil {
 		t.Fatalf("文件不存在不该报错：%v", err)
 	}
-	if cfg.Enabled {
-		t.Error("未配置时 Enabled 应为 false（零值）")
-	}
 	if len(cfg.Servers) != 0 {
 		t.Errorf("未配置时无 server，实得 %v", cfg.Servers)
+	}
+	if len(cfg.Unsupported) != 0 {
+		t.Errorf("未配置时不该有诊断，实得 %v", cfg.Unsupported)
+	}
+	if !cfg.EnabledOrDefault() {
+		t.Error("新语义下未配置视作启用（Enabled 为 nil）；让它「不产生工具」的是 Servers 为空，不是 Enabled=false")
 	}
 }
 
 // TestLoadConfigNoMcpKey —— 有配置文件但无 mcp 键 = 未配置。
+//
+// 同 `TestLoadConfigMissingFile`：断言「无 server」而非「Enabled=false」。
 func TestLoadConfigNoMcpKey(t *testing.T) {
 	p := writeConfig(t, `{"agent":{"permissions":{"allow":[]}}}`)
 	cfg, err := LoadConfigFromFile(p)
 	if err != nil {
 		t.Fatalf("读取失败：%v", err)
 	}
-	if cfg.Enabled || len(cfg.Servers) != 0 {
-		t.Errorf("无 mcp 键时应为空配置，实得 %+v", cfg)
+	if len(cfg.Servers) != 0 {
+		t.Errorf("无 mcp 键时应无 server，实得 %+v", cfg.Servers)
+	}
+	if len(cfg.Unsupported) != 0 {
+		t.Errorf("无 mcp 键时不该有诊断，实得 %v", cfg.Unsupported)
+	}
+}
+
+// TestManagerEmptyConfigProducesNoTools —— 正交性的端到端钉子。
+//
+// 把上面两条的意图（「未配置不产生工具」）钉在 **Manager 行为**上，
+// 而非配置字段的取值上——这样将来再改字段语义，这条仍然守得住。
+func TestManagerEmptyConfigProducesNoTools(t *testing.T) {
+	m := NewManager(Config{}, "")
+	defer m.Shutdown()
+
+	if err := m.Initialize(t.Context()); err != nil {
+		t.Fatalf("零值配置不该报错：%v", err)
+	}
+	if len(m.AllTools()) != 0 {
+		t.Errorf("零值配置不产生工具（Servers 为空），实得 %d", len(m.AllTools()))
 	}
 }
 
@@ -159,7 +192,7 @@ func TestLoadConfigEmptyServersObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("空 servers 不该报错：%v", err)
 	}
-	if !cfg.Enabled {
+	if !cfg.EnabledOrDefault() {
 		t.Error("enabled 应为 true")
 	}
 	if len(cfg.Servers) != 0 {
@@ -174,7 +207,7 @@ func TestConfigJSONRoundTrip(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
 		t.Fatalf("反序列化失败：%v", err)
 	}
-	if !cfg.Enabled || cfg.TimeoutMS != 1000 || cfg.Servers["s"].Command != "c" {
+	if !cfg.EnabledOrDefault() || cfg.TimeoutMS != 1000 || cfg.Servers["s"].Command != "c" {
 		t.Errorf("字段名与 TS 不一致，实得 %+v", cfg)
 	}
 }

@@ -71,9 +71,8 @@ type ConnectionState struct {
 // ServerConfig 是单个 MCP server 的配置。
 //
 // 对账 `src/mcp/config.ts` 的 `mcpServerConfigSchema`（字段子集——只收
-// stdio 路径用得到的）。**未收**：`url` / `headers` / `transportHint` /
-// `auth`（属 HTTP 传输）、`workspace`（属 subAgent 策略）、`policy`（属
-// 工具级策略，W3 经 WrapOptions 传）。
+// stdio 路径用得到的）。**未收**：`headers` / `transportHint` /
+// `auth`（属 HTTP 传输）、`workspace`（属 subAgent 策略）。
 //
 // **零值语义**：`Disabled` 为 true 时跳过（对账 TS 的 `disabled` 字段）。
 type ServerConfig struct {
@@ -82,16 +81,85 @@ type ServerConfig struct {
 	Env      map[string]string `json:"env,omitempty"`
 	Cwd      string            `json:"cwd,omitempty"`
 	Disabled bool              `json:"disabled,omitempty"`
+
+	// URL 是 url 型 server 的端点。
+	//
+	// **为什么「不实现它却要收它」**（第一百一十刀 finding #2）：
+	// 此前 `ServerConfig` 完全不收 `url` → 用户的 url 型 server 被 JSON 解码
+	// 静默丢弃 → 进 map 后 `Command` 为空 → `SpawnStdio` 报 `command is empty`
+	// → 错误进 `State` 但**装配层不打印** → 用户看到「工具没出现」而不知为什么。
+	//
+	// 收了它，`validate` 才能识别并**明确拒绝 + 给出原因**。
+	// HTTP 传输本身仍不在本刀范围（见包内 `UnsupportedServer` 的说明）。
+	URL string `json:"url,omitempty"`
+
+	// Policy 是 server 级的工具策略（对账 `src/mcp/config.ts:9-14`）。
+	Policy *ServerPolicy `json:"policy,omitempty"`
+}
+
+// ServerPolicy 是 server 级策略容器。
+//
+// 对账 `mcpServerPolicySchema`（`src/mcp/config.ts:12-14`）。
+// **键是「加 mcp__ 前缀之前」的原始 MCP 工具名**——`connectOne` 查表时
+// 用 `def.Name`（原始名）而非 rivet 名。
+type ServerPolicy struct {
+	Tools map[string]ToolPolicy `json:"tools"`
+}
+
+// ToolPolicy 是单个 MCP 工具的策略。
+//
+// 对账 `mcpToolPolicySchema`（`src/mcp/config.ts:9-12`）：
+//
+//	capability: z.enum(['read','write','execute','network'])
+//	requireApproval: z.literal(true).optional()
+//
+// **为什么 `Capability` 是 `Capability` 类型而非 string**：
+// 直接复用 `policy.go` 的枚举，避免两处定义漂移（对账 TS 的 zod enum
+// 与 `McpCapability` 是同一份）。
+type ToolPolicy struct {
+	Capability      Capability `json:"capability"`
+	RequireApproval bool       `json:"requireApproval,omitempty"`
+}
+
+// UnsupportedServer 记录一个**被语义检查拒绝**的 server。
+//
+// **为什么不直接丢弃**（第一百一十刀 finding #2）：静默丢弃正是原缺陷——
+// 用户配了 url 型 server，工具不出现，却没有任何线索。保留 ID + 原因
+// 让装配层能打印诊断。
+type UnsupportedServer struct {
+	ID     string
+	Reason string
 }
 
 // Config 是 MCP 子系统配置。
 //
 // 对账 `src/mcp/config.ts` 的 `mcpConfigSchema`。
 type Config struct {
-	Enabled   bool                    `json:"enabled"`
+	// Enabled 缺席 = 启用（对齐 TS 的 `enabled: z.boolean().default(true)`，
+	// 见 `src/mcp/config.ts:83`）。
+	//
+	// **为什么用指针**（第一百一十刀 finding #1）：`bool` 的零值 `false`
+	// 与「用户显式写了 false」不可区分 → 缺席时整个 MCP 被静默关掉。
+	// 指针让「缺席」可表达；读取一律走 `EnabledOrDefault()`（唯一收口点，
+	// 不变量由结构保证，而非靠每个调用点记得判 nil）。
+	Enabled *bool `json:"enabled,omitempty"`
+
 	Servers   map[string]ServerConfig `json:"servers,omitempty"`
 	TimeoutMS int                     `json:"timeoutMs,omitempty"`
+
+	// Unsupported 是语义检查拒绝掉的 server（不参与 JSON——纯运行期诊断）。
+	Unsupported []UnsupportedServer `json:"-"`
 }
+
+// EnabledOrDefault 是 `Enabled` 的**唯一**读取点。
+//
+// 缺席（nil）→ true，对齐 TS 的 `.default(true)`。
+//
+// **为什么做成方法而非在加载时就地改写**（计划「方案取舍」的 A/B）：
+// `Config` 是导出类型、被测试直接构造（`manager_test.go` 多处），
+// 就地改写会让「配置对象」丢失「用户是否显式写过」这一信息。
+// 用指针 + 访问器让类型自己承载三态。
+func (c Config) EnabledOrDefault() bool { return c.Enabled == nil || *c.Enabled }
 
 // DefaultTimeoutMS 是单次工具调用的默认超时。
 //

@@ -867,7 +867,7 @@ func assembleMcpTools(cwd string) ([]tools.Tool, *mcp.Manager) {
 		fmt.Fprintf(os.Stderr, "MCP 配置读取失败（已跳过 MCP 工具）：%v\n", err)
 		return nil, nil
 	}
-	if !cfg.Enabled || len(cfg.Servers) == 0 {
+	if !cfg.EnabledOrDefault() || len(cfg.Servers) == 0 {
 		// 未配置：完全不建 manager（零开销、不改请求体）
 		return nil, nil
 	}

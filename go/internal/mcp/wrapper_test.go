@@ -324,4 +324,7 @@ type errTest string
 
 func (e errTest) Error() string { return string(e) }
 
+// boolPtr 供测试构造 `Config.Enabled`（指针三态，见 types.go 的说明）。
+func boolPtr(b bool) *bool { return &b }
+
 func nil2call(map[string]any) (CallResult, error) { return CallResult{}, nil }

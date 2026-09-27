@@ -41,6 +41,13 @@ type serverConn struct {
 type Manager struct {
 	cfg Config
 
+	// requestTimeoutMS 是单次 MCP 请求的超时（毫秒）。
+	//
+	// **唯一来源是 `cfg.Timeout()`**（第一百一十刀 finding #3）。
+	// 此前三处请求硬编码 `DefaultTimeoutMS` → 用户在配置里写的
+	// `timeoutMs` 完全不生效（`Config.Timeout()` 甚至零生产调用方）。
+	requestTimeoutMS int
+
 	mu      sync.Mutex
 	conns   map[string]*serverConn
 	states  map[string]ConnectionState
@@ -52,10 +59,11 @@ type Manager struct {
 // `baseCwd` 用于 `ServerConfig.Cwd` 缺省时的回退（对账 TS 的进程 cwd）。
 func NewManager(cfg Config, baseCwd string) *Manager {
 	return &Manager{
-		cfg:     cfg,
-		conns:   make(map[string]*serverConn),
-		states:  make(map[string]ConnectionState),
-		baseCwd: baseCwd,
+		cfg:              cfg,
+		requestTimeoutMS: cfg.Timeout(),
+		conns:            make(map[string]*serverConn),
+		states:           make(map[string]ConnectionState),
+		baseCwd:          baseCwd,
 	}
 }
 
@@ -78,7 +86,7 @@ func NewManager(cfg Config, baseCwd string) *Manager {
 // 若无 ctx 感知，`Initialize` 会一直等到**每个** server 的 60s 超时才返回
 // ——用户明明取消了，进程却卡住一分钟，是明确的可用性缺陷。
 func (m *Manager) Initialize(ctx context.Context) error {
-	if !m.cfg.Enabled {
+	if !m.cfg.EnabledOrDefault() {
 		return nil
 	}
 
@@ -144,7 +152,7 @@ func (m *Manager) connectOne(ctx context.Context, serverID string, sc ServerConf
 		"protocolVersion": "2025-06-18",
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "rivet", "version": "0.1.0"},
-	}, DefaultTimeoutMS); err != nil {
+	}, m.requestTimeoutMS); err != nil {
 		_ = tr.Close()
 		classified := ClassifyMcpError(err, ErrorContext{Transport: ErrorTransportStdio})
 		m.setState(ConnectionState{
@@ -200,7 +208,7 @@ func (m *Manager) connectOne(ctx context.Context, serverID string, sc ServerConf
 
 // listTools 发 `tools/list` 并解析。
 func (m *Manager) listTools(ctx context.Context, rpc *RPC) ([]ToolDef, error) {
-	raw, err := rpc.RequestCtx(ctx, "tools/list", map[string]any{}, DefaultTimeoutMS)
+	raw, err := rpc.RequestCtx(ctx, "tools/list", map[string]any{}, m.requestTimeoutMS)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +235,7 @@ func (m *Manager) callTool(rpc *RPC, serverID, toolName string, args map[string]
 	raw, err := rpc.Request("tools/call", map[string]any{
 		"name":      toolName,
 		"arguments": args,
-	}, DefaultTimeoutMS)
+	}, m.requestTimeoutMS)
 	if err != nil {
 		return CallResult{}, err
 	}

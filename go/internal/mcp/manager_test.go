@@ -22,7 +22,7 @@ import (
 // fakeServerConfig 组装指向假 server 的 Manager 配置。
 func fakeServerConfig(serverID string) Config {
 	return Config{
-		Enabled: true,
+		Enabled: boolPtr(true),
 		Servers: map[string]ServerConfig{
 			serverID: {
 				Command: os.Args[0],
@@ -187,7 +187,7 @@ func TestManagerDisconnectedServerErrorsOnCall(t *testing.T) {
 
 // TestManagerDisabledConfigIsNoop —— 配置未启用时不连（对账 TS 的 enabled 门）。
 func TestManagerDisabledConfigIsNoop(t *testing.T) {
-	m := NewManager(Config{Enabled: false}, "")
+	m := NewManager(Config{Enabled: boolPtr(false)}, "")
 	defer m.Shutdown()
 
 	if err := m.Initialize(context.Background()); err != nil {
@@ -224,7 +224,7 @@ func TestManagerDisabledServerSkipped(t *testing.T) {
 // 对账 TS：单 server 失败不阻塞 Initialize（「一个挂了不该让会话起不来」）。
 func TestManagerBadCommandRecordsErrorState(t *testing.T) {
 	m := NewManager(Config{
-		Enabled: true,
+		Enabled: boolPtr(true),
 		Servers: map[string]ServerConfig{
 			"broken": {Command: "/nonexistent/definitely-not-here-12345"},
 		},
@@ -260,7 +260,7 @@ func TestManagerBadCommandRecordsErrorState(t *testing.T) {
 func TestManagerAllToolsOrderStable(t *testing.T) {
 	// 三个 server（不同 id、同一个假 server 命令）——多元才暴露序问题
 	cfg := Config{
-		Enabled: true,
+		Enabled: boolPtr(true),
 		Servers: map[string]ServerConfig{
 			"zeta":  {Command: os.Args[0], Args: []string{"-test.run=TestMain"}, Env: map[string]string{fakeServerMode: "1"}},
 			"alpha": {Command: os.Args[0], Args: []string{"-test.run=TestMain"}, Env: map[string]string{fakeServerMode: "1"}},
@@ -325,7 +325,7 @@ func TestManagerInitializeRespectsCtxCancel(t *testing.T) {
 	}
 
 	m := NewManager(Config{
-		Enabled: true,
+		Enabled: boolPtr(true),
 		Servers: map[string]ServerConfig{"dumb": {Command: dumb}},
 	}, "")
 	defer m.Shutdown()
