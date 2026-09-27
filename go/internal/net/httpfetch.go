@@ -9,11 +9,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 	"time"
 )
 
-// httpfetch.go —— 带防护的 HTTP 抓取（第八十七刀 · W3-2）。
+// httpfetch.go —— 带防护的 HTTP 抓取（第八十七刀 · W3-2；第八十八刀修订）。
 //
 // 对账 TS `src/tools/net/http-fetch.ts`（272 行）。
 //
@@ -32,12 +31,24 @@ import (
 // 否则「预检」与「socket 连接」之间 attacker 可以把 DNS 翻成私网地址。
 // Go 侧对应物是 `http.Transport.DialContext`（探针已验证可行）。
 //
-// # 代理模式的**能力边界**（诚实标注，对账 TS 注释）
+// # 诚实标注的能力边界
 //
-// TS 明确写着：代理模式下目标**只有**请求前的一次性预检——undici 的 ProxyAgent
-// 根本不读 `opts.connect`，目标主机名由代理解析，客户端拿不到隧道对端 IP，
-// 因此**不存在 post-CONNECT 校验点**。Go 侧同理（`http.ProxyURL` 后由代理做
-// CONNECT 与解析）。**这是能力边界而非已修复项**，不要当作强保证使用。
+// **① 代理模式下 SSRF 保证弱于直连**（对账 TS 注释）：TS 明确写着 undici 的
+// ProxyAgent 不读 `opts.connect`，目标主机名由代理解析，客户端拿不到隧道对端
+// IP，**不存在 post-CONNECT 校验点**。Go 侧同理（`http.ProxyURL` 后由代理做
+// CONNECT 与解析）。**这是能力边界而非已修复项**。
+//
+// **② 系统代理解析（NO_PROXY / HTTPS_PROXY）未移植**（第八十八刀审查发现）：
+// TS 的 `resolveProxyForUrl`（proxy-resolver.ts，209 行）会读 `config.network.proxy`
+// 与 `NO_PROXY`/`HTTPS_PROXY`/`HTTP_PROXY` 环境变量，并支持逐跳解析。
+// Go 侧当前**只支持显式传入 `Options.ProxyURL`**——环境变量代理不会生效。
+// 这是**待补的缺口**，不是有意收窄；消费方（未来的 web_fetch）若需要环境代理
+// 语义，必须先移植 proxy-resolver。
+//
+// **③ 多地址 DNS 记录的完整防护**：`defaultLookup` 只取第一个解析结果并预检它
+// （对账 TS `dns.lookup` 的 `all:false` 语义）。理论上「一个公共 + 一个私有」的
+// 记录集下，若客户端选中了另一个地址就绕过预检——但 DNS pin（直连模式）会把
+// 连接钉在预检过的那个地址上，故**直连模式安全、代理模式回到边界 ①**。
 
 // 默认值（对账 TS 常量，逐字）。
 const (
@@ -62,14 +73,26 @@ type Deps struct {
 }
 
 // Options 对账 TS `HttpFetchOptions`。
+//
+// # 为什么数值字段是**指针**（第八十八刀修订）
+//
+// 对账 TS 的 `opts.timeoutMs ?? DEFAULT_TIMEOUT_MS`——`??` 只对 `null`/`undefined`
+// 回退，**显式传入的 `0` 会被尊重**。Go 的零值无法区分「未设置」与「显式 0」，
+// 故用指针：`nil` = 未设置（用默认），非 nil = 用该值（含 0）。
+//
+// 例：调用方设 `MaxRedirects: ptr(0)` 表示「不跟随重定向」——
+// 若用值类型 + `<= 0` 判默认，会被静默变成 5。
 type Options struct {
-	TimeoutMs        int
-	MaxResponseBytes int
-	MaxRedirects     int
+	TimeoutMs        *int
+	MaxResponseBytes *int
+	MaxRedirects     *int
 	UserAgent        string
-	// ProxyURL：可选的 HTTP 代理。**见文件头的能力边界说明**。
+	// ProxyURL：可选的 HTTP 代理。**见文件头的能力边界 ①②**。
 	ProxyURL string
 }
+
+// IntPtr 返回 *int（供设置 Options 的数值字段）。
+func IntPtr(v int) *int { return &v }
 
 // Result 对账 TS `HttpFetchResult`。
 type Result struct {
@@ -95,17 +118,17 @@ func HTTPFetchGuarded(ctx context.Context, rawURL string, deps Deps, opts Option
 	if lookup == nil {
 		lookup = defaultLookup
 	}
-	timeoutMs := opts.TimeoutMs
-	if timeoutMs <= 0 {
-		timeoutMs = defaultTimeoutMs
+	timeoutMs := defaultTimeoutMs
+	if opts.TimeoutMs != nil {
+		timeoutMs = *opts.TimeoutMs
 	}
-	maxBytes := opts.MaxResponseBytes
-	if maxBytes <= 0 {
-		maxBytes = defaultMaxBytes
+	maxBytes := defaultMaxBytes
+	if opts.MaxResponseBytes != nil {
+		maxBytes = *opts.MaxResponseBytes
 	}
-	maxRedirects := opts.MaxRedirects
-	if maxRedirects <= 0 {
-		maxRedirects = defaultMaxRedirects
+	maxRedirects := defaultMaxRedirects
+	if opts.MaxRedirects != nil {
+		maxRedirects = *opts.MaxRedirects
 	}
 	userAgent := opts.UserAgent
 	if userAgent == "" {
@@ -121,7 +144,6 @@ func HTTPFetchGuarded(ctx context.Context, rawURL string, deps Deps, opts Option
 	}
 
 	currentURL := parsed.String()
-	var lastResp *http.Response
 
 	for hop := 0; hop <= maxRedirects; hop++ {
 		hopURL, err := url.Parse(currentURL)
@@ -138,6 +160,12 @@ func HTTPFetchGuarded(ctx context.Context, rawURL string, deps Deps, opts Option
 			return nil, err
 		}
 
+		// hopCtx 覆盖「请求 + 读 body」的完整生命周期。
+		//
+		// **第八十八刀修复的 P0 缺陷**：此前在 `doer(req)` 返回后立即 cancel，
+		// 而终态 body 在循环外读——Go 的 http.Transport 在请求 ctx 取消后关闭
+		// 连接，导致**任何 body 不是瞬间到达的抓取都读失败**（实测慢速 200KB
+		// body 报 `context canceled`）。现在把 body 读取移进循环、cancel 延后。
 		hopCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
 		req, err := http.NewRequestWithContext(hopCtx, http.MethodGet, currentURL, nil)
 		if err != nil {
@@ -148,19 +176,25 @@ func HTTPFetchGuarded(ctx context.Context, rawURL string, deps Deps, opts Option
 
 		doer := deps.Doer
 		if doer == nil {
-			client := buildClient(resolved, opts)
+			client, err := buildClient(resolved, opts)
+			if err != nil {
+				cancel()
+				return nil, err
+			}
 			doer = client.Do
 		}
 
 		resp, err := doer(req)
-		cancel()
 		if err != nil {
+			cancel()
 			return nil, err
 		}
 
 		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 			location := resp.Header.Get("Location")
+			// 重定向响应体已丢弃 → 此跳的 ctx 可以安全取消。
 			drainAndClose(resp.Body)
+			cancel()
 			if location == "" {
 				return nil, fmt.Errorf("Redirect %d with no Location header", resp.StatusCode)
 			}
@@ -172,26 +206,23 @@ func HTTPFetchGuarded(ctx context.Context, rawURL string, deps Deps, opts Option
 			continue
 		}
 
-		lastResp = resp
-		break
+		// 终态响应：**在 ctx 存活期间**读 body，然后才 cancel。
+		body, readErr := readBodyLimited(resp.Body, maxBytes)
+		drainAndClose(resp.Body)
+		cancel()
+		if readErr != nil {
+			return nil, readErr
+		}
+
+		return &Result{
+			Status:      resp.StatusCode,
+			FinalURL:    currentURL,
+			ContentType: resp.Header.Get("Content-Type"),
+			Bytes:       body,
+		}, nil
 	}
 
-	if lastResp == nil {
-		return nil, fmt.Errorf("Too many redirects (>%d) for %s", maxRedirects, rawURL)
-	}
-	defer drainAndClose(lastResp.Body)
-
-	body, err := readBodyLimited(lastResp.Body, maxBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Result{
-		Status:      lastResp.StatusCode,
-		FinalURL:    currentURL,
-		ContentType: lastResp.Header.Get("Content-Type"),
-		Bytes:       body,
-	}, nil
+	return nil, fmt.Errorf("Too many redirects (>%d) for %s", maxRedirects, rawURL)
 }
 
 // buildClient 构造把连接钉在 `resolved` 地址上的 http.Client。
@@ -205,7 +236,10 @@ func HTTPFetchGuarded(ctx context.Context, rawURL string, deps Deps, opts Option
 //
 // TS 曾把两者绑在一起（`pin ? … : undefined`），导致 `RIVET_FETCH_PIN=0`
 // 会**静默丢掉用户配的代理**——此处不重蹈。
-func buildClient(resolved ResolvedAddress, opts Options) *http.Client {
+//
+// **返回 error 而非静默降级**（第八十八刀审查发现）：此前 `url.Parse` 失败时
+// 静默返回裸 client（无代理、无 pin）直连——那是**安全相关的静默降级**。
+func buildClient(resolved ResolvedAddress, opts Options) (*http.Client, error) {
 	// **重定向由本函数手动处理**（逐跳预检），故禁用自动跟随。
 	client := &http.Client{
 		CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -215,17 +249,18 @@ func buildClient(resolved ResolvedAddress, opts Options) *http.Client {
 
 	if opts.ProxyURL != "" {
 		proxyURL, err := url.Parse(opts.ProxyURL)
-		if err == nil {
-			client.Transport = &http.Transport{
-				Proxy:           http.ProxyURL(proxyURL),
-				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-			}
+		if err != nil {
+			return nil, fmt.Errorf("Invalid proxy URL %q: %w", opts.ProxyURL, err)
 		}
-		return client
+		client.Transport = &http.Transport{
+			Proxy:           http.ProxyURL(proxyURL),
+			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		}
+		return client, nil
 	}
 
 	if !IsConnectionPinningEnabled() {
-		return client
+		return client, nil
 	}
 
 	pinned := resolved.Address
@@ -244,7 +279,7 @@ func buildClient(resolved ResolvedAddress, opts Options) *http.Client {
 			return dialer.DialContext(ctx, network, net.JoinHostPort(pinned, port))
 		},
 	}
-	return client
+	return client, nil
 }
 
 // readBodyLimited 读取 body，超过 maxBytes 时报错（**不静默截断**）。
@@ -273,13 +308,8 @@ func drainAndClose(body io.ReadCloser) {
 
 // defaultLookup 用 net.DefaultResolver 解析主机名。
 //
-// **为什么不用 net.LookupIP 直接取第一个**：需要显式处理「解析出多个地址」
-// ——任一是私有地址就应拒绝（否则 attacker 可以用「一个公共 + 一个私有」
-// 的记录让预检通过而实际连到私有）。此处返回**第一个**地址，但预检失败时
-// 由调用方报错。
-//
-// 诚实标注：TS 的 `dns.lookup` 默认也只返回一个地址（Node 的 all:false 语义）。
-// 多地址场景的完整防护需要逐个预检——**这是当前实现的边界**。
+// **只取第一个地址**（对账 TS `dns.lookup` 的 `all:false` 语义）——
+// 见文件头能力边界 ③。
 func defaultLookup(host string) (ResolvedAddress, error) {
 	// 已是 IP 字面量 → 直接用（不解析）。
 	if ip := net.ParseIP(host); ip != nil {
@@ -303,18 +333,3 @@ func defaultLookup(host string) (ResolvedAddress, error) {
 	}
 	return ResolvedAddress{Address: addr, Family: family}, nil
 }
-
-// HostOf 返回 URL 的主机名（剥端口）。
-//
-// **为什么需要**：`url.URL.Host` 含端口，而 `Hostname()` 已剥——此函数用于
-// 需要显式剥端口的调用方（对账 TS 直接传 `URL.hostname`）。
-func HostOf(rawURL string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return ""
-	}
-	return u.Hostname()
-}
-
-// 确保 strings 被引用（错误消息拼接用）。
-var _ = strings.TrimSpace
