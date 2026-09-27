@@ -13,8 +13,23 @@
 // 键空间与生命周期也不同。合包会造成职责倒置——把会话相关状态塞进
 // 「与会话正交」的包。
 //
-// **方向性差异（易混）**：`recovery` 是「写前捕获旧内容」（防丢）；本包是
-// 「写后读取当前内容」（它是历史的每一层）。故备份里存的是**编辑后**的状态。
+// **方向性与 `recovery` 相同**（都是「编辑**前**」的内容），但**时机要求相反**：
+//
+//   - `recovery.TrackFileChange` 由**工具自己**在覆写前调（它紧邻写操作）
+//   - 本包的 `TrackEdit` 由**管线**在工具执行前调（`agent.trackEditsBeforeExecution`）
+//
+// # ★ 时序是本包最容易搞反的地方（曾经搞反过）
+//
+// 本包在**调用时刻**读磁盘，故备份内容 = 「调用时的磁盘状态」。
+// 正确时序是**工具执行前**调用（对账 TS `tool-pipeline.ts:1404`
+// 「五件写工具的编辑都要**在执行前**进 file-history」）。
+//
+// 若改成「写盘成功后」调用（第一百零二刀 W3 的错误实现），后果链是：
+//
+//	备份 = 编辑后内容 → GetDiffStats 的 oldContent==newContent 恒真
+//	→ 预览恒说「没有可撤销的变更」→ Rewind 原样写回却仍报「已恢复 N 个文件」
+//
+// ——安全网**静默失效**且自称成功。修正见 `agent.trackEditsBeforeExecution`。
 package filehistory
 
 import (
@@ -114,7 +129,9 @@ func (h *History) BackupDir() string {
 // SessionID 返回会话 id。
 func (h *History) SessionID() string { return h.sessionID }
 
-// TrackEdit 在文件被编辑**后**记录一次快照（读的是**磁盘当前内容**）。
+// TrackEdit 记录一次快照（读的是**调用时刻**的磁盘内容）。
+//
+// **调用时机由调用方保证**：必须在写工具**执行前**调（见包注释的时序说明）。
 //
 // 对账 TS `trackEdit(filePath, messageId)`。
 //

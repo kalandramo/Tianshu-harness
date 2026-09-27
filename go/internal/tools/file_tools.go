@@ -118,18 +118,6 @@ func (t *writeFileTool) Execute(_ context.Context, p *CallParams) (contract.Resu
 		return contract.Result{Content: fmt.Sprintf("写入失败：%v", writeErr), IsError: true}, nil
 	}
 
-	// 登记文件历史快照（第一百零二刀）——给 undo 提供「按调用分组」的历史层。
-	//
-	// **为什么在此处（写盘成功后）**：对账 TS 的 `trackEdit` 语义——它记录的是
-	// **编辑后**的内容（下一层的目标状态），与 `recovery.TrackFileChange` 的
-	// 「写前捕获旧内容」方向相反。故必须在写成功之后调。
-	//
-	// **失败不影响写入结论**：历史层是附加能力，其失败不该让一次成功的写入
-	// 变成错误（否则模型会重试写入，覆盖刚写好的内容）。
-	if p.TrackFileEdit != nil {
-		p.TrackFileEdit(vr.Path, p.ToolUseID)
-	}
-
 	// ── 应用后语法检查 + 回滚 ──
 	//
 	// 对账 TS 的 checkSyntax 分支。回滚策略按「写入前是否存在」分流：
@@ -280,11 +268,6 @@ func (t *editFileTool) Execute(_ context.Context, p *CallParams) (contract.Resul
 	if p.OnFileWrite != nil {
 		p.OnFileWrite(vr.Path)
 	}
-	// 登记文件历史快照（第一百零二刀）——与 write_file 同语义（写盘成功后）。
-	if p.TrackFileEdit != nil {
-		p.TrackFileEdit(vr.Path, p.ToolUseID)
-	}
-
 	msg := fmt.Sprintf("已编辑 %s（替换 %d 处）", relLabel(t.Cwd, vr.Path), count)
 	if replaceAll && count > 1 {
 		msg = fmt.Sprintf("已编辑 %s（replace_all，替换 %d 处）", relLabel(t.Cwd, vr.Path), count)

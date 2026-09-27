@@ -234,37 +234,17 @@ func (l *Loop) buildToolCallParams(tc toolCall) *tools.CallParams {
 		// **typed-nil 防护**：`l.pathGrants` 是 `*pathGrantStore`——nil 时
 		// 必须返回真 nil 接口（同 Jobs 的坑）。
 		Grants: grantCheckerOrNil(l.pathGrants),
-		// FileHistory / TrackFileEdit：文件历史（第一百零二刀）。
+		// FileHistory：undo 工具的读取面（第一百零二刀）。
 		//
-		// **两者成对**：`TrackFileEdit` 是写入侧的登记钩子（写工具成功调用），
-		// `FileHistory` 是 `undo` 工具的读取面。它们共享同一实例——
-		// 否则 undo 会读到一个空历史（写工具写进了另一个实例）。
+		// **写入侧不在 CallParams 上**：记账由 `executeTool` 在工具**执行前**
+		// 直接调 `l.FileHistory.TrackEdit`（对账 TS `tool-pipeline.ts:1404` 的
+		// 「在执行前进 file-history」）。曾经把它做成 CallParams 回调、由写工具
+		// 在**写盘成功后**调用——那是**时序倒置**：备份会存成编辑后内容，
+		// 使 undo 预览恒空、Rewind 谎报成功。详见 `trackEditsBeforeExecution`。
 		//
 		// **typed-nil 防护**：`l.FileHistory` 是 `*filehistory.History`，
-		// nil 时必须传 nil 回调（否则闭包捕获 typed-nil 并在调用时 panic，
-		// 同 Jobs / Grants 的坑）。
-		TrackFileEdit: l.trackFileEditFunc(),
-		FileHistory:   l.fileHistoryFunc(),
-	}
-}
-
-// trackFileEditFunc 返回写入侧的历史登记钩子（nil = 不跟踪）。
-//
-// 闭包里带上**当前调用的 tool_use id**——这正是本刀修的数据源：
-// `trackEdit(path, id)` 按 id 分组快照（见 filehistory 包注释）。
-func (l *Loop) trackFileEditFunc() func(string, string) {
-	if l.FileHistory == nil {
-		return nil
-	}
-	return func(absPath, toolUseID string) {
-		// **best-effort**：历史登记失败不影响已完成的写入（对账 TS 的
-		// `try { trackEdit(...) } catch {}` 语义——历史是附加能力）。
-		//
-		// id 为空时用固定哨兵：退化为一轮一个快照（历史仍可用，只是粒度粗）。
-		if toolUseID == "" {
-			toolUseID = "write"
-		}
-		_ = l.FileHistory.TrackEdit(absPath, toolUseID)
+		// nil 时必须传 nil 回调（否则闭包捕获 typed-nil 并在调用时 panic）。
+		FileHistory: l.fileHistoryFunc(),
 	}
 }
 

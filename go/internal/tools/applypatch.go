@@ -293,20 +293,6 @@ func (t *applyPatchTool) Execute(ctx context.Context, p *CallParams) (contract.R
 			}
 		}
 	}
-	// 登记文件历史快照（第一百零二刀）——**逐文件**登记（补丁可能触及多个文件，
-	// 每个都该能被 undo 回滚）。
-	//
-	// 与上面同序遍历，但**独立判断**（历史层是附加能力：OnFileWrite 未注入时
-	// 它仍应工作，反之亦然）。
-	if p.TrackFileEdit != nil {
-		for _, rel := range prompt.ExtractPatchTargetPaths(normalized) {
-			vr := pathsafe.Validate(t.Cwd, rel, pathsafe.ModeWrite, &pathsafe.Options{Grants: effectiveGrants(p, t.Grants)})
-			if vr.OK {
-				p.TrackFileEdit(vr.Path, p.ToolUseID)
-			}
-		}
-	}
-
 	return contract.Result{
 		Content:   "补丁应用成功。",
 		UIContent: truncateDiffForUI(strings.TrimSpace(normalized), applyPatchMaxUILines),

@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+
+	"github.com/kalandramo/tianshu/go/internal/filehistory"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,66 +16,23 @@ import (
 // 而不只是直调工具。这是唯一能抓到「实现已有但零消费」的判据
 // （HANDOFF 坑 49：装配层是最后一道缺口）。
 
-// e2eHistory 是测试用的 History 最小实现（避免 tools 测试 import filehistory 包，
-// 保持依赖方向；真实适配器在 agent 层）。
-type e2eHistory struct {
-	snapshots map[string]map[string]string // messageID → absPath → 内容快照
-	order     []string
+// realHistoryAdapter 把真 `filehistory.History` 适配成 `tools.UndoHistory`。
+//
+// 与生产侧 `agent.undoHistoryAdapter` 同构（两包类型同形但不同名）。
+// **测试侧自建一份**是为了让 tools 包不依赖 agent 包（依赖方向）。
+type realHistoryAdapter struct{ h *filehistory.History }
+
+func (a realHistoryAdapter) LatestSnapshotID() (string, bool) { return a.h.LatestSnapshotID() }
+
+func (a realHistoryAdapter) GetDiffStats(id string) (*UndoDiffStats, bool) {
+	st, ok := a.h.GetDiffStats(id)
+	if !ok || st == nil {
+		return nil, ok
+	}
+	return &UndoDiffStats{FilesChanged: st.FilesChanged, Insertions: st.Insertions, Deletions: st.Deletions}, true
 }
 
-func newE2EHistory() *e2eHistory {
-	return &e2eHistory{snapshots: map[string]map[string]string{}}
-}
-
-func (e *e2eHistory) LatestSnapshotID() (string, bool) {
-	if len(e.order) == 0 {
-		return "", false
-	}
-	return e.order[len(e.order)-1], true
-}
-
-func (e *e2eHistory) GetDiffStats(id string) (*UndoDiffStats, bool) {
-	snap, ok := e.snapshots[id]
-	if !ok {
-		return nil, false
-	}
-	stats := &UndoDiffStats{}
-	for path, old := range snap {
-		cur, err := os.ReadFile(path)
-		if err != nil {
-			cur = nil
-		}
-		if string(cur) == old {
-			continue
-		}
-		stats.FilesChanged = append(stats.FilesChanged, path)
-		stats.Insertions++
-	}
-	return stats, true
-}
-
-func (e *e2eHistory) Rewind(id string) ([]string, error) {
-	snap, ok := e.snapshots[id]
-	if !ok {
-		return nil, os.ErrNotExist
-	}
-	var changed []string
-	for path, content := range snap {
-		if err := os.WriteFile(path, []byte(content), 0o644); err == nil {
-			changed = append(changed, path)
-		}
-	}
-	return changed, nil
-}
-
-// track 记录一次快照（模拟写工具成功后的登记）。
-func (e *e2eHistory) track(absPath string, content []byte) {
-	if _, ok := e.snapshots["call_1"]; !ok {
-		e.snapshots["call_1"] = map[string]string{}
-		e.order = append(e.order, "call_1")
-	}
-	e.snapshots["call_1"][absPath] = string(content)
-}
+func (a realHistoryAdapter) Rewind(id string) ([]string, error) { return a.h.Rewind(id) }
 
 // TestUndoEndToEnd_ViaProductionRegistry —— ★ 端到端：
 // 走生产注册表 → write_file 改文件 → undo 预览 → undo 确认 → 文件回到改前。
@@ -84,8 +43,20 @@ func TestUndoEndToEnd_ViaProductionRegistry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	hist := newE2EHistory()
+	// 真 filehistory（写到临时目录）
+	hist := filehistory.New(filepath.Join(cwd, ".rivet-test-isolated"), "e2e")
 	reg := NewDefaultRegistry(Options{Cwd: cwd, Extra: []Tool{Undo()}})
+
+	// ★ 记账必须在写入**之前**（对账 TS `tool-pipeline.ts:1404`：
+	// 「五件写工具的编辑都要**在执行前**进 file-history」）。
+	//
+	// **为什么必须用真实现**：本刀第一版测试用包内假实现手工 `track` 了
+	// 「编辑前内容」，把正确时序编码成期望——故时序倒置时它照样绿
+	// （审查 CRITICAL-2 指出的正是这点）。用真实现 + 正确时序后，
+	// 谁把记账挪到执行后，这里就红。
+	if err := hist.TrackEdit(target, "call_1"); err != nil {
+		t.Fatalf("记账失败：%v", err)
+	}
 
 	// ① 改文件（走生产注册表）
 	res, err := reg.Execute(context.Background(), "write_file", &CallParams{
@@ -100,13 +71,11 @@ func TestUndoEndToEnd_ViaProductionRegistry(t *testing.T) {
 	if got := readRepoFileAbs(t, target); got != "MODIFIED\n" {
 		t.Fatalf("写入未生效：%q", got)
 	}
-	// 模拟写工具登记（真实路径由 Loop 的 TrackFileEdit 回调完成）
-	hist.track(target, []byte("ORIGINAL\n"))
 
 	// ② undo 预览（不带 confirm）
 	preview, err := reg.Execute(context.Background(), "undo", &CallParams{
 		Cwd: cwd, SessionID: "s",
-		FileHistory: func() UndoHistory { return hist },
+		FileHistory: func() UndoHistory { return realHistoryAdapter{hist} },
 		Input:       map[string]any{},
 	})
 	if err != nil || preview.IsError {
@@ -126,7 +95,7 @@ func TestUndoEndToEnd_ViaProductionRegistry(t *testing.T) {
 	// ③ undo 确认 → 恢复
 	done, err := reg.Execute(context.Background(), "undo", &CallParams{
 		Cwd: cwd, SessionID: "s",
-		FileHistory: func() UndoHistory { return hist },
+		FileHistory: func() UndoHistory { return realHistoryAdapter{hist} },
 		Input:       map[string]any{"confirm": true},
 	})
 	if err != nil || done.IsError {

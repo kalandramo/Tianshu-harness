@@ -1290,6 +1290,19 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 		}
 	}
 
+	// ── 文件历史记账（第一百零二刀·时序修正）──
+	//
+	// **必须在 registry.Execute 之前**：对账 TS `tool-pipeline.ts:1404` 注释逐字
+	// 「五件写工具（WRITE_TOOL_NAMES）的编辑都要**在执行前**进 file-history
+	// （/undo 与边界回溯的记账源头）」。
+	//
+	// 放在执行后的后果（第一百零二刀 W3 的实际缺陷）：备份存成编辑后内容
+	// → `GetDiffStats` 恒空 → undo 预览恒说「没有可撤销的变更」
+	// → `Rewind` 原样写回却仍报「已恢复 N 个文件」——**安全网静默失效**。
+	//
+	// 路径从**入参**解析（工具返回里没有「改了哪些文件」的结构化信息）。
+	l.trackEditsBeforeExecution(tc.name, tc.input, tc.id)
+
 	result, err := l.registry.Execute(ctx, tc.name, p)
 	if err != nil {
 		result = contract.Result{
