@@ -1,8 +1,12 @@
 package mcp
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // config_semantics_test.go —— 第一百一十刀 W1：配置语义。
@@ -240,5 +244,61 @@ func TestConfigTimeoutDefaultsWhenUnset(t *testing.T) {
 	m := NewManager(Config{}, "")
 	if m.requestTimeoutMS != DefaultTimeoutMS {
 		t.Errorf("未配置时应为 %d，实得 %d", DefaultTimeoutMS, m.requestTimeoutMS)
+	}
+}
+
+// ---- finding #3 的行为验证（计划的待验证假设 H1）----
+
+// TestManagerConfiguredTimeoutActuallyFires —— ★ H1 实测：配置的 timeoutMs 真的生效。
+//
+// **为什么需要这条**（计划把它列为待验证假设）：
+// `TestConfigTimeoutAppliedToManager` 只证明「值传对了」，
+// 不证明「这个值真的被用来判超时」。两者之间隔着「调用点是否忘了用」。
+//
+// # 层级辨析（本测试揭示的一处设计事实）
+//
+// 超时有**两个**层级，别混淆：
+//   - **单次请求**超时 = `requestTimeoutMS`（本次测的就是它）
+//   - **Initialize 整体预算** = `cfg.TimeoutMS + 5000`（握手余量，见 main.go）
+//
+// 本测试打的是**请求层**：哑 server 永不应答 → 首个 `initialize` 请求
+// 应在 ~requestTimeoutMS 处超时（而非 60s 默认值）。
+func TestManagerConfiguredTimeoutActuallyFires(t *testing.T) {
+	dir := t.TempDir()
+	dumb := filepath.Join(dir, "dumb.sh")
+	// 读 stdin 但永不应答——模拟卡住的 server
+	if err := os.WriteFile(dumb, []byte("#!/bin/sh\nsleep 300\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{
+		Enabled:   boolPtr(true),
+		TimeoutMS: 400, // ★ 远小于 DefaultTimeoutMS(60_000)
+		Servers: map[string]ServerConfig{
+			"dumb": {Command: dumb},
+		},
+	}
+	m := NewManager(cfg, "")
+	defer m.Shutdown()
+
+	start := time.Now()
+	// Initialize 应在首个请求超时后返回（哑 server 让 initialize 就卡住）
+	_ = m.Initialize(context.Background())
+	elapsed := time.Since(start)
+
+	// 判据：远早于 60s 默认值，且不早于配置值（不能是「立刻失败」——
+	// 那说明它根本没尝试连接，测试成了真空）
+	if elapsed > 5*time.Second {
+		t.Errorf("★ 配置 timeoutMs=400 应让请求在毫秒级超时，实耗 %v"+
+			"（若为 60s 档，说明 requestTimeoutMS 未被调用点使用）", elapsed)
+	}
+	if elapsed < 300*time.Millisecond {
+		t.Errorf("耗时 %v 过短——疑似未真正尝试连接（真空断言）", elapsed)
+	}
+
+	// 状态应记为 error（超时也是错误路径）
+	states := m.States()
+	if len(states) != 1 || states[0].Status != StatusError {
+		t.Errorf("超时后状态应为 error，实得 %+v", states)
 	}
 }
