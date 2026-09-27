@@ -66,6 +66,9 @@ desktop/.rivet/
 # 上方 .rivet/ 的规则是**根锚定**的，不匹配子目录——同类漏洞已由 desktop/ 那行覆盖，
 # 漏了 go/ 这一处（2026-09-24 补）。
 go/.rivet/
+# go/tianshu：`cd go && go build ./cmd/tianshu` 的默认产物落在这里（15MB 二进制）。
+# 第一百零九刀 W4 跑 e2e 时留下、误入 git status（2026-09-28 补）。
+go/tianshu
 .cc-switch/
 .rivet/check2.txt
 .rivet/*.txt

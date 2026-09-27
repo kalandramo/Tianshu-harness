@@ -520,6 +520,50 @@ Go 4 项 vs TS 5 项，差的正是 `ast_edit`（**Go 侧未移植的工具**，
 `loop.go`（「Go 侧无该决策树与提示通道」）**多处已准确记录**。故本轮无新缺口，
 只是把「确定性解析的边界」补写清楚。
 
+### 第 7 段：MCP 子系统移植（第一百零九刀，4 提交 `8e1a7327`→`4e732489`）
+
+**选刀依据**：`mcp/` 自包含（2,991 行 / 13 文件），且**三个消费端已在等它**——
+`approval_assess.go:310` 注释明写「Go 侧无 mcp 包」、`trust/project_trust.go:223,228`
+的 `mcp` 敏感键、`contract/types.go:49` 的 `Capability` 字段无生产者。
+
+**关键事实**：MCP stdio 是**换行分隔**（官方规范：「Messages are delimited by newlines,
+and MUST NOT contain embedded newlines」），与 LSP 的 `Content-Length` 帧**不兼容**
+→ 复用 `lsp/rpc.go` 的**架构模式**（Transport / pending / AbortAllPending /
+server→client 回 MethodNotFound），**分帧须新写**。Go 侧零 MCP SDK（`go.mod` 仅 3 依赖），
+且不宜引入。
+
+| 波 | 提交 | 内容 | 用例 |
+|---|---|---|---|
+| W1 | `8e1a7327` | framing（换行分隔）/ types / policy（7 分支）/ failure_classifier（8 类） | 29 |
+| W2 | `55164484` | rpc（JSON-RPC）/ stdio（复用 PrepareCommand+KillProcessTree）/ 假 server 夹具 | 39 |
+| W3 | `4db5b759` | wrapper（→`tools.Tool`）/ manager（生命周期） | 60 |
+| W4 | `4e732489` | config 读取 / CLI 装配接线 / ctx 取消 | 70 |
+
+**波末自证**：全量 31 包 ok / 0 FAIL；`go vet ./...` exit=0；`gofmt -l .` 零违规；
+回归清单 lsp/tools/trust/agent 四包全绿；V10 端到端证明 MCP 工具进**真实请求体**。
+
+**范围收窄**（明示，W5 另刀）：只做 stdio；含 SSE 传输、重连退避、health-check、
+连接级审批门（Go 无 TUI/REST 消费端，做出来是「无人可批」的僵局）未做。
+
+**本刀新增的坑（续第 40 条）**：
+
+41. **「注册 waiter」与「创建其 timer」必须原子**（W2）——`p.timer` 在锁外创建、
+    `AbortAllPending` 在锁内读 → `-race` 抓到真 data race（**无 `-race` 时全绿**）。
+    这与 HANDOFF 记载的 LSP 侧同型缺陷是**同一个错误**。
+42. **变异「红 0」要分诊到「可测性缺陷」而非急着判等价**（W3）——策略输入**内联**
+    在 `WrapTool` 里 → 「wrapper 传了什么」**不可观测**，直击判据的测试自己传参、
+    不经过那段字面量 → 变异打不到。**抽成函数后变异必红**。教训：**不可测的代码
+    = 断言不到的行为**。
+43. **测序稳定性必须有多元**（W3）——测「`AllTools` 序稳定」时初版只 1 个 server，
+    而 `conns` 是 map：**单元素 map 的遍历序当然稳定**，删掉 `sort` 后测试仍绿。
+44. **变异要选「能编译的 bug 形态」**（W4）——M7 首版 `Extra: nil` 导致
+    `declared and not used` **编译失败** → 假红。改用「算出来却没接进注册表」才真红。
+    （与坑 35③ 同源，此处再次踩到。）
+45. **`os.Exit` 会跳过 `defer`**（W4）——`defer mcpMgr.Shutdown()` 在 headless
+    错误路径**不执行**，会留孤儿 npx server 常驻。修法是该路径上显式回收。
+46. **`go build ./cmd/tianshu` 的产物落在 `go/tianshu`**（15MB）——未被 gitignore，
+    会误入 `git status`。已补规则。
+
 ### 本会话新增文件全表（`git log --diff-filter=A e866fad8^..HEAD`）
 
 ```
