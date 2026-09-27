@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kalandramo/tianshu/go/internal/contract"
+	"github.com/kalandramo/tianshu/go/internal/filediff"
 	"github.com/kalandramo/tianshu/go/internal/pathsafe"
 	"github.com/kalandramo/tianshu/go/internal/recovery"
 	"github.com/kalandramo/tianshu/go/internal/syntaxcheck"
@@ -94,6 +95,16 @@ func (t *writeFileTool) Execute(_ context.Context, p *CallParams) (contract.Resu
 	_, preStatErr := os.Stat(vr.Path)
 	existedBefore := preStatErr == nil
 
+	// **旧内容**（供 W4 的变更行区间计算）。
+	//
+	// 对账 TS `write-file.ts:307` 的 `haveOldContentForDiff` + `oldContentForDiff`。
+	// 读失败/不存在时留空 → `ComputeChangedLineRanges` 会把整个 AFTER 文件
+	// 当作改动（安全降级，见 `filediff` 的注释）。
+	//
+	// 注意 append 模式：命中「追加」语义，但 diff 仍以「拼接后全文」为 after
+	// （见下方 afterContent）。
+	oldContent, haveOldContent := readFileForDiff(vr.Path)
+
 	if _, err := t.Stack.TrackFileChange(t.Cwd, recovery.FileChangeRecord{
 		FilePath:   relForRecovery(t.Cwd, vr.Path),
 		Action:     "write",
@@ -152,9 +163,54 @@ func (t *writeFileTool) Execute(_ context.Context, p *CallParams) (contract.Resu
 	label := relLabel(t.Cwd, vr.Path)
 	lines := strings.Count(content, "\n") + 1
 	if mode == "append" {
-		return contract.Result{Content: fmt.Sprintf("已追加 %d 行到 %s", lines, label)}, nil
+		return contract.Result{
+			Content:       fmt.Sprintf("已追加 %d 行到 %s", lines, label),
+			ChangedRanges: computeWriteChangedRanges(oldContent, haveOldContent, content, mode),
+		}, nil
 	}
-	return contract.Result{Content: fmt.Sprintf("已写入 %s（%d 行）", label, lines)}, nil
+	return contract.Result{
+		Content:       fmt.Sprintf("已写入 %s（%d 行）", label, lines),
+		ChangedRanges: computeWriteChangedRanges(oldContent, haveOldContent, content, mode),
+	}, nil
+}
+
+// readFileForDiff 读文件内容供 diff 用（**best-effort**，失败即放弃）。
+//
+// 对账 TS `write-file.ts` 的 `oldContentForDiff` 捕获：读不到就当「新文件」，
+// 后果只是变更区间退化为整文件（多显示诊断，不隐藏错误）。
+func readFileForDiff(path string) (string, bool) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	return string(b), true
+}
+
+// computeWriteChangedRanges 算写操作波及的 AFTER 行区间（供 LSP 诊断区域收敛）。
+//
+// 对账 TS `write-file.ts:320-337`：`computeChangedLineRanges(oldContentForDiff, afterForDiff)`。
+//
+// **after 语义**：overwrite 时是 content 本身；append 时是「旧内容 + 新内容」
+// （因为盘上结果是拼接后的全文，诊断报告的正是它）。
+func computeWriteChangedRanges(oldContent string, haveOld bool, content, mode string) []contract.Range {
+	after := content
+	if mode == "append" && haveOld {
+		after = oldContent + content
+	}
+	// 读不到旧内容 → before 传空串 → filediff 返回「覆盖全文件」区间
+	before := ""
+	if haveOld {
+		before = oldContent
+	}
+	rs := filediff.ComputeChangedLineRanges(before, after)
+	if len(rs) == 0 {
+		return nil
+	}
+	out := make([]contract.Range, 0, len(rs))
+	for _, r := range rs {
+		out = append(out, contract.Range{Start: r.Start, End: r.End})
+	}
+	return out
 }
 
 // ── edit_file ──
@@ -272,7 +328,26 @@ func (t *editFileTool) Execute(_ context.Context, p *CallParams) (contract.Resul
 	if replaceAll && count > 1 {
 		msg = fmt.Sprintf("已编辑 %s（replace_all，替换 %d 处）", relLabel(t.Cwd, vr.Path), count)
 	}
-	return contract.Result{Content: msg}, nil
+	// W4：算变更行区间（`data` 是写入前的原始内容，`updated` 是写入后的）
+	return contract.Result{
+		Content:       msg,
+		ChangedRanges: computeEditChangedRanges(string(data), updated),
+	}, nil
+}
+
+// computeEditChangedRanges 算编辑波及的 AFTER 行区间（供 LSP 诊断区域收敛）。
+//
+// 对账 TS `hash-edit.ts:128` 的 `computeChangedLineRanges(before, after)`。
+func computeEditChangedRanges(before, after string) []contract.Range {
+	rs := filediff.ComputeChangedLineRanges(before, after)
+	if len(rs) == 0 {
+		return nil
+	}
+	out := make([]contract.Range, 0, len(rs))
+	for _, r := range rs {
+		out = append(out, contract.Range{Start: r.Start, End: r.End})
+	}
+	return out
 }
 
 // ── glob ──
