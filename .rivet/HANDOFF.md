@@ -832,37 +832,86 @@ grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test
 
 ---
 
-## 权威文档索引（按需下钻）
+## 下一步（第九十九刀后）
 
-| 想了解 | 读 |
-|---|---|
-| 每刀的完整技术细节（第一..七十六刀） | `go/HANDOFF.md`（**7217 行**，每刀一个专章） |
-| 架构欠账清单 | `go/PLAN.md` |
-| 审批门的状态表与称量结论 | `go/internal/agent/approval_gate.go` 的 A/B/B'/C/D/E 节（**用节名定位，不用行号**——该文件持续增长） |
-| 本会话的 35 提交 | 本文档 + `git log e866fad8^..de3d805f` |
-| 第七十七..**九十七**刀 | 本文档「第 4 / 5 / 6 / 7 段」（`go/HANDOFF.md` 未记） |
-| Windows 可移植性的完整记录 | 本文档「坑」1–15 + `go/HANDOFF.md` 前五刀 |
+**本节已按第九十八/九十九刀的核实更新**——原「下一步」的 2 条已在本节处理。
+
+1. **`loop.go` 的超时文案注入**（TS 在超时时补目标摘要——「哪个文件/命令超时」）——
+   独立小刀，见 `tool-pipeline.ts:1524-1529` 的 `catch` 分支。
+2. **`semantic_search`**（仍不建议）——依赖 Go 侧零命中的 `semantic-index` + embedding。
+3. **`update_goal` / `session_vitals`**（仍不建议）——同前，Go 侧依赖全为 0。
+4. **`computer_use`**——`RequiresUnconditionalApproval` 的最后一个不可达分支。需 browser 层。
+5. **`ast_edit`**——需先评估 Go 侧的 tree-sitter 等价物（cgo 绑定决策）。
+
+**判缺口的方法**（已验证有效）：`grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test`
+——排除定义与测试后若零命中，才是真缺口；**不要照文件头注释判**（第七十八刀教训）。
 
 ---
 
-## 下一步（第九十七刀后）
+## 第 8 段：遗留清理（第九十八..九十九刀）
 
-**web_search 全包移植已完成**（第 7 段）。剩余候选按依赖面排序：
+第九十七刀收灯后回头清遗留。三项逐一取证：
 
-1. **`semantic_search`**（仍不建议）——依赖 `semantic-index`（464 行）+ embedding provider，
-   **Go 侧零命中**。判据同第七十五刀：Go 侧有无该状态的**维护者**？无 → 造子系统。
-2. **`update_goal` / `session_vitals`**（仍不建议）——同上，Go 侧依赖全为 0。
-3. **`computer_use`**——`RequiresUnconditionalApproval` 的最后一个不可达分支
-   （`js_eval`/`browser_adopt`/`sequence`）。需先移植 browser 层，成本高。
-4. **`ast_edit`**——TS 侧有、Go 侧无。依赖 tree-sitter 绑定（`src/search/` 的
-   tree-sitter 路径）。**需先评估 Go 侧有无等价 AST 库**——若要走 cgo 绑定，
-   是一刀独立的称量。
-5. **架构缺口（非工具）**：`Tool.Timeout` 声明后 `internal/agent` **无统一读取点**
-   （第八十八刀审查指出）。本次新工具的 `Timeout()` 都是「写而无人读」。
-   接线它是**独立一刀**（涉及门链/超时策略）。
+### `c51a3117` 接线 web_crawl 的 artifact 落盘（第九十八刀）
 
-**判缺口的方法**（已验证有效）：`grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test`
-——排除定义文件与测试后若零命中，才是真缺口；**不要照文件头注释判**（第七十八刀教训）。
+**性质**：本仓库高频缺陷模式「**实现已有但零消费**」——三处证据：
+`buildCrawlArtifact`（`webcrawl.go:239`）**已实现**、`formatCrawlSummary`
+**已接受** `artifactNote` 参数、但 `Execute` 恒传 `""`。
+而消费端 `CallParams.ArtifactStore`（`registry.go:171`）**早在位**
+（`bash.go:425` / `grep.go:181` / `read_file.go:444` 都在用）。
+
+**故只接线，不造机制。** 三种情形严格区分（对账 TS `tool.ts:177-192`）：
+- 没配 Store → 注记**空**（TS 的 `&&` 短路）
+- 零页 → 注记**空**（TS 的 `&& result.pages.length > 0`）
+- **写失败 → 明示降级**（TS 的 `catch`，文案逐字对账）
+
+第 3 条是「失败要大声」——静默省略会让模型以为内容完整。
+
+**顺带去重**：本地 `artifactSection` 与 `artifact.ArtifactSection` 字段完全一致
+→ 删本地类型改用共享的。
+
+**变异反证 5 个全红**（M5 首版是编译失败伪装：`sections` 变未使用变量）。
+
+### `1954f0e6` 接通工具级超时（第九十九刀）
+
+**缺口**：`Tool.Timeout(p)` 被 **35 个工具**声明（`registry.go:40`），
+但 `loop.go` 全文**零处** `context.WithTimeout`，`registry.go:341` 直接调工具。
+
+**对账 TS**：`tool-pipeline.ts:1501` 的 `toolDef?.timeoutMs?.(params) ?? DEFAULT_TOOL_TIMEOUT_MS`
++ `withToolTimeout`（`:311`）。TS 注释（`:725-728`）写明理由：
+「unknown future hang becomes a visible timeout instead of a **wedged turn**」。
+
+**★ 关键语义分叉（先取证再落笔）**：TS 侧只有部分工具声明 `timeoutMs`
+（web-crawl / council / browser / delegate / starflow / plan-task）；
+**`web_fetch` / `web_map` 没声明** → 走 `?? DEFAULT`。
+故 Go 侧 `Timeout() → 0` 是「**未声明** = 用默认 120s」，**不是**「无超时」。
+按后者实现会让挂死的 web_fetch **冻住整个回合**。
+
+**★ 接线引入的回归（实测抓到）**：`context.WithTimeout` 对 nil parent **panic**，
+而 `Registry.Execute` 的既有调用方**有传 nil 的**（`acceptance_exportfile_test.go:31`），
+且各工具自己在 `Execute` 里都做了 `if ctx == nil` 兜底——**nil 在该层是被接受的输入**。
+**实测后果**：接线后全量 **0 FAIL → 2 FAIL**。
+这是「加一层包装却收窄了上层契约」的形态。已加 nil 防御 + 两条回归测试。
+
+**另**：`ToolTimeoutRecoveryHint` 首版**我自己编了一句中文**，核对 TS 原文后逐字订正。
+
+**变异反证 7 个**（M4 首版红 0 = 真覆盖缺口，M6 首版红 0 = 编译伪装，均已重验）。
+
+### ⚠️ 未处理：历史断裂（待定夺）
+
+`45feaf4c` 与 `7eb85853`（第八十三刀的前两个提交）**不可编译**——
+它们用了 `helpers.go` 的三个 schema 构造器，而 `helpers.go` 的补充被排到
+`a6441d0a`（第三个提交）。**worktree 实测确认**：头尾可编译，中间两个不可。
+
+**HEAD 完全可编译、全量绿**——只有「中途检出那两个提交」会断（如 bisect）。
+
+**两条路**：
+- **rebase 修**（把 `helpers.go` 挪到第一个提交）：历史干净，但**重写已推送历史**，
+  且项目规则禁 amend + 仓库多会话共享工作区 → 风险实在。
+- **保留 + 文档记录**（本节即是）：不碰历史，下个人知道别检出那两个点。
+
+**倾向后者**——断裂的代价是「bisect 时可能撞到」，rebase 的代价是
+「可能打断其他会话 + 违反项目规矩」。但这是**不可逆操作**，须用户明确回话才能动。
 
 ---
 
