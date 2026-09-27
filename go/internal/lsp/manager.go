@@ -45,6 +45,17 @@ type Position struct {
 	Character int `json:"character"`
 }
 
+// LspDiagnostic 是文件级诊断（TS `LspDiagnostic`）。
+//
+// **本波不产出它**（诊断回流属 W4，独立于 goto/refs），但接口相位需要该类型
+// ——与 TS 的 `getFileDiagnostics(): Promise<LspDiagnostic[]>` 对齐。
+type LspDiagnostic struct {
+	Range    Range  `json:"range"`
+	Severity int    `json:"severity"` // 1=Error 2=Warning 3=Info 4=Hint
+	Message  string `json:"message"`
+	Source   string `json:"source,omitempty"`
+}
+
 // ServerCapabilities 是 server 自报的能力（只取我们需要判定的两项）。
 //
 // 对账 TS `ServerCapabilities`（`manager.ts`）。
@@ -153,7 +164,19 @@ func (m *manager) Initialize() error {
 
 	m.mu.Lock()
 	m.tr = tr
-	m.rpc = NewRPC(tr, WithRequestTimeout(m.opts.requestTimeout))
+	m.rpc = NewRPC(tr,
+		WithRequestTimeout(m.opts.requestTimeout),
+		// 进程/连接死亡 → 置 ready=false。
+		//
+		// 对账 TS `manager.ts` 的 `proc.on('error')` / `on('exit')` 分支
+		// （两者都 `ready = false` 并 abortAllPending）。**这是 multi-manager
+		// 的重启判据**——不接的话崩溃的 server 会被永久当成 ready，
+		// 定义跳转静默失效且永不恢复（TS 注释明写的事故形态）。
+		WithDeathHandler(func(error) {
+			m.mu.Lock()
+			m.ready = false
+			m.mu.Unlock()
+		}))
 	rpc := m.rpc
 	m.mu.Unlock()
 

@@ -32,6 +32,7 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/client"
 	"github.com/kalandramo/tianshu/go/internal/config"
 	ctxstore "github.com/kalandramo/tianshu/go/internal/context"
+	"github.com/kalandramo/tianshu/go/internal/lsp"
 	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"github.com/kalandramo/tianshu/go/internal/retry"
 	"github.com/kalandramo/tianshu/go/internal/session"
@@ -201,7 +202,27 @@ func loadConfig(model, baseURL, approval string, maxTurns int, systemPrompt stri
 
 func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	cl := client.New(app.Client)
-	reg := tools.NewDefaultRegistry(tools.Options{Cwd: app.Agent.Cwd})
+	// ── LSP 导航装配 ──
+	//
+	// 对账 TS `bootstrap.ts:2434` 的 `initializeLsp(cwd, toolRegistry)`——
+	// 在 registry 构造前造好 manager 并注入，工具据其 `IsReady()` 决定是否
+	// 出现在模型可见列表（不可用则**等同不存在**，见 lsptools.go 的 Enabled）。
+	//
+	// **懒启动**：manager 不会在此 spawn 任何语言服务器——首次遇到某语言的
+	// 文件才起（multi-manager 的既有语义）。故此处零启动开销。
+	//
+	// **不阻断会话**：LSP 不可用（未装任何 server）时 `IsReady()` 为 false，
+	// 工具静默消失；初始化本身不返回错误。
+	lspNav := lsp.NewNavigator(app.Agent.Cwd)
+	if err := lspNav.Initialize(); err != nil {
+		// 对账 TS：`initializeLsp(...).catch(() => {})`——失败静默降级
+		lspNav = nil
+	}
+	var nav tools.LspNavigator
+	if lspNav != nil {
+		nav = &lspNavigatorAdapter{nav: lspNav}
+	}
+	reg := tools.NewDefaultRegistry(tools.Options{Cwd: app.Agent.Cwd, LspNavigator: nav})
 	// 会话 ID：启用状态容器 + 持久化（缺省时 Loop.State/Persist 恒为 nil）
 	if app.Agent.SessionID == "" {
 		app.Agent.SessionID = session.NewID()
@@ -719,3 +740,53 @@ func int64Ptr(i int64) *int64 { return &i }
 
 // nowMs 返回当前 epoch 毫秒。
 func nowMs() int64 { return time.Now().UnixMilli() }
+
+// lspNavigatorAdapter 把 `internal/lsp.Navigator` 适配成 `tools.LspNavigator`。
+//
+// # 为什么需要适配（而不是让 tools 直接 import lsp）
+//
+// `tools.LspNavigator` 要求方法签名与 `tools.LspLocation` **完全一致**，
+// 而 `lsp.Navigator` 返回 `[]lsp.Location`——两者是不同的命名类型，Go 的
+// 接口满足要求签名逐字相同，故无法直接赋值。
+//
+// 设计取舍：`tools.LspLocation` 与 `lsp.Location` 各自定义、互不依赖，
+// 由**装配层**（本文件）写这一层薄转换。收益是依赖方向正确
+// （子系统不反向依赖工具内核），代价是每次返回时一次字段拷贝
+// （每位置 2 个 struct + 4 个标量，可忽略）。
+type lspNavigatorAdapter struct {
+	nav *lsp.Navigator
+}
+
+func (a *lspNavigatorAdapter) IsReady() bool { return a.nav.IsReady() }
+
+func (a *lspNavigatorAdapter) SupportsDefinition() bool { return a.nav.SupportsDefinition() }
+
+func (a *lspNavigatorAdapter) SupportsReferences() bool { return a.nav.SupportsReferences() }
+
+func (a *lspNavigatorAdapter) GotoDefinition(filePath string, line, column int) ([]tools.LspLocation, error) {
+	locs, err := a.nav.GotoDefinition(filePath, line, column)
+	return convertLspLocations(locs), err
+}
+
+func (a *lspNavigatorAdapter) FindReferences(filePath string, line, column int) ([]tools.LspLocation, error) {
+	locs, err := a.nav.FindReferences(filePath, line, column)
+	return convertLspLocations(locs), err
+}
+
+// convertLspLocations 做字段拷贝（两包的 struct 同形但类型不同）。
+func convertLspLocations(in []lsp.Location) []tools.LspLocation {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]tools.LspLocation, 0, len(in))
+	for _, l := range in {
+		out = append(out, tools.LspLocation{
+			URI: l.URI,
+			Range: tools.LspRange{
+				Start: tools.LspPosition{Line: l.Range.Start.Line, Character: l.Range.Start.Character},
+				End:   tools.LspPosition{Line: l.Range.End.Line, Character: l.Range.End.Character},
+			},
+		})
+	}
+	return out
+}

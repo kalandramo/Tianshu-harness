@@ -203,10 +203,24 @@ type RPC struct {
 
 	readDone chan struct{}
 	closed   bool
+	// onDeath 在 transport 死亡时回调（见 WithDeathHandler）。
+	onDeath func(error)
 }
 
 // RPCOption 配置 RPC。
 type RPCOption func(*RPC)
+
+// WithDeathHandler 注册「transport 死亡」回调。
+//
+// **为什么需要**：TS 的 `manager.ts` 在 `proc.on('exit')` / `on('error')` 里
+// 置 `ready = false`——这是 multi-manager 的**重启判据**
+// （`if (ok && !entry.mgr.isReady())` → 丢弃条目重新 spawn）。
+// Go 侧的进程死亡表现为 transport 读端 EOF/错误，故在 readLoop 的终止分支
+// 触发本回调，让 manager 能置 ready=false。缺了它，崩溃的 server 会被
+// 永久当成 ready（定义跳转静默失效且**永不恢复**）。
+func WithDeathHandler(fn func(error)) RPCOption {
+	return func(r *RPC) { r.onDeath = fn }
+}
 
 // WithRequestTimeout 覆盖默认请求超时（对账 TS 的 `requestTimeoutMs` 选项）。
 func WithRequestTimeout(d time.Duration) RPCOption {
@@ -259,7 +273,11 @@ func (r *RPC) readLoop() {
 		if err != nil {
 			// 读端终止（EOF / 管道错误）——对账 TS 的 transportDead：
 			// **不得让调用方永远等待**（2026-09-08 wedge 事故的修法）。
-			r.AbortAllPending(fmt.Errorf("LSP transport closed: %w", err))
+			abortErr := fmt.Errorf("LSP transport closed: %w", err)
+			r.AbortAllPending(abortErr)
+			if r.onDeath != nil {
+				r.onDeath(abortErr)
+			}
 			return
 		}
 	}
@@ -466,6 +484,12 @@ func (r *RPC) Request(ctx context.Context, method string, params any, timeout ti
 		r.settle(id, func(pt *pending) { pt.onError(writeErr) })
 	}
 
+	if ctx == nil {
+		// 对账 TS 无 ctx 概念——Go 侧允许 nil（本包子调用方不关心取消）。
+		// 直接 `select on nil.Done()` 会 panic，故显式分流。
+		o := <-done
+		return o.raw, o.err
+	}
 	select {
 	case o := <-done:
 		return o.raw, o.err
@@ -520,7 +544,10 @@ func (r *RPC) Dispose() {
 	}
 	r.AbortAllPending(fmt.Errorf("LSP RPC client disposed"))
 	_ = r.tr.Close()
-	<-r.readDone
+	// **不等 readDone**：读端可能正阻塞在 Read 上（子进程挂着不写、或
+	// transport 的 Close 不中断 Read）。等它会永久挂住 Dispose——这比
+	// 泄漏一个 goroutine 更坏（调用方要等它才返回）。
+	// goroutine 自身会在 transport 真正关闭时退出（Read 返回 EOF）。
 }
 
 // formatSeconds 复刻 TS 的 `${timeoutMs / 1000}` 浮点除法输出。

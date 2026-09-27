@@ -21,6 +21,8 @@ type fakeServer struct {
 	mu         sync.Mutex
 	current    *fakeServerEndpoint // 最近一次 spawn 的连接（server 的输出走它）
 	fromClient []byte              // client → server（客户端写到这里）
+	endpoints  map[*fakeServerEndpoint]bool
+	killed     bool
 	cond       *sync.Cond
 
 	// onRequest 处理客户端请求，返回 (result, errorMsg)。
@@ -28,12 +30,34 @@ type fakeServer struct {
 	onRequest func(method string, params json.RawMessage) (any, string)
 	// notifications 记录收到的通知（方法名 → 次数）
 	notifications []string
+	// didOpenParams 记录 didOpen 的原始 params（测试断言 languageId 用）
+	didOpenParams []json.RawMessage
 	// capabilities 是 initialize 的响应
 	capabilities map[string]any
 	// onInitialize 观察 initialize 的 params（测试断言握手字段）
 	onInitialize func(json.RawMessage)
 	// onRequestFor 观察**所有**请求（含 initialize）
 	onRequestFor func(method string, params json.RawMessage)
+	// dropRequests 让 server 收到请求但**从不响应**（测就绪超时）
+	dropRequests bool
+}
+
+// kill 模拟服务器崩溃：置 ready 假象失效并关闭所有连接。
+//
+// 调用方须持有 f.mu（测试里显式加锁，避免与 readLoop 竞争）。
+func (f *fakeServer) kill() {
+	f.killed = true
+	for e := range f.endpoints {
+		e.closed = true
+	}
+	f.cond.Broadcast()
+}
+
+// IsKilled 报告该 server 是否已被 kill。
+func (f *fakeServer) IsKilled() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.killed
 }
 
 func newFakeServer() *fakeServer {
@@ -42,6 +66,7 @@ func newFakeServer() *fakeServer {
 			"definitionProvider": true,
 			"referencesProvider": true,
 		},
+		endpoints: map[*fakeServerEndpoint]bool{},
 	}
 	f.cond = sync.NewCond(&f.mu)
 	return f
@@ -52,6 +77,7 @@ func (f *fakeServer) clientSide() Transport {
 	e := &fakeServerEndpoint{f: f}
 	f.mu.Lock()
 	f.current = e
+	f.endpoints[e] = true
 	f.mu.Unlock()
 	return e
 }
@@ -90,7 +116,7 @@ func (e *fakeServerEndpoint) Read(p []byte) (int, error) {
 	f := e.f
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for len(e.toClient) == 0 && !e.closed {
+	for len(e.toClient) == 0 && !e.closed && !f.killed {
 		f.cond.Wait()
 	}
 	if len(e.toClient) == 0 {
@@ -130,10 +156,16 @@ func (e *fakeServerEndpoint) Write(p []byte) (int, error) {
 			// 通知
 			f.mu.Lock()
 			f.notifications = append(f.notifications, m.Method)
+			if m.Method == "textDocument/didOpen" {
+				f.didOpenParams = append(f.didOpenParams, append(json.RawMessage(nil), m.Params...))
+			}
 			f.mu.Unlock()
 			continue
 		}
 		// 请求
+		if f.dropRequests {
+			continue // 收到但从不响应——模拟挂死的 server
+		}
 		var result any
 		var errMsg string
 		if f.onRequestFor != nil {
