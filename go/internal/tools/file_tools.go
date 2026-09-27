@@ -97,7 +97,7 @@ func (t *writeFileTool) Execute(_ context.Context, p *CallParams) (contract.Resu
 	if _, err := t.Stack.TrackFileChange(t.Cwd, recovery.FileChangeRecord{
 		FilePath:   relForRecovery(t.Cwd, vr.Path),
 		Action:     "write",
-		ToolCallID: "write_file",
+		ToolCallID: fileChangeToolID(p, "write_file"),
 	}); err != nil {
 		return contract.Result{Content: fmt.Sprintf("备份失败（写入已中止）：%v", err), IsError: true}, nil
 	}
@@ -257,7 +257,7 @@ func (t *editFileTool) Execute(_ context.Context, p *CallParams) (contract.Resul
 	if _, err := t.Stack.TrackFileChange(t.Cwd, recovery.FileChangeRecord{
 		FilePath:   relForRecovery(t.Cwd, vr.Path),
 		Action:     "edit",
-		ToolCallID: "edit_file",
+		ToolCallID: fileChangeToolID(p, "edit_file"),
 	}); err != nil {
 		return contract.Result{Content: fmt.Sprintf("备份失败（写入已中止）：%v", err), IsError: true}, nil
 	}

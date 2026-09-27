@@ -510,7 +510,7 @@ func (t *hashEditTool) applyEdit(
 	if _, err := t.Stack.TrackFileChange(t.Cwd, recovery.FileChangeRecord{
 		FilePath:   relForRecovery(t.Cwd, absPath),
 		Action:     "edit",
-		ToolCallID: "hash_edit",
+		ToolCallID: fileChangeToolID(p, "hash_edit"),
 	}); err != nil {
 		return contract.Result{Content: "备份失败（写入已中止）：" + err.Error(), IsError: true}, nil
 	}

@@ -193,6 +193,23 @@ func enumProp(desc string, values []string) *wire.OrderedMap {
 //
 // 对账 TS 的 `relative(params.cwd, filePath)`：备份目录布局与 journal 记录
 // 都用相对路径。无法相对化时（如跨盘）退回原路径——调用方已过 pathsafe 校验。
+// fileChangeToolID 取本次调用的 **tool_use id**，缺省回退工具名。
+//
+// **为什么必须是真实 id**（第一百零二刀修）：FileHistory 按 tool_use id
+// 分组快照——同一轮里两次 `write_file` 若共用「工具名」这个键，会被归入
+// **同一个快照**，`undo` 的 rewind 就无法区分「撤到哪一次」，会多撤或撤错。
+//
+// **为什么要有兜底**：`p.ToolUseID` 在生产路径由
+// `agent.buildToolCallParams`（`artifact_intercept.go:194`）填充；
+// 但测试与少数据径可能直调工具而不设它。回退到工具名**保持既有行为**
+// （备份仍可分组，只是粒度退化为「每工具一轮」），不让备份彻底失去分组键。
+func fileChangeToolID(p *CallParams, fallback string) string {
+	if p != nil && p.ToolUseID != "" {
+		return p.ToolUseID
+	}
+	return fallback
+}
+
 func relForRecovery(cwd, abs string) string {
 	if rel, err := filepath.Rel(cwd, abs); err == nil && !strings.HasPrefix(rel, "..") {
 		return rel

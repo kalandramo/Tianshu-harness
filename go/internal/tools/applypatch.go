@@ -214,7 +214,7 @@ func (t *applyPatchTool) Execute(ctx context.Context, p *CallParams) (contract.R
 			if _, err := t.Stack.TrackFileChange(t.Cwd, recovery.FileChangeRecord{
 				FilePath:   tg.rel,
 				Action:     "edit",
-				ToolCallID: "apply_patch",
+				ToolCallID: fileChangeToolID(p, "apply_patch"),
 			}); err != nil {
 				return contract.Result{
 					Content: "错误：补丁目标 " + tg.rel + " 的备份失败：" + err.Error(),
