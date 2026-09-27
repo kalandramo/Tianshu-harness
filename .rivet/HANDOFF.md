@@ -1137,7 +1137,133 @@ TS `src/agent/tool-pipeline.ts:1404` 注释逐字：
 
 ---
 
-## 下一步（第一百零二刀后）
+## 第一百零三刀：LSP 诊断回流（W4）
+
+> 工具数不变（42）——本刀不新增工具，而是**让已有的诊断能力真正通电**。
+
+### 选刀依据（先称量，未按 HANDOFF 推荐）
+
+HANDOFF 原推荐「改 delegate 提示词文案」。**核实后否决**：
+
+TS `volatile.ts:115` 有**逐字相同**的 delegate 文案，而 TS 有真工具
+（`delegate-task.ts:132`）——那段文案在 TS 里**是正确的**。Go 侧删/改它
+① 背离 parity（本项目硬目标）② 用户仍可手动调用 → 仍是 `ErrUnknownTool`。
+**伪修复只隐藏症状**；真解法是建派发内核（11744 行），应另立计划。
+
+### 本刀真正做的事：把「桩」变成「链路」
+
+核实发现 `GetFileDiagnostics` **是返回空切片的桩**（注释自述「本波不实现
+诊断内容（属 W4）」），且 Go 侧**从未注册** `publishDiagnostics` 处理器。
+故 W4 不是「4 处接线」而是建整条诊断接收链路。
+
+**新增文件**：
+- `lsp/diagnostics_filter.go`（211 行）——`FilterDiagnosticsForEdit`
+  （对账 `client.ts:318`）+ 4 个 cap 常量
+- `lsp/diagnostics_cache.go`——`diagCache`（**`has` 与 `get` 分离**是关键）
+- `lsp/diagnostics_fetch.go`——`getFileDiagnostics` 三件套
+  （清缓存 → didChange → 等推送）
+- `agent/lspdiag.go`——注入收口（双通道 + changeFile 先于取诊断）
+- `tools/lspdiagnostics.go`——`WriteToolNames` / `ShouldRunDiagnostics`
+
+**改的既有文件**：`manager.go`（注册通知 + `diags` 字段）、
+`multi_manager.go`（桩 → 真调用）、`navigator.go`（暴露两个方法）、
+`file_tools.go`（填 `ChangedRanges`）、`loop.go`（字段 + 注入点）、
+`main.go`（装配 + 适配器）。
+
+### ★ 三处关键语义（错一处就静默降级）
+
+1. **`diagCache.has` 必须与 `get` 分离**。LSP server 对**无问题的文件**推送
+   **空数组**——那是「已检查、无问题」的**确切答案**。若等待循环用
+   `len > 0` 判断，干净文件会每次白等满超时（2s）。变异 M39 验证：改成
+   `len>0` 即红。
+2. **清缓存必须在 didChange 之前**（对账 TS 注释「avoid racing server
+   publishDiagnostics」）。顺序反了会自己清掉刚到的推送 → 空转超时。
+3. **changeFile 必须早于取诊断**（对账 TS「Must happen BEFORE diagnostics
+   so the server's view is current」）。反了拿到的是**编辑前**的诊断。
+   变异 M41 验证。
+
+### ★ 复用发现（避免重复建设）
+
+`filediff.ComputeChangedLineRanges` **已完整实现**，其注释逐字预告了 LSP
+用途（「让 LSP 诊断过滤暴露一切而非隐藏错误」）。**原计划的新建等于重复
+建设**——改为复用后 w4-3 零成本。
+
+### 有意偏离（已披露）
+
+- **不实现 pull 模型**（TS 的 LSP 3.17+ `textDocument/diagnostic` 优先路径）。
+  Go 侧只走 push 路径。理由：本机**无 gopls**，pull 路径无法验证；
+  且 `diagnosticProvider` 能力判定的分支会引入当前不可测的代码。
+- **`severity == 0` 的处理**：TS 的 `undefined <= 2` 为 false（过滤），
+  Go 的 `0 <= 2` 为 true（保留）。差异方向是**多给**（severity 缺失时多显示
+  一条），符合「降级朝多给倒」原则，接受并记录。
+
+### 提交后审查（7 条 HIGH，核验后 6 条成立）
+
+| # | 发现 | 处置 |
+|---|---|---|
+| 1 | `dry_run` 死参数（schema 声明、Execute 无读取） | **成立，属既有缺陷**——入下一步 |
+| 2 | `severity` 过滤方向与 TS 相反 | ✅ 已修（改 `<=2`）+ 测试 |
+| 3 | `WriteToolNames` 含幽灵条目 `apply_edit` | ✅ 已修（→ `ast_edit`）+ 逐字对账测试 |
+| 4 | `ChangedRanges` 零消费者 | 审查已自排（作者已声明 W2 未完成） |
+| 5 | append 分支偏离 TS | ✅ 已订正注释（**我的更精确**：TS 对 append 会错算） |
+| 6 | 同包内重定义内置 `min` | ✅ 已删 |
+| 7 | 作者宣称的验证未经本人复现 | ✅ 本刀已本人复现（见下） |
+
+### 验证（本人复现）
+
+- `lsp` 包：诊断过滤 14 用例 + 诊断链路 5 用例 **全绿**
+- `agent` 包：注入 6 用例 **全绿**
+- `tools` 包：`ChangedRanges` 2 用例 + 判定 3 用例 **全绿**
+- **变异反证 6 处全部抓住**：M37（severity 守卫）/ M38（幽灵名）/
+  M39（`len>0` 判据）/ M40（不注册通知）/ M41（通知时序）/ M42（UI 通道）
+- `-race` 下修了一处**测试基建**竞态（`fakeServer.kill` 未自持锁——
+  其注释要求「调用方须持锁」，既有测试从不调它故未暴露）
+
+### 本段新增的坑（第 58 条起）
+
+58. **「桩函数」比「缺失函数」更危险**：`GetFileDiagnostics` 存在、签名正确、
+    注释还说明了未来用途，但**返回空切片**。调用方不会报错、只会静默拿到
+    空——排查时「函数在、签名对」会让人排除它，浪费大量时间。
+    **判据**：看到「本波不实现」「暂时返回空」这类注释，就当它是**缺失**
+    而非**存在**。
+59. **`has` 与 `get` 必须分离**（缓存/集合类结构的通用教训）：把「已收到空值」
+    与「从未收到」合并成一个判据，会让**等待循环**在空值场景下空转超时。
+    TS 的 `Map.has` 天然区分二者，Go 的「读 map 得零值」天然**不**区分——
+    移植时这是高频陷阱。
+60. **测试基建的隐式契约是地雷**：`fakeServer.kill` 注释写「调用方须持有
+    `f.mu`」，但既有测试**从不调用它**故从未暴露。新增测试一调就 `-race`
+    报错。**修法是让函数自持锁**（消除契约），而非在每个调用点加锁——
+    后者依赖「记得读注释」，前者才是结构性的。
+
+## 下一步（第一百零三刀后）
+
+**LSP 诊断回流已完成**（工具数 42——本刀不新增工具）。剩余候选：
+
+1. **`edit_file` 的 `dry_run` 死参数 —— 最近、最实、且危险**。
+   schema 声明了 `dry_run`、Execute 全文无读取，故 `dry_run=true` 时
+   **文件直接落盘**（模型预期预览、实际已改）。TS `edit.ts:188-214` 有真实现
+   （`buildDryRunPreview`，含语法预检）。**这是既有缺陷**（非本刀引入），
+   但危害明确——模型一旦用它会**意外修改文件**。
+2. **delegate 派发内核**（≈11744 行）——「改文案」已被证伪为伪修复
+   （见本段选刀依据）。要么建内核，要么**显式记录为已知缺口**。
+3. **LSP 的 pull 模型**（LSP 3.17+ `textDocument/diagnostic`）——
+   本刀有意未做（无 gopls 无法验证）。有 gopls 环境时可补。
+4. **monitor** —— 建了会是休眠（唯一消费方是 `advisory.go:44` 的常量）。
+5. **仓库索引 / 语义搜索** —— 需 Meridian 图 + embedding（零基础）。
+6. **不可做**：`computer_use`（TS 侧开源桩 + `src/pro/` 闭源）、
+   `sandbox_exec`（语义前提是「隔离的 Node.js 子进程」）。
+
+**注**：本刀发现 `filediff` 包已具备 hunk 级 diff 能力
+（`ComputeChangedLineRanges` / `BuildFileDiff` / Myers 算法），
+**将来做 diff 相关能力前应先扫它**——不必重写。
+
+## 下一步（第一百零二刀后）——**已被上方「第一百零三刀后」取代，保留以示修正轨迹**
+
+> ⚠️ 本节已过期（LSP W4 已完成）。保留原文以记录「delegate 文案曾被当作
+> 最小修法」这一**已被证伪**的判断。
+
+<details>
+<summary>原内容（点击展开）</summary>
 
 **undo 已完成**（工具数 42）。剩余候选（按第 10 段的形态判据重排）：
 
@@ -1151,7 +1277,10 @@ TS `src/agent/tool-pipeline.ts:1404` 注释逐字：
    注入（编辑后把诊断拼进工具结果，`modelText`/`uiText` 分离，
    `MODEL_INREGION_CAP=10` / `UI_DIAGNOSTIC_CAP=20`）。**前置已就位**
    （LSP 子系统 + `getFileDiagnostics` 相位已在），但仍触达 `agent/loop.go`。
-3. **monitor —— 建了会是休眠**：唯一消费方是 `advisory.go:44` 的常量；
+3. <details>
+<summary>（续）</summary>
+
+**monitor —— 建了会是休眠**：唯一消费方是 `advisory.go:44` 的常量；
    `SessionJobs.OnEvent` 零生产订阅者。
 4. **仓库索引 / 语义搜索** —— 需 Meridian 图 + embedding（零基础），规模不可控。
 5. **不可做**：`computer_use`（TS 侧开源桩 + `src/pro/` 闭源）、

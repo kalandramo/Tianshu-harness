@@ -102,6 +102,28 @@ func (n *Navigator) ChangeFile(filePath string) {
 	n.multi.ChangeFile(filePath)
 }
 
+// GetFileDiagnostics 取文件级诊断（供工具管线在编辑后调用）。
+//
+// 对账 TS `deps.lspManager.getFileDiagnostics(filePath)`（`tool-pipeline.ts:1591`）。
+// `timeoutMS <= 0` 时用 `DefaultDiagnosticTimeoutMS`（2000，对账 TS 默认值）。
+//
+// **best-effort**：LSP 不可用、超时、无诊断都返回 nil——调用方不应把
+// 空结果当错误（诊断是增强，不该让工具调用失败）。
+func (n *Navigator) GetFileDiagnostics(filePath string, timeoutMS int) []LspDiagnostic {
+	if n == nil || n.multi == nil {
+		return nil
+	}
+	return n.multi.GetFileDiagnostics(filePath, timeoutMS)
+}
+
+// HasServerForFile 报告该文件是否有注册的语言服务器（供诊断触发判定）。
+//
+// 直接转发包级函数，让装配层的适配器只需一个对象即可满足
+// `tools.ShouldRunDiagnostics` 所需的 `hasServer` 输入。
+func (n *Navigator) HasServerForFile(filePath string) bool {
+	return HasServerForFile(filePath)
+}
+
 // Dispose 释放全部语言服务器。
 func (n *Navigator) Dispose() {
 	if n == nil || n.multi == nil {

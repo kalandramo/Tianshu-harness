@@ -176,6 +176,15 @@ type Loop struct {
 	// 状态跨轮累积才构成「连续重复」的判定基础。
 	wedge wedgeState
 
+	// LspDiagnostics 是 LSP 诊断回流能力面（nil = 不做诊断注入）。
+	//
+	// 对账 TS `deps.getLspManager?.() ?? deps.lspManager`（`tool-pipeline.ts:1586`）。
+	// **nil 是合法的生产态**（未装配 LSP / 用户禁用）——此时诊断不注入，
+	// 其余一切照常（best-effort 语义）。
+	//
+	// 装配点：`cmd/tianshu/main.go`（与既有的 LSP 工具导航同一处）。
+	LspDiagnostics LspDiagnostics
+
 	// RSSRatioFn 覆盖内存压力比来源（测试注入用）。
 	//
 	// nil = 用 `CurrentRSSRatio()`（真实探针）。对账 TS 的
@@ -1349,6 +1358,19 @@ func (l *Loop) executeTool(ctx context.Context, tc toolCall) contract.Result {
 	if tddSuggestNote != "" && !result.IsError {
 		result.Content = result.Content + "\n\n[TDD] " + tddSuggestNote
 	}
+
+	// ── LSP 诊断回流（第一百零三刀 W2）──
+	//
+	// 对账 TS `tool-pipeline.ts:1578-1607`。**时机**：工具已执行、结果尚未
+	// 回灌进消息历史——诊断要成为「模型看到的这一轮工具结果」的一部分。
+	//
+	// 内部记录（recordTrajectory / observeToolResult）在**其之前**完成，
+	// 故它们拿到的是不带诊断的原始结果——与 TS 同（TS 的 recordToolHistory
+	// 也用 `harnessResult.content`）。
+	//
+	// **best-effort**：nil 接口、LSP 不可用、超时都静默跳过（不影响结果）。
+	result = l.injectLspDiagnostics(tc, result)
+
 	return result
 }
 

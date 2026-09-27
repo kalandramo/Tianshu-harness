@@ -102,9 +102,18 @@ type manager struct {
 	ready        bool
 	openedDocs   map[string]bool
 
+	// diags 是服务端推送的诊断缓存（对账 TS `diagnosticCache`）。
+	//
+	// **为什么在 manager 上而非全局**：每个语言服务器（gopls/pyright/…）
+	// 有独立的推送流与文档版本，共享一个缓存会跨语言串味。
+	diags *diagCache
+
 	// 测试观察点（生产为 nil）
 	onDidOpen   func(json.RawMessage)
 	onDidChange func(json.RawMessage)
+	// onPublishDiagnostics 在生产**不用**（诊断走 diags 缓存），
+	// 仅供测试观察通知是否送达。
+	onPublishDiagnostics func(json.RawMessage)
 }
 
 // newManager 创建 manager（spawn 缝可注入）。
@@ -122,6 +131,7 @@ func newManager(spawn spawnFn, cwd string, opts *managerOptions) *manager {
 		cwd:         cwd,
 		opts:        o,
 		openedDocs:  map[string]bool{},
+		diags:       newDiagCache(),
 		onDidOpen:   o.onDidOpen,
 		onDidChange: o.onDidChange,
 		spawn:       spawn,
@@ -178,6 +188,21 @@ func (m *manager) Initialize() error {
 			m.mu.Unlock()
 		}))
 	rpc := m.rpc
+
+	// 注册诊断推送接收（对账 TS `rpc.onNotification` 的 publishDiagnostics 分支）。
+	//
+	// ★ **必须在 `initialize` 请求之前注册**：服务器可能在握手期间就开始
+	// 推送（尤其 gopls 对已打开文档）。晚注册会漏掉首批诊断——而首批恰是
+	// 我们最想要的（didOpen 后的全量）。
+	//
+	// 注意此处 `m.diags` 只读引用、`handlePublishDiagnostics` 内部加锁，
+	// 故不需要持有 `m.mu`（避免在通知路径上死锁）。
+	rpc.OnNotification("textDocument/publishDiagnostics", func(raw json.RawMessage) {
+		if m.onPublishDiagnostics != nil {
+			m.onPublishDiagnostics(raw)
+		}
+		m.handlePublishDiagnostics(raw)
+	})
 	m.mu.Unlock()
 
 	raw, err := rpc.Request(nil, "initialize", map[string]any{

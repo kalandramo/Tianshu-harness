@@ -229,6 +229,22 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	}
 	loop := agent.New(app.Agent, cl, reg)
 
+	// ── LSP 诊断回流装配（第一百零三刀 W2）──
+	//
+	// 对账 TS `bootstrap.ts` 把 `lspManager` 经 deps 注入 `tool-pipeline`，
+	// 供编辑后诊断注入（`tool-pipeline.ts:1586` 的
+	// `deps.getLspManager?.() ?? deps.lspManager`）。
+	//
+	// **复用同一个 `lspNav`**（不另起 manager）：服务器进程、诊断缓存、
+	// 文档版本状态都该是**一份**——两套会各持一个 gopls，且 didChange 的
+	// 版本号在两套间漂移。
+	//
+	// **nil 安全**：LSP 不可用时 `lspNav` 为 nil，此处 `loop.LspDiagnostics`
+	// 保持 nil → 诊断不注入，其余一切照常（best-effort 语义，见 lspdiag.go）。
+	if lspNav != nil {
+		loop.LspDiagnostics = &lspDiagnosticsAdapter{nav: lspNav}
+	}
+
 	// ── skill 注册表装配 ──
 	//
 	// 对账 TS `bootstrap.ts:2084` 的 `loadProjectSkills(cwd, ...)`。
@@ -789,4 +805,31 @@ func convertLspLocations(in []lsp.Location) []tools.LspLocation {
 		})
 	}
 	return out
+}
+
+// lspDiagnosticsAdapter 把 `internal/lsp.Navigator` 适配成 `agent.LspDiagnostics`。
+//
+// # 为什么需要适配（与 lspNavigatorAdapter 同一理由）
+//
+// `agent.LspDiagnostics` 要求方法签名与 `lsp.LspDiagnostic` **逐字一致**，
+// 而接口定义在 `agent` 包、实现返回 `lsp` 包的类型——Go 的接口满足要求
+// 命名类型完全相同，故无法直接赋值。装配层做薄适配是既定模式
+// （见 `lspNavigatorAdapter` 的长注释）。
+//
+// **依赖方向**：`agent → lsp`（agent 直接用 lsp 的类型）+ 本适配器
+// 在装配层桥接。`lsp` 不依赖 `agent`/`tools`，故无环。
+type lspDiagnosticsAdapter struct {
+	nav *lsp.Navigator
+}
+
+func (a *lspDiagnosticsAdapter) IsReady() bool { return a.nav.IsReady() }
+
+func (a *lspDiagnosticsAdapter) ChangeFile(filePath string) { a.nav.ChangeFile(filePath) }
+
+func (a *lspDiagnosticsAdapter) HasServerForFile(filePath string) bool {
+	return a.nav.HasServerForFile(filePath)
+}
+
+func (a *lspDiagnosticsAdapter) GetFileDiagnostics(filePath string, timeoutMS int) []lsp.LspDiagnostic {
+	return a.nav.GetFileDiagnostics(filePath, timeoutMS)
 }

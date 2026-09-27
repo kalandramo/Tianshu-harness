@@ -44,7 +44,20 @@ type fakeServer struct {
 
 // kill 模拟服务器崩溃：置 ready 假象失效并关闭所有连接。
 //
-// 调用方须持有 f.mu（测试里显式加锁，避免与 readLoop 竞争）。
+// ⚠️ **调用方必须持有 `f.mu`**（既有契约，`multi_manager_test.go` 的两个
+// 调用点显式加锁）。
+//
+// **为什么不能改成「自持锁」**（曾试过，造成死锁）：Go 的 `sync.Mutex`
+// **不可重入**——自持锁后，已在锁内的调用点会**永久阻塞**。
+// 教训：修「易错契约」的正确方向是把契约**结构化**（如拆成
+// `killLocked()` + `kill()` 两个方法），而非简单加锁——后者会把
+// 「忘记加锁」的问题换成「重复加锁」的死锁，且后者更隐蔽。
+//
+// 新增调用点请照 `multi_manager_test.go` 的写法：
+//
+//	fs.mu.Lock()
+//	fs.kill()
+//	fs.mu.Unlock()
 func (f *fakeServer) kill() {
 	f.killed = true
 	for e := range f.endpoints {

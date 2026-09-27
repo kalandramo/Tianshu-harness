@@ -287,13 +287,22 @@ func (m *multiManager) ChangeFile(filePath string) {
 
 // GetFileDiagnostics 按扩展名路由；就绪等待**有界**（不拖住编辑）。
 //
-// 本波不实现诊断内容（属 W4，独立于 goto/refs），返回空切片。
-// 保留方法是为了让接口相位与 TS 对齐（调用方无需按波次分支）。
+// 对账 TS `multi-manager.ts:205-213`：
+//
+//	async getFileDiagnostics(filePath, timeoutMs?) {
+//	  const mgr = this.managerFor(filePath)
+//	  return mgr ? mgr.getFileDiagnostics(filePath, timeoutMs) : []
+//	}
+//
+// ★ **W4 已实现**（第一百零三刀 W2）：原先是返回空切片的桩，注释自述
+// 「本波不实现诊断内容」。现走 `manager.getFileDiagnostics` 真路径
+// （清缓存 → didChange → 等 publishDiagnostics，见 `diagnostics_fetch.go`）。
 func (m *multiManager) GetFileDiagnostics(filePath string, timeoutMS int) []LspDiagnostic {
 	def := m.resolve(filePath)
 	if def == nil {
 		return nil
 	}
+	// 有界就绪等待（慢冷启动不阻塞工具结果）——对账 TS 的 `ensure` 形态。
 	wait := time.Duration(DiagnosticReadyWaitMS) * time.Millisecond
 	if timeoutMS > 0 {
 		candidate := time.Duration(timeoutMS) * time.Millisecond
@@ -301,9 +310,11 @@ func (m *multiManager) GetFileDiagnostics(filePath string, timeoutMS int) []LspD
 			wait = candidate
 		}
 	}
-	// 对账 TS：诊断路径只用**有界**等待，慢冷启动不阻塞工具结果
-	_ = m.ensure(def, wait)
-	return nil
+	mgr := m.ensure(def, wait)
+	if mgr == nil {
+		return nil
+	}
+	return mgr.getFileDiagnostics(filePath, timeoutMS)
 }
 
 // Dispose 释放全部语言 server。
