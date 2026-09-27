@@ -183,14 +183,29 @@ func (m *Manager) connectOne(ctx context.Context, serverID string, sc ServerConf
 	}
 
 	// ③ 包装成 tools.Tool
+	//
+	// ★ 策略查表（第一百一十刀 W2，修 finding #4）：
+	// 键是**原始 MCP 工具名**（`def.Name`，加 `mcp__` 前缀之前），
+	// 对账 TS `src/mcp/manager.ts:480` 的 `serverConfig.policy?.tools[mcpDef.name]`。
+	//
+	// **此前完全没接**：`WrapOptions` 只传 `Transport` → `policyInputFor`
+	// 恒收空 capability → `EvaluatePolicy` 恒走 `CapabilityUnknown` 分支
+	// （`policy.go` 的 unknown 判据）→ **所有 MCP 工具恒需批准**，
+	// 用户在 `policy.tools.<name>.capability` 里声明的 read 完全无效。
 	wrapped := make([]tools.Tool, 0, len(defs))
 	for _, d := range defs {
 		def := d // 闭包捕获
 		call := func(args map[string]any) (CallResult, error) {
 			return m.callTool(rpc, serverID, def.Name, args)
 		}
+		var pol ToolPolicy
+		if sc.Policy != nil {
+			pol = sc.Policy.Tools[def.Name]
+		}
 		wrapped = append(wrapped, WrapTool(serverID, def, call, WrapOptions{
-			Transport: ErrorTransportStdio,
+			Transport:       ErrorTransportStdio,
+			Capability:      pol.Capability,
+			RequireApproval: pol.RequireApproval,
 		}))
 	}
 
