@@ -118,3 +118,46 @@ func TestAccOfficeFamilyRequireApprovalInProduction(t *testing.T) {
 		}
 	}
 }
+
+// TestAccOpenPathViaProductionRegistry —— open_path 走生产装配验收（第八十四刀）。
+//
+// **验证什么**：工具在注册表中可见 + definition 可序列化（前缀缓存字节稳定）。
+// **不验证什么**：真的 spawn OS 打开器——那会在测试机上弹窗口（不可接受的副作用）。
+// execute 的分支由 openpath_test.go 的纯函数测试覆盖。
+func TestAccOpenPathViaProductionRegistry(t *testing.T) {
+	reg := NewDefaultRegistry(Options{Cwd: t.TempDir()})
+
+	tool, ok := reg.Get("open_path")
+	if !ok {
+		t.Fatal("open_path 应在生产注册表中")
+	}
+	def := tool.Definition()
+	if def.Name != "open_path" {
+		t.Errorf("name 应为 open_path，实得 %q", def.Name)
+	}
+	if !tool.RequiresApproval(nil) {
+		t.Error("open_path 应恒需审批")
+	}
+	if !tool.ConcurrencySafe() {
+		t.Error("open_path 应并发安全（只读打开）")
+	}
+
+	// definition 两次构造字节稳定（前缀缓存硬约束）
+	a, b := def.InputSchema.PropOrder, tool.Definition().InputSchema.PropOrder
+	if len(a) != len(b) || a[0] != b[0] {
+		t.Error("definition 应字节稳定")
+	}
+	t.Logf("open_path 已注册，PropOrder=%v", a)
+
+	// 不存在的路径 → 报错（**不 spawn**，安全可测）
+	res, err := reg.Execute(nil, "open_path", &CallParams{
+		Input: map[string]any{"path": "/definitely/not/exist/zzq.svg"},
+	})
+	if err != nil {
+		t.Fatalf("不应返回 error：%v", err)
+	}
+	if !res.IsError {
+		t.Errorf("不存在的路径应报错，实得 %q", res.Content)
+	}
+	t.Logf("不存在路径被正确拒绝：%s", res.Content)
+}

@@ -118,6 +118,13 @@ func NewDefaultRegistry(opts Options) *Registry {
 	r.Register(CreatePresentation(cwd))
 	r.Register(CreatePdf(cwd))
 	r.Register(CreateImage(cwd))
+	// open_path：在 OS 中打开文件/目录（第八十四刀 · W2-1）。
+	//
+	// **为什么需要**：办公文档家族产出的文件要能被用户看到—— 是
+	// 「产出 → 查看」闭环的最后一环。依赖  + （已有）。
+	// **门链早已预留**： 的 open_path 授权分支
+	// 在本刀前就存在，本刀让它首次有真实消费者。
+	r.Register(OpenPath(cwd))
 	r.Register(RunTests(cwd))
 
 	// ── 任务 ──
