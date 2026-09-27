@@ -1584,6 +1584,95 @@ ownedFiles: deps.ownershipLedger?.getOwnedFiles(),   // ← Go 侧未移植（�
 （`ComputeChangedLineRanges` / `BuildFileDiff` / Myers 算法），
 **将来做 diff 相关能力前应先扫它**——不必重写。
 
+## 第一百零七刀：补完 plan 草稿回读 + 订正过期描述
+
+> 工具数不变（42）。**起点是「订正文本」的小刀，执行期发现真实功能缺口**——
+> 计划前提「实现正确，只订正描述」**部分不成立**（用户拍板扩范围为 B 方案）。
+
+### 起点：一个模型可见的诚实性缺陷
+
+`plan` 工具的**描述**（`internal/tools/plan.go`）写：
+
+> ### Action: enter_mode / exit_mode
+> **Go 运行时暂不支持**——写工具禁用机制尚未移植。调用会返回明确错误说明。
+
+而第七十九刀**早已接线实现**：`planEnterModeExecute` 分发到真实现、写工具禁用
+由 `planmode_wiring_test.go` 的 `TestPlanModeBlocksWriteTools` 钉住。
+
+**为什么特别值得修**：描述**进模型上下文**——模型据此认为该 action 无用，
+**永不调用**。而既有的 `TestPlanModeUnsupportedMessageGone` 只断言 **runtime
+输出**，够不到 `Definition().Description` 这条通路。同一事实三个载体
+（实现 / 测试 / 描述），第七十九刀改了前两处，**第三处无人守**。
+
+### ★★ 执行期发现：同族还有两处，且底下是**真功能缺口**
+
+改变判据（不再只看描述，而是 grep 全仓「暂不支持/未支持/尚未移植」）后找到：
+
+1. **错误消息**（`planSubmitExecute`）：「Go 运行时暂无 plan mode 活动计划文件
+   （**enter_mode 未支持**）」——同上，enter_mode 已支持。
+2. **文件头差异清单**：称「Go 侧无任何写工具禁用机制」——已失效。
+3. **★ 底层缺口**：`planSubmitExecute` **只读 `Input["plan"]`，从不回读草稿**，
+   且 `CallParams` **连 `ActivePlanFilePath` 字段都没有**
+   （TS `tools/types.ts:301` 有）。
+
+**后果链**（这才是本刀真正的价值）：plan-mode 指令块
+（`prompt/modeblocks.go` 的 `<plan-mode>`，此刻正进模型上下文）明写
+「用 `plan action=submit` 提交（**可省略 plan 字段，从活动计划文件读取**）」
+——而 `enter_mode` 自第七十九刀起**真会建** `.rivet/plans/draft-<ms>.md`。
+故模型照办：进 plan mode → 写草稿 → 省略 plan 提交 → **失败**。
+**那条指令对 Go 是假话**，且它依赖的上游（enter_mode）已工作，缺口就在 submit 这一环。
+
+### 修法（对账 TS 三处）
+
+- `registry.go` 新增 `CallParams.ActivePlanFilePath`（对账 TS `types.ts:301`）。
+- `artifact_intercept.go` 的 `buildToolCallParams` 注入（**唯一构造点**，
+  漏填即「有读取方零写入方」——本仓库高频模式）。
+- `planSubmitExecute` 按 TS `plan.ts:399-425` 回读草稿，三分支：
+  无路径 → 「未设置活动计划文件时 plan 必填」/ 读失败 → 报错 / 空 → 报错。
+- 草稿回收（对账 TS `plan.ts:583-590`），**两道守卫缺一不可**：
+  ① `submittedFromDraft != ""`（只有真从草稿提交才删）
+  ② `plan.IsDraftSlug`（只有草稿形态才删——修订会话里 `ActivePlanFilePath`
+  可能就指向**用户已批准的计划本身**，删它等于毁掉用户工作）。
+  best-effort（对账 TS 的 `.catch(() => {})`）。
+- 三处过期文本订正：工具描述改为 TS `plan.ts:243-249` 的两段原文（**逐字**）；
+  文件头差异清单标 ~~已废~~ + 补订正说明；错误消息改对账 TS 文案。
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| RED | 8 条新用例全红（含 `TestPlanDescriptionDoesNotClaimUnsupported`） |
+| GREEN | tools 包 85s 绿 / agent 包 3s 绿；30 条 plan 相关用例通过 |
+| 变异 5 个全红 | M1 去注入红2 / M2 去 `IsDraftSlug` 守卫红1 / M3 显式 plan 被草稿覆盖红8 / M4 描述回退红1 / M5 错误消息回退红1 |
+| **★ 覆盖盲区实证** | **M4 状态下旧 `TestPlanModeUnsupportedMessageGone` 仍绿**——实证它只查 runtime、够不到 Description。新断言的必要性由此从「推断」变成「实测」 |
+| 全量 | exit=0 / 30 包 ok / 0 FAIL（`go list ./...` = 32，含 2 无测试包）；vet exit=0；gofmt 零违规 |
+
+### 诚实标注
+
+- **`sessionModel` 留痕仍未移植**（`planSubmitExecute` 的注释已声明）：Go 的
+  `CallParams` 无该字段——**本刀未碰**，属既有收窄。
+- **`assessDelivery`（evidence-gated closure）仍未移植**：已核实是成套子系统
+  （`createDeliveryGateV2` + `DeliveryReport` + `ModuleCoverageInput` + 归因分类），
+  且 Go 侧无 `deliver_task` 工具——属**造子系统**，另立计划。
+- **`onPlanSubmitted`（TUI 审批回调）仍未移植**：Go 无渲染层，已明示。
+- 本刀过程记录：计划期我把「实现正确，只订正描述」当作前提，**执行取证时被推翻**。
+
+### 本刀新增的坑（第 76 条起）
+
+76. **「订正文本」的任务要先验证「被订正的那句话是否真的只错在文本」**：本刀计划
+    前提是「实现正确」，执行取证后发现描述承诺的行为（草稿回读）**根本没实现**。
+    若只订正文本，会产出「描述说可用、实际会失败」的**新矛盾**——比原缺陷更难排查。
+    **判据**：订正任何「声称 X 可用/不可用」的文本前，先用代码验证 X 的实际可达性。
+77. **覆盖盲区的证据要「让旧测试在变异下仍绿」**：本刀 M4（描述回退成过期文本）
+    跑旧 `TestPlanModeUnsupportedMessageGone` **仍然绿**——这一条比任何论证都硬：
+    它直接证明「同一事实的第三条载体无人守」。**修覆盖盲区时，把「旧测试为何没抓住」
+    做成可复现证据，而非写成解释。**
+78. **同一事实的载体数量要当场数**：实现 / 测试 / 模型可见描述 / 函数注释——
+    第七十九刀只改了前两个。**改一处前先 grep 该事实的全部载体**
+    （`grep -rn "暂不支持" go/`），否则「改了但没改全」会以新形式复发。
+
+
+
 ## 下一步（第一百零二刀后）——**已被上方「第一百零三刀后」取代，保留以示修正轨迹**
 
 > ⚠️ 本节已过期（LSP W4 已完成）。保留原文以记录「delegate 文案曾被当作
