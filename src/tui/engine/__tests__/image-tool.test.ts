@@ -1,6 +1,6 @@
 /**
- * image-tool.ts tests：isCompletePng 完整性校验 + runImageTool 截断 PNG fallback
- * + 全失败时 RIVET_DEBUG 调试输出可观测性。
+ * image-tool.ts tests：isCompletePng / isCompleteJpeg 完整性校验 + runImageTool 截断
+ * fallback + PNG/JPEG 选择律 + 全失败时 RIVET_DEBUG 调试输出可观测性。
  */
 
 import { test } from 'node:test'
@@ -8,11 +8,39 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { isCompletePng, resizeCandidates, runImageTool } from '../image-tool.js'
+import {
+  isCompleteJpeg,
+  isCompletePng,
+  pickSmallerImage,
+  pngHasAlpha,
+  resizeCandidates,
+  resizeJpegCandidates,
+  runImageTool,
+  runImageToolAuto,
+} from '../image-tool.js'
 
-// 1x1 transparent PNG（含完整 IHDR + IEND）
+// 1x1 transparent PNG（含完整 IHDR + IEND；IHDR color type = 6 / RGBA）
 const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 const PNG_BUF = Buffer.from(PNG_1X1, 'base64')
+
+/**
+ * 最小 JPEG 骨架：SOI + APP0 + SOF0 + SOS（+ EOI）。没有熵数据——校验器只读段头，
+ * 这样测试不依赖真实编码器。
+ */
+function minimalJpeg(width = 1, height = 1, opts: { eoi?: boolean } = {}): Buffer {
+  const app0 = Buffer.from([
+    0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00,
+    0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
+  ])
+  const sof0 = Buffer.from([
+    0xFF, 0xC0, 0x00, 0x11, 0x08, height >> 8, height & 0xFF, width >> 8, width & 0xFF,
+    0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01,
+  ])
+  const sos = Buffer.from([0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3F, 0x00])
+  const parts = [Buffer.from([0xFF, 0xD8]), app0, sof0, sos]
+  if (opts.eoi !== false) parts.push(Buffer.from([0xFF, 0xD9]))
+  return Buffer.concat(parts)
+}
 
 /** 用 node -e 构造假命令，不依赖 sips/ImageMagick 真实存在。 */
 function fakeCmd(script: string, ...extraArgs: string[]): { bin: string; args: string[] } {
@@ -124,5 +152,108 @@ test('resizeCandidates：macOS sips 缩放时显式输出 PNG', () => {
   assert.deepEqual(resizeCandidates('/tmp/in.jpg', '/tmp/out.png', 1568, 'darwin')[0], {
     bin: 'sips',
     args: ['-Z', '1568', '-s', 'format', 'png', '/tmp/in.jpg', '--out', '/tmp/out.png'],
+  })
+})
+
+// ── isCompleteJpeg ───────────────────────────────────────────────────────────
+
+test('isCompleteJpeg：完整骨架（SOI + SOF + EOI）通过', () => {
+  assert.equal(isCompleteJpeg(minimalJpeg()), true)
+  assert.equal(isCompleteJpeg(minimalJpeg(640, 480)), true)
+})
+
+test('isCompleteJpeg：缺 EOI（工具写半个文件）不算完整', () => {
+  assert.equal(isCompleteJpeg(minimalJpeg(1, 1, { eoi: false })), false)
+})
+
+test('isCompleteJpeg：宽高为 0 的伪造帧头不算完整', () => {
+  assert.equal(isCompleteJpeg(minimalJpeg(0, 0)), false)
+})
+
+test('isCompleteJpeg：非 JPEG 内容（含 PNG 字节）不通过', () => {
+  assert.equal(isCompleteJpeg(PNG_BUF), false)
+  assert.equal(isCompleteJpeg(Buffer.alloc(64, 0x41)), false)
+  // 只有 SOI、没有帧头
+  assert.equal(isCompleteJpeg(Buffer.concat([Buffer.from([0xFF, 0xD8]), Buffer.alloc(32), Buffer.from([0xFF, 0xD9])])), false)
+})
+
+// ── pngHasAlpha ──────────────────────────────────────────────────────────────
+
+test('pngHasAlpha：RGBA（color type 6）为真，RGB（2）为假', () => {
+  assert.equal(pngHasAlpha(PNG_BUF), true)
+  const rgb = Buffer.from(PNG_BUF)
+  rgb[25] = 2 // IHDR color type：真值 2 = truecolor 无 alpha
+  assert.equal(pngHasAlpha(rgb), false, '无 alpha 的 PNG 可以进 JPEG 阶梯')
+})
+
+test('pngHasAlpha：非 PNG / 结构不完整一律假', () => {
+  assert.equal(pngHasAlpha(minimalJpeg()), false)
+  assert.equal(pngHasAlpha(PNG_BUF.subarray(0, 20)), false)
+})
+
+// ── pickSmallerImage：PNG/JPEG 取更小 ────────────────────────────────────────
+
+test('pickSmallerImage：两者都合格取更小者，平局取 PNG', () => {
+  const png = Buffer.alloc(100, 1)
+  const jpeg = Buffer.alloc(60, 2)
+  assert.deepEqual(pickSmallerImage(png, jpeg, 1024), { data: jpeg, mime: 'image/jpeg' })
+  assert.deepEqual(pickSmallerImage(png, Buffer.alloc(100, 2), 1024), { data: png, mime: 'image/png' })
+})
+
+test('pickSmallerImage：超预算的候选作废；都不合格返回 null', () => {
+  const png = Buffer.alloc(100, 1)
+  const jpeg = Buffer.alloc(40, 2)
+  assert.deepEqual(pickSmallerImage(png, jpeg, 50), { data: jpeg, mime: 'image/jpeg' })
+  assert.deepEqual(pickSmallerImage(png, null, 50), null)
+  assert.deepEqual(pickSmallerImage(png, Buffer.alloc(60, 2), 50), null, '两个都超预算 = 压不动')
+  assert.deepEqual(pickSmallerImage(null, jpeg, 1024), { data: jpeg, mime: 'image/jpeg' })
+  assert.deepEqual(pickSmallerImage(null, null, 1024), null)
+})
+
+// ── resizeJpegCandidates ─────────────────────────────────────────────────────
+
+test('resizeJpegCandidates：macOS sips 缩放并显式输出 JPEG（带质量档）', () => {
+  assert.deepEqual(resizeJpegCandidates('/tmp/in.png', '/tmp/out.jpg', 1568, 'darwin')[0], {
+    bin: 'sips',
+    args: ['-Z', '1568', '-s', 'format', 'jpeg', '-s', 'formatOptions', '85', '/tmp/in.png', '--out', '/tmp/out.jpg'],
+  })
+})
+
+test('resizeJpegCandidates：win32 首选 ImageMagick（sips 不存在），含 -quality', () => {
+  const [first] = resizeJpegCandidates('C:\\in.png', 'C:\\out.jpg', 1568, 'win32')
+  assert.equal(first?.bin, 'magick')
+  assert.ok(first?.args.includes('-quality'))
+})
+
+// ── runImageTool / runImageToolAuto：格式纪律 ────────────────────────────────
+
+test('runImageToolAuto：JPEG 产物回传真实 MIME（不得按扩展名假定为 PNG）', async () => {
+  await withTempDir(async (dir) => {
+    const out = join(dir, 'out.jpg')
+    const jpeg = minimalJpeg(4, 4)
+    const result = await runImageToolAuto([fakeCmd(writeBytesScript(jpeg), out)], out)
+    assert.equal(result?.mime, 'image/jpeg')
+    assert.deepEqual(result?.data, jpeg)
+  })
+})
+
+test('runImageTool：PNG-only 纪律——写出 JPEG 的候选不算合格', async () => {
+  await withTempDir(async (dir) => {
+    const out = join(dir, 'out.png')
+    const result = await runImageTool([fakeCmd(writeBytesScript(minimalJpeg()), out)], out)
+    assert.equal(result, null, '展示路径要的是 PNG，JPEG 字节不能冒充')
+  })
+})
+
+test('runImageToolAuto：截断 JPEG 后回落到下一候选（候选级隔离对两种格式同规）', async () => {
+  await withTempDir(async (dir) => {
+    const out = join(dir, 'out.jpg')
+    const truncated = minimalJpeg(1, 1, { eoi: false })
+    const good = minimalJpeg(8, 8)
+    const result = await runImageToolAuto([
+      fakeCmd(writeBytesScript(truncated), out),
+      fakeCmd(writeBytesScript(good), out),
+    ], out)
+    assert.deepEqual(result?.data, good)
   })
 })

@@ -1,14 +1,20 @@
 import type { StreamClient, StreamCallbacks } from './stream-client.js'
 import type { OaiChatRequest, OaiMessage } from './oai-types.js'
-import { oaiMessagesHaveImageParts, stripOaiImageParts } from './oai-types.js'
+import { stripOaiImageParts } from './oai-types.js'
 import { withStructuredRetry } from './retry-engine.js'
 import { parseRetryAfterMs } from './error-classifier.js'
 import { fetchWithTimeout } from './fetch-timeout.js'
 import { wireAbortToReaderCancel, wrapBodyTimeoutError } from './abort-reader.js'
 import { parseJsonObjectWithEscapeRepair } from './json-escape-repair.js'
 import { normalizeBaseUrl } from './endpoint-map.js'
+import { resolveWireEffort } from './provider.js'
 import { ProxyAgent } from 'undici'
 import { acquireRateLimitSlot } from './rate-limiter.js'
+import {
+  createBodyGuardNotifyState,
+  enforceRequestBodyLimit,
+  notifyBodyGuard,
+} from './request-body-guard.js'
 import type { ProviderRetryConfig } from '../config/retry-schema.js'
 
 export interface AnthropicClientConfig {
@@ -20,6 +26,12 @@ export interface AnthropicClientConfig {
   /** 总时限（ms）：替换内置 10min 硬顶，显式配置即严格。 */
   requestTimeoutMs?: number
   /** 重试次数覆盖；undefined = 分类器 per-category 默认（显式值不再被夹取），0 = 禁用。 */
+  /**
+   * PLAN §3 共享重试预算 getter：provider 重试与 agent 重连共用同一份，
+   * 防 3×3=9 相乘（per-run，由 AgentConfig.retryBudgetHolder 承载）。
+   * undefined = 不启用（历史行为）。用 getter 而非实例：客户端在 agent 构造期建好。
+   */
+  retryBudget?: () => import('./retry-budget.js').RetryBudget | undefined
   maxRetries?: number
   /** Provider-level retry policy (issue #75)：退避曲线 / 类别覆盖 / 客户端限速。
    *  undefined = 历史行为（分类器固定延迟 + 内置预算）。 */
@@ -27,6 +39,13 @@ export interface AnthropicClientConfig {
   /** 采样温度默认值（clamp 到 Anthropic 合法的 0–1）；thinking 启用时不注入
    *  （Anthropic 要求 thinking 请求 temperature=1）。 */
   temperature?: number
+  /**
+   * 发送前体积护栏（字节；未配置 = 不限制）。与 OpenAI 兼容客户端共用同一个护栏
+   * （`src/api/request-body-guard.ts`），只是按 Anthropic Messages 形态解析可截断的
+   * 工具输出与图片——网关按字节截断 body 时报的是「unexpected end of hex escape」
+   * 一类英文 serde 错，护栏把它变成「谁占的体积 + 该怎么办」。
+   */
+  maxBodyBytes?: number
   /** Per-provider HTTP proxy（优先于全局 network.proxy）。 */
   proxy?: string
   /** Custom User-Agent — providers that verify caller identity (OpenCode Go
@@ -37,6 +56,20 @@ export interface AnthropicClientConfig {
   /** Header name carrying sessionId. Default 'X-Request-Session'; OpenCode Go
    *  mandates 'x-opencode-session' and 400s without it. */
   sessionHeader?: string
+  /** 鉴权头形态：缺省 x-api-key（Anthropic SDK 惯例）；'bearer' 供只认
+   *  `Authorization: Bearer` 的网关（火山方舟 /api/plan）——两者互斥，不同发。 */
+  authMode?: 'x-api-key' | 'bearer'
+  /**
+   * 档位通道。缺省/undefined = Anthropic 传统路径：档位在**建客户端时**换算成
+   * `thinking.budget_tokens`，运行时 setReasoningEffort 对线上无影响。
+   * `'output_config'` = 写 `body.output_config.effort`（火山方舟 Messages 官方
+   * 字段，取值 none/minimal/low/medium/high/xhigh/max），运行时档位可上线。
+   */
+  effortFormat?: 'reasoning_effort' | 'output_config' | 'none'
+  /** 内部档位→端点枚举映射（与 openai-client 的 effortCap 同语义；仅 output_config 消费）。 */
+  effortCap?: Record<string, string>
+  /** 初始档位；请求级 `request.reasoning_effort` 优先。 */
+  reasoningEffort?: string
 }
 
 interface AnthropicContentBlock {
@@ -72,6 +105,8 @@ interface AnthropicRequestBody {
   thinking?: { type: 'enabled'; budget_tokens: number }
   temperature?: number
   tool_choice?: { type: 'tool'; name: string }
+  /** 火山方舟 Messages 的思考深度通道（effortFormat='output_config' 时写）。 */
+  output_config?: { effort?: string }
 }
 
 /**
@@ -88,6 +123,20 @@ interface AnthropicRequestBody {
  * [anchors…, assistant(handoff), user(原文), user(task-anchor appendix)]
  * 天然含连续 assistant / 连续 user。
  */
+/**
+ * 刚发出去的 Anthropic 体里还有没有 image block——413 分流用（图片过重 vs 纯上下文
+ * 超限在 wire 层同形）。必须看**发出去的那个体**：体积护栏可能已经把图驱逐成占位符，
+ * 拿入参 messages 判断会让分类器去剥一次已经不存在的图（白发一轮）。
+ */
+function anthropicBodyHasImages(body: Record<string, unknown>): boolean {
+  const messages = body.messages
+  if (!Array.isArray(messages)) return false
+  return messages.some((m) => {
+    const content = (m as { content?: unknown } | null)?.content
+    return Array.isArray(content) && content.some((b) => (b as { type?: unknown } | null)?.type === 'image')
+  })
+}
+
 function foldConsecutiveSameRole(messages: AnthropicMessage[]): AnthropicMessage[] {
   const out: AnthropicMessage[] = []
   for (const msg of messages) {
@@ -104,17 +153,30 @@ function foldConsecutiveSameRole(messages: AnthropicMessage[]): AnthropicMessage
 export class AnthropicClient implements StreamClient {
   /** undici ProxyAgent for config.proxy (undefined = no per-provider proxy). */
   private readonly proxyDispatcher: ProxyAgent | undefined
+  /** 体积护栏上报节律（跨请求保持；语义与节流见 notifyBodyGuard）。 */
+  private readonly bodyGuardNotify = createBodyGuardNotifyState()
+  /** 运行时档位（output_config 通道消费；传统 budget 路径不读）。 */
+  private reasoningEffort: string | undefined
 
   constructor(private config: AnthropicClientConfig) {
     this.proxyDispatcher = config.proxy ? new ProxyAgent(config.proxy) : undefined
+    this.reasoningEffort = config.reasoningEffort
   }
 
-  setReasoningEffort(_effort: string): void {
-    // Anthropic doesn't use reasoning_effort — thinking budget is set at construction
+  setReasoningEffort(effort: string): void {
+    // 传统路径（budget_tokens）在建客户端时就定死了，运行时档位不生效；但
+    // output_config 通道（火山方舟 Messages）需要运行时档位，这里统一记下，
+    // 由 buildRequestBody 按 effortFormat 决定是否写线上字段。
+    this.reasoningEffort = effort
   }
 
   setThinking(_mode: 'enabled' | 'disabled'): void {
     // Anthropic thinking is controlled via budget_tokens, not a toggle
+  }
+
+  /** 该请求是否按「思考请求」给长超时：budget_tokens 通道或 output_config 档位通道。 */
+  private thinkingActive(): boolean {
+    return (this.config.thinkingBudget ?? 0) > 0 || this.config.effortFormat === 'output_config'
   }
 
   async stream(
@@ -131,15 +193,27 @@ export class AnthropicClient implements StreamClient {
     await withStructuredRetry(async () => {
       // 剥图重发：只重建本次请求体，不动调用方的 messages（会话历史仍保图）。
       let wireMessages = request.messages
+      // 同 openai-client：剥图后任何后续 attempt 都必须幂等重放剥离，不许毒图回魂。
+      if (imagesStripped) wireMessages = stripOaiImageParts(wireMessages).messages
       if (stripRequested && !imagesStripped) {
         const stripped = stripOaiImageParts(wireMessages)
         if (stripped.removedCount > 0) {
           wireMessages = stripped.messages
           imagesStripped = true
-          callbacks.onImageStripped?.({ removedCount: stripped.removedCount })
+          callbacks.onImageStripped?.({ removedCount: stripped.removedCount, uniqueUrlCount: stripped.uniqueUrlCount })
         }
       }
       const body = this.buildRequestBody({ ...request, messages: wireMessages })
+
+      // 请求体体积护栏（可选）：与 openai-client.sendStream 同一护栏、同一确定性纪律
+      // （只截 wire 副本、同输入同字节），差异只是 shape——OpenAI 兼容体的工具输出是
+      // `role:'tool'` 消息、图片是 `image_url` part；这里分别是 user 消息里的
+      // `tool_result` / `image` block。未配置 maxBodyBytes 时不量体、零额外成本。
+      const guard = enforceRequestBodyLimit(
+        body as unknown as Record<string, unknown>,
+        { limitBytes: this.config.maxBodyBytes, shape: 'anthropic' },
+      )
+      notifyBodyGuard(guard, this.bodyGuardNotify, callbacks.onBodyGuard)
 
       // 共享 lifecycle controller（见 openai-client 同名注释）：传给 fetch，
       // 由外部 signal 联动并在 processSSEStream 的 finally 中 abort。
@@ -154,7 +228,9 @@ export class AnthropicClient implements StreamClient {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': this.config.apiKey,
+          ...(this.config.authMode === 'bearer'
+            ? { authorization: `Bearer ${this.config.apiKey}` }
+            : { 'x-api-key': this.config.apiKey }),
           'anthropic-version': '2023-06-01',
           'Accept': 'text/event-stream',
           ...(this.config.userAgent ? { 'User-Agent': this.config.userAgent } : {}),
@@ -162,9 +238,9 @@ export class AnthropicClient implements StreamClient {
             ? { [this.config.sessionHeader ?? 'X-Request-Session']: this.config.sessionId }
             : {}),
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(guard.body),
         signal: lifecycle.signal,
-      }, this.config.thinkingBudget && this.config.thinkingBudget > 0 ? 90_000 : 45_000, this.proxyDispatcher)
+      }, this.thinkingActive() ? 90_000 : 45_000, this.proxyDispatcher)
 
       if (!response.ok) {
         const errorBody = await response.text().catch(() => '')
@@ -175,7 +251,7 @@ export class AnthropicClient implements StreamClient {
             // 413 的两种成因在 wire 层同形——只有这里知道刚发出去的体里有没有图。
             // 标在错误上让分类器分流（无图 = 纯上下文超限，重发无用）。
             ...(response.status === 413
-              ? { payloadHadImages: oaiMessagesHaveImageParts(wireMessages) }
+              ? { payloadHadImages: anthropicBodyHasImages(guard.body as unknown as Record<string, unknown>) }
               : {}),
           },
         )
@@ -191,6 +267,7 @@ export class AnthropicClient implements StreamClient {
 
       await this.processSSEStream(response, callbacks, signal, lifecycle)
     }, signal, {
+      budget: this.config.retryBudget?.(),
       maxTotalDurationMs: this.config.retry?.maxTotalDurationMs ?? 10 * 60_000,
       // provider 级 maxRetries 显式配置时覆盖内置默认（0 = 禁用重试）。
       maxTotalRetries: this.config.maxRetries,
@@ -255,12 +332,22 @@ export class AnthropicClient implements StreamClient {
 
     if (system.length > 0) body.system = system
     if (tools) body.tools = tools
-    if (this.config.thinkingBudget && this.config.thinkingBudget > 0) {
+    const outputConfigEffort = this.config.effortFormat === 'output_config'
+    if (!outputConfigEffort && this.config.thinkingBudget && this.config.thinkingBudget > 0) {
       body.thinking = { type: 'enabled', budget_tokens: this.config.thinkingBudget }
-    } else if (this.config.temperature !== undefined) {
+    } else if (!outputConfigEffort && this.config.temperature !== undefined) {
       // provider 级采样温度默认值；Anthropic 合法范围 0–1（config 层允许 0–2）。
       // thinking 启用时不注入——Anthropic 要求 thinking 请求 temperature=1。
       body.temperature = Math.max(0, Math.min(1, this.config.temperature))
+    }
+
+    // output_config.effort 通道（火山方舟 Messages 官方字段）：与 budget_tokens
+    // 形态互斥——声明该通道的端点用 effort 表达思考强度，不再发 thinking 块
+    // （时间预算仍按 thinking 请求走，见 FIRST_BYTE/READ 常量）。off 经
+    // resolveWireEffort 映射（{off:'none'}）或省略，永不原样上线。
+    if (outputConfigEffort) {
+      const wireEffort = resolveWireEffort(request.reasoning_effort ?? this.reasoningEffort, this.config.effortCap)
+      if (wireEffort) body.output_config = { effort: wireEffort }
     }
 
     // OAI 对象形式 tool_choice（{type:'function',function:{name}}）映射为
@@ -442,8 +529,8 @@ export class AnthropicClient implements StreamClient {
     // Non-thinking requests use shorter timeouts (45s/120s) for faster
     // failure detection; extended-thinking requests use 90s/180s to
     // accommodate long first-byte delays from reasoning.
-    const FIRST_BYTE_TIMEOUT_MS = (this.config.thinkingBudget && this.config.thinkingBudget > 0) ? 90_000 : 45_000
-    const READ_TIMEOUT_MS = (this.config.thinkingBudget && this.config.thinkingBudget > 0) ? 180_000 : 120_000
+    const FIRST_BYTE_TIMEOUT_MS = this.thinkingActive() ? 90_000 : 45_000
+    const READ_TIMEOUT_MS = this.thinkingActive() ? 180_000 : 120_000
     let streamTimedOut = false
     let idleTimer: ReturnType<typeof setTimeout> | null = null
     let receivedFirstChunk = false

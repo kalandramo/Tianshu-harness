@@ -292,3 +292,62 @@ test('looksLikeBinaryPaste：解码残渣一律 true（防乱码防御的触发�
   assert.equal(looksLikeBinaryPaste('\u0080\u009f'), true, 'C1 控制符（单字节解释残渣）')
   assert.equal(looksLikeBinaryPaste('\ue000'), true, '私用区')
 })
+
+
+test('TIFF→PNG 转换失败 → 返回 null，不得把 TIFF 原样泄漏给模型', async () => {
+  // provider 对 tiff/bmp 常态拒收：原样返回会触发客户端「全量剥图重试」，
+  // 用户这一轮所有图都看不到。转换失败时宁可放弃本次读图。
+  const mod = await import('../clipboard-image.js')
+  const { tryShellClipboard } = mod
+  const tiffBuf = Buffer.from('49492a000800000000000000', 'hex')
+  const execFile = async (bin: string, _args: string[]) => {
+    if (bin === 'osascript') return { stdout: 'TIFF' }
+    if (bin === 'sips') throw new Error('sips conversion failed')
+    throw new Error(`unexpected exec: ${bin}`)
+  }
+  const readFile = async (p: string) => {
+    if (p.endsWith('.tiff')) return tiffBuf
+    throw new Error(`unexpected readFile: ${p}`)
+  }
+  const result = await tryShellClipboard({
+    execFile,
+    platform: 'darwin',
+    readFile,
+    tmpdir: '/tmp',
+    randomUUID: () => 'u',
+  } as any)
+  assert.equal(result, null, '转换失败时不得回退返回 image/tiff')
+})
+
+// ── ingest 归一化：大截图在粘贴出口就压到软目标（Grok/Kimi 同款） ──
+
+test('大图剪贴板：读图出口先过 ingest 归一化（注入 shrinker 验证接线）', async () => {
+  const mod = await import('../clipboard-image.js')
+  const { tryShellClipboard, setClipboardImageShrinker } = mod
+  const big = 'A'.repeat(4 * 1024 * 1024) // > TARGET_IMAGE_BYTES(3.75MB)
+  let calls = 0
+  setClipboardImageShrinker(async (buf: Buffer) => {
+    calls++
+    assert.equal(buf.length, big.length, 'shrink 钩子必须拿到原始 buffer')
+    return Buffer.from(PNG_B64, 'base64')
+  })
+  try {
+    const result = await tryShellClipboard({
+      execFile: async (bin: string) =>
+        ({ stdout: bin === 'wl-paste' ? big : '' }),
+      platform: 'linux',
+      tmpdir: '/tmp',
+      randomUUID: () => 'u',
+    } as any)
+    assert.equal(calls, 1, '大图必须走归一化')
+    assert.ok(result?.dataUrl.startsWith('data:image/png;base64,'))
+  } finally {
+    setClipboardImageShrinker(null)
+  }
+})
+
+test('小图剪贴板：shrinkClipboardImage 原样返回（零系统工具调用）', async () => {
+  const { shrinkClipboardImage } = await import('../clipboard-image.js')
+  const small = Buffer.from(PNG_B64, 'base64')
+  assert.equal(await shrinkClipboardImage(small), small, '≤ 软目标必须返回同一引用，不付压缩成本')
+})

@@ -470,3 +470,33 @@ test('resolveHookDisabledEnv: env 解析与回落（热更回调与装配同源�
     else process.env.RIVET_HOOKS_DISABLED = prev
   }
 })
+
+
+test('createTurnStreamController 把持久化剥图接到 session（Grok ServerRejected 门）', () => {
+  const messages = [{
+    role: 'user',
+    content: [
+      { type: 'text', text: '看这张图' },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+    ],
+  }]
+  const replaced: unknown[][] = []
+  const self = {
+    session: {
+      getMessages: () => messages,
+      replaceMessages: (next: unknown[]) => { replaced.push(next) },
+    },
+    config: {},
+  } as unknown as AgentLoop
+  const deps = (createTurnStreamController(self) as unknown as {
+    deps: { persistStrippedImages: (info: { removedCount: number; uniqueUrlCount?: number }) => void }
+  }).deps
+
+  deps.persistStrippedImages({ removedCount: 1, uniqueUrlCount: 1 })
+  assert.equal(replaced.length, 1, '唯一 blame 必须写回历史（下一轮不再重发毒图）')
+  assert.ok(!JSON.stringify(replaced[0]).includes('image_url'), '写回的历史不得再含 image_url')
+
+  replaced.length = 0
+  deps.persistStrippedImages({ removedCount: 2, uniqueUrlCount: 2 })
+  assert.equal(replaced.length, 0, 'blame 不明时保持 wire-only（服务端只指认请求，不指认图）')
+})

@@ -124,7 +124,7 @@ related: [../reference/observability-harness.md, ../user-guide-sandbox-permissio
 
 ## 9. Windows 特有问题
 
-**现象 A：提示 WebView2 运行时过旧、会话区滚动卡顿。** 界面渲染依赖 WebView2 Runtime（建议 ≥ 120）。在提示条或「设置 → 运行时与关于」里点「运行修复工具」；窗口完全打不开时，用开始菜单「修复 WebView2」，或从 [Releases](https://github.com/huiliyi37/Tianshu-Tui/releases/latest) 下载 `windows-repair` 目录运行 `repair-webview2.cmd`；也可手动安装 WebView2 离线安装包后重启。
+**现象 A：提示 WebView2 运行时过旧、会话区滚动卡顿。** 界面渲染依赖 WebView2 Runtime（建议 ≥ 120）。在提示条或「设置 → 运行时与关于」里点「运行修复工具」；窗口完全打不开时，用开始菜单「修复 WebView2」，或从 [Releases](https://github.com/huiliyi37/Tianshu-harness/releases/latest) 下载 `windows-repair` 目录运行 `repair-webview2.cmd`；也可手动安装 WebView2 离线安装包后重启。
 
 **现象 B：shell 命令执行异常。** 桌面版安装包内嵌 PortableGit（完整 Git + Git Bash，开箱即用，不依赖自装 Git；已装系统 Git 时优先用系统版）。CLI 用户自装 Git for Windows 即可获得可靠的 POSIX 命令执行——`/doctor` 会告诉你 bash 工具实际用的是哪个 shell，未用 Git Bash 时会给出警告。
 
@@ -159,10 +159,79 @@ related: [../reference/observability-harness.md, ../user-guide-sandbox-permissio
 
 **现象 D：连接超时 / `ECONNRESET` / 连不上 443。** 多为防火墙的应用程序规则拦了出站（新装的"未知发布者"默认询问或阻止；`node.exe` 常需单独放行）。放行后仍不通，就走代理：`rivet config set-proxy http://127.0.0.1:7890`（或设置 → 网络），也可在 provider 上单配 `proxy`。
 
+## 12. npm 全局安装 / 升级失败（EEXIST / EPERM）
+
+CLI 通过 `npm install -g tianshu-harness` 安装与升级。若中途失败，日志尾部通常是一行 `npm error code EEXIST`——但**真正的起点往往在更上面**。先分清是下面两种中的哪一种：
+
+**现象 A：从旧包 `tianshu-tui` 迁移时报 `EEXIST: file already exists`**（path 指向 `npm\rivet`）。v3.23.1 之前这个 npm 包叫 `tianshu-tui`，新旧两包都提供 `rivet` 命令，同时存在时 bin 链接互相冲突。先卸旧再装新：
+
+```bash
+npm uninstall -g tianshu-tui && npm install -g tianshu-harness
+```
+
+一键安装脚本（`install-tui.sh` / `install-tui.ps1`）已内置这一步，会自动检测并处理。
+
+**现象 B：升级同一个包时，上方先出现一串 `npm warn cleanup ... EPERM`，最后才是 `EEXIST`。** Windows 上更常见：npm 要删掉旧版本的安装目录（`%APPDATA%\npm\node_modules\tianshu-harness`）再写入，但目录里的文件被占用删不掉，于是残留下来；紧接着写 `rivet` 命令链接时撞上旧文件。**日志把这两段印开了，容易被当成两件不相干的事——实际是 EPERM 在前、EEXIST 在后，前者是因后者是果。** 占用者通常是还在跑的进程（CLI、桌面端 sidecar、集成终端里的 node/npx/tsx），也可能是杀毒软件的实时扫描。
+
+处置（PowerShell）：
+
+```powershell
+# 1) 结束可能占用文件的进程
+Get-Process | Where-Object { $_.ProcessName -match 'rivet|tianshu|node' } | Stop-Process -Force -ErrorAction SilentlyContinue
+# 2) 删掉残留的命令垫片（EEXIST 的直接原因）
+Remove-Item "$env:APPDATA\npm\rivet*","$env:APPDATA\npm\tianshu*" -Force -ErrorAction SilentlyContinue
+# 3) 删掉清理失败的残留包目录
+Remove-Item "$env:APPDATA\npm\node_modules\tianshu-harness" -Recurse -Force -ErrorAction SilentlyContinue
+# 4) 重装
+npm install -g tianshu-harness
+```
+
+> 第 2、3 步若仍报「文件被占用」，说明占用者不是普通进程：用资源监视器搜 `rivet` 看是谁拿着，或重启后立刻执行（避开杀毒软件启动扫描的窗口）。**不建议改用 `npm install -g tianshu-harness --force`**——它会跳过一批安全检查（npm 自己的措辞是 "overwrite files recklessly"），而这里的失败清掉残留即可解决。
+
+> 成因说明：现象 B 的「EPERM 是因、EEXIST 是果」是对一份 Windows 现场日志的推断（未在受控环境复现）；「清残留 + 重装」这条处置路径本身是 npm 在该报错信息里给出的指引。
+
+## 13. `npm install -g` 报 EACCES（无权限写 `/usr/local`）
+
+**现象**：`npm install -g tianshu-harness`（一键安装脚本同理）中途失败：
+
+```
+npm error code EACCES
+npm error syscall mkdir
+npm error path /usr/local/lib/node_modules/tianshu-harness
+npm error Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/tianshu-harness'
+```
+
+**先看**：跑 `npm config get prefix`。输出 `/usr/local` 就是这个原因——Node 由官方安装包装的场合，全局目录落在 `/usr/local`（属主 `root:wheel`、权限 755），非 root 用户写不进去。只读确认一眼即可：`ls -ld /usr/local/lib/node_modules` 显示的属主是 `root`。
+
+**怎么修**（任选一种，改完重跑 `npm install -g tianshu-harness`）：
+
+- **把全局目录交给当前用户**（一次 sudo，PATH 与自动更新都不受影响）：
+
+  ```bash
+  sudo chown -R "$(whoami)" /usr/local/lib/node_modules /usr/local/bin /usr/local/share/man
+  ```
+
+- **不想用 sudo：改用用户级 prefix**（之后要保证 `~/.npm-global/bin` 在 PATH 上）：
+
+  ```bash
+  mkdir -p "$HOME/.npm-global"
+  npm config set prefix "$HOME/.npm-global"
+  echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.zshrc   # bash 用户改 ~/.bashrc
+  source ~/.zshrc && npm install -g tianshu-harness
+  ```
+
+- **长期做法**：用 nvm / fnm / volta 装 Node——prefix 天然落在用户目录，不会触发这个问题。
+
+**不要用 `sudo npm install -g`**：装得进去，但 `node_modules` 里的文件归 root；之后 `/update`（内部执行 `npm install -g tianshu-harness@latest`）会再次 EACCES，等于把问题推到下一次升级。
+
+> 一键安装脚本（`scripts/install-tui.sh` / `scripts/install-tui.ps1`）已内置这项预检：全局目录不可写时会在**动手安装之前**直接给出原因与上面的修法，不会再把权限失败说成网络问题。
+
+> 安装时若出现 `N packages have install scripts not yet covered by allowScripts` 的警告，可以忽略：天枢的原生依赖（`esbuild` / `better-sqlite3` / `@ast-grep/*`）都随包附带各平台预编译产物，跳过安装脚本不影响功能（`tianshu --version` 能打印版本即为通过）。
+
 ## 还有问题
 
 在终端跑 `rivet logs --json`，把输出的结构化落点清单贴进 issue——它列出所有会话/日志文件的实际路径与写入门控，维护者能据此快速定位。
 
-- Bug 报告 / 功能请求 → [GitHub Issues](https://github.com/huiliyi37/Tianshu-Tui/issues)
-- 使用问题 / 讨论 → [GitHub Discussions](https://github.com/huiliyi37/Tianshu-Tui/discussions)
-- 安全漏洞 → 走[私密报告](https://github.com/huiliyi37/Tianshu-Tui/security/advisories/new)，不要开公开 issue
+- Bug 报告 / 功能请求 → [GitHub Issues](https://github.com/huiliyi37/Tianshu-harness/issues)
+- 使用问题 / 讨论 → [GitHub Discussions](https://github.com/huiliyi37/Tianshu-harness/discussions)
+- 安全漏洞 → 走[私密报告](https://github.com/huiliyi37/Tianshu-harness/security/advisories/new)，不要开公开 issue

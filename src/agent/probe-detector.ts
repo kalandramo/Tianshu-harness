@@ -46,11 +46,19 @@ export interface ProbeHit {
 const CONSOLE_PROBE_RE = /(^|[^.])\bconsole\.(log|debug|dir|trace)\s*\(/gm
 
 /**
- * debugger 独立语句
- * 来源：JS 标准断点语句，无项目样本（正是要防的——调试后遗忘）
- * 匹配 `debugger` 作为独立 token（前后单词边界），不匹配 `debuggerMode` 等。
+ * debugger 独立语句——判据是**语句位置**，不只是词边界。
+ *
+ * 来源：JS 标准断点语句，无项目样本（正是要防的——调试后遗忘）。
+ * 匹配 `debugger` 作为独立 token（不匹配 `debuggerMode` 等），并要求它前面的最后一个
+ * 非空白字符是**语句边界**：行首 / `;` / `{` / `}` / `)` / `:`。
+ *
+ * 为什么加后一条：`debugger` 在语法上只能作语句出现，这个前导集合是它的必要条件，
+ * 于是注释与字符串里的提及被自然排除——`const x = 1 // debugger`、
+ * `foo() /＊ debugger ＊/`、`const s = 'debugger'` 此前都会被报成「探针残留」
+ * （旧判据只跳过**行首**是 `//` 或 `*` 的整行，行内提及一律漏网），是交付乱报的来源之一。
+ * 2026-09-25 修。真语句形态（缩进 / 带分号 / `if (x) debugger` / `a(); debugger`）不受影响。
  */
-const DEBUGGER_RE = /\bdebugger\b/g
+const DEBUGGER_RE = /(?:^|[;{}):])\s*debugger\b/gm
 
 /**
  * .only() 测试隔离——it.only / describe.only / test.only
@@ -87,6 +95,40 @@ const WHITELIST_PREFIXES = [
   'src/server/serve.ts', // API server startup logs
 ]
 
+/**
+ * 「讨论探针」的说明性文件：**不整文件豁免**，只豁免确属模式表/文案的行。
+ *
+ * 2026-09-25 二修：此前这两个文件（`src/prompt/static.ts` 与本文件自身）整文件
+ * 进白名单，代价是这两个真 `.ts` 里的**真实探针一并漏检**——而检测器自身恰恰是
+ * 最常被临时插桩调试的文件，`deliver_task` 的 fs 重扫与 probe-tracking hook 两条
+ * 通道会同时静默。误报的原始动机是「模式注册表与文案里的枚举词被自己命中」，
+ * 那是**行级**问题，就该用行级判据解，不该拿整文件的检测能力去换。
+ * 判据见 `isSelfReferenceLine`，回归护栏见 probe-detector.test.ts 的
+ * 「这两个文件的当前内容零命中」用例。
+ */
+const SELF_REFERENCE_FILES = [
+  'src/prompt/static.ts',
+  'src/agent/probe-detector.ts',
+]
+
+/** 模式注册表条目行：`{ name: 'debugger', re: DEBUGGER_RE },` */
+const PATTERN_REGISTRY_LINE_RE = /^\s*\{\s*name:\s*['"]/
+/** 独立语句的 debugger 后面必然是 `;` 或行尾；后跟标点说明它出现在文本里。 */
+const DEBUGGER_IN_TEXT_RE = /\bdebugger\b(?!\s*[;\n]|$)/
+/** `assert(` 前置引号 = 字符串字面量里的枚举（`'bare assert()'`）；裸调用前面是空白。 */
+const ASSERT_IN_STRING_RE = /['"`][^'"`]*assert\s*\(/
+
+/** 该行是否属「讨论探针」的文本——只对 SELF_REFERENCE_FILES 生效。 */
+function isSelfReferenceLine(filePath: string, line: string, patternName: string): boolean {
+  const normalized = normalizeProbePath(filePath)
+  const isSelfRefFile = SELF_REFERENCE_FILES.some((f) => matchesPathPrefix(normalized, f))
+  if (!isSelfRefFile) return false
+  if (PATTERN_REGISTRY_LINE_RE.test(line)) return true
+  if (patternName === 'debugger' && DEBUGGER_IN_TEXT_RE.test(line)) return true
+  if (patternName === 'bare assert()' && ASSERT_IN_STRING_RE.test(line)) return true
+  return false
+}
+
 /** 白名单文件后缀（`.md`：文档说明性文本不是可执行探针——台账 F2 实例③） */
 const WHITELIST_SUFFIXES = [
   '.test.ts',
@@ -108,15 +150,40 @@ const STRUCTURED_LOG_RE = /\b(?!console\b)\w+(?:\.\w+)*\.(info|warn|error|debug|
 const CONDITIONAL_DEBUG_RE = /\bif\s*\([^)]*\)\s*\{?\s*console\.(debug|log|dir|trace)\s*\(/
 
 /**
+ * 路径归一化：统一分隔符（Windows 反斜杠）并剥掉前导 `./`。
+ * 绝对路径原样保留——兼容两种形态是白名单匹配的职责（见 matchesPathPrefix）。
+ */
+function normalizeProbePath(filePath: string): string {
+  return filePath.replace(/^\.\//, '').replace(/\\/g, '/')
+}
+
+/**
+ * 前缀/文件型白名单条目匹配，兼容相对与绝对两种形态。
+ *
+ * 为什么需要它：`gate` 的 fs 重扫与模型写入的 `filePath` 都可能是**绝对路径**
+ * （`/Users/x/repo/scripts/a.ts`），而 `startsWith('scripts/')` 对绝对形态恒假 →
+ * **整张白名单同时失效**，`scripts/`、`bin/`、`*.test.ts`、`.md`、`serve.ts` 里的
+ * 日志被一律报成「探针残留」：交付时乱报，且内容与本次改动无关（2026-09-25 修）。
+ *
+ * 绝对形态按**路径段边界**匹配（`/scripts/`），不做子串包含——否则
+ * `/tmp/xscripts/a.ts` 会被误当成 `scripts/` 而漏检。
+ */
+function matchesPathPrefix(normalized: string, entry: string): boolean {
+  if (normalized.startsWith(entry)) return true
+  const bare = entry.endsWith('/') ? entry.slice(0, -1) : entry
+  return normalized.includes(`/${bare}/`) || normalized.endsWith(`/${bare}`)
+}
+
+/**
  * 判断文件路径是否在白名单中（不需要检测探针）。
  */
 export function isWhitelistedPath(filePath: string): boolean {
-  const normalized = filePath.replace(/^\.\//, '')
+  const normalized = normalizeProbePath(filePath)
   for (const suffix of WHITELIST_SUFFIXES) {
     if (normalized.endsWith(suffix)) return true
   }
   for (const prefix of WHITELIST_PREFIXES) {
-    if (normalized.startsWith(prefix)) return true
+    if (matchesPathPrefix(normalized, prefix)) return true
   }
   return false
 }
@@ -140,9 +207,10 @@ export function detectProbes(content: string, filePath: string): ProbeHit[] {
     const line = lines[i]!
     if (line.length > 120) continue // 跳过巨型行（压缩代码等）
 
-    // 跳过注释行（// 或 * 开头的注释）
+    // 跳过注释行（`//` 行注释、JSDoc 续行 `*`、块注释起始 `/*` 与 `/**`——
+    // 后者此前漏判，导致本文件 L118 那种 JSDoc 起始行被整行误报）
     const trimmed = line.trimStart()
-    if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue
+    if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) continue
 
     for (const { name, re } of PROBE_PATTERNS) {
       // Reset regex lastIndex（global flag 会有状态）
@@ -156,6 +224,9 @@ export function detectProbes(content: string, filePath: string): ProbeHit[] {
         if (name === 'console.log/debug/dir/trace' && CONDITIONAL_DEBUG_RE.test(line)) {
           continue
         }
+        // 自指豁免（仅「讨论探针」的那两个文件）：模式注册表与文案里的枚举词不是探针。
+        // 真实调用形态（裸 console.log / 独立 debugger 语句 / 裸 assert(）不受影响。
+        if (isSelfReferenceLine(filePath, line, name)) continue
         hits.push({
           filePath,
           pattern: name,

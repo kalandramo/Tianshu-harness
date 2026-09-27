@@ -18,6 +18,7 @@
 import { createHash } from 'node:crypto'
 
 export interface BaselineSnapshot {
+  complete?: boolean
   branch: string
   head: string
   preExistingDirty: string[]
@@ -68,6 +69,7 @@ export function createWorktreeBaseline(snapshot: BaselineSnapshot): WorktreeBase
 
   function isExternal(filePath: string | null | undefined): boolean {
     if (!filePath) return false
+    if (snapshot.complete === false) return true
     return externalSet.has(filePath)
   }
 
@@ -98,6 +100,7 @@ export function createWorktreeBaseline(snapshot: BaselineSnapshot): WorktreeBase
       preExistingDirty: [...snapshot.preExistingDirty],
       preExistingUntracked: [...snapshot.preExistingUntracked],
       capturedAt: snapshot.capturedAt,
+      complete: snapshot.complete,
     }
   }
 

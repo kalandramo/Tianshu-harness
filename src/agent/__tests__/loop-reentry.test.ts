@@ -28,6 +28,12 @@ test('run claims the instance synchronously before awaiting idle compaction', as
     // toolRegistry 的异步注册清零状态。裸 fake 缺 config，同款「fake 过时」形态
     // （补前的症状一样：cancelCalls 恒为 0）——最小桩即可，与本轮不变量无关。
     config: { toolRegistry: { awaitExtraRegistrations: async () => {} } },
+    // run/runObserved 拆分（2026-09-27）：run() 现在只做「早退 + observeRun 包裹」，
+    // 主体搬进 runObserved。裸 fake 只实现叶子依赖（_runInner/cancelIdleCompaction…），
+    // 没有这条原型方法 → `this.runObserved is not a function`，且因为是 async 里抛的，
+    // 症状表现为「_running 没被同步置位」——看着像 re-entry 契约回归，实为 fake 过时
+    // （同 2026-09-15 / toolRegistry 两处）。借真原型方法，保持「只换叶子」的原意。
+    runObserved: (AgentLoop.prototype as unknown as { runObserved: unknown }).runObserved,
     cancelIdleCompaction: async () => {
       cancelCalls++
       await idleGate
@@ -49,4 +55,14 @@ test('run claims the instance synchronously before awaiting idle compaction', as
   assert.equal(innerCalls, 1)
   assert.equal(fake._running, false)
   assert.equal(schedules, 1)
+})
+
+test('AgentLoop 必须真的实现 getTranscriptWatermark（否则生产检查点永远写不进水位）', () => {
+  // 管理器用可选调用 agent.getTranscriptWatermark?.()：方法不存在时不报错、只是静默
+  // 恒为 undefined —— 测试替身有、真身没有，是最容易骗过 review 的缺接线。
+  const fn = (AgentLoop.prototype as unknown as { getTranscriptWatermark?: () => number }).getTranscriptWatermark
+  assert.equal(typeof fn, 'function', 'AgentLoop 必须实现 getTranscriptWatermark')
+  const persist = { getTranscriptWatermark: () => 42 }
+  assert.equal(fn!.call({ persist } as unknown as AgentLoop), 42, '应转发到 SessionPersist 的水位')
+  assert.equal(fn!.call({ persist: undefined } as unknown as AgentLoop), 0, '无 persist（匿名会话）时降级为 0，不抛')
 })

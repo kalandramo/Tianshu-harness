@@ -1059,12 +1059,12 @@ describe('image_strip recovery', () => {
     const calls = mockFetchSequence([413])
     try {
       const client = new OpenAIClient(TEST_CONFIG)
-      const strippedCounts: number[] = []
+      const strippedInfos: Array<{ removedCount: number; uniqueUrlCount?: number }> = []
       let stopReason = ''
       await client.stream(IMAGE_REQUEST as never, {
         ...NOOP_CALLBACKS,
         onStopReason: (r: string) => { stopReason = r },
-        onImageStripped: (info: { removedCount: number }) => { strippedCounts.push(info.removedCount) },
+        onImageStripped: (info) => { strippedInfos.push(info) },
       })
 
       assert.equal(calls.length, 2, '一次带图尝试 + 一次剥图重发')
@@ -1073,7 +1073,11 @@ describe('image_strip recovery', () => {
       assert.ok(!second.some(p => p.type === 'image_url'), '重发必须已剥图')
       assert.ok(second.some(p => p.type === 'text' && p.text === 'describe this'), '文本必须保留')
       assert.equal(stopReason, 'end_turn')
-      assert.deepEqual(strippedCounts, [1], '剥离必须通知调用方（用户可见提示）')
+      assert.deepEqual(
+        strippedInfos,
+        [{ removedCount: 1, uniqueUrlCount: 1 }],
+        '剥离必须通知调用方（用户可见提示）+ 唯一 URL 数（持久化判据）',
+      )
     } finally {
       restoreFetch()
     }
@@ -1122,6 +1126,32 @@ describe('image_strip recovery', () => {
       )
       assert.equal(calls.length, 2, '带图一次 + 剥图一次；第三次必然重复已剥的体')
       assert.ok(!userContent(calls[1]!.body).some(p => p.type === 'image_url'), '重发体已剥图')
+    } finally {
+      restoreFetch()
+    }
+  })
+
+  it('剥图后的后续重试（500）必须保持剥图——毒图不许回魂', async () => {
+    const calls = mockFetchSequence([413, 500])
+    try {
+      const client = new OpenAIClient({
+        ...TEST_CONFIG,
+        // 让 500 重试立即发生（默认 2s 延迟只拖慢测试）。
+        retry: { backoff: { baseDelayMs: 1, jitterRatio: 0 } },
+      } as OpenAIClientConfig)
+      const strippedCounts: number[] = []
+      await client.stream(IMAGE_REQUEST as never, {
+        ...NOOP_CALLBACKS,
+        onImageStripped: (info) => { strippedCounts.push(info.removedCount) },
+      })
+
+      assert.equal(calls.length, 3, '带图 → 剥图 → 500 后再重试')
+      assert.ok(!userContent(calls[1]!.body).some(p => p.type === 'image_url'), '第二次 attempt 已剥图')
+      assert.ok(
+        !userContent(calls[2]!.body).some(p => p.type === 'image_url'),
+        '第三次 attempt 必须仍剥图：每次 attempt 从原始 body 重建，剥离要幂等重放',
+      )
+      assert.deepEqual(strippedCounts, [1], '剥离只发生一次')
     } finally {
       restoreFetch()
     }

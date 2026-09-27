@@ -548,8 +548,9 @@ rivet config setup grok --key-env XAI_API_KEY
 | `rate_limit` | HTTP 429 | 5 | 2000ms |
 | `overloaded` | 529 / 503 / 425 / 文案匹配 | 3 | 3000ms |
 | `server_error` | 500 / 502 / 其他 5xx | 3 | 2000ms |
-| `timeout` | 408 / ETIMEDOUT / ECONNRESET / EPIPE 等 | 3 | 2000–3000ms |
+| `timeout` | 408 / ETIMEDOUT / ECONNRESET / EPIPE 等连接类失败 | 3 | 2000–3000ms |
 | `stream_parse` | SSE 解析失败 | 2 | 1000ms |
+| `malformed_response` | 上游**响应头**畸形（`Response does not match the HTTP/1.1 protocol`：网关/WAF 边缘节点往响应头里插了空白字符等）。单节点/单连接故障，每次重试都是新 TCP 连接 = 一次换节点的机会，故「多试几次 + 短间隔」而非长退避 | 5 | 800ms |
 | `unknown` | 兜底 | 2 | 2000ms |
 | `image_strip` | 413 / 图片处理失败 | 1（只剥离一次） | 0 |
 | `tls_intercept` | TLS 证书校验失败（`UNABLE_TO_VERIFY_LEAF_SIGNATURE` / `SELF_SIGNED_CERT_IN_CHAIN` 等）：本机检出加密连接扫描根证书 → 本地中间人；未检出 → 多为服务端证书链不完整 | 0（本地中间人，同一张证书重试必然复现）/ 1（未检出，给服务端半截链一次自愈机会） | 2000ms |

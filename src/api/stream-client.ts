@@ -35,8 +35,10 @@ export interface StreamCallbacks {
   /** Called when image_url parts were dropped to recover from a 413 / image
    *  rejection — the retry carries a smaller body without images. The caller is
    *  expected to surface it: the model answering that turn never saw the images,
-   *  so a silent strip reads as "the model ignored my screenshot". Optional. */
-  onImageStripped?: (info: { removedCount: number }) => void
+   *  so a silent strip reads as "the model ignored my screenshot". Optional.
+   *  `uniqueUrlCount` = 剥图前请求里不同 image URL 的数量；agent 层据此决定
+   *  是否把剥离持久化写回历史（唯一 blame 才写，见 persisted-image-strip.ts）。 */
+  onImageStripped?: (info: { removedCount: number; uniqueUrlCount?: number }) => void
   /** Called when an attempt was rejected for missing `reasoning_content` and the
    *  retry re-sends history **with** the model's thinking content preserved
    *  (issue #258: some OpenAI-protocol gateways hosting DeepSeek thinking models

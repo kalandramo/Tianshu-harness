@@ -33,6 +33,10 @@
   <a href="https://discord.gg/XjWTATCHB"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
+<p align="center">
+  <a href="https://trendshift.io/repositories/100440" target="_blank"><img src="https://trendshift.io/api/badge/trendshift/repositories/100440/daily?language=TypeScript" alt="Trendshift: TypeScript repository of the day" width="250" height="55"></a>
+</p>
+
 ---
 
 ### 実際のエンジニアリング作業のための AI エージェントランタイム
@@ -1104,10 +1108,6 @@ tianshu logs open desktop            # sidecar ログディレクトリを開く
     "enabled": true,
     "autoThreshold": 800000       // 自動圧縮をトリガーする token 閾値
   },
-  "cache": {
-    "enabled": true,              // プレフィックスキャッシュの総合スイッチ
-    "showHitRate": true           // GlanceBar にヒット率を表示
-  },
   "tools": {
     "preset": "frontend"          // minimal | frontend（デフォルト）| full | taiyi
   },
@@ -1229,3 +1229,8 @@ tianshu logs open desktop            # sidecar ログディレクトリを開く
 ## ライセンス
 
 本プロジェクトは [Apache License, Version 2.0](LICENSE) で公開されています。Copyright 2025-2026 Tianshu Contributors.
+
+## 謝辞
+
+- デスクトップ版「カスタム壁紙と領域別ガラス」機能の**デザイン**は <a href="https://github.com/elysia395/dsh-wallpaper-engine">dsh-wallpaper-engine</a>（MIT License）を参考にしています。実装は天枢による独自実装で、上流のコードは含みません。参考範囲とライセンス全文は <a href="THIRD-PARTY-NOTICES.md">THIRD-PARTY-NOTICES.md</a> を参照してください。
+- dsh-wallpaper-engine の作者とコア開発者——<a href="https://github.com/elysia395">@elysia395</a>、<a href="https://github.com/YV3507">@YV3507</a>、<a href="https://github.com/yuxilao">@yuxilao</a>、<a href="https://github.com/oneincase">@oneincase</a> の四名に特に感謝します。**壁紙エンジンレンダリングの技術顧問**として、壁紙の合成と領域別ガラスマテリアルの設計・実装にご指導いただきました。

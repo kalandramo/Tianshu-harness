@@ -21,6 +21,10 @@ export type FailureClass =
   /** 只读探测工具对不存在路径的 not-found（A5 信号互扰治理 M3）——
    *  反幻影探针证实"不存在"是有效信息收集，不是认知失败，vigor 减罚 0.3。 */
   | 'probe_miss'
+  /** 设计性拒绝（browser_debug 的 fail-closed 允许名单 / 协议白名单等）：
+   *  调用没有执行是**预期行为**，不是工具损坏或模型能力问题。retryable=false，
+   *  vigor 减罚，免疫/收敛不放大（见 tool-history-recorder 的豁免）。 */
+  | 'refused'
 
 export interface ClassifiedFailure {
   class: FailureClass
@@ -88,6 +92,7 @@ const CANONICAL: Record<FailureClass, { suggestion: string; retryable: boolean }
   format_error: { suggestion: 'Model output was malformed. Retry with clearer format instructions.', retryable: true },
   test_red: { suggestion: 'TDD RED — 这是预期中的测试红灯，实现代码后应转绿。', retryable: false },
   probe_miss: { suggestion: '探测确认路径不存在——这本身是有效信息，记录结论即可，不要重试同一路径。', retryable: false },
+  refused: { suggestion: '调用被设计性拒绝（目标不允许或协议不支持）。不要重复同一调用；改用允许的目标，或按提示修改配置。', retryable: false },
 }
 
 /** 从 ToolResult 的结构字段解析失败类别：errorKind 直读；
@@ -133,6 +138,13 @@ export function classifyFailure(
   // 系统一边教"读前探测"一边罚探测行为。
   if (opts?.isReadProbe && NOT_FOUND_PATTERN.test(errorText)) {
     return { class: 'probe_miss', suggestion: '探测确认路径不存在——这本身是有效信息，记录结论即可，不要重试同一路径。', confidence: 0.85, retryable: false }
+  }
+
+  // 0.5 设计性拒绝（browser_debug 等 fail-closed 护栏）：工具按设计拒绝执行，
+  // 不是工具损坏。结构字段 errorKind 是首选通道，这里是文案兜底——
+  // 顺序放在 timeout/network 之前，避免"已拦截……请设置……"里的词被误分类。
+  if (/已拦截|不支持的协议|不是回环地址且不在许可名单/.test(errorText)) {
+    return { class: 'refused', suggestion: '调用被设计性拒绝（目标不允许或协议不支持）。不要重复同一调用；改用允许的目标，或按提示修改配置。', confidence: 0.9, retryable: false }
   }
 
   // 1. TypeScript type errors

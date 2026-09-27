@@ -1,7 +1,8 @@
 import type { ModelConfig, ProviderConfig } from './schema.js'
 import { isLoopbackBaseUrl } from './local-endpoint.js'
+import { VOLC_PRESETS } from './provider-presets-volc.js'
 
-export type ProviderPresetKey = 'deepseek' | 'glm' | 'kimi' | 'opencode-go' | 'opencode-go-anthropic' | 'mimo' | 'mimo-api' | 'minimax' | 'codex' | 'openai' | 'grok' | 'siliconflow' | 'stepfun' | 'longcat' | 'ccswitch' | 'zhipu-vision' | 'dashscope' | 'volc' | 'openrouter' | 'relay' | 'ollama'
+export type ProviderPresetKey = 'deepseek' | 'glm' | 'kimi' | 'opencode-go' | 'opencode-go-anthropic' | 'mimo' | 'mimo-api' | 'minimax' | 'codex' | 'openai' | 'grok' | 'siliconflow' | 'stepfun' | 'longcat' | 'ccswitch' | 'zhipu-vision' | 'dashscope' | 'volc' | 'volc-plan' | 'volc-plan-anthropic' | 'openrouter' | 'relay' | 'ollama'
 
 /** 一种计费模式对应一个官方 Base URL（如百炼的按量计费 / token plan）。 */
 export interface ProviderBillingMode {
@@ -118,6 +119,12 @@ export const PROVIDER_PRESETS: Record<ProviderPresetKey, ProviderPreset> = {
         // cache-warm so compaction stops re-prefilling the full 1M-window prompt.
         prefixCache: 'deepseek-native',
         prefixCompletion: false,
+        // Coding Plan 官方档位映射（docs.bigmodel.cn 深度思考）：GLM-5.3 系
+        // none/minimal/low→low、medium/high→high、xhigh/max→max；GLM-5.2 的
+        // none/minimal 代表模型放弃思考。内部两个越界档在这里对齐：off→none、
+        // medium→high，不依赖服务端改写（本预设 baseUrl 就是 Coding Plan 端点，
+        // 该映射与直连 API 的"仅 max/high/low、其余报错"不同）。
+        effortCap: { off: 'none', medium: 'high' },
       },
       thinking: 'enabled',
       maxTokens: 131072,
@@ -161,10 +168,16 @@ export const PROVIDER_PRESETS: Record<ProviderPresetKey, ProviderPreset> = {
       unsupported: ['stream_options'],
     },
   },
+  // Kimi Code（Kimi 会员订阅额度）——官方「模型配置 / 会员权益」页口径：
+  //   · Kimi Code 随 Kimi 会员订阅一同提供，**与 Kimi 会员共享同一套额度**；
+  //     CLI / VS Code / 桌面端 / 第三方工具发起的请求均计入该额度；
+  //   · 额度用尽后可开启「加油包（Extra Usage）」按量续用（费率近似开放平台 API），
+  //     本预设仍按订阅额度标记：模型单价清零 + cost-model 按订阅端点（/coding/）归类；
+  //   · 模型 ID 只有 k3 / k3-256k / kimi-for-coding(K2.8) / kimi-for-coding-highspeed。
   kimi: {
     key: 'kimi',
-    label: 'Moonshot Kimi',
-    description: '月之暗面 Kimi Code：K3 旗舰 1M 上下文 + K2.7 Code（会员订阅）',
+    label: 'Moonshot Kimi Code 订阅',
+    description: 'Kimi Code 会员订阅额度（与 Kimi 会员共享，CLI/桌面/第三方工具请求均计入）：K3 / K2.8 Preview / K2.7 Code HighSpeed',
     defaultModelId: 'k3',
     keyUrl: 'https://www.kimi.com/code/console',
     provider: {
@@ -181,14 +194,17 @@ export const PROVIDER_PRESETS: Record<ProviderPresetKey, ProviderPreset> = {
       },
       thinking: 'enabled',
       maxTokens: 131_072,
+      // 官方多模态：k3/kimi-for-coding/highspeed 图片+视频，k3-256k 仅图片（视频见 supportsVideo）。
       models: [
         {
           id: 'k3',
           description: 'K3 旗舰：2.8T MoE，1M 上下文（Moderato 起可用）',
-          contextWindow: 1_000_000,
+          contextWindow: 1_048_576,
           maxTokens: 131_072,
           reasoningEffort: 'max',
           tier: 'strong',
+          supportsVision: true,
+          supportsVideo: true, // 官方：图片+视频输入
           pricing: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, // 会员订阅不按 token 计费（同 GLM Coding Plan）
         },
         {
@@ -198,16 +214,34 @@ export const PROVIDER_PRESETS: Record<ProviderPresetKey, ProviderPreset> = {
           maxTokens: 131_072,
           reasoningEffort: 'max',
           tier: 'strong',
+          supportsVision: true, // 官方：仅图片输入（视频不支持）
           pricing: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         },
         {
           id: 'kimi-for-coding',
-          description: 'K2.7 Code：面向编程任务（所有会员可用）',
-          contextWindow: 256_000,
+          description: 'K2.8 Preview：综合性能接近 K3，1M 上下文（思考档 low/high/max，默认 max）',
+          contextWindow: 1_048_576,
+          // 官方模型页未公布最大输出——沿用旧 K2.7 Code 条目值（向导要求非空，
+          // 且过小会被「元数据不全」拖进补参表单）。
           maxTokens: 64_000,
-          reasoningEffort: 'high',
+          reasoningEffort: 'max',
           tier: 'strong',
+          supportsVision: true, // 官方：图片+视频输入
+          supportsVideo: true, // 同上（视频输入）
           pricing: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        },
+        {
+          id: 'kimi-for-coding-highspeed',
+          description: 'K2.7 Code 高速版：输出速度约 5–6 倍（3 倍消耗），Thinking:ON 无档位',
+          contextWindow: 262_144,
+          maxTokens: 64_000, // 同 kimi-for-coding：官方未公布最大输出，沿用 K2.7 Code 条目值
+          tier: 'strong',
+          supportsVision: true, // 官方：图片+视频输入
+          supportsVideo: true, // 同上（视频输入）
+          pricing: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          // Thinking:ON（官方模型页），不参与 low/high/max 档位——模型级关掉
+          // 档位通道，避免把 reasoning_effort 发给不认的端点。
+          capabilities: { effortFormat: 'none' },
         },
       ],
       unsupported: [],
@@ -449,6 +483,7 @@ export const PROVIDER_PRESETS: Record<ProviderPresetKey, ProviderPreset> = {
           maxTokens: 64000,
           tier: 'strong',
           supportsVision: true,
+          supportsVideo: true, // 官方：MiniMax-M3 多模态 Chat 输入支持文本/图片/视频
           pricing: { input: 0.3, output: 1.2, cacheRead: 0.03, cacheWrite: 0.3 },
         },
       ],
@@ -512,6 +547,10 @@ export const PROVIDER_PRESETS: Record<ProviderPresetKey, ProviderPreset> = {
           maxTokens: 131_072,
           tier: 'strong',
           pricing: { input: 0.94, output: 4.0 },
+          // 官方 reasoning_effort 支持清单只列 Pro DeepSeek-V4 / V4-Flash /
+          // Pro GLM-5.2；该型号未列入 → 模型级关掉档位通道，避免默认 medium
+          // 被无差别发出（聚合站逐模型支持度分裂）。
+          capabilities: { effortFormat: 'none' },
         },
         {
           id: 'Qwen/Qwen3.6-27B',
@@ -520,6 +559,8 @@ export const PROVIDER_PRESETS: Record<ProviderPresetKey, ProviderPreset> = {
           maxTokens: 131_072,
           tier: 'balanced',
           pricing: { input: 0.3, output: 3.2 },
+          // 同 Kimi：不在官方 reasoning_effort 支持清单内，模型级关闭该通道。
+          capabilities: { effortFormat: 'none' },
         },
       ],
       unsupported: [],
@@ -950,49 +991,7 @@ export const PROVIDER_PRESETS: Record<ProviderPresetKey, ProviderPreset> = {
       unsupported: [],
     },
   },
-  volc: {
-    key: 'volc',
-    label: '火山方舟 (豆包)',
-    description: '火山引擎方舟：豆包 Doubao 系列，OpenAI 兼容端点',
-    defaultModelId: 'doubao-seed-2.0-pro',
-    keyUrl: 'https://console.volcengine.com/ark',
-    provider: {
-      name: 'volc',
-      apiKeyEnv: 'VOLC_API_KEY',
-      baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-      protocol: 'openai',
-      capabilities: {
-        cacheControl: false,
-        stripParams: [],
-        toolJsonBug: false,
-        prefixCache: 'none',
-        prefixCompletion: false,
-      },
-      thinking: 'enabled',
-      maxTokens: 32_768,
-      // 方舟模型以控制台接入点为准——探测（/v3/models）能拉到真实列表，
-      // 下表仅兜底推荐，型号随方舟发布更新。
-      models: [
-        {
-          id: 'doubao-seed-2.0-pro',
-          description: '豆包旗舰（以方舟控制台接入点为准）',
-          contextWindow: 262_144,
-          maxTokens: 32_768,
-          reasoningEffort: 'high',
-          tier: 'strong',
-        },
-        {
-          id: 'doubao-seed-2.0-flash',
-          description: '豆包快速档：低延迟轻量任务',
-          contextWindow: 131_072,
-          maxTokens: 16_384,
-          reasoningEffort: 'medium',
-          tier: 'cheap',
-        },
-      ],
-      unsupported: [],
-    },
-  },
+  ...VOLC_PRESETS,
   // 阶跃星辰 StepFun —— 官方开放平台，OpenAI 兼容端点（/v1/chat/completions）。
   // 2026-09-23 接入，规格与定价取自官方文档 platform.stepfun.com（模型页 + 定价页）。
   // 推理强度走 reasoning_effort（low/medium/high 三档，无 max）——档位映射声明在
@@ -1028,6 +1027,7 @@ export const PROVIDER_PRESETS: Record<ProviderPresetKey, ProviderPreset> = {
           reasoningEffort: 'high',
           tier: 'strong',
           supportsVision: true,
+          supportsVideo: true, // 官方：原生文本/图片/视频输入（video URL / Base64 / stepfile://）
           // 官方定价（元 / 1M tokens）：输入 7 / 缓存命中 0.35 / 输出 20
           pricing: { input: 7, output: 20, cacheRead: 0.35, cacheWrite: 7 },
         },

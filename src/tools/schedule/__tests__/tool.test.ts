@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CronScheduler, setActiveScheduler } from '../../../server/cron-scheduler.js'
+import { CronScheduler, setActiveScheduler, setUnattendedAutomationGate } from '../../../server/cron-scheduler.js'
 import { SCHEDULE_CREATE_TOOL, SCHEDULE_LIST_TOOL, SCHEDULE_DELETE_TOOL } from '../tool.js'
 
 // schedule 工具测试：真实 CronScheduler 实例（schedulePath 指向 /tmp 临时
@@ -77,6 +77,43 @@ test('schedule_create: 缺 prompt 返回「输入不合法」', async () => {
   const r = await run(SCHEDULE_CREATE_TOOL, { trigger: { type: 'interval', spec: '1000' } })
   assert.ok(r.content.startsWith('输入不合法：'), r.content)
   assert.equal(scheduler.list().length, 0)
+})
+
+// 回归（2026-09-24）：Pro 门原先只长在 HTTP 路由（schedule-routes 的
+// wantsUnattended），而 agent 的 schedule_create 直接调 CronScheduler.add，
+// 非 Pro 环境下模型能自建无人值守任务。工具层补上同口径判定。
+test('schedule_create: Pro 门关闭时拒绝无人值守创建，always-review 放行', async () => {
+  setUnattendedAutomationGate(() => false)
+  try {
+    const denied = await run(SCHEDULE_CREATE_TOOL, {
+      prompt: 'x', trigger: { type: 'interval', spec: '3600000' }, reviewPolicy: 'auto-proceed',
+    })
+    assert.match(denied.content, /pro_required/, denied.content)
+    assert.equal(scheduler.list().length, 0, '被拒时不得落任务')
+
+    // 含 computer_use 白名单同样归「无人值守自动化」
+    const denied2 = await run(SCHEDULE_CREATE_TOOL, {
+      prompt: 'x', trigger: { type: 'interval', spec: '3600000' }, allowedTools: ['computer_use'],
+    })
+    assert.match(denied2.content, /pro_required/, denied2.content)
+    assert.equal(scheduler.list().length, 0)
+
+    // always-review + 不含 computer_use：不属于无人值守，放行
+    const ok = await run(SCHEDULE_CREATE_TOOL, {
+      prompt: 'x', trigger: { type: 'interval', spec: '3600000' }, reviewPolicy: 'always-review',
+    })
+    assert.ok(ok.content.includes('定时任务已创建'), ok.content)
+    assert.equal(scheduler.list().length, 1)
+  } finally {
+    setUnattendedAutomationGate(undefined)
+  }
+})
+
+test('schedule_create: 门未注入（CLI/测试缺省）时不拦截', async () => {
+  const r = await run(SCHEDULE_CREATE_TOOL, {
+    prompt: 'x', trigger: { type: 'interval', spec: '3600000' }, reviewPolicy: 'auto-proceed',
+  })
+  assert.ok(r.content.includes('定时任务已创建'), r.content)
 })
 
 test('schedule_list: 空表返回提示', async () => {

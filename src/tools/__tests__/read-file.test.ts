@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { readFilePayload } from '../read-file.js'
+import { computeModelReadCap } from '../model-read-cap.js'
 
 describe('readFilePayload', () => {
   let dir: string
@@ -95,6 +96,33 @@ describe('readFilePayload', () => {
     const payload = await readFilePayload(dir, { filePath: 'src/medium-large.ts' })
     assert.ok(payload.modelContent.includes('PARTIAL view'), 'should use PARTIAL view for large source')
     assert.ok(payload.modelContent.includes('const val_0'), 'should contain first line')
+  })
+
+  it('小窗口下超 cap 的 full-with-hint 文件应给连续页与导航，而不是头尾碎片', async () => {
+    // 回归（2026-09-24）：PARTIAL 门是 max(80KB, cap)，所以 <500K 的窗口里静态门
+    // 是唯一裁决者。200K 窗口下 70KB 文件走 full-with-hint → truncateContent 头尾
+    // 拼接（丢中间且无导航），而 90KB 文件走 partial → 连续页 + 导航：越超预算形态
+    // 反而越好。视图构造应与 partial 路径统一。
+    mkdirSync(join(dir, 'src'), { recursive: true })
+    const lines = Array.from({ length: 1100 }, (_, i) => `const v_${i} = ${i}; // ${'x'.repeat(45)}`)
+    const content = lines.join('\n')
+    assert.ok(
+      content.length > 20_000 && content.length < 80 * 1024,
+      `夹具须落在 (SOURCE_SMALL_BYTES 20KB, SOURCE_LARGE_BYTES 80KB) 内（实得 ${content.length}）`,
+    )
+    writeFileSync(join(dir, 'src/band.ts'), content, 'utf-8')
+
+    const cap = computeModelReadCap({ contextWindow: 200_000 })
+    assert.ok(content.length > cap.maxChars, `夹具内容须超该窗口 cap（cap=${cap.maxChars}, content=${content.length}）`)
+
+    const payload = await readFilePayload(dir, { filePath: 'src/band.ts', modelCap: cap })
+
+    assert.doesNotMatch(
+      payload.modelContent,
+      /truncated, use offset\/limit/,
+      '不该是「头丢尾留」的拼接碎片——它既不连续也不教模型怎么继续读',
+    )
+    assert.match(payload.modelContent, /To read more:/, '应给连续页/骨架的导航提示')
   })
 
   it('allows files >100KB when offset/limit specified', async () => {
@@ -385,6 +413,58 @@ describe('readCapOverride (2026-07-24 worker max-turns 诊断)', () => {
     assert.match(result.content, /offset=1, limit=200/, '必须指向从头精读而非跳过已"看过"的部分')
   })
 
+  // 2026-09-23 回归：decideReadPolicy 在单文件路径上激活（ea909fd18）后，主会话读
+  // >80KB 源文件也走了 partial 分支——该分支无条件折叠骨架，于是 1M 窗口下模型
+  // 拿到的是「只有签名、函数体全丢」的 ~12K 骨架，哪怕 cap 装得下 120K 正文。
+  it('主会话读 >80KB 且 cap 装得下的源文件：返回正文而非骨架', async () => {
+    const { READ_FILE_TOOL } = await import('../read-file.js')
+    // 实测 111,780 字节（~109KB）：同时越过 SOURCE_LARGE_BYTES(80KB) 与历史硬门
+    // MAX_TOOL_INPUT_BYTES(100KB)，但在 1M 窗口 readCap(120K chars) 之内——正是
+    // 「静态字节门 vs 窗口预算」不一致会掐住的那个区间。
+    const src = Array.from({ length: 1500 }, (_, i) =>
+      `export function wide${i}(input: string): string {\n  return input + '${i}'\n}\n`,
+    ).join('')
+    assert.ok(src.length > 100 * 1024, `夹具必须越过历史硬门（实得 ${src.length}）`)
+    assert.ok(src.length < 120_000, `夹具必须落在 1M 窗口预算内（实得 ${src.length}）`)
+    writeFileSync(join(dir, 'src', 'wide.ts'), src, 'utf-8')
+
+    const result = await READ_FILE_TOOL.execute({
+      input: { file_path: 'src/wide.ts' },
+      toolUseId: 'test',
+      cwd: dir,
+      contextWindow: 1_000_000,
+      sessionId: `wide-a-${Date.now()}`,
+    })
+    assert.ok(!result.isError)
+    assert.doesNotMatch(result.content, /── SKELETON view of/, 'cap 装得下就不该剥正文')
+    assert.doesNotMatch(result.content, /── PARTIAL view of/, '预算内直接全文，不走 partial 判定')
+    assert.match(result.content, /return input \+ '1499'/, '末尾函数体必须在')
+  })
+
+  it('主会话读 >cap 的大源文件：给连续正文页，不给剥离正文的签名骨架', async () => {
+    const { READ_FILE_TOOL } = await import('../read-file.js')
+    // ~144KB：超过 1M 窗口 readCap(120K chars)，必须截断——但截正文页而非折骨架
+    const src = Array.from({ length: 2400 }, (_, i) =>
+      `export function giant${i}(input: string): string {\n  return input + '${i}'\n}\n`,
+    ).join('')
+    writeFileSync(join(dir, 'src', 'giant.ts'), src, 'utf-8')
+
+    const result = await READ_FILE_TOOL.execute({
+      input: { file_path: 'src/giant.ts' },
+      toolUseId: 'test',
+      cwd: dir,
+      contextWindow: 1_000_000,
+      sessionId: `giant-a-${Date.now()}`,
+    })
+    assert.ok(!result.isError)
+    assert.match(result.content, /── PARTIAL view of/, '应为正文页')
+    assert.doesNotMatch(result.content, /── SKELETON view of/, '不得剥掉函数体')
+    assert.ok(
+      result.content.length > 100_000,
+      `正文页应接近 cap（实得 ${result.content.length} 字符）`,
+    )
+  })
+
   it('override 不影响显式 offset/limit 精读', async () => {
     const { READ_FILE_TOOL } = await import('../read-file.js')
     const result = await READ_FILE_TOOL.execute({
@@ -398,5 +478,40 @@ describe('readCapOverride (2026-07-24 worker max-turns 诊断)', () => {
     assert.ok(!result.isError)
     assert.match(result.content, /handler0/)
     assert.doesNotMatch(result.content, /── PARTIAL view of/)
+  })
+})
+
+// 2026-09-23: 日志类豁免 read_file 硬门后，必须给出 head/tail preview 而不是
+// "File too large" —— 边界由 read-policy 的 MAX_LOG_PREVIEW_BYTES(2MB) 兜住。
+describe('read_file 大日志豁免硬门', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'rivet-log-guard-'))
+    mkdirSync(join(dir, 'logs'), { recursive: true })
+  })
+
+  afterEach(() => {
+    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('超 1M 窗口 cap 的日志给 head/tail preview，不是 File too large', async () => {
+    const { READ_FILE_TOOL } = await import('../read-file.js')
+    const lines = Array.from({ length: 2000 }, (_, i) => `2026-09-23 10:00:00 INFO line ${i} ${'x'.repeat(60)}`)
+    const body = lines.join('\n')
+    writeFileSync(join(dir, 'logs', 'app.log'), body, 'utf-8')
+    assert.ok(body.length > 120_000, `夹具必须超 1M 窗口 cap（实得 ${body.length}）`)
+
+    const result = await READ_FILE_TOOL.execute({
+      input: { file_path: 'logs/app.log' },
+      toolUseId: 'test',
+      cwd: dir,
+      contextWindow: 1_000_000,
+      sessionId: `log-guard-${Date.now()}`,
+    })
+    assert.ok(!result.isError, `不得报错（实得：${result.content.slice(0, 160)}）`)
+    assert.match(result.content, /looks like a log\/JSONL output file/, '应给 preview 头部说明')
+    assert.match(result.content, /lines omitted/, '头尾之间应有省略标记')
+    assert.doesNotMatch(result.content, /File too large/)
   })
 })

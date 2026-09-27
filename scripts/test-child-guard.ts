@@ -22,6 +22,12 @@
  *  3. **汇总完整性 fail-closed**：进程退出却没见到 `ℹ tests` 行 = 什么都没验证，判非零。
  *     这一条把"核对报告条数"从人的归因习惯（见
  *     docs/analysis/2026-08-02-测试静默少跑仍报通过.md 的行动项）变成机器的闸。
+ *  4. **进程组收场**（2026-09-24 补）：批次自成进程组（`detached: true`），看门狗与
+ *     信号收场都按**组**杀。只 kill 直接子进程会漏掉**孙进程**——测试自己 spawn 的
+ *     长驻子进程（如 `test-runner-flags` 的 hang fixture runner）在祖父被杀后
+ *     reparent 到 init 永久存活：实测机器上攒下 21 个 PPID=1、存活 11h~3天7h 的孤儿。
+ *     第 4 条与 fixture 自带的寿命上限互为兜底：前者管「有人来得及杀」，后者管
+ *     「整棵树被 SIGKILL 端掉、没人来得及」（见 test-runner-flags.test.ts 的 8s 自毁）。
  *
  * 汇总已出现但进程不退时（句柄未释放）**不判失败**：测试确实跑完了，看门狗只负责
  * 收尾，退出码以汇总里的 fail 计数为准——否则等于把 flag 的过度自信换成过度悲观。
@@ -98,7 +104,35 @@ export function runGuardedChild(opts: GuardOptions): Promise<GuardedResult> {
       env: opts.env ?? process.env,
       cwd: opts.cwd,
       shell: false,
+      windowsHide: true,
+      // 让批次自成**进程组**：收场时按组杀，才能连带带走批次的子进程。
+      // 只 kill 直接子进程是不够的——测试自己 spawn 的孙进程（如
+      // test-runner-flags 的 hang fixture runner）会在祖父被杀后 reparent 到 init
+      // 永久存活：2026-09-24 实测机器上攒下 21 个 PPID=1、存活 11h~3天7h 的孤儿。
+      // 这道防线的前提是「有人来得及杀」；若整棵树被 SIGKILL 端掉，由 fixture 自带
+      // 的寿命上限兜底（见 test-runner-flags.test.ts 的 fixture 自毁定时器）。
+      detached: true,
     })
+
+    /**
+     * 杀**整个进程组**（批次 + 它 spawn 的子进程）；组已不存在时退回杀进程本身。
+     *
+     * `detached: true` 让批次成为新组的组长（pgid === child.pid），于是 `-pid`
+     * 指向整组——这是「祖父被收场时孙进程不留孤儿」的唯一手段。
+     */
+    const killTree = (sig: NodeJS.Signals): void => {
+      const pid = child.pid
+      if (pid === undefined) return
+      try {
+        process.kill(-pid, sig)
+      } catch {
+        try {
+          child.kill(sig)
+        } catch {
+          /* 已经退出了 */
+        }
+      }
+    }
 
     let tail = ''
     let settled = false
@@ -140,7 +174,7 @@ export function runGuardedChild(opts: GuardOptions): Promise<GuardedResult> {
       if (idleTimer !== null) clearTimeout(idleTimer)
       idleTimer = setTimeout(() => {
         result.killed = 'idle'
-        child.kill('SIGKILL')
+        killTree('SIGKILL')
       }, idleMs)
     }
 
@@ -169,7 +203,7 @@ export function runGuardedChild(opts: GuardOptions): Promise<GuardedResult> {
     }
 
     function onSignal(sig: NodeJS.Signals): void {
-      child.kill(sig)
+      killTree(sig)
     }
 
     child.stdout?.on('data', consume)
@@ -178,7 +212,7 @@ export function runGuardedChild(opts: GuardOptions): Promise<GuardedResult> {
 
     hardTimer = setTimeout(() => {
       result.killed = 'hard'
-      child.kill('SIGKILL')
+      killTree('SIGKILL')
     }, hardMs)
     armIdle()
 

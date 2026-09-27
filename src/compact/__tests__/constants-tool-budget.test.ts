@@ -28,7 +28,11 @@ describe('toolTypeBudgets', () => {
 
     assert.equal(b64k['read_file']!.perCall, 6_400)
     assert.equal(b200k['read_file']!.perCall, 20_000)
-    assert.equal(b1m['read_file']!.perCall, 20_000)
+    // 2026-09-23: clamp raised 20K → 40K tokens (summarizeAfter 30K → 60K) so the
+    // per-call read cap (120K chars = 30K tokens on a 1M window) actually reaches
+    // the model instead of being cut in half by this layer.
+    assert.equal(b1m['read_file']!.perCall, 40_000)
+    assert.equal(b1m['read_file']!.summarizeAfter, 60_000)
   })
 })
 

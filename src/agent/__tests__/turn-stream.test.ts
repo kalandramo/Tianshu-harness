@@ -80,15 +80,27 @@ describe('TurnStreamController', () => {
     assert.equal(turnCaches[0]?.usage.cache_read_input_tokens, 70)
   })
 
-  it('forwards onImageStripped to the caller（剥图提示链路的中间段）', async () => {
+  it('forwards onImageStripped to the caller + 持久化钩子（唯一 blame 判定在钩子实现里）', async () => {
     const client: StreamClient = {
       stream: mock.fn(async (_request: OaiChatRequest, cb: StreamCallbacks) => {
-        cb.onImageStripped?.({ removedCount: 2 })
+        cb.onImageStripped?.({ removedCount: 2, uniqueUrlCount: 1 })
         cb.onStopReason('end_turn', {})
       }),
     }
-    const { controller } = makeController(client)
-    const stripped: Array<{ removedCount: number }> = []
+    const persisted: Array<{ removedCount: number; uniqueUrlCount?: number }> = []
+    const controller = new TurnStreamController({
+      client,
+      abortSignal: new AbortController().signal,
+      getStreamedTextLength: () => 0,
+      appendStreamedText: () => {},
+      getLastPrewarmAt: () => 0,
+      setLastPrewarmAt: () => {},
+      maybePrewarm: () => {},
+      addUsage: () => {},
+      recordTurnCache: () => {},
+      persistStrippedImages: info => { persisted.push(info) },
+    })
+    const stripped: Array<{ removedCount: number; uniqueUrlCount?: number }> = []
 
     await controller.streamTurn({
       request,
@@ -103,7 +115,49 @@ describe('TurnStreamController', () => {
       },
     })
 
-    assert.deepEqual(stripped, [{ removedCount: 2 }], '剥图事件必须到达 agent 层')
+    assert.deepEqual(
+      persisted,
+      [{ removedCount: 2, uniqueUrlCount: 1 }],
+      '持久化钩子必须先拿到 uniqueUrlCount（唯一 blame 才写历史）',
+    )
+    assert.deepEqual(stripped, [{ removedCount: 2, uniqueUrlCount: 1 }], '剥图事件必须到达 agent 层')
+  })
+
+  it('持久化钩子抛错不得阻断剥图事件（best-effort）', async () => {
+    const client: StreamClient = {
+      stream: mock.fn(async (_request: OaiChatRequest, cb: StreamCallbacks) => {
+        cb.onImageStripped?.({ removedCount: 1, uniqueUrlCount: 1 })
+        cb.onStopReason('end_turn', {})
+      }),
+    }
+    const controller = new TurnStreamController({
+      client,
+      abortSignal: new AbortController().signal,
+      getStreamedTextLength: () => 0,
+      appendStreamedText: () => {},
+      getLastPrewarmAt: () => 0,
+      setLastPrewarmAt: () => {},
+      maybePrewarm: () => {},
+      addUsage: () => {},
+      recordTurnCache: () => {},
+      persistStrippedImages: () => { throw new Error('disk full') },
+    })
+    const stripped: number[] = []
+
+    await controller.streamTurn({
+      request,
+      turn: 1,
+      lastTurnTextFingerprint: '',
+      callbacks: {
+        onTextDelta: () => {},
+        onThinkingDelta: () => {},
+        onToolUse: () => {},
+        onError: () => {},
+        onImageStripped: info => { stripped.push(info.removedCount) },
+      },
+    })
+
+    assert.deepEqual(stripped, [1], '持久化失败不许把 UI 提示一起吞掉')
   })
 
   it('forwards body-guard notices to the agent layer (degraded body must be visible)', async () => {

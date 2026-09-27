@@ -30,13 +30,28 @@ describe('buildSystemPrompt', () => {
     assert.ok(prompt.includes('</tool-usage>'))
   })
 
-  it('可读性校准（回流 main 634af35bb）：散文纪律收窄到交付报告 + 面向阅读回复的分点引导', () => {
+  it('selects reader-facing structure without imposing completion headings', () => {
     const prompt = buildSystemPrompt({ tools: [] })
-    // 2026-09-05 可读性校准：交付报告散文纪律收窄 + 面向阅读回复的主动分点
-    // （用户截图反馈模型回复不分点不易读）。两个方向的措辞都必须有落点。
-    assert.ok(prompt.includes('交付报告不用列表能说的用散文'), '散文纪律必须收窄到交付报告')
-    assert.ok(prompt.includes('面向阅读的回复'), '面向阅读回复的分点引导必须有落点')
-    assert.ok(prompt.includes('主动分点'), '分点引导必须落在输出纪律')
+    const delivery = prompt.match(/<delivery-contract>([\s\S]*?)<\/delivery-contract>/)![1]!
+    assert.ok(delivery.includes('先回答当前问题'), '先回答用户关心的结果')
+    for (const rule of ['解释因果用短段落', '并列事项用 markdown 列表', '执行顺序用编号', '比较或映射用表格']) {
+      assert.ok(delivery.includes(rule), `信息关系应有对应表达形式：${rule}`)
+    }
+    assert.ok(delivery.includes('只有一个简单结论时直接回答'), '简单回答不强制分栏')
+    assert.ok(delivery.includes('每段或每项围绕一个主要意思'), '分点不能只是给长段落加圆点')
+    assert.ok(delivery.includes('不要求固定标题'), '必填信息不等于固定栏目')
+    for (const retired of ['固定四项', '### 做了什么', '### 效果预期', '### 过程发现', '### 后续建议', '交付四项']) {
+      assert.ok(!prompt.includes(retired), `旧模板不得从其他段落回流：${retired}`)
+    }
+    assert.ok(delivery.includes('没有额外建议时直接结束'), '不为填栏目追加建议')
+  })
+
+  it('keeps commit facts after the result and discloses incomplete delivery honestly', () => {
+    const prompt = buildSystemPrompt({ tools: [] })
+    assert.ok(prompt.includes('已提交的代码任务随后给「已提交：<短 hash> <message 首行>」'))
+    assert.ok(prompt.includes('涉及文件及改动性质'), '保留可核实的文件变更范围')
+    assert.ok(prompt.includes('未提交、降级、部分交付照实说'), '无提交/降级时不得编造')
+    assert.ok(prompt.includes('不要让提交记录或文件清单代替结果说明'))
   })
 
   it('teaches parallel fan-out of independent探索 tools', () => {
@@ -121,13 +136,29 @@ describe('buildSystemPrompt', () => {
     assert.ok(prompt.includes('所有层的入口'), 'grep 所有层入口的方法必须保留')
   })
 
+  it('evidence-scope carries the field-semantics discipline (字段语义纪律，2026-09-25)', () => {
+    const prompt = buildSystemPrompt({ tools: [] })
+    // 补此条的事故形状：同一个会话里三次把字段读成它名字暗示的东西——
+    //   ① cache-log 的 `injected` 读成「本轮发生了注入」，实为**历史 SR 消息累计条数**
+    //      （loop-factory.ts 里遍历 messages 计数）；
+    //   ② `wireDiverged.prevCount/newCount` 读成**工具数**，实为 **messages 条数**
+    //      （openai-client.ts 里 sigs = messages.map(...)）；
+    //   ③ 用「29 低命中轮 × 14 injected 轮」的并列计数代替直接指示字段。
+    // 三者共同点：没读构造点 / 没看兄弟字段。已有的 lossy-observation-discipline 只管
+    // 「不得推负向结论」，而这三处都是**正向语义断言**，方向不匹配，拦不住。
+    assert.ok(prompt.includes('字段名不是语义'), '应含"字段名不是语义"内核')
+    assert.ok(prompt.includes('赋值点'), '定位赋值点的方法必须保留')
+    assert.ok(prompt.includes('兄弟字段'), '用兄弟字段消歧的方法必须保留')
+    assert.ok(prompt.includes('邻近计数'), '禁止拿邻近计数当证据的内核必须保留')
+  })
+
   it('delivery-contract carries the consolidated delivery discipline', () => {
     const prompt = buildSystemPrompt({ tools: [] })
     // no-fabricated-tests 门禁 + output-style 已并入 <delivery-contract>。
     assert.ok(prompt.includes('<delivery-contract>'), '应有统一的交付契约块')
     assert.ok(prompt.includes('0 passed 当成功'), '诚实门禁内核（未运行=未验证）必须有落点')
     assert.ok(prompt.includes('涉及文件'), '收束必须包含commit+文件信息')
-    assert.ok(prompt.includes('后续建议'), '收束必须包含后续建议段落')
+    assert.ok(prompt.includes('失败、未完成和未验证不得因精简而省略'), '精简不能省略不利事实')
     assert.ok(!prompt.includes('自我设限'), '"NEVER narrate session limits"条已于 2026-07-19 应用户要求整条移除')
   })
 
@@ -211,8 +242,8 @@ describe('buildSystemPrompt', () => {
   it('includes task completion reporting requirements', () => {
     const prompt = buildSystemPrompt({ tools: [] })
     assert.ok(prompt.includes('涉及文件'), '收束应有 commit + 文件信息')
-    assert.ok(prompt.includes('效果预期'), '收束应提示可写效果预期但不必强制')
-    assert.ok(prompt.includes('后续建议'), '收束必须包含后续建议段落')
+    assert.ok(prompt.includes('改动结果、验证状态、遗留事项及设计偏差（如有）'), '必填信息不随栏目变化而丢失')
+    assert.ok(prompt.includes('失败、未完成和未验证不得因精简而省略'), '精简不能省略不利事实')
   })
 
   it('includes only a short manifest entry for sensitive knowledge domains', () => {

@@ -475,6 +475,39 @@ describe('session tool_result stream coalescing', () => {
     assert.equal(manager.getSession(session.id)?.status, 'completed')
   })
 
+  it('已收尾 run 的迟到审批直接拒绝：不登记 pending、不架审批超时定时器', async () => {
+    // 这条锁定 onApprovalRequired 的收窄守卫（isLiveAttempt）：生命周期仍在
+    // （会话没归档/删除），但本次 run 已经 settle——旧语义下 requestApproval 照常
+    // 挂 pending + 起超时定时器，而没有任何 run 会回来消费它。
+    const persistence = new MemoryPersistence()
+    const { manager, agent, session } = setup({ persistence, approvalTimeoutMs: 20 })
+    const callbacks = agent.callbacks!
+    const internal = (manager as unknown as {
+      sessions: Map<string, { pending: Map<string, unknown> }>
+    }).sessions.get(session.id)!
+
+    agent.finish(0)
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(manager.getSession(session.id)?.status, 'completed')
+    const baseline = manager.getEvents(session.id, 0)!.lastSeq
+
+    const approval = await Promise.race([
+      callbacks.onApprovalRequired('late-after-settle', 'bash', { command: 'rm x' }),
+      Promise.resolve('still-pending' as const),
+    ])
+    assert.deepEqual(approval, { approved: false }, '陈旧 run 的审批必须是立即的 deny，不能挂起等超时')
+    assert.equal(internal.pending.size, 0)
+    // 等过审批超时窗口：定时器若被架起来，此刻会补一条 approval_resolved{timeout}。
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    assert.equal(internal.pending.size, 0)
+    assert.deepEqual(
+      manager.getEvents(session.id, baseline)!.events.filter((e) => e.type === 'approval_required'),
+      [],
+      '不进 requestApproval 就不该留下 approval_required 事件',
+    )
+  })
+
+
   it('fences old plan mode, submitted, draft timer, and async read completion from a new run', async () => {
     const { manager, agent, session, scheduler } = setup()
     const oldCallbacks = agent.callbackRuns[0]!

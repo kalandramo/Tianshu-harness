@@ -414,6 +414,106 @@ describe('probeProvider', () => {
   })
 })
 
+// issue #272：火山方舟 Agent Plan /api/plan/v3 没有 GET /models（404 会把
+// 「能对话的 Key」误判成 baseUrl 填错）。命中 hasModelsListEndpoint 的端点跳过
+// 列表拉取，直接用 probeModel 做最小补全。
+describe('endpoints without GET /models (issue #272)', () => {
+  let server: { baseUrl: string; close: () => Promise<void> } | undefined
+
+  after(async () => {
+    await server?.close()
+  })
+
+  it('skips /models for the volc-plan preset and verifies via a minimal completion', async () => {
+    const seen: string[] = []
+    server = await startServer((req, res) => {
+      seen.push(`${req.method} ${req.url}`)
+      if (req.url === '/v1/chat/completions') {
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        res.end(sse([JSON.stringify({ choices: [{ delta: { content: 'hi' }, finish_reason: 'stop' }] })]))
+        return
+      }
+      res.writeHead(404, { 'content-type': 'application/json' })
+      res.end('{"error":"not found"}')
+    })
+
+    const report = await probeProvider({
+      baseUrl: server.baseUrl,
+      apiKey: 'sk-x',
+      providerName: 'volc-plan',
+      probeModel: 'ark-code-latest',
+    })
+    assert.equal(report.modelsUnavailable, true)
+    assert.equal(report.modelsOk, false)
+    assert.equal(report.completionOk, true)
+    assert.equal(report.probedModel, 'ark-code-latest')
+    assert.deepEqual(report.errors, [], '跳过列表后不得残留 404 噪音')
+    assert.equal(seen.some(s => s.includes('/models')), false, `不得请求 /models：${seen.join(', ')}`)
+    await server.close()
+    server = undefined
+  })
+
+  it('official Agent Plan base URL also skips /models for custom providers', async () => {
+    const report = await probeProvider({
+      baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+      providerName: 'my-plan',
+      probeModel: 'ark-code-latest',
+      skipCompletion: true,
+    })
+    assert.equal(report.modelsUnavailable, true)
+    assert.deepEqual(report.errors, ['Endpoint exposes no GET /models list — provide a model id to run a completion probe.'])
+  })
+
+  it('carries a structured completionError when the fallback completion fails', async () => {
+    server = await startServer((_req, res) => {
+      res.writeHead(404, { 'content-type': 'application/json' })
+      res.end('{"error":{"code":"InvalidEndpointOrModel.NotFound","message":"model not found"}}')
+    })
+
+    const report = await probeProvider({
+      baseUrl: server.baseUrl,
+      apiKey: 'sk-x',
+      providerName: 'volc-plan',
+      probeModel: 'not-a-model',
+    })
+    assert.equal(report.completionOk, false)
+    assert.equal(report.completionError?.code, 'http-404')
+    assert.equal(report.completionError?.status, 404)
+    assert.ok(report.completionError?.message.includes('404'))
+    await server.close()
+    server = undefined
+  })
+
+  // 火山方舟 Messages 端点只认 Authorization: Bearer（x-api-key 401）；host 规则
+  // 让预设与自定义 provider 都拿到同一鉴权形态。
+  it('Anthropic 面按 host 规则发 Authorization: Bearer（火山方舟只认 Bearer）', async () => {
+    const originalFetch = globalThis.fetch
+    let captured: Record<string, string> = {}
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      captured = (init?.headers as Record<string, string>) ?? {}
+      return new Response(
+        'data: {"type":"message_start","message":{"usage":{"input_tokens":1}}}\n\ndata: [DONE]\n\n',
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      )
+    }) as typeof fetch
+    try {
+      const report = await probeProvider({
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/plan',
+        apiKey: 'sk-plan',
+        providerName: 'volc-plan-anthropic',
+        protocol: 'anthropic',
+        probeModel: 'ark-code-latest',
+      })
+      assert.equal(report.completionOk, true)
+      assert.equal(report.modelsUnavailable, true)
+      assert.equal(captured['authorization'], 'Bearer sk-plan')
+      assert.equal(captured['x-api-key'], undefined, '两种鉴权头不得同发')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})
+
 describe('vision real-test (视觉真测)', () => {
   let server: { baseUrl: string; close: () => Promise<void> } | undefined
 

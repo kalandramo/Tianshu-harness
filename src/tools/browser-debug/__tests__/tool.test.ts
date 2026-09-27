@@ -1,5 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   createBrowserDebugTool,
   isLoopbackHost,
@@ -7,7 +10,8 @@ import {
   isLoopbackCdpUrl,
   isCdpUrlAllowed,
 } from '../tool.js'
-import { __resetSessionForTest } from '../session.js'
+import { __resetSessionForTest, DEFAULT_SESSION_KEY } from '../session.js'
+import { defaultUserDataDir } from '../profiles.js'
 import type { BrowserDebugDriver, DriverEvents, DriverLaunchOptions } from '../driver.js'
 import type { ToolCallParams } from '../../types.js'
 import type { SaveArtifactInput } from '../../../artifact/store.js'
@@ -17,6 +21,9 @@ class FakeDriver implements BrowserDebugDriver {
   static lastLaunchOpts?: DriverLaunchOptions
   url = 'about:blank'
   closed = false
+  alive = true
+  /** 下一次 click 抛这个错（用于死亡恢复测试）；抛完自动清空。 */
+  failClickOnce: Error | null = null
   waitAborted = false
   calls: string[] = []
   private readonly events: DriverEvents
@@ -47,7 +54,13 @@ class FakeDriver implements BrowserDebugDriver {
   async snapshot(selector?: string) {
     return selector ? `snap:${selector}` : 'page body text'
   }
-  async click() {}
+  async click() {
+    if (this.failClickOnce) {
+      const err = this.failClickOnce
+      this.failClickOnce = null
+      throw err
+    }
+  }
   async type() { this.calls.push('type') }
   async press(selector: string | undefined, key: string) { this.calls.push(`press:${selector ?? '-'}:${key}`) }
   async selectOption(selector: string, value: string) { this.calls.push(`select:${selector}:${value}`); return [value] }
@@ -107,6 +120,7 @@ class FakeDriver implements BrowserDebugDriver {
   }
   pageUrls() { return this.pages ?? [this.url] }
   async bringToFront() {}
+  isAlive() { return this.alive }
   async close() {
     this.closed = true
   }
@@ -475,4 +489,125 @@ test('await_login ends the turn', async () => {
 test('tool is disabled by default, enabled via option', () => {
   assert.equal(createBrowserDebugTool().isEnabled(), false)
   assert.equal(createBrowserDebugTool({ enabled: true }).isEnabled(), true)
+})
+
+test('refusals carry errorKind=refused; missing url carries format_error', async () => {
+  __resetSessionForTest()
+  const tool = makeTool()
+
+  const host = await tool.execute(params({ action: 'open', url: 'https://example.com/' }))
+  assert.equal(host.isError, true)
+  assert.equal(host.errorKind, 'refused', '设计性拒绝必须结构化，不能落 unknown 全罚')
+
+  const proto = await tool.execute(params({ action: 'open', url: 'about:blank' }))
+  assert.equal(proto.isError, true)
+  assert.equal(proto.errorKind, 'refused')
+
+  const missing = await tool.execute(params({ action: 'open' }))
+  assert.equal(missing.isError, true)
+  assert.equal(missing.errorKind, 'format_error')
+})
+
+test('status reports liveness; dead session is rebuilt before the next action', async () => {
+  __resetSessionForTest()
+  const tool = makeTool()
+  await tool.execute(params({ action: 'open', url: 'http://localhost:3000/' }))
+  const first = FakeDriver.last!
+  first.alive = false
+
+  const status = await tool.execute(params({ action: 'status' }))
+  assert.match(status.content, /状态：已失效（下次页面操作会自动重建）/)
+
+  const evalRes = await tool.execute(params({ action: 'eval', expression: '1+1' }))
+  assert.equal(evalRes.isError, undefined)
+  assert.notEqual(FakeDriver.last, first, '死会话必须重建')
+  assert.equal(first.closed, true, '死 driver 必须被驱逐')
+  await tool.execute(params({ action: 'close' }))
+})
+
+test('death error during an action triggers one rebuild and retry', async () => {
+  __resetSessionForTest()
+  const tool = makeTool()
+  await tool.execute(params({ action: 'open', url: 'http://localhost:3000/' }))
+  const first = FakeDriver.last!
+  first.failClickOnce = new Error('page.click: Target page, context or browser has been closed')
+
+  const res = await tool.execute(params({ action: 'click', selector: 'button.plus' }))
+  assert.equal(res.isError, undefined, '一次死亡应被恢复，不应把错误回给模型')
+  assert.match(res.content, /已点击/)
+  assert.notEqual(FakeDriver.last, first, '必须重建 session 后重试')
+  assert.equal(first.closed, true, '死 driver 必须被驱逐')
+  await tool.execute(params({ action: 'close' }))
+})
+
+test('default profile dirs are isolated per sessionKey; __default__ keeps legacy', () => {
+  const legacy = defaultUserDataDir(DEFAULT_SESSION_KEY)
+  assert.match(legacy, /browser-debug-profile$/)
+
+  const a = defaultUserDataDir('session-a')
+  const b = defaultUserDataDir('session-b')
+  assert.notEqual(a, b, '不同 sessionKey 必须拿到不同 profile 目录')
+  assert.match(a, /browser-debug-profiles/)
+  assert.equal(defaultUserDataDir('session-a', true), legacy, 'shared_profile 回退共享目录')
+  const weird = defaultUserDataDir('含中文/斜杠的 key')
+  assert.match(weird, /browser-debug-profiles/)
+  assert.doesNotMatch(weird.split('/').pop()!, /[^\w.-]/, '目录名必须文件系统安全（中文/空格/斜杠已替换）')
+})
+
+test('per-session profile dirs are actually passed to the factory (RIVET_HOME hermetic)', async () => {
+  const prev = process.env.RIVET_HOME
+  const home = mkdtempSync(join(tmpdir(), 'rivet-bd-test-'))
+  process.env.RIVET_HOME = home
+  try {
+    __resetSessionForTest()
+    const dirs: string[] = []
+    const tool = createBrowserDebugTool({
+      enabled: true,
+      allowlist: () => [],
+      driverFactory: async (o: DriverLaunchOptions) => {
+        dirs.push(o.userDataDir)
+        return new FakeDriver(o.events)
+      },
+    })
+    await tool.execute(params({ action: 'open', url: 'http://localhost:3000/' }, { sessionId: 'worker-a' }))
+    await tool.execute(params({ action: 'open', url: 'http://localhost:3000/' }, { sessionId: 'worker-b' }))
+    assert.equal(dirs.length, 2)
+    assert.notEqual(dirs[0], dirs[1])
+    assert.match(dirs[0]!, /browser-debug-profiles/)
+    await tool.execute(params({ action: 'close' }, { sessionId: 'worker-a' }))
+    await tool.execute(params({ action: 'close' }, { sessionId: 'worker-b' }))
+  } finally {
+    if (prev === undefined) delete process.env.RIVET_HOME
+    else process.env.RIVET_HOME = prev
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('click timeout appends candidate elements and errorKind=timeout', async () => {
+  __resetSessionForTest()
+  class TimeoutDriver extends FakeDriver {
+    async click(): Promise<void> {
+      throw new Error("page.click: Timeout 10000ms exceeded. Call log: waiting for locator('button.plus-btn')")
+    }
+    async evaluate(): Promise<string> {
+      return JSON.stringify([{
+        selector: 'button.add', tag: 'button', role: null, text: '新增任务', ariaLabel: null,
+        placeholder: null, value: null, title: null, name: null, id: null, type: null,
+        disabled: false, visible: true,
+      }])
+    }
+  }
+  const tool = createBrowserDebugTool({
+    enabled: true,
+    allowlist: () => [],
+    userDataDir: () => '/tmp/test-browser-profile',
+    driverFactory: async (o: DriverLaunchOptions) => new TimeoutDriver(o.events),
+  })
+  await tool.execute(params({ action: 'open', url: 'http://localhost:3000/' }))
+  const res = await tool.execute(params({ action: 'click', selector: 'button.plus-btn' }))
+  assert.equal(res.isError, true)
+  assert.equal(res.errorKind, 'timeout')
+  assert.match(res.content, /当前页面可交互元素/)
+  assert.match(res.content, /新增任务/)
+  await tool.execute(params({ action: 'close' }))
 })

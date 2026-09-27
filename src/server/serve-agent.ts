@@ -9,6 +9,9 @@ import { createDelegationActivityMapper } from '../tools/worker-activity-stream.
 import type { DelegationActivity, DelegationIdentity } from '../tools/types.js'
 import type { DelegateWorkerInput, DelegateActivityUpdate, ManagedAgent, RuntimeSessionManager } from './session-manager.js'
 import { SessionPersist, getSessionDir } from '../agent/session-persist.js'
+import { captureGitBaselineAsync } from '../agent/git-baseline-async.js'
+import type { BaselineSnapshot } from '../agent/worktree-baseline.js'
+import { findRecentUnrecordedWritesAsync, formatDiskReconciliationNote, shouldReconcileDisk } from '../context/write-evidence-probe.js'
 import { runGateCompletion } from '../agent/gate-completion.js'
 import { memoryBackfillEnabled, runMemoryBackfill } from '../memory/backfill.js'
 import { restoreGoalTracker } from '../agent/goal-persist.js'
@@ -69,6 +72,7 @@ import {
   isModelSpecUsable,
   unconfiguredSpecMessage,
   restoreHistoryMessages,
+  describeRestore,
   buildDelegateSummary,
 } from './serve.js'
 
@@ -295,14 +299,69 @@ function resolveReviewGate(ctx: ServeContext): 'auto' | 'off' {
   return flag ? 'off' : 'auto'
 }
 
+/**
+ * 恢复收口的**唯一入口**：同步路径与桌面异步预取路径都从这里走。
+ *
+ * 异步预取（buildManagedAgentAsync）自己 loadOaiAsync 拿到 messages，此前那条路直接
+ * 写 `{ restored }`，于是模型已经通过结构化注入看到「结果未知」、UI 却收不到待确认
+ * 提示，转录水位检查也没跑——模型与观察者看到的事实不一致（P2）。抽成命名单元后这条
+ * 分支决策本身可被测试直接驱动，而不是只能靠读代码确认。
+ */
+export function resolveHistoryRestore(
+  persist: SessionPersist,
+  session: SessionContext,
+  prepared: Pick<PreparedSession, 'messages'> | undefined,
+  cwd: string | undefined,
+  expectedTranscriptWatermark: number | undefined,
+): HistoryRestoreInfo {
+  if (prepared) {
+    session.replaceMessages(prepared.messages)
+    return describeRestore(persist, prepared.messages.length, expectedTranscriptWatermark)
+  }
+  return restoreHistoryMessages(persist, session, cwd, expectedTranscriptWatermark)
+}
+
+interface PreparedSession {
+  persist: SessionPersist
+  messages: import('../api/oai-types.js').OaiMessage[]
+  baseline: BaselineSnapshot
+}
+
+export async function buildManagedAgentAsync(
+  args: Parameters<typeof buildManagedAgent>, signal?: AbortSignal, expectedTranscriptWatermark?: number,
+): Promise<import('./session-manager.js').ManagedAgent> {
+  const [ctx, cwd, sessionId, registry, approval, shared, reload, model, allowed] = args
+  signal?.throwIfAborted()
+  const persist = new SessionPersist(sessionId, cwd, {
+    recoveryStructuredTools: ctx.config.agent.recovery?.structuredTools,
+  })
+  const [messages, baseline] = await Promise.all([persist.loadOaiAsync(signal), captureGitBaselineAsync(cwd, signal)])
+  const meta = persist.loadMetadata()
+  if (messages.length && shouldReconcileDisk(meta)) {
+    const { writes, complete } = await findRecentUnrecordedWritesAsync(cwd, messages, {
+      sinceMs: meta.updatedAt ? meta.updatedAt - 600_000 : undefined, signal,
+    })
+    const note = formatDiskReconciliationNote(writes)
+    if (note) messages.push({ role: 'user', content: note })
+    if (!complete) messages.push({ role: 'system', content: 'Disk reconciliation is incomplete; verify existing work before repeating any external operation.' })
+  }
+  signal?.throwIfAborted()
+  return buildManagedAgent(ctx, cwd, sessionId, registry, approval, shared, reload, model, allowed, { persist, messages, baseline }, expectedTranscriptWatermark)
+}
+
 function buildSessionStores(
   ctx: ServeContext,
   cwd: string,
   sessionId: string,
   registry?: SessionRegistry,
   shared?: SharedRuntime,
+  prepared?: PreparedSession,
+  /** 观测（PLAN §4 第 2 步）：检查点转录水位，向下传给恢复路径做对齐观测。 */
+  expectedTranscriptWatermark?: number,
 ): SessionStores {
-  const persist = new SessionPersist(sessionId, cwd)
+  const persist = prepared?.persist ?? new SessionPersist(sessionId, cwd, {
+    recoveryStructuredTools: ctx.config.agent.recovery?.structuredTools,
+  })
   const claimStore = persist.createClaimStore()
   persist.injectDurableClaims(claimStore, cwd)
   for (const rule of loadProjectRules(cwd)) claimStore.propose(rule)
@@ -324,7 +383,7 @@ function buildSessionStores(
   const session = new SessionContext()
   // Restore prior conversation from disk (sidecar restart recovery).
   // Matches TUI bootstrap.ts:1461 — loadOai returns [] for new sessions.
-  const historyRestore = restoreHistoryMessages(persist, session, cwd)
+  const historyRestore = resolveHistoryRestore(persist, session, prepared, cwd, expectedTranscriptWatermark)
 
   // sidecar 工具装配——复用 bootstrap 的 createInteractiveToolRegistry，与 TUI 端
   // 共享一套装配链。Wave C 后所有工具（含 coordinator 依赖工具）均通过
@@ -382,6 +441,7 @@ function buildSessionStores(
     const restored = restoreGoalTracker(sessionDir, sessionId, { maxJudgeRuns: ctx.config.agent?.goal?.judge?.maxRuns })
     if (restored) refs.goalTrackerRef.current = restored
   } catch { /* non-fatal — start without a restored goal */ }
+  refs.preparedBaseline = prepared?.baseline
   const { registry: toolRegistry } = createInteractiveToolRegistry(refs, ctx.config, cwd)
 
   // 插件工具合入（2026-09-12 补齐 sidecar 装配缺口——此前桌面会话不加载插件，
@@ -442,7 +502,7 @@ function buildSessionStores(
   // 原地填入 refs；fallback 仅用于装配失败时不破坏 assembleAgentLoop 的 deps。
   const taskLedger = refs.taskLedger ?? createTaskLedger({ taskId: sessionId })
   const ownershipLedger = refs.ownershipLedger ?? createOwnershipLedger({
-    baseline: createWorktreeBaseline(captureGitBaseline(cwd)),
+    baseline: createWorktreeBaseline(prepared?.baseline ?? captureGitBaseline(cwd)),
     taskLedger,
   })
 
@@ -767,8 +827,11 @@ export function buildManagedAgent(
   reload?: () => ServeContext,
   preferredModelId?: string,
   allowedTools?: string[],
+  prepared?: PreparedSession,
+  /** 观测（PLAN §4 第 2 步）：检查点转录水位，向下传给恢复路径做对齐观测。 */
+  expectedTranscriptWatermark?: number,
 ): import('./session-manager.js').ManagedAgent {
-  const stores = buildSessionStores(ctx, cwd, sessionId, registry, shared)
+  const stores = buildSessionStores(ctx, cwd, sessionId, registry, shared, prepared, expectedTranscriptWatermark)
   // Register stores so the session-manager's goal methods can reach
   // refs.goalTrackerRef + sessionDir via resolveGoalHandles. Overwrites any
   // stale entry from a prior build of the same session (switchModel rebuild).
@@ -889,6 +952,32 @@ export function buildManagedAgent(
     // 停在上一个跑完的 run 上。
     getTotalUsage: () => agent.session.getTotalUsage(),
     getTurnCount: () => agent.session.getTurnCount(),
+    // 转录水位（PLAN §4 第 1 步）：必须在这里转发——buildManagedAgent 返回的是**手工
+    // 包装对象**，不是 AgentLoop 本身。只在 AgentLoop 上实现等于没接：管理器用的可选
+    // 调用 `agent.getTranscriptWatermark?.()` 会继续拿到 undefined，生产检查点依旧
+    // 缺水位（实测就是这个形状：新增测试只验了 AgentLoop，没覆盖真包装对象）。
+    getTranscriptWatermark: () => agent.getTranscriptWatermark(),
+    // 同一族补齐：管理器对这些面都是**可选调用**（`agent.X?.()`），漏转发不报错、
+    // 只静默 no-op。这四处（+resetAppendixBaseline）此前在包装对象里一个都没有，
+    // 于是桌面端：ask 模式退不出去、禅相位晋升失效、任务面板拿不到 job 注册表、
+    // 推理档位设置无效、附录基线重置落空。TUI 路径直接持有 AgentLoop，不受影响。
+    exitAskMode: () => agent.exitAskMode(),
+    promoteZen: (reason) => agent.promoteZen(reason),
+    setJobs: (jobs) => agent.setJobs(jobs),
+    setReasoningEffort: (effort) => agent.setReasoningEffort(effort),
+    resetAppendixBaseline: () => agent.config.promptEngine.resetAppendixBaseline(),
+    // 又一批同族漏转发（由 serve-agent-gate-wiring 的对账守卫抓出）：管理器对这些面
+    // 都是可选调用，而其中两个**没有替用通路**——
+    //   · setGoalTracker：同时同步 agent 字段（驱动 GoalContinuationController）与 refs 槽，
+    //     漏转发则工具闭包与续跑控制器看到的 tracker 不一致；
+    //   · getActivePlanFilePath：为 null 时桌面「起草中」实时视图直接断流（源码里已有记载）。
+    // 另三个（enterAskMode/enableTool/getGoalTracker）同样镜像 AgentLoop，getGoalTracker 本有
+    // goalHandles 兜底，一并转发以免守卫里留豁免名单。
+    enterAskMode: () => agent.enterAskMode(),
+    enableTool: (name) => agent.enableTool(name),
+    getActivePlanFilePath: () => agent.getActivePlanFilePath(),
+    getGoalTracker: () => agent.getGoalTracker(),
+    setGoalTracker: (tracker) => agent.setGoalTracker(tracker),
     getContextWindow: () => spec.model.contextWindow,
     getReasoningEffort: () => agent.getReasoningEffort(),
     // 识图桥真实状态（供桌面端准确显示，而非只看 config 有没有 visionModel 键）。
@@ -921,7 +1010,15 @@ export function buildManagedAgent(
     },
     // Wave L: 进程退出释放本 session 的 coordinator timer + in-flight worker
     // 句柄。abort() 仅中止当前 turn；shutdown() 是终结性操作。
+    flushPersistence: () => agent.drainPersistWrites(),
+    getRecoverySnapshot: () => ({
+      messages: agent.session.getMessages(),
+      frozen: agent.config.promptEngine.exportFrozenSnapshot(),
+      usage: agent.session.getTotalUsage(),
+    }),
     shutdown: async () => {
+      let persistenceError: unknown
+      try { await agent.drainPersistWrites() } catch (error) { persistenceError = error }
       // config 热载 watcher 是 AgentLoop 级句柄：sidecar 空闲回收/归档 agent 时必须
       // 显式 close，否则每次漏 2-3 个 FSWatcher 并经闭包钉住整个旧 AgentLoop 对象图。
       // （TUI switch 三路径已在 bootstrap 显式调 stop——此处补齐 serve 释放链。）
@@ -944,6 +1041,7 @@ export function buildManagedAgent(
         settled = false
       }
       shared?.sessions?.clearCoordinatorRef(sessionId)
+      if (persistenceError) throw persistenceError
       return settled
     },
     // I1: 桌面端议事会入口，直接评审 artifact 中的 council-plan-json。

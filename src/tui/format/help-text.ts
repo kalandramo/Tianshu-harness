@@ -140,6 +140,7 @@ export const HELP_TEXT = `Available commands:
 /fast — 解除禅模式，恢复全量工具面（/zen 的出口）
 /skill [list|install <name>|import <name>|<name>|off <name>|review|approve <name>|reject <name>] — List/load skills; install from .claude/skills; review drafts
 /diagram [list|<type>] — Generate a mermaid diagram skeleton (architecture|dataflow|sequence|flowchart|comparison|state)
+/new — 开新会话：重置上下文但不重启进程（项目记忆/配置/工作目录保留；旧会话存档，可 /resume 回访）
 /clear — Clear screen
 /update — Check and install the latest Rivet release
 /exit — Exit Rivet
@@ -152,7 +153,7 @@ Ctrl+P — 命令面板（模糊搜索全部命令与界面动作；Ctrl+Esc 被
 
 ⚠ 上下文占用直接影响 token 成本——尽早 /handoff 比触发压缩划算得多。
 
-  · 60% 以上 → 建议 /handoff 写交接文档后开新会话（交接自动注入，比续跑省前缀重建成本）
+  · 60% 以上 → 建议 /handoff 写交接文档后 /new 开新会话（交接自动注入，比续跑省前缀重建成本）
   · 70%-78% → 触发自动压缩，压缩本身 token 支出很高（整段历史重写一次）
   · 80% 以上 → 压缩 + 前缀缓存大概率碎裂，每轮 cache miss，成本数倍
   · 版本升级后请勿连接旧会话——提示词结构变化会让缓存整体碎裂

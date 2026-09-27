@@ -2,7 +2,7 @@ import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { TurnHeartbeat } from '../turn-heartbeat.js'
 import { wrapCallbacksWithHeartbeat } from '../turn-orchestrator.js'
-import { clearActivity, getLastActivity, touchActivity } from '../stall-observer.js'
+import { beginRun, clearActivity, finishRun, getLastActivity, touchActivity, withActivityRun } from '../stall-observer.js'
 import type { AgentCallbacks } from '../loop-types.js'
 
 function delay(ms: number): Promise<void> {
@@ -501,26 +501,47 @@ describe('wrapCallbacksWithHeartbeat', () => {
     hb.stop()
   })
 
-  it('markIdle survives the callback itself touching activity (session-manager append order)', () => {
-    // 集成顺序回归：session-manager 的 onTurnComplete 内 append turn_complete
-    // 事件并对所有事件无条件 touchActivity——若 markIdle 在 cb 之前打，
-    // 同一同步链里会被 touch 覆盖成 idle:false，sidecar/desktop 下
-    // 「交付后等用户 >150s 误报」修复永不生效（956564a83 遗留缺口）。
+  it('idle 置位后收尾链里的 touchActivity 不得把它拉回活跃（session-manager append 顺序）', () => {
+    // 集成顺序回归：session-manager 收尾是「先 append（对事件无条件 touchActivity）、
+    // 再 finishRun/markIdle 收口」。若顺序反过来，同一同步链里 idle 会被 touch 冲掉，
+    // 「交付后等用户 >150s 误报 stall」的修复永不生效。
+    //
+    // 2026-09-27 改：打 idle 的地点已从 wrapCallbacksWithHeartbeat.onTurnComplete
+    // 移到 session-manager 的 run 收尾（finishActivityRun）——那才是 run 真正结束、
+    // 会话进入等待态的时刻；wrapper 只管心跳打点。同时活动表改成 run 作用域模型
+    // （touchActivity 只在 beginRun/withActivityRun 的上下文里被采信），所以这里
+    // 必须先建 run 上下文，否则打的点会被合法忽略、断言测的是空气。
     const key = 'test-idle-order'
+    const generation = 'gen-idle-order'
     try {
-      touchActivity(key, 'test-setup')
-      const hb = new TurnHeartbeat({ silentMs: 10_000, repeatMs: 10_000, onHeartbeat: () => {} })
-      const wrapped = wrapCallbacksWithHeartbeat(
-        makeCallbacks(() => {
-          // 模拟 session-manager append('turn_complete')：回调内同步打点
-          touchActivity(key, 'evt:turn_complete')
-        }),
-        hb,
-        () => key,
-      )
-      wrapped.onTurnComplete({}, 1, true)
-      assert.equal(getLastActivity(key).idle, true, 'idle 标记必须在回调内 touchActivity 之后仍成立')
-      hb.stop()
+      beginRun(key, generation)
+      withActivityRun(key, generation, () => {
+        const hb = new TurnHeartbeat({ silentMs: 10_000, repeatMs: 10_000, onHeartbeat: () => {} })
+        const wrapped = wrapCallbacksWithHeartbeat(
+          makeCallbacks(() => {
+            // 模拟 session-manager append('turn_complete')：回调内同步打点
+            touchActivity(key, 'evt:turn_complete')
+          }),
+          hb,
+          () => key,
+        )
+        try {
+          wrapped.onTurnComplete({}, 1, true)
+          assert.equal(getLastActivity(key).idle, false, 'run 在跑时回调内的打点必须被采信（否则下面的断言没有意义）')
+          // 收尾顺序：append('done') 内部 touchActivity → finishRun 收口。
+          touchActivity(key, 'evt:done')
+          finishRun(key, generation)
+          assert.equal(getLastActivity(key).idle, true, 'idle 标记必须在收尾打点之后仍成立')
+          // 迟到的打点（迟到的事件 flush / 30s 兜底轮询）不得复活已收尾的会话——
+          // 只有 beginRun 能重新激活。
+          touchActivity(key, 'evt:late')
+          assert.equal(getLastActivity(key).idle, true, 'idle 一旦置位，只有 beginRun 能复活它')
+        } finally {
+          // 必须在 finally 里 stop：断言失败时漏掉它，心跳定时器会吊住整个测试
+          // 进程（实测让整批 493 个文件的汇总永远打不出来，把这一条红藏了 3 分钟）。
+          hb.stop()
+        }
+      })
     } finally {
       clearActivity(key)
     }

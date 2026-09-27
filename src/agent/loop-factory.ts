@@ -1,5 +1,6 @@
 import type { AgentLoop } from './loop.js'
 import { TurnStreamController } from './turn-stream.js'
+import { persistStrippedImagesIfUnambiguous } from './persisted-image-strip.js'
 import { describeImages, visionCacheKey } from './vision-service.js'
 import { TurnCompletionController } from './turn-completion.js'
 import { ToolExecutionController } from './tool-execution.js'
@@ -150,6 +151,8 @@ export function createTurnStreamController(self: AgentLoop): TurnStreamControlle
         }
       },
       addUsage: usage => { self.session.addUsage(usage) },
+      // 服务端明确拒图（唯一 URL）→ 持久化剥图写回历史，下一轮不再重发毒图。
+      persistStrippedImages: info => { persistStrippedImagesIfUnambiguous(self.session, info) },
       recordTtft: ms => { self.ttftTotalMs += ms; self.ttftSamples++ },
       // 4e1aaa21 post-mortem: aborted attempts silently discarded minutes of
       // streamed reasoning. Record each failure in the cache-log so the loss
@@ -1214,6 +1217,7 @@ export function createTurnOrchestrator(self: AgentLoop): TurnOrchestrator {
     getPlanModeState: () => self.planModeState,
     getStreamRules: () => self.config.streamRules,
     getAgentReconnect: () => self.config.agentReconnect,
+    getRetryBudgetHolder: () => self.config.retryBudgetHolder,
     getCwd: () => self.cwd,
     getSessionId: () => self.config.sessionId,
     setClientThinking: (mode) => { self.config.client.setThinking?.(mode) },

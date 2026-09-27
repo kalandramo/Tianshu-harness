@@ -28,10 +28,22 @@ import { cloneGitSource, GitCloneError } from './git-source.js'
  *
  * Falls back to the system `npm` command in dev / test environments where the
  * bundled npm is absent.
+ *
+ * 2026-09-25 修「存在 ≠ 可用」：判据原为 `existsSync`（文件在就选它），但打包
+ * 桌面端内置的 npm 垫片**可能文件在、却跑不起来**——实测
+ * `/Applications/Tianshu.app/Contents/Resources/node-runtime/darwin-arm64/bin/npm`
+ * require 的 `../lib/cli.js` 不存在（该 runtime 的 `lib/` 下只有 `node_modules`），
+ * 一执行即 `Cannot find module '../lib/cli.js'`。存在性检查命中它就返回、不再回落
+ * 系统 npm，于是插件安装整条链路失败（`plugin-installer.test.ts` 3 条 +
+ * `plugin-api.test.ts` 2 条用例红），且报错被包成
+ * `npm install failed: <node 内部栈>`，从错误信息看不出真因是选错了 npm。
+ * 现在改为**试跑 `npm --version`**：跑不通就当它不存在，继续回落。
+ *
+ * 导出供测试断言「返回的命令必须真的能跑」：
+ * `__tests__/plugin-installer-npm-resolve.test.ts`。
  */
-function resolveNpmCommand(): string {
-  const nodeBin = process.execPath
-  const nodeDir = dirname(nodeBin)
+export function resolveNpmCommand(): string {
+  const nodeDir = dirname(process.execPath)
   const isWindows = process.platform === 'win32'
 
   // Bundled npm layout mirrors the official Node.js archive layout.
@@ -40,10 +52,37 @@ function resolveNpmCommand(): string {
     : [join(nodeDir, 'bin', 'npm')]
 
   for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate
+    if (existsSync(candidate) && npmUsable(candidate, nodeDir)) return candidate
   }
 
   return isWindows ? 'npm.cmd' : 'npm'
+}
+
+/** 宿主 node 目录前置到 PATH——npm 垫片靠 PATH 解析 node（见 npmInstallArgs 注释）。 */
+function withNodeOnPath(nodeDir: string): string {
+  const pathSep = process.platform === 'win32' ? ';' : ':'
+  const currentPath = process.env.PATH || ''
+  return currentPath ? `${nodeDir}${pathSep}${currentPath}` : nodeDir
+}
+
+/**
+ * 试跑 `npm --version` 判定可用性——「文件在」不等于「能跑」。
+ *
+ * 任何失败（缺文件 / 超时 / 权限 / 非零退出）一律算不可用并回落，不抛错：调用方只
+ * 需要知道「该用哪个 cmd」；真跑不通时的报错仍由 `npmInstallArgs` 那条路径负责。
+ */
+function npmUsable(cmd: string, nodeDir: string): boolean {
+  try {
+    execSync(`"${cmd}" --version`, {
+      stdio: 'pipe',
+      timeout: 15_000,
+      windowsHide: true,
+      env: { ...process.env, PATH: withNodeOnPath(nodeDir) },
+    })
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -62,10 +101,7 @@ function npmInstallArgs(cmd: string): { command: string; options: import('node:c
   // The packaged desktop app bundles its own Node/npm; npm's launcher script
   // resolves `node` via PATH, so without this it could pick up a system Node
   // (or none at all) and fail or use the wrong ABI.
-  const nodeDir = dirname(process.execPath)
-  const pathSep = isWindows ? ';' : ':'
-  const currentPath = process.env.PATH || ''
-  const pathWithNode = currentPath ? `${nodeDir}${pathSep}${currentPath}` : nodeDir
+  const pathWithNode = withNodeOnPath(dirname(process.execPath))
 
   const options: import('node:child_process').ExecSyncOptions = {
     stdio: 'pipe',

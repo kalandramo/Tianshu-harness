@@ -64,7 +64,7 @@ import { CompactionController } from './compaction-controller.js'
 import { resolveActiveDomain, type ActiveStarDomain, type StarDomainId } from './star-domain.js'
 import { starDomainRegistry } from './star-domain-registry.js'
 import { DomainDriftDetector } from './domain-drift-detector.js'
-import { touchActivity } from './stall-observer.js'
+import { touchActivity, observeRun } from './stall-observer.js'
 import { buildDomainKnowledgeBlock } from './domain-knowledge-block.js'
 import { mintNumericId, buildAgentMark, VOID_SYMBOL } from './void-identity.js'
 import { buildDepartureMilestone } from '../constellation/milestone.js'
@@ -112,7 +112,7 @@ import { modeForRecoveryTrigger, type ReliabilityDecision } from './reliability-
 import { ResourceSensor, type ResourceSensorSnapshot } from './resource-sensor.js'
 import { type PlanMethodology, type TaskContract, type TaskDepthLayer } from '../context/task-contract.js'
 import { StigmergyStore } from '../context/stigmergy.js'
-import { describeImages, visionCacheKey } from './vision-service.js'
+import { dispatchUserImages } from './user-image-dispatch.js'
 import { ImageRegistry } from './image-registry.js'
 import { createStanceTally } from './stance-tally.js'
 import { createVirtuePendingLedger, type VirtuePendingLedger, computeVirtueCredit } from './virtue-signals.js'
@@ -2217,6 +2217,18 @@ export class AgentLoop {
     return this.session.getEstimatedTokens()
   }
 
+  /**
+   * 转录水位（PLAN §4 恢复设计第 1 步）：转录里当前的 OAI 消息条数。
+   *
+   * 接线缺口补记：管理器侧一直用可选调用 `agent.getTranscriptWatermark?.()`，但这个
+   * 方法**从未在真实 ManagedAgent 上实现过**——于是生产检查点永远写不进该字段，观测门
+   * 只在测试替身上生效（替身有、真身没有，是最容易骗过 review 的一种缺接线）。
+   * 语义与消费口径见 SessionPersist.getTranscriptWatermark 的文档。
+   */
+  getTranscriptWatermark(): number {
+    return this.persist?.getTranscriptWatermark() ?? 0
+  }
+
   /** Session-scoped background job registry (undefined in anon/no-session mode). */
   get jobs(): import('../tools/job-store.js').SessionJobs | undefined {
     return this._jobs
@@ -2520,6 +2532,11 @@ export class AgentLoop {
   }
 
   async run(userInput: string, callbacks: AgentCallbacks, images?: string[]): Promise<AgentRunOutcome> {
+    if (this._running) return 'skipped-already-running'
+    return observeRun(this.config.sessionId ?? 'default', () => this.runObserved(userInput, callbacks, images))
+  }
+
+  private async runObserved(userInput: string, callbacks: AgentCallbacks, images?: string[]): Promise<AgentRunOutcome> {
     // Re-entry guard: prevent concurrent agent.run() calls.
     // React strict mode or rapid re-submits could trigger handleSubmit
     // while a previous run is still in-flight, corrupting SessionContext.
@@ -2574,47 +2591,21 @@ export class AgentLoop {
       // 反复追问。id 顺序与 images 顺序一致。纯内存、不进 prompt/落盘。
       const registeredIds = images && images.length > 0 ? this.imageRegistry.register(images) : []
 
-      // Vision bridge: when the primary model is text-only but a dedicated
-      // multimodal model is configured, describe the images and prepend the
-      // description to the user prompt so the primary model still receives
-      // the visual information. 多模态主控则跳过桥接——images 照常进 oaiMessages 原生识图，
-      // 同时已寄存进 registry 供 ask_image 复用（v4 变多模态后自动走这条路）。
-      if (images && images.length > 0 && !this.config.supportsVision && this.config.visionClient) {
-        // 桥接失败不得炸整轮：视觉模型超时/报错/返回空，都降级为一条可见提示，
-        // 让主控知道"有图但没读到"而非静默吞图或整轮 failed。原因落 debugLog。
-        // 缓存键必须按**原始** userInput 归类（与 describeImages 内部的模式判定同源）——
-        // userInput 下面会被 prepend 改写，故先算好键再改写。
-        const firstDescKey = visionCacheKey(undefined, this.config.visionModelPrompt, userInput)
-        try {
-          const description = await describeImages(this.config.visionClient, images, {
-            prompt: this.config.visionModelPrompt,
-            // 随图文本用于自动切通用/精确转写模式（用户没显式配 prompt 时）：
-            // "这个报错怎么回事[图]" → 精确 OCR 转写，避免泛泛描述丢掉报错行。
-            accompanyingText: userInput,
-            maxTokens: this.config.visionModelMaxTokens,
-            signal: this.abortController.signal,
-          })
-          if (description) {
-            userInput = `[图片描述]\n${description}\n\n${userInput}`
-            // 首描述写入首图缓存，供 ask_image 同角度追问命中零调用。
-            const firstId = registeredIds[0]
-            if (firstId) {
-              this.imageRegistry.cacheDescription(firstId, firstDescKey, description)
-            }
-          } else {
-            userInput = `[图片桥接提示] 用户发送了 ${images.length} 张图片，但识图模型返回空描述——`
-              + `请告知用户重发或检查识图模型配置。\n\n${userInput}`
-            debugLog('[vision] bridge returned empty description')
-          }
-        } catch (err) {
-          const reason = (err as Error)?.message ?? String(err)
-          userInput = `[图片桥接失败] 用户发送了 ${images.length} 张图片，但识图桥接出错（${reason}）——`
-            + `请告知用户识图暂不可用，可检查 agent.visionModel 配置或稍后重试。\n\n${userInput}`
-          debugLog(`[vision] bridge error: ${reason}`)
-        }
-        // text-only 主控：图已转描述，从 prompt parts 去掉（原图仍在 registry 供二次看）。
-        images = undefined
-      }
+      // 视觉分派（三条出口的纪律与文案见 user-image-dispatch.ts）：
+      //   多模态主控直通 / text-only 走识图桥 / text-only 且无桥 → 丢弃 + 可见提示。
+      const dispatched = await dispatchUserImages(userInput, images, {
+        supportsVision: this.config.supportsVision,
+        visionClient: this.config.visionClient,
+        visionModelPrompt: this.config.visionModelPrompt,
+        visionModelMaxTokens: this.config.visionModelMaxTokens,
+        registeredIds,
+        cacheDescription: (imageId, cacheKey, description) => {
+          this.imageRegistry.cacheDescription(imageId, cacheKey, description)
+        },
+        signal: this.abortController.signal,
+      })
+      userInput = dispatched.userInput
+      images = dispatched.images
 
       await this._runInner(userInput, callbacks, images)
       return 'completed'

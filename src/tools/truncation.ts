@@ -1,3 +1,6 @@
+import { foldCode } from '../compact/code-fold.js'
+import type { ModelReadCap } from './model-read-cap.js'
+
 const TRUNCATION_NOTE = '... (truncated, use offset/limit for more specific ranges)'
 
 export function truncateContent(
@@ -73,4 +76,37 @@ export function buildPartialView(
     '',
     firstPage,
   ].join('\n')
+}
+
+/**
+ * Build the model-facing view of a file that overflowed the read cap: a code
+ * fold (signature skeleton) or a contiguous prose page — whichever carries more
+ * information.
+ *
+ * "Folding saved ≥30% of the lines" is NOT sufficient grounds to serve the
+ * skeleton — it says nothing about how much information is left. On a 1M window
+ * the cap holds ~120K chars, while a folded skeleton of a real source file is
+ * ~8–12K chars: choosing the skeleton there throws away ~90% of the readable
+ * 正文 to save bytes the caller had budget for. Measured on this repo
+ * (src/agent/loop.ts, 146,231 chars): skeleton 12,295 chars — every function
+ * body stripped, imports only — vs prose page 120,003 chars.
+ *
+ * So pick by information content: the skeleton is served only when the prose
+ * page is not meaningfully richer (≥3× smaller). That keeps the worker intent
+ * (16K cap: prose 16,047 vs skeleton 12,295 → ratio 1.31 → skeleton — function
+ * bodies are unusable at that budget anyway) while the main session (ratio ~10)
+ * gets real code.
+ *
+ * Relocated here from read-file.ts (2026-09-23): this is view construction, the
+ * same seam as buildPartialView, and read-file.ts is a named巨石 (structure gate).
+ */
+export function applyFoldThenPartial(content: string, filePath: string, cap: ModelReadCap): string {
+  const prose = buildPartialView(content, filePath, cap.maxChars)
+  const fold = foldCode(content, { filePath, maxLines: 200 })
+  if (fold.wasFolded && fold.foldedLines < fold.originalLines * 0.7) {
+    const skeleton = buildPartialView(fold.folded, filePath, cap.maxChars, { lines: fold.originalLines, chars: content.length })
+    if (prose.length >= skeleton.length * 3) return prose
+    return skeleton
+  }
+  return prose
 }

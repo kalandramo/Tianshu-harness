@@ -90,6 +90,7 @@ export function toModelDescriptors(results: ModelMatchResult[]): {
       ...(metadata.maxTokens !== undefined ? { maxTokens: metadata.maxTokens } : {}),
       ...(metadata.reasoningEffort ? { reasoningEffort: metadata.reasoningEffort } : {}),
       ...(metadata.supportsVision !== undefined ? { supportsVision: metadata.supportsVision } : {}),
+      ...(metadata.supportsVideo !== undefined ? { supportsVideo: metadata.supportsVideo } : {}),
       ...(metadata.tier ? { tier: metadata.tier } : {}),
       ...(metadata.pricing ? { pricing: metadata.pricing } : {}),
       ...(metadata.capabilities && Object.keys(metadata.capabilities).length > 0 ? { capabilities: metadata.capabilities } : {}),
@@ -138,7 +139,11 @@ export function effortChannelNotes(
 
 function formatProbeSummary(report: ProbeReport): string[] {
   const lines: string[] = []
-  lines.push(`Models list: ${report.modelsOk ? `${report.models.length} model(s)` : 'unavailable'}`)
+  lines.push(
+    report.modelsUnavailable
+      ? 'Models list: endpoint exposes no GET /models (add model ids manually)'
+      : `Models list: ${report.modelsOk ? `${report.models.length} model(s)` : 'unavailable'}`,
+  )
   lines.push(`Completion probe: ${report.completionOk ? `ok${report.latencyMs !== undefined ? ` (${report.latencyMs}ms)` : ''}` : 'failed/skipped'}`)
   if (report.hints.reasoningSplit) lines.push('Hint: endpoint emits reasoning_content → consider capabilities.reasoningSplit: true')
   for (const error of report.errors) lines.push(`⚠ ${error}`)
@@ -217,6 +222,11 @@ async function cmdModels(args: string[], io: ProviderCliIO): Promise<void> {
     skipCompletion: true,
   })
   if (!report.modelsOk) {
+    if (report.modelsUnavailable) {
+      err(io, `Provider "${name}" 的端点不提供 GET /models 列表（火山方舟订阅制端点等）——请直接填写模型 ID（如 ark-code-latest），或从官方控制台/文档获取型号清单。`)
+      exit(io, 1)
+      return
+    }
     for (const error of report.errors) err(io, `⚠ ${error}`)
     exit(io, 1)
     return

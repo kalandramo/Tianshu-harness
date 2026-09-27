@@ -42,6 +42,33 @@ if uname -o 2>/dev/null | grep -q '^Android$'; then
   安装 Node >= 24（nodesource 或 nvm），然后重跑本脚本或 npm i -g tianshu-harness"
 fi
 
+# 1.6 npm 全局目录可写性预检。
+#     官方 Node 安装包把全局 prefix 放在 /usr/local（属主 root、权限 755），
+#     普通用户 npm install -g 直接 EACCES。这里提前给出结论与修法——既不让用户
+#     吃 npm 的原始堆栈，也不把权限失败误诊成网络问题。必须排在旧包迁移之前：
+#     那一步的 `npm uninstall -g` 同样要写全局目录。
+NPM_PREFIX="$(npm prefix -g 2>/dev/null || true)"
+if [ -n "$NPM_PREFIX" ]; then
+  NPM_PROBE="$NPM_PREFIX/lib/node_modules"
+  [ -d "$NPM_PROBE" ] || NPM_PROBE="$NPM_PREFIX"
+  if [ ! -w "$NPM_PROBE" ]; then
+    die "npm 全局目录不可写：$NPM_PROBE
+官方 Node 安装包把全局目录放在 /usr/local（root 所有），普通用户写不进去——npm install -g 会报 EACCES。
+任选一种修完重跑本脚本：
+
+  ① 把全局目录交给当前用户（一次 sudo；之后安装与 /update 自动更新都不再需要 sudo）
+       sudo chown -R \"\$(whoami)\" $NPM_PREFIX/lib/node_modules $NPM_PREFIX/bin
+
+  ② 改用用户级 prefix（无需 sudo；注意把 ~/.npm-global/bin 加进 PATH）
+       mkdir -p \"\$HOME/.npm-global\" && npm config set prefix \"\$HOME/.npm-global\"
+       echo 'export PATH=\"\$HOME/.npm-global/bin:\$PATH\"' >> ~/.zshrc
+
+  ③ 长期做法：用 nvm / fnm / volta 装 Node——prefix 天然落在用户目录。
+
+排障细节见 docs/guides/troubleshooting.md 第 12 节。"
+  fi
+fi
+
 # 2. 改名迁移：旧包 tianshu-tui 若仍全局安装，它的 rivet bin 链接会让
 #    npm install -g tianshu-harness 直接 EEXIST——先卸旧包装新包。
 if npm ls -g --depth=0 tianshu-tui >/dev/null 2>&1; then

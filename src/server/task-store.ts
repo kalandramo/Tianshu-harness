@@ -11,6 +11,7 @@ import { join, relative, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { errorContext, serverLogger } from './logger.js'
 import type { ScheduledTaskRetry } from './cron-scheduler.js'
+import type { ApprovalMode } from '../agent/loop-types.js'
 
 // ─── Task 类型 ────────────────────────────────────────────────
 
@@ -75,6 +76,12 @@ export interface TaskRecord {
   retry?: ScheduledTaskRetry
   /** 无人值守运行（reviewPolicy 解析结果）：审批请求 fail-closed 中止而非挂起。 */
   unattended?: boolean
+  /**
+   * 该运行的审批档位（issue #259）——由 `ScheduledTask.approval` 透传，runtime 建
+   * 会话时应用。**缺省即不注入**：unattended 的 fail-closed 语义不变，只有任务
+   * 显式声明档位时才覆盖。重试沿用同一档位（见 TaskRegistry 的重试路径）。
+   */
+  approvalMode?: ApprovalMode
   /** 无人值守中止时缺授权的 app 名（结构化，驱动「去授权/重跑」修复动作）。 */
   haltedApp?: string
 }
@@ -99,6 +106,8 @@ export interface CreateTaskInput {
   retry?: ScheduledTaskRetry
   /** 无人值守运行（审批 fail-closed 中止）。 */
   unattended?: boolean
+  /** 该运行的审批档位（issue #259）。缺省 = 不注入，保持既有默认档位。 */
+  approvalMode?: ApprovalMode
   /** 任务执行的工作区（cron 任务=创建时快照；缺省=runtime 池 defaultCwd）。 */
   cwd?: string
 }

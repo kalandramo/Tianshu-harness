@@ -165,7 +165,9 @@ function modelFamilyHasExactPrefixCache(modelId: string | undefined): boolean {
  * per call site.
  *
  * Billing comes from `classifyCostModel` — provider identity first, then
- * oauth/baseUrl hints. It is never inferred from the model alias: `mimo` (the
+ * endpoint/oauth hints（订阅端点 URL 比同名按量端点更具体：kimi 预设走
+ * api.kimi.com/coding 订阅额度，Moonshot 开放平台同名 'kimi' 仍是按量）。
+ * It is never inferred from the model alias: `mimo` (the
  * token-plan provider) is subscription while `mimo-api` serving the same model
  * stays per-token.
  *

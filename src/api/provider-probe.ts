@@ -4,6 +4,8 @@
  * probeProvider() verifies a candidate endpoint before anything is written to
  * config:
  *   1. GET /models              → model id list (timeout/404 degrades, not fails)
+ *      (endpoints without a list — 火山方舟 Agent Plan /api/plan/v3 等 — skip
+ *       this step entirely and are verified by the completion probe alone)
  *   2. one minimal completion   → stream liveness + capability hints
  *      (max_tokens=8, "hi")       - non-SSE 200 → "missing /v1?" guidance
  *                                 - reasoning_content in the wire → reasoningSplit hint
@@ -13,7 +15,8 @@
  * user's tokens, so nothing here is mandatory.
  */
 
-import { normalizeBaseUrl, resolveProbeEndpoints } from './endpoint-map.js'
+import { hasModelsListEndpoint, normalizeBaseUrl, resolveProbeEndpoints } from './endpoint-map.js'
+import { resolveProviderWire } from './provider-catalog.js'
 import { providerIdentityHeaders } from './caller-identity.js'
 import { type ModelAliasEntry, type ModelAliasMetadata } from './model-aliases.js'
 import { matchModelId } from './model-id-matcher.js'
@@ -46,6 +49,9 @@ export interface ProbeOptions {
   probeModel?: string
   /** Skip the completion probe entirely (models list only). */
   skipCompletion?: boolean
+  /** 端点没有 GET /models 列表（如火山方舟 Agent Plan /api/plan/v3）。缺省按
+   *  providerName + baseUrl 经 hasModelsListEndpoint 判定；显式传值只用于测试。 */
+  modelsListUnavailable?: boolean
   /** 视觉探测三态（2026-09-09「测试没用」反馈）：undefined=按模型名启发（现状，
    *  ProviderRow 无视觉声明场景）；true=强制图片真测；false=压制启发按纯文本测
    *  （自定义 provider 未勾「支持视觉」时与用户声明一致——模型名带 vision 词
@@ -73,12 +79,18 @@ export interface ProbeReport {
   models: string[]
   /** GET /models returned a usable list. */
   modelsOk: boolean
+  /** 端点没有 GET /models 列表（火山方舟订阅制端点等）——models/modelsOk 恒空/false
+   *  不是失败信号，连接有效性以 completionOk 为准。 */
+  modelsUnavailable?: boolean
   /** 结构化 models 拉取错误——适配层（桌面 test-key）按 code 映射前端 i18n 键
    *  （auth-failed/timeout/network-error/quota/http-<status>）。CLI 仍消费 errors
    *  字符串，本字段是增量，不替代。 */
   modelListError?: { code: string; status?: number; message: string }
   /** The minimal completion succeeded. */
   completionOk: boolean
+  /** 结构化补全探测错误——modelsUnavailable 的端点（跳过了 /models）只能靠这条
+   *  报错误码，与 modelListError 同形状。 */
+  completionError?: { code: string; status?: number; message: string }
   hints: CapabilityHints
   /** First-byte latency of the completion probe. */
   latencyMs?: number
@@ -105,8 +117,13 @@ function authHeaders(apiKey?: string, identity: Record<string, string> = {}): Re
   return { ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}), ...identity }
 }
 
-function anthropicHeaders(apiKey?: string, identity: Record<string, string> = {}): Record<string, string> {
-  return { ...(apiKey ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } : {}), ...identity }
+function anthropicHeaders(apiKey?: string, identity: Record<string, string> = {}, authMode?: 'x-api-key' | 'bearer'): Record<string, string> {
+  if (!apiKey) return { ...identity }
+  return {
+    'anthropic-version': '2023-06-01',
+    ...(authMode === 'bearer' ? { authorization: `Bearer ${apiKey}` } : { 'x-api-key': apiKey }),
+    ...identity,
+  }
 }
 
 /**
@@ -167,7 +184,7 @@ function classifyHttpError(status: number, bodyText: string, baseUrl: string): s
  * 按 code 取值。分支优先级必须与 classifyHttpError 一致：quota body 判定先于
  * 401/403（FreeTierOnly 是 403 但属账单问题，不是鉴权失败）。
  */
-function modelListErrorCode(status: number, bodyText: string): string {
+function probeErrorCode(status: number, bodyText: string): string {
   if (/quota|FreeTierOnly|insufficient|arrearage/i.test(bodyText)) return 'quota'
   if (status === 401 || status === 403) return 'auth-failed'
   if (status === 404) return 'http-404'
@@ -261,10 +278,16 @@ interface FetchedModelList {
   infos?: Record<string, ProbedModelInfo>
   /** models 拉取失败时的结构化错误（HTTP 分支）；超时/网络错误分支不带 status。 */
   modelListError?: { code: string; status?: number; message: string }
+  /** 端点没有 /models 列表（未发请求，非失败）。 */
+  modelsUnavailable?: boolean
 }
 
 async function fetchModelList(options: ProbeOptions, errors: string[]): Promise<FetchedModelList> {
   const anthropic = options.protocol === 'anthropic'
+  const modelsUnavailable = options.modelsListUnavailable
+    ?? !hasModelsListEndpoint(options.providerName, options.baseUrl)
+  // 无 /models 的端点直接跳过列表拉取：404 不是 Key/连通性结论，补全探测才是。
+  if (modelsUnavailable) return { ids: [], modelsUnavailable: true }
   // DashScope：优先原生形态（带规格元数据），失败回退 OpenAI 兼容形状。
   if (!anthropic && options.providerName === 'dashscope') {
     const native = await fetchDashscopeNativeModels(options)
@@ -277,14 +300,14 @@ async function fetchModelList(options: ProbeOptions, errors: string[]): Promise<
     const response = await fetchWithProbeTimeout(url, {
       method: 'GET',
       headers: anthropic
-        ? anthropicHeaders(options.apiKey, probeIdentityHeaders(options))
+        ? anthropicHeaders(options.apiKey, probeIdentityHeaders(options), resolveProviderWire(options.providerName ?? '', options.baseUrl)?.anthropicAuthMode)
         : authHeaders(options.apiKey, probeIdentityHeaders(options)),
     }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
     if (!response.ok) {
       const bodyText = await response.text().catch(() => '')
       const message = classifyHttpError(response.status, bodyText, options.baseUrl)
       errors.push(`GET /models failed: ${message}`)
-      return { ids: [], modelListError: { code: modelListErrorCode(response.status, bodyText), status: response.status, message } }
+      return { ids: [], modelListError: { code: probeErrorCode(response.status, bodyText), status: response.status, message } }
     }
     const payload = await response.json() as unknown
     const ids = parseModelIds(payload)
@@ -305,6 +328,9 @@ interface CompletionProbeOutcome {
   hints: CapabilityHints
   latencyMs?: number
   error?: string
+  /** 结构化错误码（与 modelListError 同枚举），供 modelsUnavailable 端点报给 UI。 */
+  errorCode?: string
+  errorStatus?: number
   /** 流式回答文本（视觉真测展示用；非视觉探测也会顺带提取）。 */
   answer?: string
 }
@@ -371,7 +397,14 @@ async function probeOpenAICompletion(options: ProbeOptions, model: string, visio
     const latencyMs = Date.now() - startedAt
     if (!response.ok) {
       const bodyText = await response.text().catch(() => '')
-      return { ok: false, hints: {}, latencyMs, error: classifyHttpError(response.status, bodyText, options.baseUrl) }
+      return {
+        ok: false,
+        hints: {},
+        latencyMs,
+        error: classifyHttpError(response.status, bodyText, options.baseUrl),
+        errorCode: probeErrorCode(response.status, bodyText),
+        errorStatus: response.status,
+      }
     }
 
     const contentType = response.headers.get('content-type') ?? ''
@@ -397,10 +430,11 @@ async function probeOpenAICompletion(options: ProbeOptions, model: string, visio
     }
     return { ok: true, hints, latencyMs, answer }
   } catch (error) {
-    const reason = error instanceof Error && error.name === 'AbortError'
+    const aborted = error instanceof Error && error.name === 'AbortError'
+    const reason = aborted
       ? `completion probe timed out after ${options.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms`
       : (error instanceof Error ? error.message : String(error))
-    return { ok: false, hints: {}, latencyMs: Date.now() - startedAt, error: reason }
+    return { ok: false, hints: {}, latencyMs: Date.now() - startedAt, error: reason, errorCode: aborted ? 'timeout' : 'network-error' }
   }
 }
 
@@ -471,7 +505,14 @@ async function probeResponsesCompletion(
     const latencyMs = Date.now() - startedAt
     if (!response.ok) {
       const bodyText = await response.text().catch(() => '')
-      return { ok: false, hints: {}, latencyMs, error: classifyHttpError(response.status, bodyText, options.baseUrl) }
+      return {
+        ok: false,
+        hints: {},
+        latencyMs,
+        error: classifyHttpError(response.status, bodyText, options.baseUrl),
+        errorCode: probeErrorCode(response.status, bodyText),
+        errorStatus: response.status,
+      }
     }
 
     const contentType = response.headers.get('content-type') ?? ''
@@ -495,10 +536,11 @@ async function probeResponsesCompletion(
     }
     return { ok: true, hints: {}, latencyMs, answer }
   } catch (error) {
-    const reason = error instanceof Error && error.name === 'AbortError'
+    const aborted = error instanceof Error && error.name === 'AbortError'
+    const reason = aborted
       ? `completion probe timed out after ${options.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms`
       : (error instanceof Error ? error.message : String(error))
-    return { ok: false, hints: {}, latencyMs: Date.now() - startedAt, error: reason }
+    return { ok: false, hints: {}, latencyMs: Date.now() - startedAt, error: reason, errorCode: aborted ? 'timeout' : 'network-error' }
   }
 }
 
@@ -510,8 +552,7 @@ async function probeAnthropicCompletion(options: ProbeOptions, model: string): P
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        ...(options.apiKey ? { 'x-api-key': options.apiKey, 'anthropic-version': '2023-06-01' } : {}),
-        ...probeIdentityHeaders(options),
+        ...anthropicHeaders(options.apiKey, probeIdentityHeaders(options), resolveProviderWire(options.providerName ?? '', options.baseUrl)?.anthropicAuthMode),
       },
       body: JSON.stringify({
         model,
@@ -524,17 +565,25 @@ async function probeAnthropicCompletion(options: ProbeOptions, model: string): P
     const latencyMs = Date.now() - startedAt
     if (!response.ok) {
       const bodyText = await response.text().catch(() => '')
-      return { ok: false, hints: {}, latencyMs, error: classifyHttpError(response.status, bodyText, options.baseUrl) }
+      return {
+        ok: false,
+        hints: {},
+        latencyMs,
+        error: classifyHttpError(response.status, bodyText, options.baseUrl),
+        errorCode: probeErrorCode(response.status, bodyText),
+        errorStatus: response.status,
+      }
     }
     const bodyText = await readCappedText(response)
     const hints: CapabilityHints = {}
     if (bodyText.includes('thinking')) hints.reasoningSplit = true
     return { ok: true, hints, latencyMs }
   } catch (error) {
-    const reason = error instanceof Error && error.name === 'AbortError'
+    const aborted = error instanceof Error && error.name === 'AbortError'
+    const reason = aborted
       ? `completion probe timed out after ${options.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms`
       : (error instanceof Error ? error.message : String(error))
-    return { ok: false, hints: {}, latencyMs: Date.now() - startedAt, error: reason }
+    return { ok: false, hints: {}, latencyMs: Date.now() - startedAt, error: reason, errorCode: aborted ? 'timeout' : 'network-error' }
   }
 }
 
@@ -566,11 +615,19 @@ export async function probeProvider(options: ProbeOptions): Promise<ProbeReport>
     completionOk: false,
     hints: {},
     errors,
+    ...(fetched.modelsUnavailable ? { modelsUnavailable: true } : {}),
     ...(fetched.modelListError ? { modelListError: fetched.modelListError } : {}),
     ...(fetched.infos ? { modelInfos: fetched.infos } : {}),
   }
 
-  if (options.skipCompletion) return report
+  if (options.skipCompletion) {
+    // 无 /models 端点跳过补全后就失去了唯一的连通性信号——给出可操作的指引，
+    // 而不是让消费方看到「ok=false 且无任何错误文案」。
+    if (report.modelsUnavailable) {
+      errors.push('Endpoint exposes no GET /models list — provide a model id to run a completion probe.')
+    }
+    return report
+  }
   // 型号选取：建议型号在列表中存在则优先；建议型号是视觉档但端点没有它时
   // （聚合站命名各异），优先挑别名表认识的识图/多模态型号——盲取 models[0]
   // 容易撞上 embedding/TTS 或未开通的型号导致误报失败；其余情况回退首个发现。
@@ -606,6 +663,13 @@ export async function probeProvider(options: ProbeOptions): Promise<ProbeReport>
   // 失败不展示模型输出——只在成功时携带回答文本。
   if (outcome.ok && vision && outcome.answer) report.visionAnswer = outcome.answer
   if (outcome.error) errors.push(outcome.error)
+  if (!outcome.ok && outcome.error && outcome.errorCode) {
+    report.completionError = {
+      code: outcome.errorCode,
+      ...(outcome.errorStatus !== undefined ? { status: outcome.errorStatus } : {}),
+      message: outcome.error,
+    }
+  }
   return report
 }
 

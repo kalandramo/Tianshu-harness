@@ -108,6 +108,8 @@ export interface AgentConfigInput {
    *  meridianIndexer 恒 undefined → 写工具收尾走 importGraph fallback（每会话首个
    *  写工具全量扫仓 ~750ms/5k 文件）。透传后走持久 SQLite 增量图。 */
   meridianIndexer?: import('../repo/meridian-indexer.js').MeridianIndexer | null
+  /** 模型请求中断后的有界重连（PLAN §4；config.agent.reconnect 映射而来）。 */
+  agentReconnect?: AgentConfig['agentReconnect']
 }
 
 export interface MainAgentConfigInputParams {
@@ -133,6 +135,8 @@ export interface MainAgentConfigInputParams {
   /** 会话冻结的 wire 变换上下文（见 AgentConfigInput.wireContext）。 */
   wireContext?: import('../api/pro-registry.js').WireTransformContext
   meridianIndexer?: import('../repo/meridian-indexer.js').MeridianIndexer | null
+  /** 模型请求中断后的有界重连（见 config.agent.reconnect / loop-types.agentReconnect）。 */
+  agentReconnect?: AgentConfig['agentReconnect']
 }
 
 export function createMainAgentConfigInput(params: MainAgentConfigInputParams): AgentConfigInput {
@@ -156,6 +160,8 @@ export function createMainAgentConfigInput(params: MainAgentConfigInputParams): 
     runtimeLean: isRuntimeLeanForDomain(params.config.agent.defaultDomain, params.config.runtime, params.cwd),
     securityGuidance: params.config.agent.securityGuidance,
     interruptMarker: params.config.agent.interruptMarker,
+    // PLAN §4：模型请求中断在预算内重连（默认关，config.agent.reconnect.enabled 开启）。
+    agentReconnect: params.config.agent.reconnect,
     hearthObserveEnabled: params.config.agent.hearthObserveEnabled,
     crossSessionEnabled: params.config.agent.crossSessionEnabled,
     antiAnchoring: params.config.agent.antiAnchoring,
@@ -196,7 +202,7 @@ export function createMainAgentConfigInput(params: MainAgentConfigInputParams): 
 
 export function createAgentConfig(input: AgentConfigInput): Pick<
   AgentConfig,
-  'client' | 'promptEngine' | 'contextWindow' | 'compact' | 'cwd' | 'blockPolicy' | 'providerProfile' | 'providerName' | 'compactionProfile' | 'primaryClient' | 'compactClient' | 'sessionId' | 'approvalMode' | 'autoReasoning' | 'reasoningFloor' | 'turnLevelThinking' | 'songlineEnabled' | 'constellationEnabled' | 'companionPresenceEnabled' | 'dreamEnabled' | 'runtimeLean' | 'securityGuidance' | 'interruptMarker' | 'hearthObserveEnabled' | 'crossSessionEnabled' | 'antiAnchoring' | 'intentRetrievalRouter' | 'llmSpeculation' | 'autoDelegateEnabled' | 'domainKeywordRouting' | 'defaultDomain' | 'goalJudge' | 'allProviders' | 'permissions' | 'toolGating' | 'prefixCacheStrategy' | 'supportsVision' | 'visionClient' | 'visionModelPrompt' | 'visionModelMaxTokens' | 'visionBridge' | 'onStatusLine' | 'wireContext' | 'meridianIndexer'
+  'client' | 'promptEngine' | 'contextWindow' | 'compact' | 'cwd' | 'blockPolicy' | 'providerProfile' | 'providerName' | 'compactionProfile' | 'primaryClient' | 'compactClient' | 'sessionId' | 'approvalMode' | 'autoReasoning' | 'reasoningFloor' | 'turnLevelThinking' | 'songlineEnabled' | 'constellationEnabled' | 'companionPresenceEnabled' | 'dreamEnabled' | 'runtimeLean' | 'securityGuidance' | 'interruptMarker' | 'hearthObserveEnabled' | 'crossSessionEnabled' | 'antiAnchoring' | 'intentRetrievalRouter' | 'llmSpeculation' | 'autoDelegateEnabled' | 'domainKeywordRouting' | 'defaultDomain' | 'goalJudge' | 'allProviders' | 'permissions' | 'toolGating' | 'prefixCacheStrategy' | 'supportsVision' | 'visionClient' | 'visionModelPrompt' | 'visionModelMaxTokens' | 'visionBridge' | 'onStatusLine' | 'wireContext' | 'meridianIndexer' | 'agentReconnect' | 'retryBudgetHolder'
 > {
   const { model, apiKey, cwd, provider } = input
   const capabilities = resolveCapabilities(provider.name, provider.capabilities, model.capabilities)
@@ -204,6 +210,8 @@ export function createAgentConfig(input: AgentConfigInput): Pick<
     ? 64000
     : Math.min(16000, Math.floor(model.contextWindow * 0.02))
 
+  // 共享重试预算载体：客户端 getter 与 AgentConfig 都指向它（onRun 起点赋值）。
+  const retryBudgetHolder: { current?: import('../api/retry-budget.js').RetryBudget } = {}
   const primaryClient = createProviderClient(provider, capabilities, {
     apiKey,
     model: model.id,
@@ -213,6 +221,8 @@ export function createAgentConfig(input: AgentConfigInput): Pick<
     auth: input.auth,
     sessionId: input.sessionId,
     wireContext: input.wireContext,
+    // PLAN §3：provider 重试与 agent 重连共用一份预算（per-run 由 orchestrator 写入）。
+    retryBudget: () => retryBudgetHolder.current,
   })
 
   const client = buildFallbackChain(primaryClient, provider, model, input)
@@ -307,6 +317,8 @@ export function createAgentConfig(input: AgentConfigInput): Pick<
     runtimeLean: input.runtimeLean,
     securityGuidance: input.securityGuidance,
     interruptMarker: input.interruptMarker,
+    agentReconnect: input.agentReconnect,
+    retryBudgetHolder,
     hearthObserveEnabled: input.hearthObserveEnabled,
     crossSessionEnabled: input.crossSessionEnabled,
     antiAnchoring: input.antiAnchoring,

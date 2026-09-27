@@ -2373,3 +2373,14 @@ test('setTitle (PATCH route path) strips terminal escapes too', () => {
   const after = manager.getSession(rec.id)!
   assert.equal(after.title, 'injected')
 })
+
+test('onModelRetry → retry 会话事件（按尝试替换信号）', () => {
+  const { manager, agents } = makeManager()
+  const s = manager.createSession({ prompt: 'go' })
+  const a = agents[0]!
+  a.callbacks!.onModelRetry?.({ attempt: 1, maxAttempts: 2 })
+  const retry = manager.getEvents(s.id, 0)!.events.find((e) => e.type === 'retry')
+  assert.equal(retry?.data.attempt, 1)
+  assert.equal(retry?.data.maxAttempts, 2)
+  assert.equal(retry?.data.replaceAttempt, true)
+})

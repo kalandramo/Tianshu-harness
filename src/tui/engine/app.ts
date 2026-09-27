@@ -19,12 +19,14 @@ import { OverlayEngine } from './overlay-engine.js'
 import { InputHandler, type KeyPress } from './input-handler.js'
 import { ResizeHandler } from './resize-handler.js'
 import { InputLine } from './input-line.js'
-import { loadImageAttachment, looksLikeImagePath, MAX_IMAGES } from './image-attach.js'
+import { MAX_IMAGES } from './image-attach.js'
+import { formatImagePasteNotices, loadPastedImages, parseImagePathPaste } from './image-paste.js'
 import { readImageFromClipboard, readTextFromClipboard, looksLikeBinaryPaste, FOCUS_DEBOUNCE_MS } from './clipboard-image.js'
 import { WriteBatcher } from './write-batcher.js'
 import { StreamRenderer } from './stream-renderer.js'
 import type { TuiPerfMonitor, TuiPerfSummary } from './perf-monitor.js'
 import { ToolGroupController, type PendingToolMeta } from './tool-group-controller.js'
+import { flushPendingAssistantText } from './assistant-text-barrier.js'
 import { OverlayController } from './overlay-controller.js'
 import { ApprovalIntentController } from './approval-intent-controller.js'
 import { MetricsGlanceController } from './metrics-glance-controller.js'
@@ -1088,25 +1090,26 @@ export class TuiApp {
         }
       }
 
-      const trimmed = text.trim()
-      // 粘贴内容看起来像图片路径 → 尝试加载为附件；失败则回退为普通文本。
-      if (trimmed && looksLikeImagePath(trimmed) && !trimmed.includes('\n')) {
-        if (this.inputLine.images.length >= MAX_IMAGES) {
-          this.commitStatic(color(`⚠ 最多附加 ${MAX_IMAGES} 张图片`, this.theme.warning))
-          this.renderLive()
-          return
+      // 粘贴内容是「一整段图片路径」（单行或多行，见 parseImagePathPaste）→ 逐张挂成附件；
+      // 全员加载失败才回退普通文本（保留旧的单图语义）。
+      const pastedPaths = parseImagePathPaste(text)
+      if (pastedPaths) {
+        const outcome = await loadPastedImages(pastedPaths.map((p) => resolve(p)), {
+          slots: MAX_IMAGES - this.inputLine.images.length,
+        })
+        for (const notice of formatImagePasteNotices(outcome, MAX_IMAGES)) {
+          this.commitStatic(color(notice, this.theme.warning))
         }
-        try {
-          const attachment = await loadImageAttachment(resolve(trimmed))
-          this.inputLine.addImage(attachment.dataUrl)
+        if (outcome.dataUrls.length > 0) {
+          for (const dataUrl of outcome.dataUrls) this.inputLine.addImage(dataUrl)
           this.writeBatcher.schedule()
+          if (outcome.failures.length > 0 || outcome.skipped > 0) this.renderLive()
           return
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err)
-          this.commitStatic(color(`⚠ 图片加载失败: ${message}`, this.theme.warning))
-          this.renderLive()
-          // fallthrough to normal text paste
         }
+        this.renderLive()
+        // 槽位满（skipped）同样吞掉：路径文本进输入框只会让用户再删一次。
+        if (outcome.skipped > 0) return
+        // 全部加载失败 → fallthrough to normal text paste
       }
 
       this.inputLine.insertText(text)
@@ -1383,10 +1386,7 @@ export class TuiApp {
           if (review) {
             const reviewLines = formatThinkingReview(review, this.theme)
             if (reviewLines.length > 0) {
-              this.commitAbove(() => {
-                this.commit.write({ text: reviewLines.join('\n'), trailingNewline: true })
-                this.state.committedCount++
-              })
+              this.commitBlock(reviewLines.join('\n'))
             }
           }
         }
@@ -4572,6 +4572,23 @@ export class TuiApp {
     this.enqueueMainCommit(write)
   }
 
+  /**
+   * 提交一段已格式化的文本到 scrollback（含 committedCount 记账）。
+   *
+   * 全文件最高频的 commit 形态（13 处同构）。提取的理由是它同时承载两条不变量：
+   * ① 必须经 commitAbove 排队——overlay（alt screen）激活期间主屏一个字节都不能写；
+   * ② 每次 commit 都要记账，漏记会让 pager / 滚动判定漂移。手抄十几份时第 ② 条
+   * 漏掉不会报任何错，界面照常工作，只有滚动位置慢慢偏——正是该收口的那类静默漂移。
+   *
+   * 块尾空行（trailingNewline）是与 user/assistant/summary 统一的间距契约。
+   */
+  private commitBlock(text: string): void {
+    this.commitAbove(() => {
+      this.commit.write({ text, trailingNewline: true })
+      this.state.committedCount++
+    })
+  }
+
   /** 主屏 commit 队列条目：ready 为同步写闭包，或 prepare 完成后兑现写闭包的 Promise。 */
   private mainCommitQueue: Array<{
     ready: (() => void) | Promise<() => void>
@@ -5290,6 +5307,8 @@ export class TuiApp {
   private handleToolUse(id: string, name: string, input: Record<string, unknown>): void {
     this.setPhase('analyzing')
     this.markActivity()
+    // commit 屏障：文本尾段先落盘，否则工具组会插到它前面（见 assistant-text-barrier.ts）
+    flushPendingAssistantText(this.blockWriter, this.streamRenderer)
     // zen_unlock 是虚拟工具（无 registry 实体、结果即时合成并走 TTL 提示）：
     // 不进 pending——它没有常规意义的「执行中→终态」生命周期，进 pending 就是
     // 一张永远等不到终态的悬停卡（曾实挂 22 分钟：「zen_unlock (22m48s) 仍无输出」）。
@@ -5325,22 +5344,18 @@ export class TuiApp {
   private flushToolGroup(): void {
     const group = this.toolGroupController.flushGroup()
     if (!group || group.entries.length === 0) return
+    flushPendingAssistantText(this.blockWriter, this.streamRenderer)
     const formatted = formatCollapsedGroup({ group, theme: this.theme })
-    this.commitAbove(() => {
-      this.commit.write({ text: formatted.join('\n'), trailingNewline: true })
-      this.state.committedCount++
-    })
+    this.commitBlock(formatted.join('\n'))
   }
 
   /** 将 bash 折叠组 buffer 刷新到 scrollback */
   private flushBashGroup(): void {
     const group = this.toolGroupController.flushBashGroup()
     if (!group || group.entries.length === 0) return
+    flushPendingAssistantText(this.blockWriter, this.streamRenderer)
     const formatted = formatCollapsedBashGroup({ group, theme: this.theme })
-    this.commitAbove(() => {
-      this.commit.write({ text: formatted.join('\n'), trailingNewline: true })
-      this.state.committedCount++
-    })
+    this.commitBlock(formatted.join('\n'))
   }
 
   /**
@@ -5614,10 +5629,7 @@ export class TuiApp {
       }
       if (settled.length > 0) {
         const card = formatWorkerFleetSettled(settled, this.theme, this.columns)
-        this.commitAbove(() => {
-          this.commit.write({ text: card.join('\n'), trailingNewline: true })
-          this.state.committedCount++
-        })
+        this.commitBlock(card.join('\n'))
       }
     }
     const finalContent = toolAcc ? toolAcc + displayContent : displayContent
@@ -5656,10 +5668,7 @@ export class TuiApp {
       const model = decodeTeamPanelModel(finalContent.trim())
       if (model) {
         const panel = formatTeamPanel(model, this.theme, this.columns)
-        this.commitAbove(() => {
-          this.commit.write({ text: panel.join('\n'), trailingNewline: true })
-          this.state.committedCount++
-        })
+        this.commitBlock(panel.join('\n'))
         return
       }
     }
@@ -5671,10 +5680,7 @@ export class TuiApp {
       const model = decodeCouncilPanel(finalContent.trim())
       if (model) {
         const panel = formatCouncilPanel(model, this.theme, this.columns)
-        this.commitAbove(() => {
-          this.commit.write({ text: panel.join('\n'), trailingNewline: true })
-          this.state.committedCount++
-        })
+        this.commitBlock(panel.join('\n'))
         return
       }
     }
@@ -5682,10 +5688,7 @@ export class TuiApp {
     // ask_user_question 用模态化边框卡片渲染，确保问题和选项完整可见。
     if (name === 'ask_user_question') {
       const formatted = formatAskUserQuestion({ content: finalContent, columns: this.columns }, this.theme)
-      this.commitAbove(() => {
-        this.commit.write({ text: formatted.join('\n'), trailingNewline: true })
-        this.state.committedCount++
-      })
+      this.commitBlock(formatted.join('\n'))
       return
     }
 
@@ -5710,11 +5713,8 @@ export class TuiApp {
       })
     }
 
-    this.commitAbove(() => {
-      // 块尾空行：与 user/assistant/summary 统一间距契约
-      this.commit.write({ text: formatted.join('\n'), trailingNewline: true })
-      this.state.committedCount++
-    })
+    // 块尾空行：与 user/assistant/summary 统一间距契约
+    this.commitBlock(formatted.join('\n'))
 
     // todo / plan_task 写入后刷新常驻任务面板（canonical 源为 TodoStore）。
     // plan_task 同样调用 setTodos 落库，但工具名不是 'todo'，过去走不到立即刷新，
@@ -5733,10 +5733,7 @@ export class TuiApp {
       const g = collapsed
       this.toolGroupController.clearLastCollapsedGroup()
       const formatted = formatCollapsedGroup({ group: g, expanded: true, theme: this.theme })
-      this.commitAbove(() => {
-        this.commit.write({ text: formatted.join('\n'), trailingNewline: true })
-        this.state.committedCount++
-      })
+      this.commitBlock(formatted.join('\n'))
       return
     }
     // live 中的活跃 read/search 组：flush 并展开提交（无需等非折叠工具打断）。
@@ -5746,10 +5743,7 @@ export class TuiApp {
       if (g) {
         this.toolGroupController.clearLastCollapsedGroup()
         const formatted = formatCollapsedGroup({ group: g, expanded: true, theme: this.theme })
-        this.commitAbove(() => {
-          this.commit.write({ text: formatted.join('\n'), trailingNewline: true })
-          this.state.committedCount++
-        })
+        this.commitBlock(formatted.join('\n'))
         return
       }
     }
@@ -5759,10 +5753,7 @@ export class TuiApp {
       const g = collapsedBash
       this.toolGroupController.clearLastCollapsedBashGroup()
       const formatted = formatCollapsedBashGroup({ group: g, expanded: true, theme: this.theme })
-      this.commitAbove(() => {
-        this.commit.write({ text: formatted.join('\n'), trailingNewline: true })
-        this.state.committedCount++
-      })
+      this.commitBlock(formatted.join('\n'))
       return
     }
     // 回退：展开单个截断工具卡片
@@ -5777,10 +5768,7 @@ export class TuiApp {
       toolInput: t.toolInput,
       expanded: true,
     }, this.theme)
-    this.commitAbove(() => {
-      this.commit.write({ text: formatted.join('\n'), trailingNewline: true })
-      this.state.committedCount++
-    })
+    this.commitBlock(formatted.join('\n'))
   }
 
   private handleCheckpoint(hash: string): void {
@@ -5843,10 +5831,7 @@ export class TuiApp {
         inputTokens: usage.input_tokens ?? 0,
         outputTokens: usage.output_tokens ?? 0,
       }, this.theme)
-      this.commitAbove(() => {
-        this.commit.write({ text: summary, trailingNewline: true })
-        this.state.committedCount++
-      })
+      this.commitBlock(summary)
 
       // /handoff 归档：交接 turn 产出项目内文档后，拷贝到会话目录 <id>.handoff.md
       // （loadPrevHandoff 注入管线认的位置）。注入默认关闭（并行会话安全，
@@ -6344,14 +6329,20 @@ export class TuiApp {
     const welcomeIdle = this.state.phase === 'idle' && this.state.turnNumber === 0
     const slashOverlay = this.inputController.slashMenu.open || this.inputLine.value.startsWith('/')
     if (welcomeIdle && this.liveRowsHighWater === 0 && !slashOverlay) return 0
-    // 矮屏（<24 行，手机软键盘展开的典型形态）把高水位预留压到半屏——整屏
-    // 空白比输入框弹跳更伤；常规桌面高度维持原 cap（28 行封顶）不变。
+    // 矮窗口（<32 行：手机软键盘展开 + 小窗桌面终端）把高水位预留压到半屏——
+    // 整屏空白比输入框弹跳更伤（30 行窗口曾实测空闲空档 16+ 行，超半屏）；
+    // 常规桌面高度维持原 cap（28 行封顶）不变。
     const rows = this.rows || 24
-    const cap = rows < 24
+    const cap = rows < 32
       ? Math.min(liveMaxRowsFor(rows), Math.ceil(rows / 2))
       : liveMaxRowsFor(rows)
     const total = dynamicRows + chromeRows
-    this.liveRowsHighWater = Math.min(cap, Math.max(this.liveRowsHighWater, total))
+    // 审批挂起时放开半屏 cap：截断从动态段顶部丢最旧行，「等待审批 <tool>」
+    // 状态行恰在段首，会被 cap 截掉——那是 2d8b67ca 事故要防的观感（明明在等
+    // 用户按 y/n，界面却不说在等什么）。审批期间用引擎上限兜底，审批结束后
+    // 高水位回落半屏 cap，输入框一次性小幅上跳，可接受。
+    const effectiveCap = this.approvalIntentController.approvalPending ? liveMaxRowsFor(rows) : cap
+    this.liveRowsHighWater = Math.min(effectiveCap, Math.max(this.liveRowsHighWater, total))
     return Math.max(0, this.liveRowsHighWater - chromeRows)
   }
 

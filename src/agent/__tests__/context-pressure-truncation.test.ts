@@ -12,18 +12,29 @@ describe('enforceContextPressureTruncation', () => {
     assert.equal(enforced[0]!.content, results[0]!.content)
   })
 
-  it('truncates large read_file results when usage ratio > 70%', () => {
-    const lines = Array.from({ length: 100 }, (_, i) => `line ${i}: ${'x'.repeat(50)}`)
+  it('keeps a 200-line preview in the 70–90% band', () => {
+    const lines = Array.from({ length: 500 }, (_, i) => `line ${i}: ${'x'.repeat(50)}`)
     const bigContent = lines.join('\n')
     const results = [
       { toolUseId: '1', content: bigContent, toolName: 'read_file' },
     ]
+    // 80% on a 1M window still leaves ~200K tokens free — do not clobber the file.
     const enforced = enforceContextPressureTruncation(results, 0.8)
     assert.ok(enforced[0]!.content.length < bigContent.length)
     assert.match(enforced[0]!.content, /context pressure/)
-    // Should keep first 30 lines
+    assert.ok(enforced[0]!.content.includes('line 199'), 'should keep first 200 lines')
+    assert.ok(!enforced[0]!.content.includes('line 250'))
+  })
+
+  it('collapses to a 30-line preview only at ≥90%', () => {
+    const lines = Array.from({ length: 500 }, (_, i) => `line ${i}: ${'x'.repeat(50)}`)
+    const bigContent = lines.join('\n')
+    const results = [
+      { toolUseId: '1', content: bigContent, toolName: 'read_file' },
+    ]
+    const enforced = enforceContextPressureTruncation(results, 0.95)
+    assert.match(enforced[0]!.content, /context pressure/)
     assert.ok(enforced[0]!.content.includes('line 29'))
-    // Should NOT include line 35
     assert.ok(!enforced[0]!.content.includes('line 35'))
   })
 

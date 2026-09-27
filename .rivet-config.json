@@ -2,7 +2,8 @@
   "songlineEnabled": true,
   "verify": {
     "routes": [
-      { "match": "desktop/src/**", "run": "node_modules/.bin/tsc --noEmit -p desktop/tsconfig.json", "kind": "typecheck" }
+      { "match": "desktop/src/**", "run": "node_modules/.bin/tsc --noEmit -p desktop/tsconfig.json", "kind": "typecheck" },
+      { "match": "desktop/**", "run": "npm run test:desktop", "kind": "test" }
     ]
   }
 }

@@ -211,7 +211,32 @@ describe('resolveEffortSupported — 会话内调档是否真能上线', () => {
 
   it('anthropic 协议与 thinking disabled 都算不支持（前者预算固定，后者不发该字段）', () => {
     assert.equal(resolveEffortSupported('my-claude', { protocol: 'anthropic', thinking: 'enabled' }), false)
+    assert.equal(resolveEffortSupported('claude', { protocol: 'anthropic', thinking: 'enabled' }), false, '官方 Claude 仍走 budget_tokens')
     assert.equal(resolveEffortSupported('deepseek', { protocol: 'openai', thinking: 'disabled' }), false)
+  })
+
+  it('anthropic 显式声明 output_config 通道时放行（火山方舟 Messages）', () => {
+    assert.equal(resolveEffortSupported(
+      'volc-plan-anthropic',
+      { protocol: 'anthropic', thinking: 'enabled', capabilities: { effortFormat: 'output_config' } },
+    ), true)
+  })
+})
+
+describe('官方档位枚举对齐（reasoning_effort → wire enum）', () => {
+  it('deepseek 官方 none|low|high|max：off→none、medium→high、max 原样', () => {
+    const caps = resolveCapabilities('deepseek')
+    assert.deepEqual(caps.effortCap, { off: 'none', medium: 'high' })
+  })
+
+  it('kimi 官方 low|high|max：off→none（关闭思考）、medium→high、max 不降级', () => {
+    const caps = resolveCapabilities('kimi')
+    assert.deepEqual(caps.effortCap, { off: 'none', medium: 'high' })
+  })
+
+  it('siliconflow 官方 high|max：low/medium 在客户端对齐 high', () => {
+    const caps = resolveCapabilities('siliconflow')
+    assert.deepEqual(caps.effortCap, { low: 'high', medium: 'high' })
   })
 })
 

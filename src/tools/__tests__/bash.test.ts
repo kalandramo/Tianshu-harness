@@ -1,6 +1,6 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { execFileSync } from 'node:child_process'
@@ -448,3 +448,53 @@ describe('sanitizeEnv', () => {
     assert.equal(result.NODE_PATH, '/opt/lib')
   })
 })
+
+// ─── typecheck 形态的 timeout 下限（P0：交付门假失败的主因） ──────────────────
+//
+// 事故形状（2026-09-25 会话取证，tianshu-3.15 最近 7 个会话）：
+//   模型跑 `npm run typecheck 2>&1 | tail -40` 并显式传 timeout=420000（21 次
+//   typecheck 调用里 8 次如此），而 typecheck 要过 typecheck-cache 的跨进程共享
+//   闸门，等待上限是 TYPECHECK_CALLER_BUDGET_MS（13 分钟）。420s 先到 → SIGTERM
+//   → exit=-1，`| tail` 又把已有输出一起吞掉（lines=1、零结果）→ ledger 记
+//   「验证超时」→ deliver_task 拒绝提交（isError）→ turn-harness 再重试 2 次。
+//   交付门 31 次调用 20 次 error 里没有一次 RED，全部是这条链。
+describe('typecheck 形态的 timeout 下限', () => {
+  it('给 typecheck 形态的小预算会被抬到闸门预算——命令跑完而不是被 SIGTERM', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rivet-bash-tc-budget-'))
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({
+      name: 'rivet-tc-budget-fixture',
+      private: true,
+      scripts: { typecheck: `node -e "setTimeout(()=>process.stdout.write('TC_OK\\n'), 1200)"` },
+    }))
+    try {
+      const result = await BASH_TOOL.execute({
+        input: { command: 'npm run typecheck', timeout: 300 },
+        toolUseId: 'bash-typecheck-budget-lift',
+        cwd: dir,
+      })
+      assert.notEqual(result.isError, true, `typecheck 形态不该在 300ms 被杀：${result.content.slice(0, 240)}`)
+      assert.match(result.content, /TC_OK/, '命令应跑完并产出它的输出')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('对照：同长度非 typecheck 命令的小预算照旧生效（证明上一条测的是形态抬升）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rivet-bash-tc-control-'))
+    try {
+      const result = await BASH_TOOL.execute({
+        input: {
+          command: `node -e "setTimeout(()=>process.stdout.write('NOT_TC\\n'), 1200)"`,
+          timeout: 300,
+        },
+        toolUseId: 'bash-typecheck-budget-control',
+        cwd: dir,
+      })
+      assert.equal(result.isError, true, '非 typecheck 命令必须仍受小预算约束')
+      assert.match(result.content, /命令超时/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+

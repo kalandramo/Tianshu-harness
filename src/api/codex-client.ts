@@ -15,6 +15,12 @@ export interface CodexClientConfig {
   maxTokens: number
   auth?: import('../auth/types.js').AuthProvider
   /** 显式重试上限；undefined = 分类器 per-category 默认（显式值不再被夹取），0 = 禁用。 */
+  /**
+   * PLAN §3 共享重试预算 getter：provider 重试与 agent 重连共用同一份，
+   * 防 3×3=9 相乘（per-run，由 AgentConfig.retryBudgetHolder 承载）。
+   * undefined = 不启用（历史行为）。用 getter 而非实例：客户端在 agent 构造期建好。
+   */
+  retryBudget?: () => import('./retry-budget.js').RetryBudget | undefined
   maxRetries?: number
   /** Provider-level retry policy (issue #75)：退避曲线 / 类别覆盖 / 客户端限速。
    *  undefined = 历史行为（分类器固定延迟 + 内置预算）。 */
@@ -97,6 +103,7 @@ export class CodexClient implements StreamClient {
 
       await this.processSSEStream(response, callbacks, signal, lifecycle)
     }, signal, {
+      budget: this.config.retryBudget?.(),
       maxTotalDurationMs: this.config.retry?.maxTotalDurationMs ?? 10 * 60_000,
       maxTotalRetries: this.config.maxRetries,
       policy: this.config.retry,

@@ -285,12 +285,55 @@ describe('classifyApiError', () => {
     assert.match(result.userMessage, /ECONNREFUSED 104\.18\.27\.90:443/)
   })
 
+  it('classifies a malformed HTTP response head as malformed_response (not "connection lost")', () => {
+    // 2026-09-27 用户报告：第三方 provider 的 CloudWAF 某边缘节点往响应头里插了
+    // 一行空白字符。undici 在解析响应头阶段就拒绝，抛 HTTPParserError。
+    // 这条曾经落进通用 /fetch failed/i 分支被报成「Connection lost」，把用户
+    // 指去查自己的网络——而上游明明回了响应，只是字节畸形。
+    const cause = Object.assign(
+      new Error('Response does not match the HTTP/1.1 protocol (Unexpected whitespace after header value)'),
+      { name: 'HTTPParserError' },
+    )
+    const result = classifyApiError(new TypeError('fetch failed', { cause }))
+    assert.equal(result.category, 'malformed_response')
+    assert.equal(result.retryable, true)
+    assert.equal(result.shouldReconnect, true)
+    assert.ok(result.maxRetries >= 5, '单节点故障靠多试几次换节点，预算要比通用网络错误宽')
+    assert.doesNotMatch(result.userMessage, /connection lost/i, '不得再报成「连接中断」')
+    assert.match(result.userMessage, /malformed HTTP response/i)
+  })
+
+  it('classifies the rewritten message form too (fetch-timeout 加前缀后仍归这类)', () => {
+    // fetch-timeout.ts 会把这类失败改写成
+    // `fetch failed: upstream HTTP response malformed (gateway/WAF edge) — <parser 原文>`
+    // 好让 TUI/桌面端那一行自解释。改写不得让分类退化。
+    const err = new Error(
+      'fetch failed: upstream HTTP response malformed (gateway/WAF edge) — '
+      + 'Response does not match the HTTP/1.1 protocol (Unexpected whitespace after header value)',
+    )
+    assert.equal(classifyApiError(err).category, 'malformed_response')
+  })
+
+  it('does not swallow ordinary connection failures into malformed_response', () => {
+    // 反向护栏：新分支排在「Connection lost」之前，不能把连接类错误一起吃掉。
+    const reset = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' })
+    assert.equal(classifyApiError(new TypeError('fetch failed', { cause: reset })).category, 'timeout')
+    assert.equal(classifyApiError(new Error('fetch failed')).category, 'timeout')
+  })
+
   it('classifies fetch failed with ENOTFOUND cause (DNS) as reconnectable', () => {
     const cause = Object.assign(new Error('getaddrinfo ENOTFOUND api.deepseek.com'), { code: 'ENOTFOUND' })
     const result = classifyApiError(new TypeError('fetch failed', { cause }))
     assert.equal(result.retryable, true)
     assert.equal(result.shouldReconnect, true)
     assert.match(result.userMessage, /ENOTFOUND api\.deepseek\.com/)
+  })
+
+  it('malformed_response 的恢复指引点明「不是本机网络问题」', () => {
+    const cause = Object.assign(new Error('Response does not match the HTTP/1.1 protocol'), { name: 'HTTPParserError' })
+    const guidance = errorRecoveryGuidance(new TypeError('fetch failed', { cause }))
+    assert.match(guidance, /畸形/)
+    assert.match(guidance, /不是本机网络问题/)
   })
 
   it('unwraps nested cause chains (fetch failed → SocketError → ECONNRESET)', () => {

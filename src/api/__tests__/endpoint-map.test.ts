@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeBaseUrl, resolveProbeEndpoints, PROVIDER_ENDPOINT_MAP, DEFAULT_ENDPOINT_PATHS } from '../endpoint-map.js'
+import { normalizeBaseUrl, resolveProbeEndpoints, PROVIDER_ENDPOINT_MAP, DEFAULT_ENDPOINT_PATHS, hasModelsListEndpoint } from '../endpoint-map.js'
 
 describe('normalizeBaseUrl', () => {
   it('strips trailing slashes', () => {
@@ -91,6 +91,24 @@ describe('resolveProbeEndpoints', () => {
   it('unknown providers fall back to the OpenAI-compatible default', () => {
     const r = resolveProbeEndpoints('https://my-relay.example.com/v1', 'totally-unknown')
     assert.equal(r.chatUrl, 'https://my-relay.example.com/v1/chat/completions')
+  })
+
+  // issue #272：火山方舟 Agent Plan / Coding Plan 的 OpenAI 兼容面没有 GET
+  // /models，探测必须能提前识别并跳过列表拉取（改走最小补全）。
+  it('detects endpoints without a GET /models list (provider name or official base URL)', () => {
+    assert.equal(hasModelsListEndpoint('volc-plan', 'https://ark.cn-beijing.volces.com/api/plan/v3'), false)
+    // 自定义 provider 名 + 官方地址（issue #272 用户的实际路径）
+    assert.equal(hasModelsListEndpoint('my-plan', 'https://ark.cn-beijing.volces.com/api/plan/v3'), false)
+    assert.equal(hasModelsListEndpoint(undefined, 'https://ark.cn-beijing.volces.com/api/plan/v3/'), false)
+    assert.equal(hasModelsListEndpoint('my-coding', 'https://ark.cn-beijing.volces.com/api/coding/v3'), false)
+    // Anthropic Messages 面 /api/plan（无 /v3）——同样没有列表
+    assert.equal(hasModelsListEndpoint('volc-plan-anthropic', 'https://ark.cn-beijing.volces.com/api/plan'), false)
+    assert.equal(hasModelsListEndpoint(undefined, 'https://ark.cn-beijing.volces.com/api/plan'), false)
+    // 按量端点 / 普通 OpenAI 兼容端点仍有列表
+    assert.equal(hasModelsListEndpoint('volc', 'https://ark.cn-beijing.volces.com/api/v3'), true)
+    assert.equal(hasModelsListEndpoint(undefined, 'https://api.example.com/v1'), true)
+    // 只认官方域名+路径，别家同形路径不误伤
+    assert.equal(hasModelsListEndpoint(undefined, 'https://relay.example.com/api/plan/v3'), true)
   })
 
   it('per-provider overrides win over defaults', () => {

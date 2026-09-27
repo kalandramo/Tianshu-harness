@@ -95,6 +95,9 @@ export const modelConfigSchema = z.object({
    *  the norm. Gates the computer_use screenshot → conversation vision channel.
    *  Default undefined = text-only (images are dropped, today's behavior). */
   supportsVision: z.boolean().optional(),
+  /** 官方视频输入声明（与 supportsVision 平行）。当前 harness 无视频投喂通道——
+   *  先用于展示/契约与后续接入门控；undefined = 未声明（按不支持）。 */
+  supportsVideo: z.boolean().optional(),
   /** Model generates images (text-to-image endpoint, issue #8). Declared per
    *  model, NOT per provider. Consumed by the image-gen slot picker; chat model
    *  pickers filter these out, and the DashScope native probe keeps them so the
@@ -476,6 +479,24 @@ export const agentSchema = z.object({
   /** 用户 Stop 时保留 partial 并追加 [interrupted] 标记（对齐 Codex/Claude Code）。
    *  默认开；false 或 RIVET_INTERRUPT_MARKER=0 关。 */
   interruptMarker: z.boolean().default(true),
+  /** 模型请求中断（网络/超时类可重连错误）后，在预算内用**相同 request** 重连当前
+   *  请求：失败尝试的 partial 丢弃、按尝试替换（避免 UI/历史重复）。默认关——保守
+   *  特性，需显式开启（PLAN §4 的恢复规则，2026-09-26 接通配置）。 */
+  reconnect: z.object({
+    enabled: z.boolean().default(false),
+    /** 最大重连次数（不含首次）。默认 1。 */
+    maxAttempts: z.number().int().nonnegative().default(1),
+    /** 每次重连前的退避 ms（可被 abort 打断）。默认 500。 */
+    backoffMs: z.number().int().nonnegative().default(500),
+  }).optional(),
+
+  /** PLAN §4 恢复行为开关（灰度）。`structuredTools`：恢复时把「结果未知」的工具
+   *  从静默剔除升级为结构化注入（明确 tool 消息 + 事件待确认）。默认关——行为变更
+   *  先灰度；env RIVET_RECOVERY_STRUCTURED_TOOLS=1 仍可覆盖（优先级低于本配置项时
+   *  以配置为准，见 session-persist）。 */
+  recovery: z.object({
+    structuredTools: z.boolean().default(false),
+  }).optional(),
   /** 证据防火墙 Phase 2（jidoka 硬门禁）：deliver_task commit 时引用未经本会话
    *  独立核验的 delegate/scout file:line 断言 → isError 拦截。默认关（opt-in，
    *  Phase 1 诚实标注数据决定是否默认开）。env RIVET_SCOUT_FIREWALL 优先。 */

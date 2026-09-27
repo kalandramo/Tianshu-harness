@@ -17,6 +17,7 @@ export function attachSessionPersistListener(deps: {
 }): { drain: () => Promise<void> } {
   const { session, persist } = deps
   let writeChain: Promise<void> = Promise.resolve()
+  let writeFailure: unknown
   session.setMutationListener((m) => {
     if (m.type === 'append') {
       const msg = m.message
@@ -64,6 +65,7 @@ export function attachSessionPersistListener(deps: {
           } catch { /* metadata update failures are non-critical */ }
         })
         .catch(err => {
+          writeFailure ??= err
           // Persistence failures must not crash the agent loop.
           // Surface to stderr; the in-memory state is still authoritative.
           // eslint-disable-next-line no-console
@@ -75,6 +77,7 @@ export function attachSessionPersistListener(deps: {
       writeChain = writeChain
         .then(() => persist.compactOaiAsync(m.messages))
         .catch(err => {
+          writeFailure ??= err
           // eslint-disable-next-line no-console
           console.error('[session-persist] compact failed:', err)
         })
@@ -85,5 +88,8 @@ export function attachSessionPersistListener(deps: {
     // P1 write-behind: drain must also flush the pending batch so /cd
     // migration, shutdown, and abort paths leave no unwritten tail.
     await persist.flushSessionBuffer()
+    // Background writes stay handled, but an explicit durability barrier must
+    // never acknowledge history that failed to reach disk.
+    if (writeFailure) throw writeFailure
   } }
 }

@@ -35,6 +35,8 @@ export interface Block {
   language?: string
   content: string
   items?: string[]
+  /** 列表块：标记为 `1. ` 的有序列表。parse 阶段会剥掉标记，不记下来就再也分不出。 */
+  ordered?: boolean
 }
 
 // ── Keyword sets (unchanged from markdown-render.tsx) ──────────
@@ -273,10 +275,12 @@ export function parseBlocks(text: string): Block[] {
 
     if (/^(\s*[-*]\s|\s*\d+\.\s)/.test(line)) {
       const items: string[] = []
+      let ordered = false
       while (i < lines.length && /^(\s*[-*]\s|\s*\d+\.\s)/.test(lines[i]!)) {
+        if (/^\s*\d+\.\s/.test(lines[i]!)) ordered = true
         items.push(lines[i]!.replace(/^\s*[-*]\s|\s*\d+\.\s/, '')); i++
       }
-      blocks.push({ type: 'list', content: items.join('\n'), items }); continue
+      blocks.push({ type: 'list', content: items.join('\n'), items, ordered }); continue
     }
 
     if (line.includes('|') && i + 1 < lines.length && /^\|?[\s-:|]+\|?$/.test(lines[i + 1]!)) {
@@ -358,9 +362,13 @@ export function guessLang(text: string): string | undefined {
 export function hasMarkdown(text: string): boolean {
   return text.includes('**') || text.includes('`') || text.includes('```')
     || /^#{1,6}\s/m.test(text) || /^[-*]\s/m.test(text) || /^>\s/m.test(text)
+    // 编号列表：parseBlocks 一直支持它（`\s*\d+\.\s`），但这里漏判 → 编号列表
+    // 降级走纯文本快速路径，块结构、留白、序号高亮全部失效。2026-09-26 用户
+    // 反馈「分点挤在一起、没有结构」时暴露：交付报告的四项就是这么被吞掉的。
+    || /^\s*\d+\.\s/m.test(text)
     || /^(-{3,}|\*{3,}|_{3,})\s*$/m.test(text)
     // Inline/display math delimiters trigger the full parser too.
-    || /\$[^\s$]/.test(text) || text.includes('$$') || text.includes('\\[') || text.includes('\\(')
+    || /\$[^\s$]/.test(text) || text.includes('$') || text.includes('\\[') || text.includes('\\(')
     // Markdown links [text](url) — 触发行内解析以渲染 OSC 8 超链接。
     || /\[[^\]]+\]\([^)]+\)/.test(text)
 }
@@ -512,10 +520,17 @@ function formatBlock(block: Block, columns: number, theme: RivetTheme): string[]
     }
     case 'list': {
       const items = block.items ?? block.content.split('\n')
-      for (const item of items) {
+      items.forEach((item, idx) => {
+        // 项间留白：终端没有字号层级，行距是唯一能穿过整屏文字的结构信号。
+        if (idx > 0) result.push('')
         const itemAnsi = formatInlineToAnsi(parseInline(item), theme)
-        result.push(`${color('◇', theme.secondary)} ${highlightCodeLineNumber(itemAnsi, theme)}`)
-      }
+        // 有序列表还原序号（parse 阶段连标记一起剥掉了）。高亮口径沿用行首
+        // 数字那一套（warning + bold），与纯文本路径的 `1.` 视觉一致。
+        const bullet = block.ordered
+          ? color(`${idx + 1}.`, theme.warning, { bold: true })
+          : color('◇', theme.secondary)
+        result.push(`${bullet} ${highlightCodeLineNumber(itemAnsi, theme)}`)
+      })
       break
     }
     case 'blockquote':
@@ -605,6 +620,9 @@ export function formatMarkdown(input: FormatMarkdownInput, theme: RivetTheme): s
     // 完整 Markdown 解析
     const blocks = parseBlocks(input.text)
     for (const block of blocks) {
+      // 块间留白：标题 / 段落 / 列表 / 代码块互不粘连。**只加在 markdown 路径**——
+      // 纯文本快速路径的逐行紧凑排布是刻意的（工具输出与逐行文本撑开会翻倍）。
+      if (result.length > 0) result.push('')
       result.push(...formatBlock(block, input.columns, theme))
     }
   }

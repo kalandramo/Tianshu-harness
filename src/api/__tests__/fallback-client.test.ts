@@ -18,10 +18,17 @@ function makeRequest(): OaiChatRequest {
   return { model: 'test', messages: [{ role: 'user', content: 'hi' }] }
 }
 
-function makeClient(behavior: 'ok' | 'server_error' | 'auth_error'): StreamClient {
+function makeClient(behavior: 'ok' | 'server_error' | 'auth_error' | 'malformed_response'): StreamClient {
   return {
     async stream(_req: OaiChatRequest, _cb: StreamCallbacks, _signal?: AbortSignal) {
       if (behavior === 'ok') return
+      if (behavior === 'malformed_response') {
+        // 真实链路里 fetch-timeout 会把 undici 的解析失败改写成这行文案
+        throw new Error(
+          'fetch failed: upstream HTTP response malformed (gateway/WAF edge) — '
+          + 'Response does not match the HTTP/1.1 protocol (Unexpected whitespace after header value)',
+        )
+      }
       if (behavior === 'server_error') {
         const err = new Error('Service Unavailable') as Error & { status: number }
         err.status = 503
@@ -49,6 +56,20 @@ describe('FallbackStreamClient', () => {
 
   it('falls back when primary throws server_error', async () => {
     const primary = makeClient('server_error')
+    const log: string[] = []
+    const client = new FallbackStreamClient(
+      primary, 'main',
+      [{ name: 'backup', create: () => makeClient('ok') }],
+      (from, to) => log.push(`${from}->${to}`),
+    )
+    await client.stream(makeRequest(), makeCallbacks())
+    assert.deepEqual(log, ['main->backup'])
+  })
+
+  it('falls back on malformed_response（上游网关返回畸形响应时换 provider）', async () => {
+    // 2026-09-27：某 provider 的 WAF 边缘节点返回畸形响应头。这不是「请求有问题」，
+    // 而是「这家此刻不可用」——配了备用 provider 的用户应当自动被接住。
+    const primary = makeClient('malformed_response')
     const log: string[] = []
     const client = new FallbackStreamClient(
       primary, 'main',

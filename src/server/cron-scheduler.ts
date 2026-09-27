@@ -16,9 +16,11 @@ import { errorContext, serverLogger } from './logger.js'
 // `from './cron-scheduler.js'` 的消费方（路由 / 工具 / 测试 / TUI）零改动。
 import {
   REVIEW_POLICIES,
+  SCHEDULED_TASK_APPROVAL_MODES,
   SCHEDULED_TASK_STATUSES,
   applyTaskPatch,
   isFiringStatus,
+  normalizeApprovalMode,
   normalizeRetry,
   normalizeReviewPolicy,
   normalizeTaskStatus,
@@ -31,12 +33,18 @@ import type {
   ScheduledTaskRetry,
   ScheduledTaskStatus,
 } from './scheduled-task-model.js'
+import type { ApprovalMode } from '../agent/loop-types.js'
+// issue #266 W4 之后本文件再次越过 800 行红线，仍按结构 gate 沿接缝拆分：
+// cron 表达式解析与「下次触发」计算是纯函数族（不碰调度器状态），切到 cron-tick.ts。
+import { computeNextTrigger, nextCronTime } from './cron-tick.js'
 
 export {
   REVIEW_POLICIES,
+  SCHEDULED_TASK_APPROVAL_MODES,
   SCHEDULED_TASK_STATUSES,
   applyTaskPatch,
   isFiringStatus,
+  normalizeApprovalMode,
   normalizeRetry,
   normalizeReviewPolicy,
   normalizeTaskStatus,
@@ -44,6 +52,7 @@ export {
   withTaskStatus,
 }
 export type { ReviewPolicy, ScheduledTaskPatch, ScheduledTaskRetry, ScheduledTaskStatus }
+export { parseCronExpr, computeNextTrigger } from './cron-tick.js'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -91,6 +100,12 @@ export interface ScheduledTask {
   /** 审查策略。缺省 = 'always-review'。 */
   reviewPolicy?: ReviewPolicy
   /**
+   * 该任务显式声明的审批档位（issue #259）。缺省 = 不注入——会话沿用既有默认
+   * 档位，`unattended` 的 fail-closed 语义因此一个字节不变；只有任务显式声明
+   * 才覆盖。取值受 SCHEDULED_TASK_APPROVAL_MODES 收窄（auto-accept / auto-safe）。
+   */
+  approval?: ApprovalMode
+  /**
    * 创建该任务时会话的工作区（快照）。任务触发后在快照 cwd 里执行——桌面端
    * 一个 sidecar 托管多个项目，缺省时所有任务都会落到 sidecar 的启动目录，
    * 项目 A 创建的「检查依赖更新」就会在错误的项目里跑 npm/git。
@@ -107,6 +122,11 @@ export interface TaskDueMeta {
   retry?: ScheduledTaskRetry
   /** 本次运行是否无人值守（reviewPolicy 解析后的生效模式）。 */
   unattended?: boolean
+  /**
+   * 该任务声明的审批档位（issue #259）——缺省不带该键，执行侧保持既有默认档位。
+   * 与 `unattended` 正交：前者决定「审批请求等不等人」，后者决定「等人的时候用哪档」。
+   */
+  approvalMode?: ApprovalMode
   /** 手动触发（试跑/中止后重跑），非定时到点。 */
   manual?: boolean
   /** 任务创建时会话的工作区快照（执行 cwd，见 ScheduledTask.cwd）。 */
@@ -146,6 +166,30 @@ function atomicWriteSchedule(path: string, table: ScheduleTable): void {
   const tmpPath = path + '.tmp'
   writeFileSync(tmpPath, JSON.stringify(table, null, 2), 'utf-8')
   renameSync(tmpPath, path)
+}
+
+/** 一次写盘的结局；失败时带原文（不吞）。 */
+export interface PersistOutcome {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * 调度表的写盘健康（issue #266 / D5）。
+ * 语义边界很重要：`ok=false` **不**代表定义没用——内存里的表已经改了，本轮/本会话
+ * 的调度照常；它代表的是「重启后会丢」。界面必须照这个语义说话，否则会把一次可恢复
+ * 的权限问题说成「保存失败」，用户会去重打一遍。
+ */
+export interface PersistHealth {
+  ok: boolean
+  /** 绝对/相对路径原样回显，便于用户直接去查权限。 */
+  path: string
+  /** 上次写盘尝试时刻（ms）。 */
+  lastAttemptAt?: number
+  /** 上次**成功**写盘时刻（ms）——判断「磁盘上那份有多旧」看这个。 */
+  lastOkAt?: number
+  /** 上次失败原文（成功不清空：残留原因有助于诊断）。 */
+  lastError?: string
 }
 
 function quarantineSchedule(path: string, reason: string, err?: unknown): void {
@@ -191,157 +235,6 @@ function loadSchedule(path: string): ScheduleTable {
   }
 }
 
-// ─── Next Tick Calculation ────────────────────────────────────
-
-/**
- * Parse one cron field into the set of matching values.
- * Supports the standard forms: `*`, `n`, `a-b`, `*​/step`, `a-b/step`, and
- * comma lists of any of those. Returns null on any syntax/range error.
- */
-function parseCronField(field: string, min: number, max: number): Set<number> | null {
-  const values = new Set<number>()
-  for (const part of field.split(',')) {
-    if (!part) return null
-    const [rangeExpr, stepExpr, extra] = part.split('/')
-    if (extra !== undefined) return null
-    let step = 1
-    if (stepExpr !== undefined) {
-      step = parseInt(stepExpr, 10)
-      if (!/^\d+$/.test(stepExpr) || isNaN(step) || step < 1) return null
-    }
-    let lo: number
-    let hi: number
-    if (rangeExpr === '*') {
-      lo = min
-      hi = max
-    } else if (/^\d+$/.test(rangeExpr!)) {
-      lo = parseInt(rangeExpr!, 10)
-      // A bare number with a step (`5/15`) means "from 5 to max, every 15".
-      hi = stepExpr !== undefined ? max : lo
-    } else {
-      const m = /^(\d+)-(\d+)$/.exec(rangeExpr!)
-      if (!m) return null
-      lo = parseInt(m[1]!, 10)
-      hi = parseInt(m[2]!, 10)
-    }
-    if (lo < min || hi > max || lo > hi) return null
-    for (let v = lo; v <= hi; v += step) values.add(v)
-  }
-  return values.size > 0 ? values : null
-}
-
-interface ParsedCron {
-  minutes: Set<number>
-  hours: Set<number>
-  daysOfMonth: Set<number>
-  months: Set<number>
-  daysOfWeek: Set<number>
-  domRestricted: boolean
-  dowRestricted: boolean
-}
-
-export function parseCronExpr(expr: string): ParsedCron | null {
-  const parts = expr.trim().split(/\s+/)
-  if (parts.length !== 5) return null
-  const minutes = parseCronField(parts[0]!, 0, 59)
-  const hours = parseCronField(parts[1]!, 0, 23)
-  const daysOfMonth = parseCronField(parts[2]!, 1, 31)
-  const months = parseCronField(parts[3]!, 1, 12)
-  // Day-of-week accepts 0-7 with 7 ≡ Sunday ≡ 0 (both cron dialects in the wild).
-  const rawDow = parseCronField(parts[4]!, 0, 7)
-  if (!minutes || !hours || !daysOfMonth || !months || !rawDow) return null
-  const daysOfWeek = new Set<number>()
-  for (const d of rawDow) daysOfWeek.add(d === 7 ? 0 : d)
-  return {
-    minutes,
-    hours,
-    daysOfMonth,
-    months,
-    daysOfWeek,
-    domRestricted: parts[2] !== '*',
-    dowRestricted: parts[4] !== '*',
-  }
-}
-
-/**
- * Next fire time (UTC) strictly after `from` for a standard 5-field cron
- * expression. Standard day-matching rule: when BOTH day-of-month and
- * day-of-week are restricted, a day fires if EITHER matches; otherwise the
- * restricted one (or neither) applies.
- */
-function nextCronTime(expr: string, from: number): number | null {
-  const cron = parseCronExpr(expr)
-  if (!cron) return null
-
-  const dayMatches = (d: Date): boolean => {
-    if (!cron.months.has(d.getUTCMonth() + 1)) return false
-    const domOk = cron.daysOfMonth.has(d.getUTCDate())
-    const dowOk = cron.daysOfWeek.has(d.getUTCDay())
-    if (cron.domRestricted && cron.dowRestricted) return domOk || dowOk
-    if (cron.domRestricted) return domOk
-    if (cron.dowRestricted) return dowOk
-    return true
-  }
-
-  // Scan day-by-day (bounded to 4 years to cover Feb-29 schedules), then pick
-  // the earliest in-set hour/minute — cheap: at most ~1461 iterations.
-  const start = new Date(from)
-  start.setUTCSeconds(0, 0)
-  const startDay = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())
-  const sortedHours = [...cron.hours].sort((a, b) => a - b)
-  const sortedMinutes = [...cron.minutes].sort((a, b) => a - b)
-  for (let dayOffset = 0; dayOffset <= 4 * 366; dayOffset++) {
-    const day = new Date(startDay + dayOffset * 24 * 60 * 60 * 1000)
-    if (!dayMatches(day)) continue
-    for (const h of sortedHours) {
-      for (const m of sortedMinutes) {
-        const candidate = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), h, m, 0, 0)
-        if (candidate > from) return candidate
-      }
-    }
-  }
-  return null
-}
-
-export function computeNextTrigger(task: ScheduledTask, now: number): number | null {
-  switch (task.trigger.type) {
-    case 'startup':
-    case 'app-open':
-    case 'file-change':
-    case 'git-push':
-    case 'focus-change':
-      // 事件触发器——不参与 tick 轮询。由外部事件（OS 开机 / 应用打开 / 文件
-      // 变更 / git push / 窗口聚焦）经 CronScheduler.fireByEvent() 显式触发。
-      return null
-    case 'interval': {
-      const ms = parseInt(task.trigger.spec, 10)
-      if (isNaN(ms) || ms <= 0) return null
-      const base = task.lastTriggeredAt
-        ? new Date(task.lastTriggeredAt).getTime()
-        : new Date(task.createdAt).getTime()
-      return base + ms
-    }
-    case 'cron': {
-      // Compute from the last fire (or creation), NOT from `now`: next is
-      // strictly in the future relative to its base, so basing it on `now`
-      // meant `next <= now` never held and cron tasks never fired. With the
-      // last-fire base, a tick landing any time after the scheduled minute
-      // sees next <= now and fires exactly once.
-      const base = task.lastTriggeredAt
-        ? new Date(task.lastTriggeredAt).getTime()
-        : new Date(task.createdAt).getTime()
-      if (isNaN(base)) return null
-      return nextCronTime(task.trigger.spec, base)
-    }
-    case 'oneshot': {
-      if (task.triggerCount > 0) return null
-      const ts = new Date(task.trigger.spec).getTime()
-      if (isNaN(ts)) return null
-      return ts <= now ? now : ts
-    }
-  }
-}
-
 // ─── Cron Scheduler ───────────────────────────────────────────
 
 export class CronScheduler {
@@ -352,6 +245,8 @@ export class CronScheduler {
   private tickTimer: ReturnType<typeof setInterval> | null = null
   private running = false
   private ticking = false
+  /** 上次写盘结果（issue #266 / D5）——`ok=false` 必须能一路传到 HTTP 回执与界面。 */
+  private persistState: Omit<PersistHealth, 'path'> = { ok: true }
 
   constructor(config: CronSchedulerConfig) {
     this.schedulePath = config.schedulePath ?? DEFAULT_SCHEDULE_PATH
@@ -615,6 +510,8 @@ export class CronScheduler {
         : resolveRunUnattended({ reviewPolicy: task.reviewPolicy, triggerCount: preTriggerCount }),
       ...(opts?.manual ? { manual: true } : {}),
       ...(task.cwd ? { cwd: task.cwd } : {}),
+      // 任务声明的审批档位（issue #259）：缺省不带该键，执行侧保持既有默认档位。
+      ...(task.approval ? { approvalMode: task.approval } : {}),
     }
     for (const handler of this.handlers) {
       try {
@@ -625,12 +522,31 @@ export class CronScheduler {
     }
   }
 
-  private persist(): void {
+  /**
+   * 写盘（issue #266 / D5）。**返回值必须被消费**：以前这里吞掉异常只打日志，
+   * 于是磁盘写不进去时接口照样 200，用户看到「保存成功」、重启后改动消失——
+   * 本仓反复记录的最贵 bug 形状（静默降级）。现在把结果一路带到 HTTP 回执。
+   */
+  private persist(): PersistOutcome {
+    const at = Date.now()
+    this.persistState.lastAttemptAt = at
     try {
       atomicWriteSchedule(this.schedulePath, this.table)
+      this.persistState.ok = true
+      this.persistState.lastOkAt = at
+      return { ok: true }
     } catch (err) {
+      const error = err instanceof Error ? err.message : String(err)
+      this.persistState.ok = false
+      this.persistState.lastError = error
       serverLogger.error('Failed to persist schedule table', { schedulePath: this.schedulePath, ...errorContext(err) })
+      return { ok: false, error }
     }
+  }
+
+  /** 写盘健康快照：`ok=false` 表示「内存里已改、磁盘上没有」（重启会丢）。 */
+  persistenceHealth(): PersistHealth {
+    return { path: this.schedulePath, ...this.persistState }
   }
 }
 
@@ -640,7 +556,7 @@ export function createScheduledTask(
   prompt: string,
   trigger: CronTrigger,
   allowedTools: string[] = [],
-  opts?: { recurringMaxAgeMs?: number; agentId?: string; retry?: ScheduledTaskRetry; reviewPolicy?: ReviewPolicy; cwd?: string },
+  opts?: { recurringMaxAgeMs?: number; agentId?: string; retry?: ScheduledTaskRetry; reviewPolicy?: ReviewPolicy; approval?: ApprovalMode; cwd?: string },
 ): ScheduledTask {
   return {
     id: `cron_${randomUUID().slice(0, 8)}`,
@@ -653,6 +569,9 @@ export function createScheduledTask(
     triggerCount: 0,
     ...(normalizeRetry(opts?.retry) ? { retry: normalizeRetry(opts?.retry)! } : {}),
     ...(normalizeReviewPolicy(opts?.reviewPolicy) ? { reviewPolicy: normalizeReviewPolicy(opts?.reviewPolicy)! } : {}),
+    // 非法档位静默丢弃（与 reviewPolicy 同口径）：路由层已把它拦成 400，
+    // 这里只保证直接调库时不会写入越权档位。
+    ...(normalizeApprovalMode(opts?.approval) ? { approval: normalizeApprovalMode(opts?.approval)! } : {}),
     ...(opts?.cwd ? { cwd: opts.cwd } : {}),
   }
 }
@@ -716,6 +635,9 @@ function normalizeScheduledTask(value: unknown): ScheduledTask | null {
     ...(status ? { status, enabled: status === 'active' } : {}),
     ...(normalizeRetry(task.retry) ? { retry: normalizeRetry(task.retry)! } : {}),
     ...(normalizeReviewPolicy(task.reviewPolicy) ? { reviewPolicy: normalizeReviewPolicy(task.reviewPolicy)! } : {}),
+    // 审批档位（issue #259）：白名单同源归一，非法值静默丢弃——否则一条手工
+    // 编辑过持久化文件的越权档位会被原样带进运行。
+    ...(normalizeApprovalMode(task.approval) ? { approval: normalizeApprovalMode(task.approval)! } : {}),
   }
   try {
     validateTriggerOrThrow(normalized.trigger)
@@ -747,4 +669,23 @@ export function setActiveScheduler(scheduler: CronScheduler | undefined): void {
 
 export function getActiveScheduler(): CronScheduler | undefined {
   return activeScheduler
+}
+
+/**
+ * unattendedAutomation Pro 门的运行时开关（与 schedule-routes 同一口径：非
+ * always-review、显式声明审批档、或含 computer_use 白名单的定时任务都算「无人
+ * 值守自动化」）。
+ *
+ * 门只长在 HTTP 路由上是不够的——agent 的 schedule_create 工具直接调
+ * CronScheduler.add，绕过了路由的 wantsUnattended 判定（2026-09-24 修复）。
+ * 缺省未注入 = 允许：CLI/TUI 没有 Pro 概念，测试也不必每个用例都注入。
+ */
+let unattendedAutomationGate: (() => boolean) | undefined
+
+export function setUnattendedAutomationGate(gate: (() => boolean) | undefined): void {
+  unattendedAutomationGate = gate
+}
+
+export function isUnattendedAutomationAllowed(): boolean {
+  return unattendedAutomationGate === undefined || unattendedAutomationGate()
 }

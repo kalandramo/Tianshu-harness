@@ -393,4 +393,36 @@ describe('createAgentConfig', () => {
     assert.equal(cfg.visionBridge?.source, 'native', '原生支持必须与桥接生效可区分')
     assert.match(cfg.visionBridge?.detail ?? '', /原生支持识图/)
   })
+
+  it('wires config.agent.reconnect into agentReconnect (PLAN §4)', () => {
+    const input = createMainAgentConfigInput({
+      apiKey: 'test-key',
+      model: baseInput.model,
+      cwd: '/tmp/test',
+      config: {
+        ...testConfig,
+        agent: { ...testConfig.agent, reconnect: { enabled: true, maxAttempts: 3, backoffMs: 250 } },
+      } as Pick<Config, 'agent' | 'compact' | 'runtime'>,
+      sessionId: 'session-1',
+      toolDefinitions: [],
+      provider: testProvider,
+    })
+    assert.deepEqual(input.agentReconnect, { enabled: true, maxAttempts: 3, backoffMs: 250 })
+    const cfg = createAgentConfig(input)
+    assert.deepEqual(cfg.agentReconnect, { enabled: true, maxAttempts: 3, backoffMs: 250 })
+  })
+
+  it('keeps agentReconnect disabled when config.agent.reconnect is unset', () => {
+    const input = createMainAgentConfigInput({
+      apiKey: 'test-key',
+      model: baseInput.model,
+      cwd: '/tmp/test',
+      config: testConfig,
+      sessionId: 'session-1',
+      toolDefinitions: [],
+      provider: testProvider,
+    })
+    assert.equal(input.agentReconnect, undefined)
+  })
+
 })

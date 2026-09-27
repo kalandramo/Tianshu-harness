@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+import { setImmediate as yieldToLoop } from 'node:timers/promises'
 import { existsSync, mkdirSync, readFileSync, unlinkSync, rmSync, readdirSync, statSync } from 'fs'
 import { writeFileAtomicSync, writeFileAtomicAsync } from '../fs-atomic.js'
 import { isAbsolute, join, relative, resolve } from 'path'
@@ -6,6 +8,8 @@ import type { ContentBlock, Message } from '../api/types.js'
 import { normalizeOaiMessage, normalizeOaiMessages } from '../api/oai-types.js'
 import type { OaiAssistantMessage, OaiMessage, OaiToolCall, OaiToolMessage } from '../api/oai-types.js'
 import { stableStringify } from '../api/stable-json.js'
+import { isSafeToRerun } from '../tools/write-tool-helpers.js'
+import { JSON_VALUE_KEEP_RATIO, MAX_SESSION_MESSAGE_JSON_CHARS } from '../compact/constants.js'
 import { parseFrozenSnapshotData, type FrozenSnapshotData } from '../prompt/frozen-snapshot.js'
 
 function legacyMessageToOaiMessages(message: Message): OaiMessage[] {
@@ -75,8 +79,6 @@ function ensureDir(dir: string): void {
   }
 }
 
-export const MAX_SESSION_MESSAGE_JSON_CHARS = 100_000
-
 function truncateString(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value
   const marker = `\n<session-message-truncated original_chars="${value.length}" kept_chars="${maxChars}" />`
@@ -117,7 +119,7 @@ function serializeSessionJsonValue<T>(message: T, maxChars: number, fallback: ()
   let json = JSON.stringify(message)
   if (json.length <= maxChars) return json
 
-  const capped = capJsonValue(message, Math.max(1_000, Math.floor(maxChars * 0.8))) as T
+  const capped = capJsonValue(message, Math.max(1_000, Math.floor(maxChars * JSON_VALUE_KEEP_RATIO))) as T
   json = JSON.stringify(capped)
   if (json.length <= maxChars) return json
 
@@ -178,8 +180,9 @@ export class SessionPersist {
     return this.filePath
   }
 
-  constructor(sessionId: string, cwd: string) {
+  constructor(sessionId: string, cwd: string, opts?: { recoveryStructuredTools?: boolean }) {
     assertValidSessionId(sessionId)
+    this.recoveryStructuredTools = opts?.recoveryStructuredTools
     this.cwd = cwd
     ensureDir(getSessionDir(cwd))
     this.sessionId = sessionId
@@ -210,6 +213,17 @@ export class SessionPersist {
     this.metaStore.flush()
   }
 
+  /** 转录里当前有多少条 OAI 消息（getTranscriptWatermark 的载体）。 */
+  private transcriptWatermark = 0
+  /** 自构造以来 append 过多少条——加载期间新 append 的要补回水位，否则水位会被读盘快照压低。 */
+  private appendedCount = 0
+
+  /** 恢复结构化注入开关（config.agent.recovery.structuredTools；未设则看 env）。 */
+  private recoveryStructuredTools?: boolean
+
+  /** 上一次 loadOai 在结构化模式下注入「结果未知」的工具（供恢复路径标待确认）。 */
+  private lastInjectedUncertain: Array<{ id: string; name: string }> = []
+
   /** Read the transcript file as JSONL text (zstd frames or legacy passthrough). */
   private readTranscriptText(): string {
     const onDisk = existsSync(this.filePath)
@@ -236,7 +250,35 @@ export class SessionPersist {
     const line = appendChecksum(json) + '\n'
     this.batchWriter.enqueueLine(line)
     if (options?.flush) await this.batchWriter.flush()
+    this.transcriptWatermark += 1
+    this.appendedCount += 1
   }
+
+  /**
+   * 转录水位（PLAN §4 恢复设计第 1 步）。
+   *
+   * **定义：转录里当前有多少条 OAI 消息**——恢复出的条数与它是同一把尺子，所以
+   * 「检查点水位 vs 实际恢复条数」才可比。三处变更都必须喂它，缺一处水位就是错的：
+   *   · 加载（loadOai / loadOaiAsync）：对齐到读到的真实条数（含批处理里未落盘的尾巴）；
+   *   · 追加（appendOaiWithChecksum）：+1；
+   *   · 历史重写（compactOai / compactOaiAsync）：落到重写后的条数（会**变小**）。
+   *
+   * 此前它只统计「本实例 append 过多少条」：重新加载 2 条历史时是 0、再追加 1 条是 1，
+   * 而转录里其实有 3 条——与恢复端的条数根本不是一个口径，观测门因此形同虚设。
+   */
+  getTranscriptWatermark(): number { return this.transcriptWatermark }
+
+  /**
+   * 加载完成后的水位对齐：读盘快照条数 + 加载期间新 append 的条数。
+   * 不直接赋值 `messages.length` 的原因：loadOaiAsync 是分片让出事件循环的，
+   * 期间可能有 append 落进批处理——那部分不在本次读到的快照里，但确实已经在转录里。
+   */
+  private alignTranscriptWatermark(loaded: number, appendedBefore: number): void {
+    this.transcriptWatermark = loaded + (this.appendedCount - appendedBefore)
+  }
+
+  /** 上一次 loadOai 注入的「结果未知」工具（结构化模式）；默认模式恒为空。 */
+  getLastInjectedUncertain(): Array<{ id: string; name: string }> { return this.lastInjectedUncertain }
 
   /**
    * Append a model-switch event to the session transcript.
@@ -260,29 +302,55 @@ export class SessionPersist {
 
   /** Load messages in OpenAI-native format, migrating legacy rows on read. */
   loadOai(): OaiMessage[] {
-    const content = this.readTranscriptText()
-    const lines = content.trim().split('\n').filter(Boolean)
-    const { validLines } = verifyLines(lines)
+    const appendedBefore = this.appendedCount
+    const parser = this.parseOai(this.readTranscriptText())
+    let next = parser.next()
+    while (!next.done) next = parser.next()
+    this.alignTranscriptWatermark(next.value.length, appendedBefore)
+    return next.value
+  }
 
+  async loadOaiAsync(signal?: AbortSignal): Promise<OaiMessage[]> {
+    signal?.throwIfAborted()
+    let text = ''
+    try { text = decodeTranscriptText(await readFile(this.filePath, { signal })) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    const appendedBefore = this.appendedCount
+    const parser = this.parseOai(this.batchWriter.mergePending(text))
+    for (;;) {
+      signal?.throwIfAborted()
+      const next = parser.next()
+      if (next.done) {
+        this.alignTranscriptWatermark(next.value.length, appendedBefore)
+        return next.value
+      }
+      await yieldToLoop()
+    }
+  }
+
+  private *parseOai(content: string): Generator<void, OaiMessage[]> {
+    const lines = content.trim().split('\n').filter(Boolean)
     const messages: OaiMessage[] = []
-    for (const line of validLines) {
-      try {
-        const parsed = parseSessionLine(line)
-        if (!parsed) continue
-        if (isOaiMessage(parsed)) {
-          messages.push(parsed)
-        } else {
-          messages.push(...legacyMessageToOaiMessages(parsed as Message).map(message => JSON.parse(JSON.stringify(message)) as OaiMessage))
-        }
-      } catch { /* skip malformed rows */ }
+    for (let offset = 0; offset < lines.length; offset += 100) {
+      const { validLines } = verifyLines(lines.slice(offset, offset + 100))
+      for (const line of validLines) {
+        try {
+          const parsed = parseSessionLine(line)
+          if (!parsed) continue
+          if (isOaiMessage(parsed)) messages.push(parsed)
+          else messages.push(...legacyMessageToOaiMessages(parsed as Message).map(message => JSON.parse(JSON.stringify(message)) as OaiMessage))
+        } catch { /* skip malformed rows */ }
+      }
+      yield
     }
     // 压#7: Validate tool_call/tool_result pairing
     // Normalize legacy/partial assistant rows before pairing repair. In
     // particular, an empty `tool_calls` array must not be mistaken for an
     // orphan batch (and must never reach the provider on resume).
     const normalized = normalizeOaiMessages(messages)
-    const { messages: repaired, hadOrphans, strippedWriteTool } = this.repairOrphanToolCalls(normalized)
-    if (hadOrphans) {
+    const { messages: repaired, hadOrphans, strippedWriteTool, injectedUncertain } = this.repairOrphanToolCalls(normalized)
+    this.lastInjectedUncertain = injectedUncertain
+    if (hadOrphans && !(this.recoveryStructuredTools ?? (process.env.RIVET_RECOVERY_STRUCTURED_TOOLS === '1'))) {
       // Orphan tool_use entries were stripped from history: the stream committed
       // a tool_calls block but no matching result durably landed. The interruption
       // can happen at two points, and we cannot tell which from the log alone:
@@ -314,11 +382,24 @@ export class SessionPersist {
     return repaired.map(normalizeOaiMessage)
   }
 
-  /** Tools whose orphan recovery must be non-destructive: the file may already
-   *  hold the intended changes, so the model must verify before re-writing. */
-  private static readonly WRITE_TOOL_NAMES = new Set([
-    'write_file', 'edit_file', 'hash_edit', 'ast_edit', 'apply_patch',
-  ])
+  /**
+   * PLAN §4 恢复设计第 3 步：为「已发出但结果未知」的工具生成显式说明。
+   * 写工具的措辞必须**非破坏性**——中断可能发生在写盘前或写盘后，文件可能已含
+   * 目标改动；先核实再补写，绝不盲目重放。只读工具可安全重跑。
+   */
+  static orphanToolOutcomeNote(name: string): string {
+    // 判据是**白名单**：只有确知无副作用的只读工具允许重跑，其余一律按「可能已产生
+    // 副作用」处理。此前只把五种文件编辑工具当有副作用，于是 bash / git / MCP 发送类
+    // 工具都拿到了「可用相同参数安全重跑」——那会诱导模型重复执行外部操作（发消息、
+    // 推分支、跑迁移），是本类恢复里最贵的一种错。
+    return isSafeToRerun(name)
+      ? `结果未知：进程中断，未收到 ${name} 的结果。这是只读 / 查询类工具，`
+        + '可用相同参数安全重跑；不要假设它已经成功。'
+      : `结果未知：进程中断，未收到 ${name} 的结果。该工具**可能已经产生了副作用**`
+        + '（写文件 / 执行命令 / 发出外部请求），也可能什么都没做。不要自动重放：'
+        + '先用 read_file / grep 等只读手段核实它当前的真实状态（文件内容、git 状态、'
+        + '外部系统的记录），再决定是否需要补做；仍不确定就问用户。'
+  }
 
   /** 压#7: Remove orphan tool_use/tool_result pairs left by corrupted/missing lines.
    *
@@ -330,7 +411,13 @@ export class SessionPersist {
    * not to assume side effects from the removed tools, plus whether any stripped
    * orphan was a write/edit tool (so the warning can be non-destructive: the
    * file may already hold the change, verify before re-running). */
-  private repairOrphanToolCalls(messages: OaiMessage[]): { messages: OaiMessage[]; hadOrphans: boolean; strippedWriteTool: boolean } {
+  private repairOrphanToolCalls(messages: OaiMessage[]): {
+    messages: OaiMessage[]
+    hadOrphans: boolean
+    strippedWriteTool: boolean
+    /** 结构化模式下被注入「结果未知」的工具（供 UI 侧标待确认）。 */
+    injectedUncertain: Array<{ id: string; name: string }>
+  } {
     const toolCallIds = new Set<string>()
     const toolResultIndices = new Map<string, number>()
     for (let i = 0; i < messages.length; i++) {
@@ -349,11 +436,18 @@ export class SessionPersist {
 
     // Pass 1: collect valid messages (strip orphan tool_calls, drop orphan results)
     const result: OaiMessage[] = []
+    const injectedUncertain: Array<{ id: string; name: string }> = []
     let hadOrphans = false
     let strippedWriteTool = false
+    // fail-closed：只要被剔除的孤儿里有**任何一个**不在只读白名单内，批量提示就走
+    // 非破坏性措辞。此前判据是「是不是文件编辑工具」，于是被剔除的 bash / git / MCP
+    // 发送类工具会落进「重跑你需要的只读步骤」那一支——同一族漏判。
     const noteStripped = (tc: OaiToolCall): void => {
-      if (SessionPersist.WRITE_TOOL_NAMES.has(tc.function?.name ?? '')) strippedWriteTool = true
+      if (!isSafeToRerun(tc.function?.name ?? '')) strippedWriteTool = true
     }
+    // PLAN §4 第 3 步（默认关，灰度）：开启时不再静默剔除孤儿工具，而是保留
+    // tool_call 并紧随注入「结果未知」的合成 tool 消息，让模型与 UI 都看见事实。
+    const structured = this.recoveryStructuredTools ?? (process.env.RIVET_RECOVERY_STRUCTURED_TOOLS === '1')
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i]!
       // Drop orphan tool results
@@ -362,6 +456,26 @@ export class SessionPersist {
       if (msg.role === 'assistant' && msg.tool_calls) {
         const valid = msg.tool_calls.filter(tc => tc.id && toolResultIndices.has(tc.id))
         const orphaned = msg.tool_calls.filter(tc => !(tc.id && toolResultIndices.has(tc.id)))
+        if (structured && orphaned.length > 0) {
+          hadOrphans = true
+          orphaned.forEach(noteStripped)
+          // 无 id 的孤儿无法与 tool 消息配对，只能剔除；有 id 的全部保留并注入结果。
+          const kept = msg.tool_calls.filter(tc => tc.id)
+          const injectable = orphaned.filter(tc => tc.id)
+          if (kept.length === 0 && !msg.content) continue
+          result.push({ ...msg, tool_calls: kept })
+          for (const tc of injectable) {
+            const name = tc.function?.name ?? ''
+            const note: OaiMessage = {
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: SessionPersist.orphanToolOutcomeNote(name),
+            }
+            result.push(note)
+            injectedUncertain.push({ id: tc.id, name })
+          }
+          continue
+        }
         // Drop the message entirely if all tool_calls were orphan and content is empty
         if (valid.length === 0 && !msg.content) { hadOrphans = true; orphaned.forEach(noteStripped); continue }
         if (valid.length !== msg.tool_calls.length) {
@@ -373,7 +487,7 @@ export class SessionPersist {
       }
       result.push(msg)
     }
-    return { messages: result, hadOrphans, strippedWriteTool }
+    return { messages: result, hadOrphans, strippedWriteTool, injectedUncertain }
   }
 
   /** Audit breadcrumb types: skipped on replay (parseSessionLine), preserved across rewrites. */
@@ -412,6 +526,8 @@ export class SessionPersist {
     const audit = this.collectAuditLines()
     const content = [...audit, ...messages.map(m => appendChecksum(serializeSessionMessage(m)))].join('\n') + '\n'
     writeFileAtomicSync(this.filePath, encodeBatch(content))
+    // 重写会**缩短**转录：水位必须跟着落到新条数（旧口径只增不减，重写后必然虚高）。
+    this.transcriptWatermark = messages.length
   }
 
   /** Compact the session file with OAI-format messages */
@@ -420,6 +536,8 @@ export class SessionPersist {
     const audit = this.collectAuditLines()
     const content = [...audit, ...messages.map(m => appendChecksum(serializeOaiSessionMessage(m)))].join('\n') + '\n'
     writeFileAtomicSync(this.filePath, encodeBatch(content))
+    // 重写会**缩短**转录：水位必须跟着落到新条数（旧口径只增不减，重写后必然虚高）。
+    this.transcriptWatermark = messages.length
   }
 
   /** Async atomic compaction — avoids blocking the agent loop on full rewrites (S13). */
@@ -428,6 +546,7 @@ export class SessionPersist {
     const audit = this.collectAuditLines()
     const content = [...audit, ...messages.map(m => appendChecksum(serializeOaiSessionMessage(m)))].join('\n') + '\n'
     await writeFileAtomicAsync(this.filePath, encodeBatch(content))
+    this.transcriptWatermark = messages.length
   }
 
   /** Delete the session file */

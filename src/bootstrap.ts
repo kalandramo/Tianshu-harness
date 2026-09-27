@@ -143,6 +143,7 @@ import type { TuiPerfSummary } from './tui/engine/perf-monitor.js'
 
 /** 运行时可变引用 — 替代 main.tsx 中的 module-level _xxxRef 全局变量 */
 export interface RuntimeRefs {
+  preparedBaseline?: BaselineSnapshot
   coordinator: DelegationCoordinator | null
   fileHistory: FileHistory | null
   claimStore: import('./context/claim-store.js').ContextClaimStore | null
@@ -742,7 +743,7 @@ export function createInteractiveToolRegistry(
   // 全局 getOrCreateSessionId 仅作 TUI 单 session 路径的兼容 fallback。
   const b1TaskLedger = createTaskLedger({ taskId: refs.sessionId ?? getOrCreateSessionId() })
   refs.taskLedger = b1TaskLedger
-  const b1Baseline = createWorktreeBaseline(captureGitBaseline(cwd))
+  const b1Baseline = createWorktreeBaseline(refs.preparedBaseline ?? captureGitBaseline(cwd))
   const b1Ownership = createOwnershipLedger({
     baseline: b1Baseline,
     taskLedger: b1TaskLedger,

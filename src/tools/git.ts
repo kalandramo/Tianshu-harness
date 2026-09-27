@@ -5,7 +5,7 @@ import type { Tool, ToolCallParams } from './types.js'
 import { relativePosix } from '../path-format.js'
 import { auditCommitTagScope } from './commit-audit.js'
 import { createWorkspaceGuard } from '../agent/workspace-guard.js'
-import { killProcessTree } from './process-kill.js'
+import { killProcessTreeAsync, killProcessTree } from './process-kill.js'
 import { detectSensitiveFile } from './sensitive-file-detector.js'
 
 const ACTIONS = ['status', 'diff_summary', 'commit', 'log', 'log_graph', 'stash', 'stash_pop'] as const
@@ -57,13 +57,13 @@ async function runGit(args: string[], cwd: string, abortSignal?: AbortSignal): P
     }
 
     // 用户中止：协作式取消，沿袭 bash.ts 的 killProcessTree 两级终止模式。
-    const onAbort = () => {
+    const onAbort = async () => {
       if (settled) return
       settled = true
       cleanup()
       if (abortSignal) abortSignal.removeEventListener('abort', onAbort)
-      killProcessTree(child, 'SIGTERM')
-      forceKillTimer = setTimeout(() => killProcessTree(child, 'SIGKILL'), FORCE_KILL_DELAY)
+      const cleanupResult = await killProcessTreeAsync(child)
+      if (cleanupResult !== 'exited') console.warn(`[process-cleanup] pid=${child.pid} status=${cleanupResult}`)
       resolve('Aborted by user.')
     }
     if (abortSignal) {

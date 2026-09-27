@@ -36,6 +36,10 @@ desktop/scripts/perf-*.ts
 # clone 都挂 ERR_MODULE_NOT_FOUND。（同类的 perf-stream-baseline.ts 早已入库——
 # ignore 规则对已跟踪文件不生效，不需要额外例外。）
 !desktop/scripts/perf-session-open.ts
+# 同款第二次：perf-session-replay-script.test.ts（2026-09-27 的桌面大会话恢复笔）
+# spawn 这个脚本做 O4 回放跑分，它读的是**已入库**的 replay-synth-800.jsonl fixture，
+# 所以不是一次性诊断。挡在库外时桌面全量只在有该文件的本机绿，干净检出红一条。
+!desktop/scripts/perf-session-replay.ts
 scripts/summarize-*.ts
 scripts/swebench-*.sh
 # 自动生成的计划、研究与设计草稿

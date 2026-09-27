@@ -33,6 +33,10 @@
   <a href="https://discord.gg/XjWTATCHB"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
+<p align="center">
+  <a href="https://trendshift.io/repositories/100440" target="_blank"><img src="https://trendshift.io/api/badge/trendshift/repositories/100440/daily?language=TypeScript" alt="Trendshift: TypeScript repository of the day" width="250" height="55"></a>
+</p>
+
 ---
 
 ### 面向 Foundation Model Agent 的认知运行时
@@ -359,3 +363,8 @@ node dist/cli/entry.js
 
 - [CVM：从 Transformer 共享退化到认知运行时](docs/reference/cvm-cognitive-runtime.md)
 - [CVM 运行时与生态系统对 Agent 模型的实证影响报告](docs/CVM运行时对Agent模型的实证影响.md)
+
+## 致谢
+
+- 桌面端「自定义壁纸与分区玻璃」功能的**设计**参考了 <a href="https://github.com/elysia395/dsh-wallpaper-engine">dsh-wallpaper-engine</a>（MIT License）；该功能为天枢独立实现，未引入上游代码，参考范围与许可全文见 <a href="THIRD-PARTY-NOTICES.md">THIRD-PARTY-NOTICES.md</a>。
+- 特别致谢 dsh-wallpaper-engine 的作者与核心开发——<a href="https://github.com/elysia395">@elysia395</a>、<a href="https://github.com/YV3507">@YV3507</a>、<a href="https://github.com/yuxilao">@yuxilao</a>、<a href="https://github.com/oneincase">@oneincase</a>：四位作为**壁纸引擎渲染的技术顾问**，在壁纸合成与分区玻璃材质的设计、实现过程中提供了指导。

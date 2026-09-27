@@ -58,7 +58,7 @@ export interface TlsTrustReport {
   suspects: string[]
   /** 命中总数（未被 MAX_SUSPECTS 截断）。 */
   suspectCount: number
-  /** 与 suspects 对应的厂商名（去重）。 */
+  /** 命中的厂商名（去重、收全，不受 MAX_SUSPECTS 展示上限影响）。 */
   vendors: string[]
 }
 
@@ -104,10 +104,11 @@ export function findInterceptionCerts(certs: readonly string[]): {
     const vendor = INTERCEPTION_VENDORS.find(([re]) => re.test(cert))?.[1]
     if (!vendor) continue
     count++
-    if (suspects.length < MAX_SUSPECTS) {
-      suspects.push(firstLine(cert))
-      if (!vendors.includes(vendor)) vendors.push(vendor)
-    }
+    // 厂商清单是「谁在拦」的结论，不是展示列表——必须收全。只给 subject 列表设展示上限；
+    // 把 vendors 一起卡在上限内，会让排在第 MAX_SUSPECTS 张之后的那个软件永远不出现在诊断里，
+    // 而处置建议（TLS_MITM_ADVICE）恰恰是按软件逐条给菜单路径的。
+    if (!vendors.includes(vendor)) vendors.push(vendor)
+    if (suspects.length < MAX_SUSPECTS) suspects.push(firstLine(cert))
   }
   return { suspects, vendors, count }
 }

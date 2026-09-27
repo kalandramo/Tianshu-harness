@@ -143,7 +143,7 @@ describe('stripOaiImageParts', () => {
     assert.equal(result.messages, msgs, '未剥离时不得复制数组')
   })
 
-  it('剥掉全部 image_url part，保留文本与其他消息', () => {
+  it('剥掉全部 image_url part（逐 part 换占位符），保留文本与其他消息', () => {
     const msgs: OaiMessage[] = [
       { role: 'system', content: 'sys' },
       {
@@ -159,9 +159,34 @@ describe('stripOaiImageParts', () => {
     const result = stripOaiImageParts(msgs)
     assert.equal(result.removedCount, 2)
     assert.notEqual(result.messages, msgs, '剥离后必须返回新数组')
-    assert.deepEqual(result.messages[1]!.content, [{ type: 'text', text: 'keep me' }])
+    assert.deepEqual(result.messages[1]!.content, [
+      { type: 'text', text: 'keep me' },
+      { type: 'text', text: STRIPPED_IMAGE_PLACEHOLDER },
+      { type: 'text', text: STRIPPED_IMAGE_PLACEHOLDER },
+    ], '混排消息也必须留占位符——直接删 part 会让模型凭记忆描述')
     assert.deepEqual(result.messages[0], msgs[0], 'system 消息不动')
     assert.deepEqual(result.messages[2], msgs[2], 'assistant 消息不动')
+  })
+
+  it('uniqueUrlCount 按不同 URL 计数（决定剥离能否持久化）', () => {
+    const msgs: OaiMessage[] = [
+      { role: 'user', content: [
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+      ] },
+      { role: 'user', content: [
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,BBBB' } },
+      ] },
+    ]
+    const result = stripOaiImageParts(msgs)
+    assert.equal(result.removedCount, 3)
+    assert.equal(result.uniqueUrlCount, 2, '同一 URL 的多个副本只算一个')
+    const single = stripOaiImageParts([{
+      role: 'user',
+      content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }],
+    }])
+    assert.equal(single.uniqueUrlCount, 1, '唯一 blame 时允许持久化写回历史')
+    assert.equal(stripOaiImageParts([{ role: 'user', content: 'no image' }]).uniqueUrlCount, 0)
   })
 
   it('纯图片用户消息替换为文本占位（保住角色与消息数）', () => {
@@ -201,7 +226,10 @@ describe('stripOaiImageParts', () => {
     ]
     const result = stripOaiImageParts(msgs)
     assert.equal(result.removedCount, 2)
-    assert.deepEqual(result.messages[2]!.content, [{ type: 'text', text: 'and this' }])
+    assert.deepEqual(result.messages[2]!.content, [
+      { type: 'text', text: 'and this' },
+      { type: 'text', text: STRIPPED_IMAGE_PLACEHOLDER },
+    ])
   })
 
   it('占位文案可覆盖', () => {

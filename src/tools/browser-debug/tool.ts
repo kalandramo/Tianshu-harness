@@ -2,21 +2,16 @@
  * browser_debug — persistent browser for local frontend/backend联调 (CDP route).
  */
 
-import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
-import { createConnection } from 'node:net'
 import pixelmatch from 'pixelmatch'
 import { PNG } from 'pngjs'
 import type { Tool, ToolCallParams, ToolResult } from '../types.js'
-import { rivetHome } from '../../config/paths.js'
 import {
   isHostAllowed,
   BROWSER_NAVIGATED_PREFIX,
   BROWSER_SCREENSHOT_OF_PREFIX,
 } from '../browser.js'
 import {
-  getOrCreateSession,
   getSession,
   closeSession,
   resolveSessionKey,
@@ -38,6 +33,9 @@ import {
   type BrowserDebugDriverFactory,
 } from './driver.js'
 import { act, extract, observe } from './ai-primitives.js'
+import { createProfileDirResolver } from './profiles.js'
+import { createSessionLifecycle, errorKindFor, isSessionDeathError, withLocatorHint } from './lifecycle.js'
+import { parseDevPortsFromScripts, probeDevPorts } from './nav-probe.js'
 import type { ActionKind } from './locator.js'
 
 export interface BrowserDebugToolOptions {
@@ -92,10 +90,6 @@ function envAllowlist(): string[] {
     .filter(Boolean)
 }
 
-function defaultUserDataDir(): string {
-  return join(rivetHome(), 'browser-debug-profile')
-}
-
 export function isLoopbackHost(host: string): boolean {
   const h = host.toLowerCase()
   return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '0.0.0.0' || h.endsWith('.localhost')
@@ -121,63 +115,6 @@ export function isCdpUrlAllowed(raw: string, allowlist: string[]): boolean {
     return isLoopbackHost(u.hostname) || isHostAllowed(u.hostname, allowlist)
   } catch {
     return false
-  }
-}
-
-/** Common dev server ports to probe when navigation fails with a connection
- *  error. Ordered by prevalence — Vite (5173), Next.js (3000), common
- *  alternatives. Only localhost — no external network. */
-const DEV_PORT_CANDIDATES = [5173, 3000, 8080, 4200, 3001, 5000, 8000, 9000, 1234, 6006]
-
-/** Try connecting to localhost:port; resolve with port number if listening,
- *  reject if not. Timeout set low so probing a dozen ports takes ~1s total. */
-function probePort(port: number, timeoutMs = 150): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const sock = createConnection(port, '127.0.0.1')
-    const timer = setTimeout(() => { sock.destroy(); reject(new Error('timeout')) }, timeoutMs)
-    sock.on('connect', () => { clearTimeout(timer); sock.destroy(); resolve(port) })
-    sock.on('error', () => { clearTimeout(timer); sock.destroy(); reject(new Error('refused')) })
-  })
-}
-
-/** Scan candidate ports in parallel, return the ones that are listening. */
-async function probeDevPorts(): Promise<number[]> {
-  const results = await Promise.allSettled(DEV_PORT_CANDIDATES.map((p) => probePort(p)))
-  return results
-    .filter((r): r is PromiseFulfilledResult<number> => r.status === 'fulfilled')
-    .map((r) => r.value)
-}
-
-/** Read package.json and extract likely dev server port numbers from scripts.
- *  Looks for `--port N`, `-p N`, `:N`（rollup/vite output）, and `PORT=N`.
- *  Returns deduplicated integer ports. */
-function parseDevPortsFromScripts(cwd: string): number[] {
-  try {
-    const raw = readFileSync(join(cwd, 'package.json'), 'utf-8')
-    const pkg = JSON.parse(raw) as { scripts?: Record<string, string> }
-    if (!pkg.scripts) return []
-    const ports = new Set<number>()
-    const seen = new Set<string>()
-    for (const cmd of Object.values(pkg.scripts)) {
-      // --port 3000 / -p 3000
-      for (const m of cmd.matchAll(/(?:--port|-p)\s+(\d{2,5})/g)) {
-        const p = parseInt(m[1]!, 10)
-        if (!seen.has(`flag:${p}`) && p > 1 && p < 65536) { ports.add(p); seen.add(`flag:${p}`) }
-      }
-      // vite/rollup "localhost:5173" output line
-      for (const m of cmd.matchAll(/:(\d{4,5})\b/g)) {
-        const p = parseInt(m[1]!, 10)
-        if (!seen.has(`colon:${p}`) && p > 1024 && p < 65536) { ports.add(p); seen.add(`colon:${p}`) }
-      }
-      // PORT=3000 env style
-      for (const m of cmd.matchAll(/\bPORT=(\d{2,5})\b/g)) {
-        const p = parseInt(m[1]!, 10)
-        if (!seen.has(`env:${p}`) && p > 1 && p < 65536) { ports.add(p); seen.add(`env:${p}`) }
-      }
-    }
-    return [...ports]
-  } catch {
-    return []
   }
 }
 
@@ -302,6 +239,7 @@ function formatStatus(session: BrowserDebugSession): string {
   const urls = safePageUrls(session)
   const lines = [
     `会话：${session.sessionKey}`,
+    `状态：${session.isAlive() ? '存活' : '已失效（下次页面操作会自动重建）'}`,
     `模式：${session.mode}${session.connectUrl ? `（${session.connectUrl}）` : ''}`,
     `无头：${session.headless}`,
     `url：${session.driver.currentUrl()}`,
@@ -336,29 +274,11 @@ function formatNetworkResults(
 export function createBrowserDebugTool(options: BrowserDebugToolOptions = {}): Tool {
   const driverFactory = options.driverFactory
   const allowlist = options.allowlist ?? envAllowlist
-  const userDataDir = options.userDataDir ?? defaultUserDataDir
   const enabled = options.enabled ?? false
 
-  async function ensureSession(
-    sessionKey: string,
-    headless: boolean,
-    connectUrl?: string,
-    viewport?: { width: number; height: number },
-  ): Promise<BrowserDebugSession> {
-    const session = await getOrCreateSession({
-      sessionKey,
-      headless,
-      userDataDir: userDataDir(),
-      connectUrl,
-      driverFactory,
-      viewport,
-    })
-    // Passing the viewport to the factory sizes a fresh launch without a resize
-    // flash; applying it again covers the case where the session already
-    // existed, so `open` with a size always lands on that size.
-    if (viewport) await session.driver.setViewport(viewport.width, viewport.height).catch(() => {})
-    return session
-  }
+    const profileDirFor = createProfileDirResolver(options.userDataDir)
+  const lifecycle = createSessionLifecycle({ driverFactory, profileDirFor })
+  const { ensureSession, withSessionRecovery } = lifecycle
 
   return {
     definition: {
@@ -366,7 +286,8 @@ export function createBrowserDebugTool(options: BrowserDebugToolOptions = {}): T
       description: `驱动持久浏览器通过 CDP 调试本地 Web 应用（前后端 + API 联调）。
 
 连接：
-- 默认：有头 Chromium；登录态持留在 ~/.rivet/browser-debug-profile。
+- 默认：有头 Chromium；profile 按 sessionId 隔离（__default__ 沿用 ~/.rivet/browser-debug-profile，登录态保留）。
+- 会话间共享登录态：shared_profile=true 或 RIVET_BROWSER_SHARED_PROFILE=1（同一时刻只能有一个浏览器实例）。
 - 连接模式：open 时传 connect_url 或设 RIVET_BROWSER_URL（Chrome --remote-debugging-port=9222）。close 仅断开连接。
 
 API 联调技巧：
@@ -447,6 +368,7 @@ API 联调技巧：
           level: { type: 'string', enum: ['log', 'info', 'warn', 'error', 'debug'], description: '控制台日志级别过滤。' },
           failed_only: { type: 'boolean', description: 'network：仅失败和 4xx/5xx。' },
           headless: { type: 'boolean', description: '隐藏启动（默认 false）。' },
+          shared_profile: { type: 'boolean', description: 'open/await_login：显式使用跨会话共享 profile（登录态共享；同一时刻只能有一个浏览器实例）。默认按 sessionId 隔离，避免并行会话抢 profile 导致启动失败。' },
           width: { type: 'integer', description: 'set_viewport/open：视口宽度 px（默认 1280）。响应式断点问题只在特定宽度下暴露，改完 UI 至少验两个宽度。' },
           height: { type: 'integer', description: 'set_viewport/open：视口高度 px（默认 800）。' },
           timeout_ms: { type: 'integer', description: 'wait：超时毫秒数（默认 10000）。' },
@@ -465,9 +387,10 @@ API 联调技巧：
       const action = params.input.action as BrowserDebugAction
       const headless = params.input.headless === true
       const viewport = parseViewport(params.input)
-      if (viewport && 'error' in viewport) return { content: viewport.error, isError: true }
+      if (viewport && 'error' in viewport) return { content: viewport.error, isError: true, errorKind: 'format_error' }
       const connectUrl = resolveConnectUrl(params.input, action)
       const sessionKey = sessionKeyFrom(params)
+      const sharedProfile = params.input.shared_profile === true || process.env.RIVET_BROWSER_SHARED_PROFILE === '1'
       const signal = params.abortSignal
 
       if (action === 'close') {
@@ -493,13 +416,14 @@ API 联调技巧：
           return {
             content: `browser_debug 已拦截：CDP 端点 "${connectUrl}" 不是回环地址且未在许可名单中。`,
             isError: true,
+            errorKind: 'refused',
           }
         }
         try {
-          const session = await ensureSession(sessionKey, headless, connectUrl)
+          const session = await ensureSession(sessionKey, headless, connectUrl, undefined, sharedProfile)
           if (!headless) await session.driver.bringToFront().catch(() => {})
         } catch (err) {
-          return { content: `browser_debug 打开失败：${(err as Error).message}`, isError: true }
+          return { content: `browser_debug 打开失败：${(err as Error).message}`, isError: true, errorKind: errorKindFor(err) }
         }
         const msg =
           (typeof params.input.message === 'string' && params.input.message.trim()) ||
@@ -513,9 +437,9 @@ API 联调技巧：
 
       if (NAV_ACTIONS.has(action)) {
         const rawUrl = params.input.url as string | undefined
-        if (!rawUrl) return { content: `${action} 需要 "url"。`, isError: true }
+        if (!rawUrl) return { content: `${action} 需要 "url"。`, isError: true, errorKind: 'format_error' }
         const parsed = parseNavUrl(rawUrl)
-        if ('error' in parsed) return { content: parsed.error, isError: true }
+        if ('error' in parsed) return { content: parsed.error, isError: true, errorKind: 'refused' }
 
         const list = allowlist()
         if (!isDebugHostAllowed(parsed.url.hostname, list)) {
@@ -526,32 +450,37 @@ API 联调技巧：
                 ? '当前仅 localhost 可访问——其他主机请设置 RIVET_BROWSER_ALLOWLIST。'
                 : `已允许：${list.join(', ')}。`),
             isError: true,
+            errorKind: 'refused',
           }
         }
         if (connectUrl && !isCdpUrlAllowed(connectUrl, list)) {
           return {
             content: `browser_debug 已拦截：CDP 端点 "${connectUrl}" 不是回环地址且未在许可名单中。`,
             isError: true,
+            errorKind: 'refused',
           }
         }
 
         try {
-          const session = await ensureSession(sessionKey, headless, connectUrl, viewport)
-          await withLiveLogs(session, params.onOutput, () =>
-            session.driver.goto(rawUrl, signal),
-          )
-          const finalUrl = session.driver.currentUrl()
-          const netCount = session.log.getNetwork().length
-          const errCount = session.log.getConsole('error').length
-          const modeHint = session.mode === 'connect' ? '（已通过 CDP 连接）' : ''
-          return {
-            content:
-              // URL 后用 ASCII `. ` 分隔——browser-mirror / walkthrough 的 \S+ 提取依赖此边界。
-              `${BROWSER_NAVIGATED_PREFIX} ${finalUrl}${modeHint}. 已捕获 ${netCount} 条网络请求、${errCount} 条控制台错误。` +
-              `使用 network 并设 url_filter="/api/" failed_only=true include_body=true 可查看 API 错误。`,
-          }
+          const session = await ensureSession(sessionKey, headless, connectUrl, viewport, sharedProfile)
+          return await withSessionRecovery(sessionKey, sharedProfile, session, async (s) => {
+            await withLiveLogs(s, params.onOutput, () =>
+              s.driver.goto(rawUrl, signal),
+            )
+            const finalUrl = s.driver.currentUrl()
+            const netCount = s.log.getNetwork().length
+            const errCount = s.log.getConsole('error').length
+            const modeHint = s.mode === 'connect' ? '（已通过 CDP 连接）' : ''
+            return {
+              content:
+                // URL 后用 ASCII `. ` 分隔——browser-mirror / walkthrough 的 \S+ 提取依赖此边界。
+                `${BROWSER_NAVIGATED_PREFIX} ${finalUrl}${modeHint}. 已捕获 ${netCount} 条网络请求、${errCount} 条控制台错误。` +
+                `使用 network 并设 url_filter="/api/" failed_only=true include_body=true 可查看 API 错误。`,
+            }
+          })
         } catch (err) {
           const msg = (err as Error).message
+          const errorKind = errorKindFor(err)
           const isConnErr = /ECONNREFUSED|ERR_CONNECTION_REFUSED|net::ERR_CONNECTION|timeout/i.test(msg)
           if (isConnErr) {
             // Connection failed — probe nearby ports to help the model
@@ -559,29 +488,34 @@ API 联调技巧：
             try {
               const livePorts = await probeDevPorts()
               if (livePorts.length > 0) {
-                return { content: `browser_debug 导航失败：${msg}\n探测到本机已监听的端口：${livePorts.join(', ')}。是否拼错了 URL 或端口？`, isError: true }
+                return { content: `browser_debug 导航失败：${msg}\n探测到本机已监听的端口：${livePorts.join(', ')}。是否拼错了 URL 或端口？`, isError: true, errorKind }
               }
             } catch { /* probing best-effort */ }
             try {
               const devPorts = parseDevPortsFromScripts(params.cwd)
               if (devPorts.length > 0) {
-                return { content: `browser_debug 导航失败：${msg}\npackage.json scripts 中出现的端口：${devPorts.join(', ')}——这些端口当前均未监听。是否忘记启动 dev server？`, isError: true }
+                return { content: `browser_debug 导航失败：${msg}\npackage.json scripts 中出现的端口：${devPorts.join(', ')}——这些端口当前均未监听。是否忘记启动 dev server？`, isError: true, errorKind }
               }
             } catch { /* best effort */ }
           }
-          return { content: `browser_debug 导航失败：${msg}`, isError: true }
+          return { content: `browser_debug 导航失败：${msg}`, isError: true, errorKind }
         }
       }
 
-      const session = getSession(sessionKey)
+      let session = getSession(sessionKey)
       if (!session) {
         return {
           content: `会话 ${sessionKey} 没有打开的浏览器会话。请先用 action="open" 并提供 url。`,
           isError: true,
         }
       }
+      // 调用前会话已死（浏览器被关/被杀）：先按旧启动参数重建一次再执行，避免
+      // 第一条错误只是死会话回显。页面级死亡由 driver.resolvePage 自愈，不会到这里。
+      if (!session.isAlive()) {
+        session = await lifecycle.rebuildSession(sessionKey, session, sharedProfile)
+      }
 
-      try {
+      const runAction = async (session: BrowserDebugSession): Promise<ToolResult> => {
         switch (action) {
           case 'console': {
             const level = params.input.level as ConsoleLevel | undefined
@@ -613,7 +547,7 @@ API 联调技巧：
           }
           case 'network_detail': {
             const requestId = params.input.request_id as string | undefined
-            if (!requestId) return { content: 'network_detail 需要 "request_id"。', isError: true }
+            if (!requestId) return { content: 'network_detail 需要 "request_id"。', isError: true, errorKind: 'format_error' }
             const entry = session.log.getByRequestId(requestId)
             if (!entry) {
               return { content: `没有 id 为 "${requestId}" 的请求。请先运行 action="network" 列出 id。`, isError: true }
@@ -635,10 +569,18 @@ API 联调技巧：
           }
           case 'eval': {
             const expression = params.input.expression as string | undefined
-            if (!expression) return { content: 'eval 需要 "expression"。', isError: true }
-            const result = await withLiveLogs(session, params.onOutput, () =>
-              session.driver.evaluate(expression),
-            )
+            if (!expression) return { content: 'eval 需要 "expression"。', isError: true, errorKind: 'format_error' }
+            let result: string
+            try {
+              result = await withLiveLogs(session, params.onOutput, () =>
+                session.driver.evaluate(expression),
+              )
+            } catch (err) {
+              // 死亡签名必须原样冒泡给 withSessionRecovery；其余是模型自己脚本的异常，
+              // 标注清楚避免模型以为工具坏了。
+              if (isSessionDeathError(err)) throw err
+              throw new Error(`eval 脚本自身抛错（不是工具故障）：${(err as Error).message}`)
+            }
             return { content: result.slice(0, SNAPSHOT_MAX) }
           }
           case 'act': {
@@ -672,31 +614,35 @@ API 联调技巧：
           // without an extra round-trip.
           case 'click': {
             const selector = params.input.selector as string | undefined
-            if (!selector) return { content: 'click 需要 "selector"。', isError: true }
+            if (!selector) return { content: 'click 需要 "selector"。', isError: true, errorKind: 'format_error' }
             const beforeC = session.log.getConsole().length
             const beforeN = session.log.getNetwork().length
-            await withLiveLogs(session, params.onOutput, () => session.driver.click(selector))
+            await withLocatorHint(session, selector, () =>
+              withLiveLogs(session, params.onOutput, () => session.driver.click(selector)),
+            )
             return { content: `已点击 ${selector}。` + actionImpactNote(session, beforeC, beforeN) }
           }
           case 'type': {
             const selector = params.input.selector as string | undefined
             const text = params.input.text as string | undefined
             if (!selector || text === undefined) {
-              return { content: 'type 需要 "selector" 和 "text"。', isError: true }
+              return { content: 'type 需要 "selector" 和 "text"。', isError: true, errorKind: 'format_error' }
             }
             const submit = params.input.submit === true
             const beforeC = session.log.getConsole().length
             const beforeN = session.log.getNetwork().length
-            await withLiveLogs(session, params.onOutput, async () => {
-              await session.driver.type(selector, text)
-              if (submit) await session.driver.press(selector, 'Enter')
-            })
+            await withLocatorHint(session, selector, () =>
+              withLiveLogs(session, params.onOutput, async () => {
+                await session.driver.type(selector, text)
+                if (submit) await session.driver.press(selector, 'Enter')
+              }),
+            )
             return { content: `已向 ${selector} 输入文本${submit ? '并按下 Enter' : ''}。` + actionImpactNote(session, beforeC, beforeN) }
           }
           case 'press': {
             const selector = params.input.selector as string | undefined
             const key = params.input.key as string | undefined
-            if (!key) return { content: 'press 需要 "key"（如 Enter、Tab、Escape）。', isError: true }
+            if (!key) return { content: 'press 需要 "key"（如 Enter、Tab、Escape）。', isError: true, errorKind: 'format_error' }
             const beforeC = session.log.getConsole().length
             const beforeN = session.log.getNetwork().length
             await withLiveLogs(session, params.onOutput, () => session.driver.press(selector, key))
@@ -706,21 +652,23 @@ API 联调技巧：
             const selector = params.input.selector as string | undefined
             const value = params.input.value as string | undefined
             if (!selector || value === undefined) {
-              return { content: 'select 需要 "selector" 和 "value"。', isError: true }
+              return { content: 'select 需要 "selector" 和 "value"。', isError: true, errorKind: 'format_error' }
             }
             const beforeC = session.log.getConsole().length
             const beforeN = session.log.getNetwork().length
-            const chosen = await withLiveLogs(session, params.onOutput, () =>
-              session.driver.selectOption(selector, value),
+            const chosen = await withLocatorHint(session, selector, () =>
+              withLiveLogs(session, params.onOutput, () => session.driver.selectOption(selector, value)),
             )
             return { content: `已在 ${selector} 中选择 ${JSON.stringify(chosen)}。` + actionImpactNote(session, beforeC, beforeN) }
           }
           case 'hover': {
             const selector = params.input.selector as string | undefined
-            if (!selector) return { content: 'hover 需要 "selector"。', isError: true }
+            if (!selector) return { content: 'hover 需要 "selector"。', isError: true, errorKind: 'format_error' }
             const beforeC = session.log.getConsole().length
             const beforeN = session.log.getNetwork().length
-            await withLiveLogs(session, params.onOutput, () => session.driver.hover(selector))
+            await withLocatorHint(session, selector, () =>
+              withLiveLogs(session, params.onOutput, () => session.driver.hover(selector)),
+            )
             return { content: `已悬停 ${selector}。` + actionImpactNote(session, beforeC, beforeN) }
           }
           case 'scroll': {
@@ -734,7 +682,7 @@ API 联调技巧：
           case 'history': {
             const go = params.input.go as string | undefined
             if (go !== 'back' && go !== 'forward' && go !== 'reload') {
-              return { content: 'history 需要 "go"：back | forward | reload。', isError: true }
+              return { content: 'history 需要 "go"：back | forward | reload。', isError: true, errorKind: 'format_error' }
             }
             if (go === 'reload') {
               await withLiveLogs(session, params.onOutput, () => session.driver.reload(signal))
@@ -758,8 +706,10 @@ API 联调技巧：
                 ? params.input.timeout_ms
                 : 10_000
             if (selector) {
-              await withLiveLogs(session, params.onOutput, () =>
-                session.driver.waitForSelector(selector, timeoutMs, signal),
+              await withLocatorHint(session, selector, () =>
+                withLiveLogs(session, params.onOutput, () =>
+                  session.driver.waitForSelector(selector, timeoutMs, signal),
+                ),
               )
               return { content: `元素 "${selector}" 已可见（超时 ${timeoutMs}ms）。` }
             }
@@ -769,7 +719,7 @@ API 联调技巧：
               )
               return { content: `已到达载入状态 "${state}"（超时 ${timeoutMs}ms）。` }
             }
-            return { content: 'wait 需要 "selector" 或 "state"（load/domcontentloaded/networkidle）。', isError: true }
+            return { content: 'wait 需要 "selector" 或 "state"（load/domcontentloaded/networkidle）。', isError: true, errorKind: 'format_error' }
           }
           case 'cookies': {
             const urlFilter = typeof params.input.url_filter === 'string' && params.input.url_filter.trim()
@@ -787,14 +737,14 @@ API 联调技巧：
             const name = params.input.name as string | undefined
             const value = params.input.value as string | undefined
             if (!name || value === undefined) {
-              return { content: 'set_cookie 需要 "name" 和 "value"。', isError: true }
+              return { content: 'set_cookie 需要 "name" 和 "value"。', isError: true, errorKind: 'format_error' }
             }
             const url = typeof params.input.url === 'string' ? params.input.url : undefined
             const domain = typeof params.input.domain === 'string' ? params.input.domain : undefined
             const path = typeof params.input.path === 'string' ? params.input.path : undefined
             if (!url && !domain) {
               const current = (() => { try { return new URL(session.driver.currentUrl()).origin } catch { return undefined } })()
-              if (!current) return { content: 'set_cookie 需要 "url" 或 "domain"（当前页面没有可用 URL）。', isError: true }
+              if (!current) return { content: 'set_cookie 需要 "url" 或 "domain"（当前页面没有可用 URL）。', isError: true, errorKind: 'format_error' }
               await withLiveLogs(session, params.onOutput, () => session.driver.addCookie({ name, value, url: current }))
               return { content: `已为 ${current} 设置 cookie "${name}"。` }
             }
@@ -812,7 +762,7 @@ API 联调技巧：
             const key = params.input.key as string | undefined
             const value = params.input.value as string | undefined
             if (!key || value === undefined) {
-              return { content: 'set_storage 需要 "key" 和 "value"。', isError: true }
+              return { content: 'set_storage 需要 "key" 和 "value"。', isError: true, errorKind: 'format_error' }
             }
             await withLiveLogs(session, params.onOutput, () => session.driver.setStorage(kind, key, value))
             return { content: `已设置 ${kind}Storage["${key}"]。` }
@@ -837,7 +787,7 @@ API 联调技巧：
             // height the page already has.
             const target = parseViewport(params.input, session.driver.viewportSize() ?? DEFAULT_VIEWPORT)
             if (!target) {
-              return { content: 'set_viewport 需要 "width" 和/或 "height"（整数 px）。', isError: true }
+              return { content: 'set_viewport 需要 "width" 和/或 "height"（整数 px）。', isError: true, errorKind: 'format_error' }
             }
             if ('error' in target) return { content: target.error, isError: true }
             await session.driver.setViewport(target.width, target.height)
@@ -1048,10 +998,18 @@ API 联调技巧：
             }
           }
           default:
-            return { content: `未知操作：${String(action)}`, isError: true }
+            return { content: `未知操作：${String(action)}`, isError: true, errorKind: 'format_error' }
         }
+      }
+
+      try {
+        return await withSessionRecovery(sessionKey, sharedProfile, session, runAction)
       } catch (err) {
-        return { content: `browser_debug ${action} 失败：${(err as Error).message}`, isError: true }
+        return {
+          content: `browser_debug ${action} 失败：${(err as Error).message}`,
+          isError: true,
+          errorKind: errorKindFor(err),
+        }
       }
     },
 

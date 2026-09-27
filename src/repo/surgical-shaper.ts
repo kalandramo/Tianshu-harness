@@ -13,7 +13,15 @@
  * 纯函数、无副作用、无 IO——便于单测与复用。
  */
 
-import { INLINE_TOOL_RESULT_MAX_CHARS } from '../compact/constants.js'
+/**
+ * 整形后代码块总字符预算的默认值。
+ *
+ * 原先直接借用 compact 的 INLINE_TOOL_RESULT_MAX_CHARS（50K），但那是「单条工具结果
+ * 在 JS heap 的驻留上限」——内存约束；本模块的预算是「给模型看的整形片段体量」——
+ * 建模选择。2026-09-23 内存上限放宽到 120K 时若不拆开，semantic_search（唯一生产
+ * 调用方，不显式传 maxTotalChars）的整形预算会跟着静默翻倍。故独立成此常量，值保持 50K。
+ */
+export const DEFAULT_MAX_TOTAL_CHARS = 50_000
 
 /**
  * 稳定哨兵串：低置信标注的标题。消费方（如 MCP 层/调用方）可检测它来调整措辞。
@@ -41,7 +49,7 @@ export interface SurgicalShapeOptions {
   maxCodeBlocks: number
   /** 单块内容字符上限（结构化裁剪之后的字符截断） */
   maxCodeBlockSize: number
-  /** 总字符预算，默认取 src/compact/constants.ts 的 INLINE_TOOL_RESULT_MAX_CHARS */
+  /** 总字符预算，默认 {@link DEFAULT_MAX_TOTAL_CHARS} */
   maxTotalChars?: number
   /** 查询文本——用于低置信判定 */
   query?: string
@@ -123,7 +131,7 @@ export function shapeSurgicalContext(
   blocks: SurgicalBlock[],
   options: SurgicalShapeOptions,
 ): ShapeResult {
-  const maxTotalChars = options.maxTotalChars ?? INLINE_TOOL_RESULT_MAX_CHARS
+  const maxTotalChars = options.maxTotalChars ?? DEFAULT_MAX_TOTAL_CHARS
   const perFileCap = Math.max(5, Math.ceil(options.maxNodes * 0.2))
   const testCap = Math.max(3, Math.ceil(options.maxNodes * 0.15))
 

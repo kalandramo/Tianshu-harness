@@ -247,6 +247,7 @@ describe('Goal 计划倒计时自动批准（2026-07-24）', () => {
     rmSync(sessionDir, { recursive: true, force: true })
   })
 
+  const settlements = new WeakMap<AgentCallbacks, () => void>()
   type CapturingAgent = GoalFakeAgent & { callbacks?: AgentCallbacks }
 
   function makePlanManager(opts: { delayMs: number; plans: PlanDocument[]; globalApprovalMode?: string }) {
@@ -255,7 +256,7 @@ describe('Goal 计划倒计时自动批准（2026-07-24）', () => {
     const manager = new RuntimeSessionManager({
       createAgent: () => {
         const a = new GoalFakeAgent() as CapturingAgent
-        a.run = (_p, cb) => { a.callbacks = cb; return Promise.resolve() }
+        a.run = (_p, cb) => { a.callbacks = cb; return new Promise<void>(resolve => { settlements.set(cb, resolve) }) }
         agents.push(a)
         return a
       },
@@ -282,6 +283,7 @@ describe('Goal 计划倒计时自动批准（2026-07-24）', () => {
   async function submitPlanViaTool(cb: AgentCallbacks): Promise<void> {
     cb.onToolUse('t1', 'plan', { action: 'submit' })
     cb.onToolResult('t1', 'plan', 'ok', false)
+    settlements.get(cb)?.()
     await new Promise((r) => setTimeout(r, 20))
   }
 
@@ -404,7 +406,7 @@ describe('Goal 计划倒计时自动批准（2026-07-24）', () => {
     const m2 = new RuntimeSessionManager({
       createAgent: () => {
         const a = new GoalFakeAgent() as CapturingAgent
-        a.run = (_p, cb) => { a.callbacks = cb; return Promise.resolve() }
+        a.run = (_p, cb) => { a.callbacks = cb; return new Promise<void>(resolve => { settlements.set(cb, resolve) }) }
         agents2.push(a)
         return a
       },

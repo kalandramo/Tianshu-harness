@@ -49,6 +49,17 @@ test('GET /health reports version, uptime and counts', async () => {
   assert.equal(body.registryOk, true)
 })
 
+test('GET /health 自报 capabilities —— 前端据此判断能力，而不是靠版本号猜（issue #266）', async () => {
+  const { router } = setup()
+  const body = (await router('GET', '/health', {}, AUTH)).body as { capabilities?: { schedulePatch?: boolean } }
+  assert.equal(body.capabilities?.schedulePatch, true, '支持 PATCH /schedule/:id 的运行时要自报')
+
+  // 匿名探测（无 token）保持最小体：rich fields 是「用户正在跑 agent」的活动侧信道，
+  // 能力表虽然不敏感，但也没有理由扩大无鉴权响应面。
+  const anon = (await router('GET', '/health', {}, {})).body as Record<string, unknown>
+  assert.ok(!('capabilities' in anon), 'anonymous probe stays minimal')
+})
+
 test('GET /health surfaces registry readiness when a probe is wired', async () => {
   const manager = new RuntimeSessionManager({ createAgent: () => new NoopAgent() })
   let ready = false
@@ -87,7 +98,7 @@ test('GET /health includes loop-lag fields when a monitor is wired, omits otherw
   assert.ok(!('loopLagP99Ms' in plain), 'no monitor wired → fields absent')
 })
 
-test('LoopHealthMonitor measures a synchronous stall and resets per window', async () => {
+test('LoopHealthMonitor shares a sampled stall window across consumers', async () => {
   const { LoopHealthMonitor } = await import('../loop-health.js')
   const mon = new LoopHealthMonitor()
   mon.start()
@@ -96,13 +107,13 @@ test('LoopHealthMonitor measures a synchronous stall and resets per window', asy
     await new Promise((r) => setTimeout(r, 50))
     const stallUntil = Date.now() + 120
     while (Date.now() < stallUntil) { /* synchronous stall */ }
-    await new Promise((r) => setTimeout(r, 50))
+    await new Promise((r) => setTimeout(r, 1100))
     const first = mon.snapshot()
     assert.ok(first.maxMs >= 100, `stall must register in maxMs, got ${first.maxMs}`)
     // Next window is clean — reset must not carry the spike over.
     await new Promise((r) => setTimeout(r, 60))
     const second = mon.snapshot()
-    assert.ok(second.maxMs < first.maxMs, 'window reset must clear the previous spike')
+    assert.equal(second.maxMs, first.maxMs, 'reading a snapshot must not clear the spike')
   } finally {
     mon.stop()
   }

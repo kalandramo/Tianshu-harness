@@ -73,11 +73,11 @@ import { PROVIDER_PRESETS, isProviderPresetKey } from '../config/provider-preset
 import { installPlugin, removePlugin, getInstalledPlugins, isPluginInstalled } from '../plugins/plugin-installer.js'
 import { parseManifest } from '../plugins/manifest.js'
 import { PLUGIN_PRESETS } from '../plugins/plugin-presets.js'
-import { switchAgentRuntime, switchAgentSession, switchAgentCwd, restorePlanModeFromMeta } from '../bootstrap.js'
-import { loadTodos, setTodoSession } from '../tools/todo.js'
+import { switchAgentRuntime, switchAgentSession, switchAgentCwd } from '../bootstrap.js'
+// /new 及其共用的会话切换复原逻辑——独立模块，避免本文件巨石继续膨胀
+//（architecture-guards 的 max-lines ratchet 只降不升）。
+import { applySessionSwitch, registerNewSessionCommand } from './new-session.js'
 import { rememberUserNote, listUserNotes } from '../memory/user-remember.js'
-import { restoreGoalTracker } from '../agent/goal-persist.js'
-import { setPlanSession } from '../agent/plan-store.js'
 import { formatPermissionLabel, parsePermissionAlias, tierToMode } from '../agent/approval-vocabulary.js'
 import { isToolAllowed, isToolDenied, isBashCommandAllowlisted, isBashCommandDenied } from '../agent/permissions.js'
 import { getMirrorConfig, setMirrorConfig, setCheckpointConfig, setApprovalMode as persistApprovalDefault } from '../config/manager.js'
@@ -3936,39 +3936,7 @@ export function registerTuiSlashCommands(app: TuiApp, ctx: BootstrapContext): vo
       onSessionSwitch: (targetId: string) => {
         try { ctx.agent.abort() } catch {}
         const res = switchAgentSession(ctx, targetId)
-        if (res.ok) {
-          app.setStreamingState(false)
-          // 会话边界重置定高视口高水位——旧会话的峰值空白不带进新会话
-          //（对齐 tianshu-public switchSession）。
-          app.resetLiveHighWater()
-          // 切换后恢复目标、todo 列表与 side panel 状态，保持会话连续性。
-          try {
-            const restoredGoal = restoreGoalTracker(getSessionDir(ctx.cwd), targetId, {
-              maxJudgeRuns: ctx.config.agent.goal?.judge?.maxRuns,
-            })
-            if (restoredGoal) {
-              ctx.agent.setGoalTracker(restoredGoal)
-              ctx.refs.goalTrackerRef.current = restoredGoal
-            } else {
-              ctx.refs.goalTrackerRef.current = null
-            }
-          } catch { /* goal restore best-effort */ }
-          try {
-            loadTodos(targetId, ctx.cwd)
-            setTodoSession(targetId, ctx.cwd)
-            setPlanSession(targetId)
-          } catch { /* todo/plan restore best-effort */ }
-          try {
-            const meta = ctx.persist.loadMetadata()
-            if (meta?.sidePanelOpen) app.setSidePanelOpen(true)
-            else app.setSidePanelOpen(false)
-            // 计划模式恢复：目标会话退出时在 planning 且 draft 仍在 → 重进。
-            const restoredPlan = restorePlanModeFromMeta(ctx.agent, ctx.cwd, meta)
-            if (restoredPlan) {
-              app.commitStatic(`🔍 已恢复计划模式（draft: ${restoredPlan}）— /plan-mode 退出或批准计划后执行。`)
-            }
-          } catch { /* panel/plan restore best-effort */ }
-        }
+        if (res.ok) applySessionSwitch(app, ctx, targetId)
         return res
       },
       openSessionPicker: () => { app.activateOverlay('chronicle') },
@@ -4092,6 +4060,11 @@ export function registerTuiSlashCommands(app: TuiApp, ctx: BootstrapContext): vo
 
   // /queue：显式排队 lane（handler 在 registerQueueCommand，独立导出供单测注册）。
   registerQueueCommand(app)
+
+  // /new：会话中途开新会话（对齐 Claude Code 的 /clear——同进程换一段干净上下文）。
+  // 与 /clear 同走 register 形式：busy 守卫与清屏需要 app 句柄。实现在
+  // new-session.ts（独立模块，本文件是点名巨石，只降不升）。
+  registerNewSessionCommand(app, ctx)
 
   // 经 SIGINT 走 main.ts 的统一 shutdown（app.dispose → ctx.shutdown →
   // 退出摘要 + resume 指引 → process.exit）。直接调 ctx.shutdown() 不会退出

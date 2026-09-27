@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync
 import { execFileSync } from 'node:child_process'
 import { join, resolve as resolvePath } from 'node:path'
 import { tmpdir } from 'node:os'
-import { executeToolUse, patchTargetPaths, type ToolPipelineDeps } from '../tool-pipeline.js'
+import { executeToolUse as rawExecuteToolUse, patchTargetPaths, type ToolPipelineDeps } from '../tool-pipeline.js'
 import { FileHistory } from '../file-history.js'
 import { createTurnBudget } from '../turn-budget.js'
 import { createCheckpoint, getRollbackPreview } from '../checkpoint.js'
@@ -15,6 +15,10 @@ import { ArtifactStore } from '../../artifact/store.js'
 import { _setSandboxBackendForTest, _resetSandboxBackendCache } from '../../tools/sandbox-profile.js'
 import { isWriteGranted, _resetGrantsForTest, loadPersistedGrants, revokeGrant } from '../../tools/path-grants.js'
 import { rivetHome } from '../../config/paths.js'
+
+import { observeRun } from '../stall-observer.js'
+const executeToolUse: typeof rawExecuteToolUse = (...args) =>
+  observeRun(args[1].sessionId ?? 'default', () => rawExecuteToolUse(...args))
 
 /** Sandbox-safe temp directory — macOS sandbox blocks os.tmpdir() /var/folders/...
  *  Must be absolute so resolve(cwd, target) in path validation works correctly. */
@@ -97,6 +101,16 @@ describe('executeToolUse', () => {
       ...overrides,
     }
   }
+
+  it('does not call the tool when the durable intent barrier fails', async () => {
+    let executed = false
+    const deps = makeDeps()
+    deps.config.toolRegistry.execute = async () => { executed = true; return { content: 'ok', isError: false } }
+    const callbacks = { ...noopCallbacks, beforeToolExecute: async () => { throw new Error('storage unavailable') } }
+    try { await executeToolUse({ id: 'durability-test', name: 'bash', input: { command: 'echo fixture' } }, deps, callbacks as any, 1, false) }
+    catch { /* pipeline may propagate or encode the storage error */ }
+    assert.equal(executed, false)
+  })
 
   it('refuses to execute a tool call whose args were truncated by stream interruption', async () => {
     let executed = false

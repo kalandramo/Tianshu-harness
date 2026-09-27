@@ -58,6 +58,12 @@ export interface ResponsesClientConfig {
   firstByteTimeoutMs?: number
   thinkingStallTimeoutMs?: number
   requestTimeoutMs?: number
+  /**
+   * PLAN §3 共享重试预算 getter：provider 重试与 agent 重连共用同一份，
+   * 防 3×3=9 相乘（per-run，由 AgentConfig.retryBudgetHolder 承载）。
+   * undefined = 不启用（历史行为）。用 getter 而非实例：客户端在 agent 构造期建好。
+   */
+  retryBudget?: () => import('./retry-budget.js').RetryBudget | undefined
   maxRetries?: number
   retry?: ProviderRetryConfig
   proxy?: string
@@ -166,6 +172,7 @@ export class ResponsesClient implements StreamClient {
 
       await this.processSSEStream(response, callbacks, signal, lifecycle)
     }, signal, {
+      budget: this.config.retryBudget?.(),
       maxTotalDurationMs: this.config.retry?.maxTotalDurationMs ?? 10 * 60_000,
       maxTotalRetries: this.config.maxRetries,
       policy: this.config.retry,

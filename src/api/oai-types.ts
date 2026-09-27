@@ -101,9 +101,15 @@ export function isUserMessage(msg: OaiMessage): msg is OaiUserMessage {
   return msg.role === 'user'
 }
 
-/** 剥图重发时替换「纯图片用户消息」的占位文本：保住角色交替与非空用户轮次，
- *  同时让模型知道这里原本有一张图，而不是面对一条空消息。 */
-export const STRIPPED_IMAGE_PLACEHOLDER = '[image removed to reduce payload size]'
+/**
+ * 剥图重发时替换 image part 的占位文本。措辞必须让模型知道「图不在了」而不是
+ * 「图还在但看不清」——静默丢图会诱导模型凭记忆描述（Grok Build
+ * `IMAGE_COMPACT_PLACEHOLDER` 同款纪律）。wire 剥图与持久化剥图共用同一常量：
+ * 两条路径必须产出逐字节相同的 part，下一轮才接得上已缓存前缀。
+ */
+export const STRIPPED_IMAGE_PLACEHOLDER =
+  '[Image removed to reduce payload size and no longer visible. '
+  + 'Do not describe or reason about its contents from memory; ask the user to re-share it if you need to see it again.]'
 
 /** 请求里是否至少有一条用户消息带多模态 image_url part。
  *  retry 路径据此判断 image_strip 恢复还有没有牌可打。 */
@@ -116,48 +122,56 @@ export function oaiMessagesHaveImageParts(messages: OaiMessage[]): boolean {
 }
 
 export interface StrippedOaiMessages {
-  /** 已移除 image_url part 的消息（无图可剥时返回原数组引用）。 */
+  /** 已替换 image_url part 的消息（无图可剥时返回原数组引用）。 */
   messages: OaiMessage[]
-  /** 被移除的 image_url part 数量。 */
+  /** 被替换的 image_url part 数量。 */
   removedCount: number
+  /**
+   * 剥图前请求里**不同** image URL 的数量。
+   * 服务端 4xx/413 只指认「这个请求」而不是具体哪张图，调用方据此判断 blame
+   * 是否唯一（uniqueUrlCount===1）再决定要不要把剥离持久化写回历史——
+   * 与 Grok Build `image_strip.rs` 的 ServerRejected 门同款。
+   */
+  uniqueUrlCount: number
 }
 
 /**
- * 返回 `messages` 的副本，去掉其中所有多模态 image_url part，文本与消息/角色
- * 结构原样保留。这是 413 / 图片被拒的重试恢复：去掉图重发，而不是把同一个
- * 过大的请求再发一遍（那样必然再次 413）。
+ * 返回 `messages` 的副本，把其中所有多模态 image_url part **就地替换为占位文本**
+ * （顺序保持）。这是 413 / 图片被拒的重试恢复：去掉图重发，而不是把同一个过大的
+ * 请求再发一遍（那样必然再次 413）。
  *
- * 纯函数，绝不修改入参——调用方的会话历史仍保图（下一轮用户再说「这张图」
- * 时图片还在）。无图可剥时返回**同一个数组引用**，调用方可零成本识别 no-op。
- * 纯图片消息（没有 text part）替换为一句占位文本，使剥图后的请求仍有非空
- * 用户轮次、角色交替依然合法。
+ * 占位符而不是直接删 part：混排消息删掉图片后模型不知道图曾经存在，会按记忆
+ * 描述（Grok 同款纪律）。纯图片消息因此天然保持非空 user 轮次与角色交替合法。
+ *
+ * 纯函数，绝不修改入参——调用方的会话历史由 agent 层按 uniqueUrlCount 决定是否
+ * 写回（见 `src/agent/persisted-image-strip.ts`）。无图可剥时返回**同一个数组
+ * 引用**，调用方可零成本识别 no-op。
  */
 export function stripOaiImageParts(
   messages: OaiMessage[],
   placeholder: string = STRIPPED_IMAGE_PLACEHOLDER,
 ): StrippedOaiMessages {
   let removedCount = 0
+  const urls = new Set<string>()
   let next: OaiMessage[] | undefined
 
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i]!
     if (msg.role !== 'user' || !Array.isArray(msg.content)) continue
-    const imageCount = msg.content.reduce(
-      (n, p) => (p.type === 'image_url' ? n + 1 : n),
-      0,
-    )
-    if (imageCount === 0) continue
+    const hasImage = msg.content.some(p => p.type === 'image_url')
+    if (!hasImage) continue
 
-    removedCount += imageCount
     next ??= messages.slice()
-    const kept = msg.content.filter(p => p.type !== 'image_url')
-    const content: OaiContentPart[] = kept.length > 0
-      ? kept
-      : [{ type: 'text', text: placeholder }]
+    const content: OaiContentPart[] = msg.content.map(p => {
+      if (p.type !== 'image_url') return p
+      removedCount++
+      urls.add(p.image_url.url)
+      return { type: 'text', text: placeholder }
+    })
     next[i] = { ...msg, content }
   }
 
-  return { messages: next ?? messages, removedCount }
+  return { messages: next ?? messages, removedCount, uniqueUrlCount: urls.size }
 }
 
 /**

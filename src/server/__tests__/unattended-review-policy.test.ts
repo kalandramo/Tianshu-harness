@@ -16,7 +16,9 @@ import { tmpdir } from 'node:os'
 import { createRouter } from '../index.js'
 import {
   CronScheduler,
+  applyTaskPatch,
   createScheduledTask,
+  normalizeApprovalMode,
   normalizeReviewPolicy,
   resolveRunUnattended,
   FIRST_RUNS_TRUST_THRESHOLD,
@@ -197,4 +199,128 @@ test('有人值守会话：审批请求照常挂起（回归）', async () => {
   assert.equal(resolvedCount, 1, 'approval should resolve after answerIntervention')
   assert.equal(typeof resolvedValue === 'boolean' ? resolvedValue : resolvedValue?.approved, true)
   agent.finish()
+})
+
+// ─── issue #259（收编公开仓 PR #261）：任务级审批档位声明 ────────
+// 定时任务在 win32 无沙箱后端时，任何需审批的调用都会撞上 unattended 的
+// fail-closed 中止，而任务定义里此前没有审批字段——用户无处可解。这里钉的是
+// 「能声明什么」与「非法/越权声明怎么被拦」，透传链的不变量另见
+// scheduled-task-approval.test.ts。
+
+test('normalizeApprovalMode：只放行安全子集', () => {
+  assert.equal(normalizeApprovalMode('auto-safe'), 'auto-safe')
+  assert.equal(normalizeApprovalMode('auto-accept'), 'auto-accept')
+  // 另两档刻意不放行：manual 与 fail-closed 现状等价（声明只会误导用户），
+  // dangerously-skip-permissions 等于给任务定义开一条「无人值守全自动」的后门
+  // ——定时任务没有人在场，越权面比交互式会话大得多。
+  assert.equal(normalizeApprovalMode('manual'), undefined)
+  assert.equal(normalizeApprovalMode('dangerously-skip-permissions'), undefined)
+  assert.equal(normalizeApprovalMode(undefined), undefined)
+  assert.equal(normalizeApprovalMode(42), undefined)
+})
+
+test('createScheduledTask 保留 approval，缺省不写字段', () => {
+  const withApproval = createScheduledTask('p', { type: 'interval', spec: '1000' }, [], { approval: 'auto-safe' })
+  assert.equal(withApproval.approval, 'auto-safe')
+  const bare = createScheduledTask('p', { type: 'interval', spec: '1000' })
+  assert.equal('approval' in bare, false, '缺省不写字段——持久化里不出现该键')
+})
+
+test('applyTaskPatch：approval 三态（缺席不动 / null 清除 / 值覆盖）', () => {
+  const task = createScheduledTask('p', { type: 'interval', spec: '1000' }, [], { approval: 'auto-safe' })
+  assert.equal(applyTaskPatch(task, {}).approval, 'auto-safe', '缺席不动')
+  assert.equal('approval' in applyTaskPatch(task, { approval: null }), false, '显式 null 清除')
+  assert.equal(applyTaskPatch(task, { approval: 'auto-accept' }).approval, 'auto-accept')
+  // 补丁不得波及同族可选项（reviewPolicy/retry/agentId 与 approval 同一套三态）
+  const both = createScheduledTask('p', { type: 'interval', spec: '1000' }, [], {
+    approval: 'auto-safe',
+    reviewPolicy: 'auto-proceed',
+  })
+  const patched = applyTaskPatch(both, { approval: null })
+  assert.equal(patched.reviewPolicy, 'auto-proceed', '清 approval 不该连带清 reviewPolicy')
+})
+
+test('POST /schedule：接受 approval 安全子集并入库', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rivet-rp-'))
+  try {
+    const { router, scheduler } = makeRouter(true, dir)
+    const res = await router('POST', '/schedule', {
+      prompt: 'x', trigger: { type: 'interval', spec: '1000' }, approval: 'auto-safe',
+    }, AUTH)
+    assert.equal(res.status, 201)
+    const id = (res.body as { id: string }).id
+    assert.equal(scheduler.get(id)!.approval, 'auto-safe')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('POST /schedule：非法 / 危险档位一律 400，不静默丢弃', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rivet-rp-'))
+  try {
+    const { router } = makeRouter(true, dir)
+    for (const approval of ['dangerously-skip-permissions', 'manual', 'yolo']) {
+      const res = await router('POST', '/schedule', {
+        prompt: 'x', trigger: { type: 'interval', spec: '1000' }, approval,
+      }, AUTH)
+      assert.equal(res.status, 400, `${approval} 必须被拒（否则用户以为声明生效了）`)
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('Pro gate：无 Pro 时声明 approval 也 403（与 reviewPolicy 同口径）', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rivet-rp-'))
+  try {
+    const { router, scheduler } = makeRouter(false, dir)
+    const res = await router('POST', '/schedule', {
+      prompt: 'x', trigger: { type: 'interval', spec: '1000' }, approval: 'auto-safe',
+    }, AUTH)
+    assert.equal(res.status, 403)
+    assert.equal((res.body as { feature: string }).feature, 'unattendedAutomation')
+    assert.equal(scheduler.list().length, 0, '被拦下的任务不得入库')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('PATCH：无 Pro 时补 approval 被拦——不能靠「先建成 always-review 再改」绕过门禁', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rivet-rp-'))
+  try {
+    const { router, scheduler } = makeRouter(false, dir)
+    // 免费版可建：always-review 且无 approval
+    const created = await router('POST', '/schedule', {
+      prompt: 'x', trigger: { type: 'interval', spec: '1000' },
+    }, AUTH)
+    assert.equal(created.status, 201)
+    const id = (created.body as { id: string }).id
+
+    const patched = await router('PATCH', `/schedule/${id}`, { approval: 'auto-safe' }, AUTH)
+    assert.equal(patched.status, 403, '更新后的生效档位属无人值守 → 需 Pro')
+    assert.equal(scheduler.get(id)!.approval, undefined, '被拦下的补丁不得落库')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('PATCH：有 Pro 时 approval 可设置也可清除（三态）', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rivet-rp-'))
+  try {
+    const { router, scheduler } = makeRouter(true, dir)
+    const created = await router('POST', '/schedule', {
+      prompt: 'x', trigger: { type: 'interval', spec: '1000' },
+    }, AUTH)
+    const id = (created.body as { id: string }).id
+
+    const set = await router('PATCH', `/schedule/${id}`, { approval: 'auto-accept' }, AUTH)
+    assert.equal(set.status, 200)
+    assert.equal(scheduler.get(id)!.approval, 'auto-accept')
+
+    // 缺席不动
+    const untouched = await router('PATCH', `/schedule/${id}`, { prompt: 'y' }, AUTH)
+    assert.equal(untouched.status, 200)
+    assert.equal(scheduler.get(id)!.approval, 'auto-accept')
+
+    // 显式 null 清除
+    const cleared = await router('PATCH', `/schedule/${id}`, { approval: null }, AUTH)
+    assert.equal(cleared.status, 200)
+    assert.equal('approval' in scheduler.get(id)!, false)
+
+    // 非法值 400（不静默清空）
+    const bad = await router('PATCH', `/schedule/${id}`, { approval: 'dangerously-skip-permissions' }, AUTH)
+    assert.equal(bad.status, 400)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })

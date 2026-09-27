@@ -97,7 +97,7 @@ import { join } from 'node:path'
 import { rivetHome } from '../config/paths.js'
 import { isKeylessProviderEntry } from '../config/provider-presets.js'
 import type { ProviderRetryConfig } from '../config/retry-schema.js'
-import { allPresetKeys, resolvePreset, resolvePresetBaseUrl, resolvePresetLabel } from '../api/pro-registry.js'
+import { allPresetKeys, resolvePreset, resolvePresetBaseUrl, resolvePresetDefaultModel, resolvePresetLabel, resolvePresetProtocol } from '../api/pro-registry.js'
 import { modelConfigSchema, providerCapabilitiesSchema, PROVIDER_PROTOCOL_VALUES, type ModelConfig, type ProviderCapabilitiesConfig, type ProviderProtocol } from '../config/schema.js'
 import { queryDeepSeekBalance, type BalanceResult } from '../api/balance-client.js'
 import { discoverVisionModels, validateVisionModel } from '../api/vision-model-onboarding.js'
@@ -158,6 +158,7 @@ function parseImageGenRequest(body: unknown, options: { requireProviderName?: bo
 }
 import { probeForTestKey, matchModelDefaults } from './provider-probe-adapter.js'
 import { buildProviderKeyRoutes } from './config-routes-keys.js'
+import { buildProFeatureRoutes } from './pro-feature-routes.js'
 import { buildZenRoutes } from './config-routes-zen.js'
 import { buildPermissionRoutes } from './config-routes-permissions.js'
 import { listProviderKeys, type ProviderKeyListItem } from '../config/provider-key-store.js'
@@ -268,7 +269,7 @@ export interface ProviderListItem {
    *  provider（桌面表单 API Key 可选，用户有意空着 = keyless 端点）。
    *  模型选择器据此区分「keyless」与「该配 key 而没配」——前者照常列出。 */
   keyless: boolean
-  models: { id: string; alias?: string; supportsVision?: boolean; supportsImageGen?: boolean; effortSupported?: boolean; reasoningEffort?: string }[]
+  models: { id: string; alias?: string; supportsVision?: boolean; supportsVideo?: boolean; supportsImageGen?: boolean; effortSupported?: boolean; reasoningEffort?: string }[]
   /** 端点是否真的会把推理档位发上线（provider 级 resolveEffortSupported）。
    *  设置页开关据此回显真实状态——不是「是否显式声明」，避免预设名自带通道时
    *  取消勾选成为空操作。undefined 字段兜底旧 sidecar（按支持处理）。 */
@@ -339,6 +340,7 @@ export function buildConfigRoutes(apiToken?: string, hooks?: ConfigRouteHooks): 
             contextWindow: m.contextWindow,
             maxTokens: m.maxTokens,
             supportsVision: m.supportsVision,
+            supportsVideo: m.supportsVideo,
             supportsImageGen: m.supportsImageGen,
             reasoningEffort: m.reasoningEffort,
             // 桌面 EffortMenu 的诚实化开关：无档位通道（自定义 provider 默认）→ false，
@@ -595,11 +597,13 @@ export function buildConfigRoutes(apiToken?: string, hooks?: ConfigRouteHooks): 
       }
     }, apiToken),
 
-    // Probe a provider's /models before saving it — unified with the CLI probe
+    // Probe a provider's key before saving it — unified with the CLI probe
     // core (probeProvider) via the adapter. keyless: no key still probes — local
     // endpoints (Ollama/vLLM) need no auth, the endpoint decides the outcome.
+    // 无 /models 端点（火山方舟 Agent Plan，issue #272）没有列表可拉，补全探测
+    // 需要型号：显式 model > 已存 provider 首个模型 > 预设 defaultModelId。
     'POST /config/providers/test-key': withAuth(async (body) => {
-      const { provider, apiKey, baseUrl: override, protocol } = body as { provider?: string; apiKey?: string; baseUrl?: string; protocol?: ProviderProtocol }
+      const { provider, apiKey, baseUrl: override, protocol, model } = body as { provider?: string; apiKey?: string; baseUrl?: string; protocol?: ProviderProtocol; model?: string }
       if (!provider) return { status: 400, body: { error: 'provider is required' } }
       if (protocol !== undefined && !PROVIDER_PROTOCOL_VALUES.includes(protocol)) {
         return { status: 400, body: { error: `Invalid protocol: ${String(protocol)} (expected 'openai', 'anthropic', or 'openai-responses')` } }
@@ -608,7 +612,17 @@ export function buildConfigRoutes(apiToken?: string, hooks?: ConfigRouteHooks): 
       // allowKeyless：无鉴权端点（Ollama/vLLM）缺 key 不拦截，探测结果定成败。
       const target = resolveProviderProbeTarget(provider, apiKey, override, { allowKeyless: true })
       if ('error' in target) return { status: 400, body: { error: target.error } }
-      const result = await probeForTestKey({ baseUrl: target.baseUrl, apiKey: target.apiKey, protocol, providerName: provider })
+      const stored = loadConfig().provider.providers[provider]
+      const probeModel = (typeof model === 'string' && model.trim())
+        ? model.trim()
+        : (stored?.models?.[0]?.id ?? resolvePresetDefaultModel(provider))
+      const result = await probeForTestKey({
+        baseUrl: target.baseUrl,
+        apiKey: target.apiKey,
+        protocol: protocol ?? stored?.protocol ?? resolvePresetProtocol(provider),
+        providerName: provider,
+        ...(probeModel ? { probeModel } : {}),
+      })
       return { status: 200, body: result }
     }, apiToken),
 
@@ -654,8 +668,10 @@ export function buildConfigRoutes(apiToken?: string, hooks?: ConfigRouteHooks): 
       if (!provider) return { status: 400, body: { error: 'provider is required' } }
       const target = resolveProviderProbeTarget(provider, apiKey, override)
       if ('error' in target) return { status: 400, body: { error: target.error } }
+      const stored = loadConfig().provider.providers[provider]
       const report = await probeProvider({
-        baseUrl: target.baseUrl, apiKey: target.apiKey, protocol: protocol ?? 'openai',
+        baseUrl: target.baseUrl, apiKey: target.apiKey,
+        protocol: protocol ?? stored?.protocol ?? resolvePresetProtocol(provider),
         providerName: provider, probeModel: model || undefined, vision,
         skipCompletion: !model,
       })
@@ -796,6 +812,9 @@ export function buildConfigRoutes(apiToken?: string, hooks?: ConfigRouteHooks): 
     // Zen Mode（禅模式 / 读专注开局）——用户显式开关，默认关（opt-in）。
     // 本文件零行预算，路由住在 config-routes-zen.ts，以 spread 接入（同多 key 池）。
     ...buildZenRoutes(apiToken),
+
+    // Pro 能力矩阵（口径对齐单一查询口）——同款按接缝外提，避免巨石继续膨胀。
+    ...buildProFeatureRoutes(apiToken),
 
     // Runtime lean profile — expands into minimal tools / lean prompt / no
     // embeddings / tighter session pool. Takes effect next session (pool caps

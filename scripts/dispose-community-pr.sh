@@ -49,6 +49,18 @@ command -v gh >/dev/null || { echo "✗ 需要 gh CLI"; exit 1; }
 command -v jq >/dev/null || { echo "✗ 需要 jq"; exit 1; }
 [[ -d "$PUB_DIR/.git" ]] || { echo "✗ PUB_DIR 不是 git checkout: $PUB_DIR"; exit 1; }
 
+# credit 的查重与自检都靠「提交 subject 里有没有这笔 credit」判断。**不要写成
+# `git log --format='%s' | grep -qF …`**：本脚本开了 pipefail，而 grep -q 命中即退出，
+# 上游 git 还在往管道里写就被 SIGPIPE 打死 → 管道返回 141 →「已存在」被判成「不存在」。
+# 后果两条：① 自检会在 credit 提交**已经**落账之后报「未落账」并 exit 1（2026-09-27 处置
+# PR #281 时实跑就是这个形态）；② 查重反向漏判，重复处置同一 PR 会重复落账。
+# 先把 subject 收进变量再匹配，管道里就没有可被打断的上游进程。
+has_credit_commit() {
+  local subjects
+  subjects="$(git log --format='%s')"
+  grep -qF "credit: PR #${PR} 计入贡献" <<<"$subjects"
+}
+
 echo "==> 读取 PR #${PR}（${GH_REPO}）"
 info=$(gh pr view "$PR" --repo "$GH_REPO" --json number,title,state,author,commits,labels)
 title=$(jq -r '.title' <<<"$info")
@@ -111,7 +123,10 @@ echo "    ✓ 自检：CONTRIBUTORS.md 已收录 PR #${PR}（记得随 dev 提�
 
 # ── ② 附注 + 标记 + 关闭 ──
 echo "==> ② 附注 + sync-merged 标记 + 关闭"
-gh label list --repo "$GH_REPO" --limit 100 --json name --jq '.[].name' | grep -qx 'sync-merged' \
+# 同一条形态纪律：管道给 grep -q 会被 SIGPIPE 变成假阴性 → 会去重复建标签（gh 报「已存在」，
+# 在 set -e 下直接终止）。gh label list 的输出目前不大、不必然触发，仍按同一形态收口。
+existing_labels="$(gh label list --repo "$GH_REPO" --limit 100 --json name --jq '.[].name' || true)"
+grep -qx 'sync-merged' <<<"$existing_labels" \
   || gh label create sync-merged --repo "$GH_REPO" --color 0e8a16 \
        --description "内容已通过 sync 流程合入 dev 主仓（PR 形态留痕，作者计入 CONTRIBUTORS）"
 gh pr comment "$PR" --repo "$GH_REPO" --body "$NOTE"
@@ -122,7 +137,7 @@ gh pr edit "$PR" --repo "$GH_REPO" --add-label sync-merged
 echo "==> ③ credit commit"
 cd "$PUB_DIR"
 # 查重扫全历史（原来只看最近 50 笔——早于窗口的 credit 会被重复补一笔）。
-if git log --format='%s' | grep -qF "credit: PR #${PR} 计入贡献"; then
+if has_credit_commit; then
   echo "    已存在 PR #${PR} 的 credit commit，跳过"
 else
   git commit --allow-empty -m "credit: PR #${PR} 计入贡献——${title}
@@ -134,7 +149,7 @@ Co-authored-by: ${author_line}"
   echo "    credit commit 已创建（Co-authored-by: ${author_line}）"
 fi
 # fail-closed 自检：署名提交必须真的在本地历史里——落空 = 这次处置的目的没达成。
-if ! git log --format='%s' | grep -qF "credit: PR #${PR} 计入贡献"; then
+if ! has_credit_commit; then
   echo "✗ PR #${PR} 的 credit 提交未落账——终止（检查 PUB_DIR 可否提交 / 是否被 hook 拦截）" >&2
   exit 1
 fi

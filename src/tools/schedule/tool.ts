@@ -7,8 +7,10 @@
  * 用途：agent 可根据对话上下文主动安排自动化——「每天早上检查依赖更新」
  * 「每次打开应用时拉取最新」等，无需用户手动去自动化面板配置。
  *
- * reviewPolicy 非 always-review 的创建走 Pro 门控（由 CronScheduler/
- * schedule-routes 的现有校验保证，工具层不重复判断）。
+ * 无人值守创建（reviewPolicy 非 always-review，或工具白名单含 computer_use）走
+ * unattendedAutomation Pro 门控，口径与 schedule-routes 的 wantsUnattended 一致
+ * ——工具路径不经 HTTP 路由，必须自己判（2026-09-24 补；此前只有路由侧有门，
+ * 模型可经本工具绕过）。
  *
  * 注册是**条件性**的：`isSchedulerAvailable()` 为假时 default-registry 不注册
  * 这三个工具。CLI 交互模式永远没有调度器，注册了只会让模型看见一个必然失败
@@ -19,7 +21,7 @@
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import type { Tool } from '../types.js'
-import { getActiveScheduler, resolveTaskStatus, validateTriggerOrThrow, type CronTriggerType } from '../../server/cron-scheduler.js'
+import { getActiveScheduler, isUnattendedAutomationAllowed, resolveTaskStatus, validateTriggerOrThrow, type CronTriggerType } from '../../server/cron-scheduler.js'
 
 const triggerSchema = z.object({
   type: z.enum(['interval', 'cron', 'oneshot', 'startup', 'app-open']),
@@ -88,6 +90,18 @@ export const SCHEDULE_CREATE_TOOL: Tool = {
       validateTriggerOrThrow({ type: trigger.type as CronTriggerType, spec: trigger.spec })
     } catch (err) {
       return { content: `触发器不合法：${(err as Error).message}` }
+    }
+    // unattendedAutomation Pro 门——与 schedule-routes 的 wantsUnattended 同口径
+    // （非 always-review / 显式审批档 / 含 computer_use 白名单）。本工具不暴露
+    // approval 字段，故此处只判前两项里工具能表达的部分。
+    const wantsUnattended = (reviewPolicy !== undefined && reviewPolicy !== 'always-review')
+      || (allowedTools ?? []).includes('computer_use')
+    if (wantsUnattended && !isUnattendedAutomationAllowed()) {
+      return {
+        content: 'pro_required：非 always-review、或工具白名单含 computer_use 的定时任务属「无人值守自动化」，需要 Pro。'
+          + '若用户没有 Pro，改用 reviewPolicy: "always-review"（去掉 computer_use 白名单），或请用户在自动化面板处理。',
+        isError: true,
+      }
     }
     const id = `sched-${randomUUID().slice(0, 8)}`
     scheduler.add({

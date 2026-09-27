@@ -71,6 +71,12 @@ export const DEEPSEEK_CAPABILITIES: ProviderCapabilities = {
   stripParams: ['top_k', 'metadata', 'service_tier', 'cache_control'],
   hasToolJsonInContentBug: true,
   effortFormat: 'reasoning_effort',
+  // 官方枚举是 none|low|high|max（默认 high）；medium/xhigh 服务端映射为 high、
+  // minimal→low（api-docs.deepseek.com Chat API 参考）。内部梯子里两个越界档位
+  // 在此显式对齐：off→none（官方唯一的"关闭思考"值——用户选 off 不该反而落到
+  // 默认 high）；medium→high（官方认定的等效档）。max 是官方档，绝不能声明
+  // {max:...} 把它静默降级（Kimi 曾犯过的同款错误）。
+  effortCap: { off: 'none', medium: 'high' },
   prefixCacheStrategy: 'deepseek-native',
   supportsResponseFormat: true,
   mapUsage: mapDeepSeekUsage,
@@ -97,10 +103,16 @@ export const WELL_KNOWN_DEFAULTS: Record<string, ProviderCapabilities> = {
   kimi: {
     supportsThinking: true,
     thinkingBlockType: 'enabled',
-    // 无 effortCap：官方 Kimi Code 文档（kimi-code/models.html）——k3 / k3-256k
-    // 的 reasoning_effort 支持 low|high|max，第三方工具传 max 即映射到 max。
-    // 旧值 {max:'high'} 会把用户显式选的 max 静默降成 high，K3 旗舰的 max 档
-    // 永远发不出去。K2.7 Code（kimi-for-coding）是 Thinking:ON、无档位。
+    // 官方 Kimi Code 模型页的「第三方工具中的 effort 映射」表：
+    //   null/undefined → 模型默认（K3 high / K2.8 Preview max）
+    //   max / ultra / xhigh → max；high / medium → high（推荐）；low/minimum/light → low
+    //   none → thinking.type disabled（关闭思考）；**其它未知取值 → HTTP 400**
+    // 内部梯子里两个官方枚举外的档位在此对齐：medium→high（官方推荐档）；
+    // off→none（官方关闭思考值，K3/K2.8 关闭思考后由 K2.8 无思考版承接）。
+    // **不声明 {max:...}**——那会把用户显式选的 max 静默降成 high（issue #258
+    // 修过一次）；thinking 输出由官方 low/high/max 三档控制，highspeed 模型才是
+    // Thinking:ON、无档位（预设里模型级 effortFormat:none）。
+    effortCap: { off: 'none', medium: 'high' },
     supportsCacheControl: false,
     stripParams: ['top_k', 'metadata', 'service_tier', 'cache_control'],
     hasToolJsonInContentBug: false,
@@ -251,6 +263,11 @@ export const WELL_KNOWN_DEFAULTS: Record<string, ProviderCapabilities> = {
   // → toolJsonBug:true set in preset overrides. Server-side implicit prefix caching
   // on DeepSeek-V4 / GLM-5.2 (charges for cached input) → deepseek-native strategy
   // to preserve cache-aware compaction.
+  // 档位（docs.siliconflow.cn Chat Completions 参考）：reasoning_effort 只对
+  // Pro/deepseek-ai/DeepSeek-V4、deepseek-ai/DeepSeek-V4-Flash、Pro/zai-org/GLM-5.2
+  // 生效，且合法枚举是 high|max；low/medium 服务端映射为 high、xhigh→max。
+  // 这里把 low/medium 在客户端就对齐到 high（少依赖一层服务端改写；未支持的
+  // 型号由预设用模型级 effortFormat:none 逐个关闭——见 provider-presets）。
   siliconflow: {
     supportsThinking: true,
     thinkingBlockType: 'enabled',
@@ -258,6 +275,7 @@ export const WELL_KNOWN_DEFAULTS: Record<string, ProviderCapabilities> = {
     stripParams: ['top_k', 'metadata', 'service_tier', 'cache_control'],
     hasToolJsonInContentBug: false,
     effortFormat: 'reasoning_effort',
+    effortCap: { low: 'high', medium: 'high' },
     prefixCacheStrategy: 'deepseek-native',
     supportsResponseFormat: false,
     mapUsage: mapDeepSeekUsage,
@@ -414,8 +432,10 @@ export function resolveCapabilities(
  *   - openai：OpenAIClient 只在 thinking 分支且 `effortFormat !== 'none'` 时写
  *     `reasoning_effort`（见 openai-client 的 body 构建）。
  *   - openai-responses：ResponsesClient 直接写 `reasoning.effort`，不受 effortFormat 门控。
- *   - anthropic：档位在**建客户端时**换算成 `thinking.budget_tokens`；运行时
- *     setReasoningEffort 是空实现——会话内调档不生效。
+ *   - anthropic：默认档位在建客户端时换算成 `thinking.budget_tokens`，运行时
+ *     setReasoningEffort 空实现——**例外**：provider 显式声明
+ *     `effortFormat:'output_config'`（火山方舟 Messages 的 `output_config.effort`）
+ *     时按该通道走，运行时档位可上线。
  * 未声明 capabilities 的自定义 provider 走 DEFAULT_CAPABILITIES（effortFormat 'none'），
  * 档位会被静默丢弃：消费端必须据此禁用调档，而不是给「设置成功」的假反馈。
  */
@@ -429,9 +449,12 @@ export function resolveEffortSupported(
   modelCapabilities?: ProviderCapabilitiesConfig,
 ): boolean {
   if (provider.protocol === 'openai-responses') return true
-  if (provider.protocol === 'anthropic') return false
+  const caps = resolveCapabilities(providerName, provider.capabilities, modelCapabilities)
+  // Anthropic 协议默认没有 reasoning_effort；只有显式声明 output_config 通道的
+  // 端点（如火山方舟 /api/plan Messages）才放行，其余仍走 budget_tokens 固定换算。
+  if (provider.protocol === 'anthropic') return caps.effortFormat === 'output_config'
   if (provider.thinking === 'disabled') return false
-  return resolveCapabilities(providerName, provider.capabilities, modelCapabilities).effortFormat !== 'none'
+  return caps.effortFormat !== 'none'
 }
 
 /**

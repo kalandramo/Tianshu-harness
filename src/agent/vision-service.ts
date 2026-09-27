@@ -87,7 +87,9 @@ export async function describeImages(
     }
     const commaIdx = url.indexOf(',')
     const header = commaIdx >= 0 ? url.slice(0, commaIdx) : url
-    if (!/^data:image\/(png|jpeg|gif|webp|bmp|tiff);base64$/.test(header)) {
+    // 白名单与 provider 实际能力对齐：输入层（image-attach / clipboard-image）
+    // 已把 bmp/tiff 转 PNG，这里再拦一道，别把 provider 不识的格式送出去。
+    if (!/^data:image\/(png|jpeg|gif|webp);base64$/.test(header)) {
       throw new Error(
         `图片格式不受视觉模型支持（期望 image/png, image/jpeg, image/gif, image/webp），`
         + `实际头部: ${header.slice(0, 60)}${header.length > 60 ? '…' : ''}`

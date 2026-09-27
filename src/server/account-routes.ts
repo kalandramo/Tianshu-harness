@@ -30,6 +30,7 @@ import { rivetHome } from '../config/paths.js'
 import * as accountModule from '../auth/account.js'
 import type {
   AccountProfile,
+  AccountProfileSnapshot,
   DeviceCreateResult,
   DevicePollResult,
   FetchInjection,
@@ -56,8 +57,14 @@ export interface AccountApi {
   saveAccountIdentity(store: TokenStore, token: TokenData, identity: StellarIdentity): TokenData
   cachedAccountIdentity(token: TokenData | null): { identity: StellarIdentity; fetchedAt: number } | null
   isAccountIdentityStale(fetchedAt: number, now?: number): boolean
+  /** 账号资料（头像 + 创始铭牌）。与星籍同通道同口径：失败回 null，不抛。 */
+  fetchAccountProfileSnapshot(accessToken: string, opts?: FetchInjection): Promise<AccountProfileSnapshot | null>
+  saveAccountProfile(store: TokenStore, token: TokenData, profile: AccountProfileSnapshot, now?: number): TokenData
+  cachedAccountProfile(token: TokenData | null): AccountProfileSnapshot | null
   /** 官网星籍页 URL（「在官网查看」按钮的目标）。 */
   accountIdentityUrl(): string
+  /** 官网账号与授权页 URL（个人中心权益面板「在官网查看账号与授权」的目标）。 */
+  accountManageUrl(): string
 }
 
 export interface AccountRoutesDeps {
@@ -115,8 +122,12 @@ function defaultAccountApi(): AccountApi {
     fetchStellarIdentity: accountModule.fetchStellarIdentity,
     saveAccountIdentity: accountModule.saveAccountIdentity,
     cachedAccountIdentity: accountModule.cachedAccountIdentity,
+    fetchAccountProfileSnapshot: accountModule.fetchAccountProfileSnapshot,
+    saveAccountProfile: accountModule.saveAccountProfile,
+    cachedAccountProfile: accountModule.cachedAccountProfile,
     isAccountIdentityStale: accountModule.isAccountIdentityStale,
     accountIdentityUrl: accountModule.accountIdentityUrl,
+    accountManageUrl: accountModule.accountManageUrl,
   }
 }
 
@@ -146,6 +157,24 @@ export function buildAccountRoutes(deps: AccountRoutesDeps): Record<string, Rout
       api.saveAccountIdentity(store, fresh, identity)
     } catch {
       // 拉不到就继续用旧值：宁可显示陈旧星籍，也不让身份消失
+    }
+  }
+
+  /**
+   * 后台刷新账号资料（头像 + 创始铭牌）——与星籍同一套 stale-while-revalidate。
+   *
+   * 同一条对账纪律：写回前重新 load 并与发起时的 accessToken 比对，期间换过
+   * 账号就放弃（把 A 的头像挂到 B 的凭据上，比不刷新糟得多）。
+   */
+  const refreshProfile = async (store: TokenStore, accessToken: string): Promise<void> => {
+    try {
+      const profile = await api.fetchAccountProfileSnapshot(accessToken, { fetchImpl })
+      if (!profile) return
+      const fresh = store.load()
+      if (!fresh || fresh.accessToken !== accessToken) return
+      api.saveAccountProfile(store, fresh, profile)
+    } catch {
+      // 拉不到就继续用旧值：宁可显示陈旧头像，也不让资料消失
     }
   }
 
@@ -197,6 +226,15 @@ export function buildAccountRoutes(deps: AccountRoutesDeps): Record<string, Rout
       } catch {
         // 静默：登录已经成功，不该因为星籍拉不到而对外报异常
       }
+
+      // 账号资料（头像 + 创始铭牌）同刻顺带取——理由与星籍相同：这是唯一确定
+      // 在线的时刻。失败同样静默，不拖垮登录结果。
+      try {
+        const profile = await api.fetchAccountProfileSnapshot(saved.accessToken, { fetchImpl })
+        if (profile) api.saveAccountProfile(store, saved, profile)
+      } catch {
+        // 静默：登录已成功，不该因为资料拉不到而对外报异常
+      }
       return { status: 200, body: { status: 'approved' } }
     }),
 
@@ -215,6 +253,8 @@ export function buildAccountRoutes(deps: AccountRoutesDeps): Record<string, Rout
             stellarId: null,
             primaryDomain: null,
             title: null,
+            avatarUrl: null,
+            founding: null,
           },
         }
       }
@@ -227,10 +267,16 @@ export function buildAccountRoutes(deps: AccountRoutesDeps): Record<string, Rout
       }
 
       const cached = api.cachedAccountIdentity(token)
+      const cachedProfile = api.cachedAccountProfile(token)
       // 陈旧就后台刷新，**不 await**：星籍是装饰性信息，不该让设置页为它多等一次
       // 网络往返；也绝不轮询（星籍一生只变一次，reroll 上限 1）。
       if (api.isAccountIdentityStale(cached?.fetchedAt ?? 0)) {
         void refreshIdentity(store, token.accessToken)
+      }
+      // 资料（头像 / 铭牌）同理：陈旧才后台刷、不 await。刷新失败继续用旧值——
+      // 宁可显示陈旧头像，也不让身份消失。
+      if (api.isAccountIdentityStale(cachedProfile?.fetchedAt ?? 0)) {
+        void refreshProfile(store, token.accessToken)
       }
 
       return {
@@ -247,6 +293,10 @@ export function buildAccountRoutes(deps: AccountRoutesDeps): Record<string, Rout
           // 上次同步时刻：让界面能解释"为什么这可能是旧的"（TTL 24h + 手动刷新）
           identityFetchedAt: cached && cached.fetchedAt > 0 ? cached.fetchedAt : null,
           identityUrl: api.accountIdentityUrl(),
+          manageUrl: api.accountManageUrl(),
+          avatarUrl: cachedProfile?.avatarUrl ?? null,
+          founding: cachedProfile?.founding ?? null,
+          profileFetchedAt: cachedProfile && cachedProfile.fetchedAt > 0 ? cachedProfile.fetchedAt : null,
         },
       }
     }),

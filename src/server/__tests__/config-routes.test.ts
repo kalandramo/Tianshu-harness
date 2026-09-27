@@ -11,6 +11,7 @@ import { PROVIDER_PRESETS, type ProviderPresetKey } from '../../config/provider-
 import { __setProGrantPublicKeyForTests } from '../../config/pro-license.js'
 import { makeValidGrant } from '../../config/__tests__/grant-fixtures.js'
 import { resetRootExistsMemoForTest, _resetGrantsForTest } from '../../tools/path-grants.js'
+import { proModulePresent } from '../../api/pro-registry.js'
 
 const TOKEN = 'secret-token'
 const AUTH = { authorization: `Bearer ${TOKEN}` }
@@ -87,6 +88,107 @@ describe('GET /config/computer-use', () => {
   it('rejects unauthorized requests', async () => {
     const router = createRouter(buildConfigRoutes(TOKEN))
     const res = await router('GET', '/config/computer-use', {}, {})
+    assert.equal(res.status, 401)
+  })
+})
+
+describe('GET /config/pro-features', () => {
+  const prevHome = process.env.RIVET_HOME
+  let home: string
+
+  before(() => {
+    home = mkdtempSync(join(tmpdir(), 'rivet-pro-features-'))
+    process.env.RIVET_HOME = home
+  })
+
+  after(() => {
+    if (prevHome === undefined) delete process.env.RIVET_HOME
+    else process.env.RIVET_HOME = prevHome
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  it('未激活：active=false、全量 licensed/enabled=false；available 仍按构建如实报告', async () => {
+    const router = createRouter(buildConfigRoutes(TOKEN))
+    const res = await router('GET', '/config/pro-features', {}, AUTH)
+    assert.equal(res.status, 200)
+    const body = res.body as {
+      active: boolean
+      tier: string | null
+      reason: string
+      features: Record<string, { available: boolean; licensed: boolean; enabled: boolean }>
+    }
+    assert.equal(body.active, false)
+    assert.equal(body.tier, null)
+    assert.deepEqual(
+      Object.keys(body.features).sort(),
+      ['chatGateway', 'computerUse', 'councilMultiRound', 'spark', 'teamMax', 'unattendedAutomation'],
+      '矩阵必须穷举运行时能力',
+    )
+    for (const [key, status] of Object.entries(body.features)) {
+      assert.equal(status.licensed, false, `${key} 未激活不得 licensed`)
+      assert.equal(status.enabled, false, `${key} 未激活不得 enabled`)
+    }
+    assert.equal(body.features.chatGateway!.available, false, '预留位无接线')
+    // available 与许可证解耦（pro-feature-probe.ts 声明的语义：available 是
+    // 「本机构建是否具备」，与许可证无关）。曾经的实现读 proRegistry，而注册挂在
+    // 付费闸门之后、未激活时注册表恒空 → 未付费用户拿到的 available 恒为 false，
+    // 桌面端 Pro 清单按 available 过滤后，旗舰项 spark 整段消失（升级引导也没了它）。
+    const sparkModulePresent = proModulePresent()
+    assert.equal(
+      body.features.spark!.available,
+      sparkModulePresent,
+      'spark.available 只由「本构建带没带闭源模块」决定，不得被许可证拉低',
+    )
+    if (sparkModulePresent) {
+      assert.equal(body.features.spark!.available, true, '本仓带闭源模块：未激活时 available 必须仍为 true')
+    }
+  })
+
+  it('Pro 激活：内置能力 enabled=true；config 显式关闭生效；预留位恒不可用', async () => {
+    const { token, publicKeyB64 } = makeValidGrant()
+    const licensePath = join(home, 'license.json')
+    writeFileSync(licensePath, JSON.stringify({ token, lastVerifiedAt: Date.now() }))
+    __setProGrantPublicKeyForTests(publicKeyB64)
+    try {
+      writeConfig(home, {
+        features: {
+          computerUse: true,
+          chatGateway: true,
+          teamMax: false, // 显式关闭：licensed 也应为 false
+          councilMultiRound: true,
+          unattendedAutomation: true,
+          spark: true,
+        },
+      })
+      const router = createRouter(buildConfigRoutes(TOKEN))
+      const res = await router('GET', '/config/pro-features', {}, AUTH)
+      assert.equal(res.status, 200)
+      const body = res.body as {
+        active: boolean
+        tier: string | null
+        features: Record<string, { available: boolean; licensed: boolean; enabled: boolean }>
+      }
+      assert.equal(body.active, true)
+      assert.equal(body.tier, 'pro')
+      assert.equal(body.features.teamMax!.licensed, false, 'config 关闭的能力不得 licensed')
+      assert.equal(body.features.teamMax!.enabled, false)
+      assert.equal(body.features.unattendedAutomation!.enabled, true)
+      assert.equal(body.features.chatGateway!.licensed, true, '许可证允许')
+      assert.equal(body.features.chatGateway!.enabled, false, '无接线的预留位不得启用')
+      // 闭源能力随构建存在性浮动：enabled 必须与 available 一致（不承诺本构建没有的东西）。
+      for (const key of ['spark', 'computerUse']) {
+        const status = body.features[key]!
+        assert.equal(status.enabled, status.available, `${key} enabled=available&&licensed`)
+      }
+    } finally {
+      __setProGrantPublicKeyForTests(null)
+      rmSync(licensePath, { force: true })
+    }
+  })
+
+  it('rejects unauthorized requests', async () => {
+    const router = createRouter(buildConfigRoutes(TOKEN))
+    const res = await router('GET', '/config/pro-features', {}, {})
     assert.equal(res.status, 401)
   })
 })
@@ -1059,6 +1161,25 @@ describe('GET /config/providers — unconfigured 预设透传 keyUrl（获取 AP
     assert.equal(model?.reasoningEffort, 'high')
     assert.equal(model?.contextWindow, 500_000)
   })
+
+  it('kimi 预设契约：supportsVision / supportsVideo 透出到桌面（视频声明先于投喂通道）', async () => {
+    writeConfig(home, { enabled: false, features: {} })
+    const router = createRouter(buildConfigRoutes(TOKEN))
+    const setupRes = await router('POST', '/config/providers', { providerName: 'kimi', apiKey: 'sk-test' }, AUTH)
+    assert.equal(setupRes.status, 200, JSON.stringify(setupRes.body))
+
+    const list = await router('GET', '/config/providers', {}, AUTH)
+    const kimi = (list.body as {
+      providers: { name: string; models: { id: string; supportsVision?: boolean; supportsVideo?: boolean }[] }[]
+    }).providers.find(p => p.name === 'kimi')
+    assert.ok(kimi, 'setup 后 kimi provider 必须在列表里')
+    const k3 = kimi.models.find(m => m.id === 'k3')
+    assert.equal(k3?.supportsVision, true, '图片输入声明')
+    assert.equal(k3?.supportsVideo, true, '官方视频输入声明必须透出（展示用；投喂通道未接入）')
+    const budget = kimi.models.find(m => m.id === 'k3-256k')
+    assert.equal(budget?.supportsVision, true, '仅图片档')
+    assert.equal(budget?.supportsVideo, undefined, '官方不支持视频的档不得声明视频')
+  })
 })
 
 describe('POST /config/providers — models 批量回填（「每行一个」/ 拉取勾选导入）', () => {
@@ -1606,6 +1727,97 @@ describe('POST /config/providers/test-key — 探测走统一 probeProvider', ()
     assert.equal(res.status, 200)
     assert.equal(sentAuth, undefined, 'anthropic 协议不得携带 Authorization')
     assert.equal(sentApiKey, 'sk-ant', 'anthropic 协议携带 x-api-key')
+  })
+
+  // ── issue #272：无 /models 的订阅端点（火山方舟 Agent Plan）连接测试 ─────────
+  it('volc-plan 预设：跳过 /models，用 defaultModelId 做最小补全并判 ok', async () => {
+    writeConfig(home, { enabled: false, features: {} })
+    const urls: string[] = []
+    global.fetch = mock.fn(async (url: string | URL | Request) => {
+      const u = String(url)
+      urls.push(u)
+      if (u.endsWith('/chat/completions')) {
+        return new Response(
+          `data: ${JSON.stringify({ choices: [{ delta: { content: 'hi' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        )
+      }
+      return new Response('{"error":"not found"}', { status: 404, headers: { 'content-type': 'application/json' } })
+    }) as typeof fetch
+    const router = createRouter(buildConfigRoutes(TOKEN))
+
+    const res = await router('POST', '/config/providers/test-key', {
+      provider: 'volc-plan',
+      apiKey: 'sk-plan',
+    }, AUTH)
+    assert.equal(res.status, 200)
+    const body = res.body as { ok: boolean; models: string[]; modelsUnavailable?: boolean; probedModel?: string }
+    assert.equal(body.ok, true, '能对话的 Key 不得再被 /models 404 拦下')
+    assert.equal(body.modelsUnavailable, true)
+    assert.equal(body.probedModel, 'ark-code-latest', '预设 defaultModelId 兜底选型')
+    assert.deepEqual(body.models, [])
+    assert.equal(urls.some(u => u.includes('/models')), false, `不得请求 /models：${urls.join(', ')}`)
+    assert.ok(urls.some(u => u === 'https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions'))
+  })
+
+  it('自定义 provider 填官方 Agent Plan 地址 + 模型 id：/models 404 回落补全后成功', async () => {
+    writeConfig(home, { enabled: false, features: {} })
+    const urls: string[] = []
+    global.fetch = mock.fn(async (url: string | URL | Request) => {
+      const u = String(url)
+      urls.push(u)
+      if (u.endsWith('/chat/completions')) {
+        return new Response(
+          `data: ${JSON.stringify({ choices: [{ delta: { content: 'hi' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        )
+      }
+      return new Response('{"error":"not found"}', { status: 404, headers: { 'content-type': 'application/json' } })
+    }) as typeof fetch
+    const router = createRouter(buildConfigRoutes(TOKEN))
+
+    const res = await router('POST', '/config/providers/test-key', {
+      provider: 'Agent Plan',
+      apiKey: 'sk-plan',
+      baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+      model: 'deepseek-v4-flash',
+    }, AUTH)
+    assert.equal(res.status, 200)
+    const body = res.body as { ok: boolean; modelsUnavailable?: boolean; probedModel?: string }
+    assert.equal(body.ok, true)
+    assert.equal(body.modelsUnavailable, true)
+    assert.equal(body.probedModel, 'deepseek-v4-flash')
+  })
+
+  it('volc-plan-anthropic 预设：协议缺省时按预设解析为 anthropic + Bearer 补全', async () => {
+    writeConfig(home, { enabled: false, features: {} })
+    const urls: string[] = []
+    let authHeader: string | undefined
+    let apiKeyHeader: string | undefined
+    global.fetch = mock.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      urls.push(String(url))
+      const headers = (init?.headers ?? {}) as Record<string, string>
+      authHeader = headers.authorization ?? headers.Authorization
+      apiKeyHeader = headers['x-api-key']
+      return new Response(
+        'data: {"type":"message_start","message":{"usage":{"input_tokens":1}}}\n\ndata: [DONE]\n\n',
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      )
+    }) as typeof fetch
+    const router = createRouter(buildConfigRoutes(TOKEN))
+
+    const res = await router('POST', '/config/providers/test-key', {
+      provider: 'volc-plan-anthropic',
+      apiKey: 'sk-plan',
+    }, AUTH)
+    assert.equal(res.status, 200)
+    const body = res.body as { ok: boolean; modelsUnavailable?: boolean; probedModel?: string }
+    assert.equal(body.ok, true)
+    assert.equal(body.modelsUnavailable, true)
+    assert.equal(body.probedModel, 'ark-code-latest')
+    assert.deepEqual(urls, ['https://ark.cn-beijing.volces.com/api/plan/v1/messages'], '无 /models 直接走 Messages 补全')
+    assert.equal(authHeader, 'Bearer sk-plan', '火山方舟 Messages 只认 Bearer')
+    assert.equal(apiKeyHeader, undefined, '不得同发 x-api-key')
   })
 })
 

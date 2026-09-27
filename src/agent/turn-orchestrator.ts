@@ -20,6 +20,7 @@ import { getGitChangeRate, smoothChangeRate } from './git-freshness.js'
 import { rejectOnAbort } from './turn-boundary-abort.js'
 import { abortableDelay } from '../api/retry-engine.js'
 import { classifyApiError } from '../api/error-classifier.js'
+import { RetryBudget } from '../api/retry-budget.js'
 import type { GoalContinuationController } from './goal-continuation.js'
 import type { PostTurnDecisionController } from './post-turn-decision.js'
 import type { TelemetryRecord } from './telemetry-writer.js'
@@ -29,7 +30,6 @@ import type { AdvisoryEntry } from './advisory-bus.js'
 import { debugLog } from '../utils/debug.js'
 import { hasActionIntent, hasWriteActionIntent, turnUsedOnlyReadTools, DELIVERY_SIGNAL_RE } from './action-intent-detector.js'
 import { b1ReadOnlyLimitForWindow, b2TurnLimitForWindow, isB2ConvergingRecently } from './window-thresholds.js'
-import { markIdle } from './stall-observer.js'
 import { recordInterruption } from './interrupt-marker.js'
 
 // ── Types re-exported for deps interface ──
@@ -167,6 +167,8 @@ export interface TurnOrchestratorDeps {
   getPlanModeState: () => PlanModeState
   getStreamRules: () => StreamRule[] | undefined
   getAgentReconnect: () => { enabled?: boolean; maxAttempts?: number; backoffMs?: number } | undefined
+  /** PLAN §3：共享重试预算载体（provider 重试与 agent 重连共用一份）。 */
+  getRetryBudgetHolder?: () => { current?: import('../api/retry-budget.js').RetryBudget } | undefined
   getCwd: () => string
   getSessionId: () => string | undefined
   setClientThinking: (mode: 'enabled' | 'disabled') => void
@@ -332,20 +334,7 @@ export function wrapCallbacksWithHeartbeat(
     },
     onTurnComplete: (usage, turnNumber, isFinal, evidenceSummary, continuationReason) => {
       hb.tick(`turn ${turnNumber} complete`)
-      try {
-        cb.onTurnComplete(usage, turnNumber, isFinal, evidenceSummary, continuationReason)
-      } finally {
-        // 用户回合真正结束（非中间工具循环 turn）：会话进入等待态（等用户下
-        // 一条输入或 harness 续轮）。打 markIdle——交付后静默等待期不被误报为
-        // stall；任何后续活动（新 turn 的工具/事件打点）自动解除 idle。
-        // 必须在 cb 之后打：session-manager 的 onTurnComplete 内 append
-        // turn_complete 事件会对所有事件无条件 touchActivity（覆盖 idle），
-        // 先打会在同一同步链里被冲掉——sidecar/desktop 下 markIdle 永不生效。
-        if (isFinal) {
-          const sid = getSessionId?.()
-          if (sid) markIdle(sid)
-        }
-      }
+      cb.onTurnComplete(usage, turnNumber, isFinal, evidenceSummary, continuationReason)
     },
     onPhaseChange: (phase, detail) => {
       // Heartbeat-emitted phases must NOT recursively reset the clock.
@@ -809,6 +798,15 @@ export class TurnOrchestrator {
         const streamHeartbeat = this.deps.getHeartbeat()
         streamHeartbeat?.disarmWatchdog()
         let streamResult: Awaited<ReturnType<typeof streamOnce>>
+        // PLAN §3：本次运行的**共享重试预算**。写进载体后 provider 客户端（经
+        // retryBudget getter 读 current）与 agent 重连共用同一份，两层合计不超过
+        // maxAttempts——否则 provider 3 次 × agent 3 次 = 9 次相乘。
+        const reconnectCfg = this.deps.getAgentReconnect()
+        const budgetHolder = this.deps.getRetryBudgetHolder?.()
+        const sharedBudget = reconnectCfg?.enabled && budgetHolder
+          ? new RetryBudget({ maxAttempts: Math.max(0, reconnectCfg.maxAttempts ?? 1) })
+          : undefined
+        if (budgetHolder) budgetHolder.current = sharedBudget
         try {
           streamResult = await streamOnce()
 
@@ -816,7 +814,6 @@ export class TurnOrchestrator {
           // classifyApiError 判为 shouldReconnect、非 AbortError、且未 abort 时触发。
           // 守护 prefix cache：丢弃本轮 partial blocks（不入 session）与已累计 streamedText，
           // 用**相同 request**（消息历史不变）重发，prefix 命中不受污染。
-          const reconnectCfg = this.deps.getAgentReconnect()
           const abortSignal = this.deps.getAbortSignal()
           if (reconnectCfg?.enabled && abortSignal) {
             const maxAttempts = Math.max(0, reconnectCfg.maxAttempts ?? 1)
@@ -830,6 +827,8 @@ export class TurnOrchestrator {
               classifyApiError(streamResult.streamError).shouldReconnect
             ) {
               attempt++
+              // 共享预算耗尽（provider 侧重试可能已吃掉）→ 停止 agent 重连。
+              if (sharedBudget && !sharedBudget.take()) break
               this.deps.state.streamedText = ''
               turnTextPersisted = false
               turnTextAccum = ''
@@ -838,6 +837,9 @@ export class TurnOrchestrator {
               turnDedupState = 'tracking'
               rateLimitOccurred = false
               rateLimitRetryMs = 0
+              // 失败尝试的 partial 已在上面丢弃（agent 侧 state）；这里再通知消费方
+              // 「按尝试替换」——否则 UI/事件流里旧 partial 会与新尝试的输出拼在一起。
+              callbacks.onModelRetry?.({ attempt, maxAttempts })
               callbacks.onPhaseChange?.('working', { reason: `reconnecting (${attempt}/${maxAttempts})` })
               try {
                 await abortableDelay(backoffMs, abortSignal)
@@ -1376,7 +1378,7 @@ export class TurnOrchestrator {
         // injecting its own "keep going" reminder — the user feels unheard.
         // Drain here FIRST: if the user said something, hand the next turn to
         // their words alone and skip this round's continuation reminders.
-        const steerText = callbacks.onSteerDrain?.()
+        const steerText = await callbacks.onSteerDrain?.()
         if (steerText) {
           debugLog(`[steer-preempt] turn=${turn} user guidance preempted auto-continuation`)
           await rejectOnAbort(

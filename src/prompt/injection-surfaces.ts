@@ -502,6 +502,17 @@ export const CHANNEL_SURFACES: readonly InjectionSurface[] = [
     note: 'runtime hook 的 injectUserMessage 载荷（MCTS 种子、scout 包、兜底建议）当伪 user 消息追加到末条 user 消息，而非新开消息条目。',
   },
   {
+    id: 'reminder.reasoning-repeat-correction',
+    channel: 'reminder',
+    cost: 'append-tail',
+    volatility: 'per-turn',
+    producer: 'REASONING_REPETITION_CORRECTION',
+    anchor: { file: 'src/api/openai-client.ts', symbol: 'REASONING_REPETITION_CORRECTION' },
+    note: '复读退化（issue #260）的纠正重试：思考被判复读时，丢掉那段退化推理并在请求尾部附一句纠正，重发一次；第二次仍命中才报错。'
+      + '这是唯一在 **wire 层**（只改本次 attempt 的 messages 副本）追加的注入点——不进口历史、前缀字节不变，代价只有这段文本；'
+      + '不进 delta/appendix 是因为它按失败事件触发，不是每轮常驻内容。',
+  },
+  {
     id: 'ui.status-channel',
     channel: 'ui-only',
     cost: 'none',

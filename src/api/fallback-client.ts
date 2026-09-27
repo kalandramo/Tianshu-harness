@@ -89,6 +89,9 @@ export class FallbackStreamClient implements StreamClient {
     const fallbackCategories = new Set([
       'rate_limit', 'server_error', 'overloaded',
       'timeout', 'stream_parse',
+      // 上游网关返回畸形响应（WAF/边缘节点故障）：换一个 provider 通常立刻就好，
+      // 属于「本 provider 此刻不可用」而不是「请求本身有问题」。
+      'malformed_response',
     ])
     return fallbackCategories.has(category)
   }

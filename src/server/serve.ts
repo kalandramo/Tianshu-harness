@@ -15,12 +15,13 @@ import { resolveEffortSupported } from '../api/provider.js'
 import { desktopDir, desktopSessionsDir } from '../config/paths.js'
 import { serverLogger } from './logger.js'
 import { createRoutes, type ServerState } from './routes.js'
-import { RuntimeSessionManager } from './session-manager.js'
+import { RuntimeSessionManager, type AgentFactory } from './session-manager.js'
+import { resolveExecutionBackend } from './execution-backend.js'
 import { buildSessionRoutes } from './session-routes.js'
 import { buildMissionRoutes } from './mission-routes.js'
 import { buildRemoteInfoRoutes } from './remote-info-routes.js'
 import { MissionStore } from './mission-store.js'
-import { buildHealthRoute, createHealthSnapshot } from './health-route.js'
+import { buildHealthRoute, createHealthSnapshot, RUNTIME_INSTANCE_ID } from './health-route.js'
 import { buildAccountRoutesFor } from './account-routes.js'
 import { ServerEventBus } from './server-event-bus.js'
 import { SseConnectionRegistry } from './sse-registry.js'
@@ -41,7 +42,7 @@ import { buildTrustRoutes } from './trust-api.js'
 import { buildCacheRoutes } from './cache-routes.js'
 import { buildSpeechRoutes, createSpeechEngineFromEnv, type SpeechEngine } from './speech-routes.js'
 import { existsSync } from 'node:fs'
-import { CronScheduler, setActiveScheduler } from './cron-scheduler.js'
+import { CronScheduler, setActiveScheduler, setUnattendedAutomationGate } from './cron-scheduler.js'
 import { CronWiring } from './cron-wiring.js'
 import { buildMcpRoutes } from './mcp-api.js'
 import { buildPluginRoutes } from './plugin-api.js'
@@ -79,6 +80,8 @@ import { SessionRegistry } from '../agent/session-registry.js'
 import { ProviderHealthTracker } from '../agent/provider-health.js'
 import type { Config, ProviderConfig, ModelConfig } from '../config/schema.js'
 import { FileSessionPersistence } from './session-persistence.js'
+import { RunLedger } from './run-ledger.js'
+import { RecoveryJournal } from './recovery-journal.js'
 import type { SharedRuntime } from './serve-agent.js'
 
 type ServeAgentModule = typeof import('./serve-agent.js')
@@ -501,12 +504,25 @@ export interface HistoryRestoreInfo {
   restored: number
   /** Set when the session file existed but could not be read at all (IO error). */
   error?: string
+  /**
+   * 观测（PLAN §4 恢复设计第 2 步）：检查点转录水位与恢复出的消息数是否对齐。
+   * `undefined` = 无从比较（无检查点水位 / IO 失败）。**只观测**：不影响恢复结果。
+   */
+  transcriptAligned?: boolean
+  /** 检查点记录的转录水位（观测字段）。 */
+  expectedTranscriptWatermark?: number
+  /**
+   * 结构化恢复中被注入「结果未知」的工具（PLAN §4 第 3 步）；UI 侧据此在时间线
+   * 标「待确认」。默认模式恒为空/缺失。
+   */
+  uncertainTools?: Array<{ id: string; name: string }>
 }
 
 export function restoreHistoryMessages(
   persist: SessionPersist,
   session: SessionContext,
   cwd?: string,
+  expectedTranscriptWatermark?: number,
 ): HistoryRestoreInfo {
   // loadOai already skips corrupt lines; the catch covers hard IO failures
   // (unreadable file, permissions) so a broken history file degrades to an
@@ -531,7 +547,44 @@ export function restoreHistoryMessages(
   if (messages.length > 0) {
     session.replaceMessages(messages)
   }
-  return { restored: messages.length }
+  return describeRestore(persist, messages.length, expectedTranscriptWatermark)
+}
+
+/**
+ * 恢复信息收口（PLAN §4 第 2/3 步）：结构化注入的待确认工具 + 转录水位对齐观测。
+ *
+ * **两条恢复路径都必须走这里**：同步的 restoreHistoryMessages，以及桌面端的异步
+ * 预取路径（buildManagedAgentAsync 自己 loadOaiAsync，拿到 messages 后走本函数收口）。
+ * 否则会出现「模型已经收到『结果未知』的注入，UI 却收不到待确认提示、水位检查也没
+ * 跑」——观察者与模型看到的事实不一致。
+ */
+export function describeRestore(
+  persist: SessionPersist,
+  restored: number,
+  expectedTranscriptWatermark?: number,
+): HistoryRestoreInfo {
+  const uncertain = persist.getLastInjectedUncertain()
+  // 水位若高于恢复出的消息数，说明检查点引用了转录里已不存在的历史（丢失/被裁剪）。
+  // 当前只记警告（只观测、不改结果），供观测期核对水位定义。
+  if (expectedTranscriptWatermark !== undefined && restored < expectedTranscriptWatermark) {
+    console.warn(
+      `[recovery] 转录水位不对齐：检查点=${expectedTranscriptWatermark} 实际=${restored}`
+      + `（仅观测，不影响恢复）`,
+    )
+    return {
+      restored,
+      transcriptAligned: false,
+      expectedTranscriptWatermark,
+      ...(uncertain.length > 0 ? { uncertainTools: uncertain } : {}),
+    }
+  }
+  return {
+    restored,
+    ...(expectedTranscriptWatermark !== undefined
+      ? { transcriptAligned: true, expectedTranscriptWatermark }
+      : {}),
+    ...(uncertain.length > 0 ? { uncertainTools: uncertain } : {}),
+  }
 }
 
 /** Type histogram of live event-loop handles — the loop-lag attribution field
@@ -690,6 +743,7 @@ export async function runServe(opts: RunServeOptions = {}): Promise<RunningServe
   // SQLite backend dynamic-imports better-sqlite3); sessions are created
   // seconds later by user interaction, by which time it's resolved. Tests pass a
   // pre-built registry. Ephemeral mode (tests) skips it → behavior unchanged.
+  let initializationError: string | undefined
   let sessionRegistry: SessionRegistry | undefined = opts.sessionRegistry
   if (!sessionRegistry && !opts.ephemeral) {
     // 启动收割崩溃会话的幽灵独占锁（收编公开仓 PR #110）：硬杀 sidecar 留下的死行会让 R2 写前守卫永久拒写。
@@ -699,6 +753,7 @@ export async function runServe(opts: RunServeOptions = {}): Promise<RunningServe
         // Registry init failed (e.g. better-sqlite3 native build missing).
         // Concurrency features stay dormant; surface the cause instead of
         // silently swallowing it so the failure is diagnosable in logs.
+        initializationError = 'session-registry-unavailable'
         console.error('[serve] SessionRegistry unavailable:', (err as Error)?.message ?? err)
       })
   }
@@ -788,45 +843,60 @@ export async function runServe(opts: RunServeOptions = {}): Promise<RunningServe
   // P1 任务身份化 — Mission 存储：session-manager（创建/隐式关联）与
   // /missions 路由共享同一实例（内存 cache 一致）。
   const missionStore = new MissionStore()
+  // 恢复台账先建出来：网关工厂恢复时要用它取检查点的转录水位做对齐观测（PLAN §4
+  // 第 2 步，只观测），随后同一个实例交给 RuntimeSessionManager——不能建两份，
+  // 否则工厂读到的检查点与 manager 写入的不是同一个目录。
+  const recoveryJournal = new RecoveryJournal(join(desktopDir(), 'recovery-journal'))
+  // 执行后端选择：默认进程内执行；RIVET_EXECUTION_BACKEND=isolated 时走闭源
+  // 进程隔离适配器（缺产物时回退进程内，绝不因闭源目录缺席而启动失败）。
+  const buildGatewayAgent: AgentFactory = async (cwd, sessionId, approvalMode, modelId, allowedTools, signal) => {
+    // 首个会话可能早于延迟预热到点——立刻拉响（幂等），并给插件快照一个有界
+    // 等待窗：agent chunk import 本身就要几百 ms，插件扫描通常在其内落定；
+    // 超窗则按既有语义无插件装配，绝不让一个卡住的插件 import 拖死会话创建。
+    warmup?.fireNow()
+    const [agentMod] = await Promise.all([
+      loadServeAgent(),
+      Promise.race([
+        pluginToolsWarmup(),
+        new Promise<void>((resolve) => { setTimeout(resolve, PLUGIN_WARM_WAIT_CAP_MS).unref() }),
+      ]),
+    ])
+    // Capture the goal-handles resolver on first load (dynamic import is
+    // cached, so this runs once). Used by resolveGoalHandles below.
+    if (!goalHandlesResolve && typeof agentMod.resolveGoalHandles === 'function') {
+      goalHandlesResolve = agentMod.resolveGoalHandles
+    }
+    if (!reviewGateResolve && typeof agentMod.resolveReviewGateRef === 'function') {
+      reviewGateResolve = agentMod.resolveReviewGateRef
+    }
+    if (!storesForgetter && typeof agentMod.forgetSessionStores === 'function') {
+      storesForgetter = agentMod.forgetSessionStores
+    }
+    if (initializationError) throw new Error(initializationError)
+    signal?.throwIfAborted()
+    // PLAN §4 恢复设计第 2 步（只观测）：把检查点的转录水位带进恢复路径，
+    // 由 restoreHistoryMessages 记录「检查点水位 vs 实际恢复条数」的对齐情况。
+    const expectedTranscriptWatermark = sessionId
+      ? (await recoveryJournal.load(sessionId))?.transcriptWatermark
+      : undefined
+    return agentMod.buildManagedAgentAsync([
+      ctx,        cwd ?? process.cwd(),
+      sessionId ?? randomUUID(),
+      sessionRegistry,
+      approvalMode,
+      sharedRuntime,
+      specReload,
+      modelId,
+      allowedTools,
+    ], signal, expectedTranscriptWatermark)
+  }
+  const executionBackend = await resolveExecutionBackend(buildGatewayAgent)
   // cold /health does not pay for tools/Meridian/council.
   const sessions = new RuntimeSessionManager({
-    // config schema 的 approval 联合比 agent 的 ApprovalMode 宽（多一个
-    // 'suggest'）——与 create-agent-config 的透传同口径，窄化强转。
+    runLedger: new RunLedger(join(desktopDir(), 'run-ledgers')),
+    recoveryJournal,
     globalApprovalMode: ctx.config.agent.approval as import('../agent/loop-types.js').ApprovalMode,
-    createAgent: async (cwd, sessionId, approvalMode, modelId, allowedTools) => {
-      // 首个会话可能早于延迟预热到点——立刻拉响（幂等），并给插件快照一个有界
-      // 等待窗：agent chunk import 本身就要几百 ms，插件扫描通常在其内落定；
-      // 超窗则按既有语义无插件装配，绝不让一个卡住的插件 import 拖死会话创建。
-      warmup?.fireNow()
-      const [agentMod] = await Promise.all([
-        loadServeAgent(),
-        Promise.race([
-          pluginToolsWarmup(),
-          new Promise<void>((resolve) => { setTimeout(resolve, PLUGIN_WARM_WAIT_CAP_MS).unref() }),
-        ]),
-      ])
-      // Capture the goal-handles resolver on first load (dynamic import is
-      // cached, so this runs once). Used by resolveGoalHandles below.
-      if (!goalHandlesResolve && typeof agentMod.resolveGoalHandles === 'function') {
-        goalHandlesResolve = agentMod.resolveGoalHandles
-      }
-      if (!reviewGateResolve && typeof agentMod.resolveReviewGateRef === 'function') {
-        reviewGateResolve = agentMod.resolveReviewGateRef
-      }
-      if (!storesForgetter && typeof agentMod.forgetSessionStores === 'function') {
-        storesForgetter = agentMod.forgetSessionStores
-      }
-      return agentMod.buildManagedAgent(
-        ctx,        cwd ?? process.cwd(),
-        sessionId ?? randomUUID(),
-        sessionRegistry,
-        approvalMode,
-        sharedRuntime,
-        specReload,
-        modelId,
-        allowedTools,
-      )
-    },
+    createAgent: executionBackend.createAgent,
     defaultCwd: process.cwd(),
     persistence,
     maxLoadedSessions: sessionPool.maxLoadedSessions,
@@ -1078,7 +1148,8 @@ export async function runServe(opts: RunServeOptions = {}): Promise<RunningServe
   // from a healthy sidecar. In ephemeral/test mode (no registry wired) it reads
   // true so existing single-session behavior is unchanged.
   const registryReady = () => (opts.ephemeral ? true : sessionRegistry !== undefined)
-  const serveConfigured = () => resolveServeContext().configured
+  const serveConfigured = () => ctx.configured
+  let lastLoggedLagSample = 0
   const loopLagForHealth = () => {
     const snap = loopHealth.snapshot()
     // 2026-08-09 卡顿归因遥测：>2s 的事件循环尖峰落 sidecar 日志（带堆/RSS），
@@ -1086,7 +1157,8 @@ export async function runServe(opts: RunServeOptions = {}): Promise<RunningServe
     // 却无任何数据可查，2026-08-09 首轮响应排查的观测缺口）。仅尖峰时写，
     // 健康路径零开销。完全卡死时 /health 当窗答不出——尖峰记在恢复后首个
     // 响应的 maxMs 里（loop-health.ts 注释的窗口语义），正好够归因。
-    if (snap.maxMs > 2000) {
+    if (snap.maxMs > 2000 && snap.sampledAt !== lastLoggedLagSample) {
+      lastLoggedLagSample = snap.sampledAt ?? 0
       const mem = process.memoryUsage()
       console.warn(
         `[loop-lag] t=${new Date().toISOString()} event-loop stall: ` +
@@ -1102,14 +1174,14 @@ export async function runServe(opts: RunServeOptions = {}): Promise<RunningServe
 
   Object.assign(
     routes,
-    buildHealthRoute(sessions, startedAt, version, apiToken, registryReady, serveConfigured, loopLagForHealth),
+    buildHealthRoute(sessions, startedAt, version, apiToken, registryReady, serveConfigured, loopLagForHealth, () => initializationError),
   )
   // 阶段 4：GET /events 全局推送通道——sessions/tasks 失效提示 + 5s health 心跳
   // （心跳体与带 token 的 GET /health 同一构造点，前端直接 setQueryData）。
   Object.assign(
     routes,
     buildServerEventsRoute(serverEvents, apiToken, {
-      healthSnapshot: createHealthSnapshot(sessions, startedAt, version, registryReady, serveConfigured, loopLagForHealth),
+      healthSnapshot: createHealthSnapshot(sessions, startedAt, version, registryReady, serveConfigured, loopLagForHealth, () => initializationError),
     }, sseRegistry),
   )
 
@@ -1148,6 +1220,7 @@ export async function runServe(opts: RunServeOptions = {}): Promise<RunningServe
     const rivetDir = desktopDir()
     scheduler = new CronScheduler({ schedulePath: join(rivetDir, 'scheduled_tasks.json') })
     setActiveScheduler(scheduler)
+    setUnattendedAutomationGate(() => isProFeatureEnabled(ctx.config, 'unattendedAutomation'))
     const registry = new TaskRegistry({
       taskStore: new JsonTaskStore(join(rivetDir, 'tasks')),
       // 阶段 4：任务创建 / 状态转换 → 推送通道失效提示（替代 /tasks 5s 轮询）。
@@ -1166,8 +1239,7 @@ export async function runServe(opts: RunServeOptions = {}): Promise<RunningServe
       // 付费版 v1 · T5 — 非 always-review / 含 computer_use 的定时任务归 Pro。
       // 用启动时的 ctx.config：桌面端 Pro 状态经签名凭证注入（激活/吊销后要求
       // 重启 sidecar），CLI 走配置软 gate。
-      isUnattendedAutomationEnabled: () =>
-        isProFeatureEnabled(ctx.config, 'unattendedAutomation'),
+      isUnattendedAutomationEnabled: () => isProFeatureEnabled(ctx.config, 'unattendedAutomation'),
     }))
     // Task audit/history API (execution records for the automations dashboard).
     // The scheduler + task-registry share this desktop dir, so events land in
@@ -1220,6 +1292,8 @@ export async function runServe(opts: RunServeOptions = {}): Promise<RunningServe
       // 共享资源要等 claims/worker finally 完成后再拆，避免 handoff 紧接着
       // 进入同一工作区时撞上上一会话的文件归属。
       const finish = async () => {
+        // 先收执行后端：隔离模式下这是 kill 每个会话执行进程的第一道口。
+        await executionBackend.close().catch(() => {})
         void wiring?.stop()
         wiring?.dispose()
         taskRegistry?.dispose()
@@ -1273,7 +1347,7 @@ export function probeParentAlive(ppid: number): boolean {
     return true
   } catch (err) {
     // ESRCH = parent gone. EPERM = alive but not ours → still alive.
-    return (err as NodeJS.ErrnoException).code === 'EPERM'
+    return (err as NodeJS.ErrnoException).code !== 'ESRCH'
   }
 }
 
@@ -1336,6 +1410,8 @@ function writeExitBreadcrumb(reason: string, extra: Record<string, unknown> = {}
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, JSON.stringify({
       reason,
+      instanceId: RUNTIME_INSTANCE_ID,
+      buildId: process.env.RIVET_BUILD_ID ?? 'unknown',
       pid: process.pid,
       at: new Date().toISOString(),
       ...extra,

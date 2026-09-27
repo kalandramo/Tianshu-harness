@@ -25,6 +25,8 @@ const SUBSCRIPTION_PROVIDERS = new Set<string>([
   'mimo', // Xiaomi MiMo token-plan (token-plan-cn.xiaomimimo.com)
   'codex', // ChatGPT subscription via OAuth
   'claude', // Claude Max/Pro via OAuth
+  'volc-plan', // 火山方舟 Agent Plan（AFP 套餐额度，非按 token；issue #272）
+  'volc-plan-anthropic', // 同一订阅的 Messages 端点
 ])
 
 /** Providers billed per API token (cache hits save real money). */
@@ -49,26 +51,38 @@ const PER_TOKEN_PROVIDERS = new Set<string>([
 export interface CostModelHints {
   /** Auth type from the provider config; 'oauth' implies a subscription. */
   authType?: string
-  /** Provider baseUrl; coding-plan / token-plan endpoints imply a subscription. */
+  /** Provider baseUrl; subscription endpoints (coding-plan / token-plan / 火山 plan)
+   *  imply a subscription — 端点计费属性，比 provider 名更具体。 */
   baseUrl?: string
 }
 
+/** 订阅制端点的 baseUrl 特征（小写子串匹配）。 */
+const SUBSCRIPTION_BASE_URL_MARKERS = ['/coding/', 'token-plan', '/api/plan/'] as const
+
+function isSubscriptionBaseUrl(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false
+  const url = baseUrl.toLowerCase()
+  return SUBSCRIPTION_BASE_URL_MARKERS.some(marker => url.includes(marker))
+}
+
 /**
- * Classify how a provider bills. Falls back to baseUrl / auth hints for custom
- * providers not in the known sets, defaulting to 'per-token' (the conservative
- * choice: never relax cost-driven cache protection for an unknown provider).
+ * Classify how a provider bills.
+ *
+ * Order matters and is deliberate:
+ *   1. 订阅制 provider 名（glm / mimo / codex / claude / 火山 plan）；
+ *   2. **订阅制端点 URL**——同一 provider 名可能横跨订阅与按量两套端点：内置
+ *      `kimi` 预设走 `api.kimi.com/coding`（Kimi Code 会员订阅额度），而 Moonshot
+ *      开放平台按量端点是同名 'kimi'；只看名字无法区分，baseUrl 是更具体的事实。
+ *      已有行为（自定义 provider 贴订阅 URL）不变，只把判定提前到按量名单之前。
+ *   3. 按量 provider 名；4. oauth 兜底（保持"名字优先于 oauth 提示"的现状）；
+ *   5. 未知默认按量（保守：不为未知端点放松缓存保护）。
  */
 export function classifyCostModel(providerName: string | undefined, hints: CostModelHints = {}): CostModel {
   const name = (providerName ?? '').trim().toLowerCase()
   if (SUBSCRIPTION_PROVIDERS.has(name)) return 'subscription'
+  if (isSubscriptionBaseUrl(hints.baseUrl)) return 'subscription'
   if (PER_TOKEN_PROVIDERS.has(name)) return 'per-token'
-
-  // Unknown / custom provider — infer from config hints.
   if (hints.authType === 'oauth') return 'subscription'
-  if (hints.baseUrl) {
-    const url = hints.baseUrl.toLowerCase()
-    if (url.includes('/coding/') || url.includes('token-plan')) return 'subscription'
-  }
   return 'per-token'
 }
 

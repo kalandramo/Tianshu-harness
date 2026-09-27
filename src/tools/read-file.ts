@@ -1,8 +1,8 @@
 import { existsSync } from 'fs'
 import { stat, readFile } from 'node:fs/promises'
-import { extname, relative } from 'path'
+import { extname } from 'path'
 import type { Tool, ToolCallParams } from './types.js'
-import { truncateContent, buildPartialView } from './truncation.js'
+import { truncateContent, applyFoldThenPartial } from './truncation.js'
 import { validatePath } from './path-validate.js'
 import { GitignoreFilter } from './gitignore.js'
 import { persistRawOutput } from './output-store.js'
@@ -11,9 +11,8 @@ import { computeModelReadCap, DEFAULT_MODEL_READ_CAP, type ModelReadCap } from '
 import { getToolArtifactThreshold } from './artifact-threshold.js'
 import { debugLog } from '../utils/debug.js'
 import { decideReadPolicy } from './read-policy.js'
-import { foldCode } from '../compact/code-fold.js'
 import { canUsePrewarmForRead, consumePrewarm } from '../agent/prewarm-file.js'
-import { canonicalPathKey } from '../path-format.js'
+import { canonicalPathKey, relativePosix } from '../path-format.js'
 import { OFFICE_EXTENSIONS, readOfficeFile } from './office-reader.js'
 import { buildFocusedReadView } from './focused-read.js'
 
@@ -264,7 +263,10 @@ function maybeAppendNeighborHint(cwd: string, canonicalPath: string, sessionId: 
   }
   const unread = neighbors.filter(abs => !fileReadHistory.has(fileHistoryKey(sessionId, abs)))
   if (unread.length === 0) return content
-  const label = '结构邻居: ' + unread.slice(0, 3).map(abs => relative(cwd, abs)).join(', ')
+  // relativePosix：模型可见输出里的相对路径一律正斜杠。裸 relative() 在 Windows
+  // 下产出 src\c.ts，与工具描述和其他工具输出的路径风格不一致——neighbor-hint
+  // 的两条用例（:52/:73）正是长期如此失败。
+  const label = '结构邻居: ' + unread.slice(0, 3).map(abs => relativePosix(cwd, abs)).join(', ')
   return content + '\n\n' + label.slice(0, 100)
 }
 
@@ -399,20 +401,9 @@ function getGitignoreFilter(cwd: string): Promise<GitignoreFilter> {
 const MAX_TOOL_INPUT_BYTES = 100 * 1024
 /** Focused reads may scan a larger source file, but never load unbounded data. */
 const MAX_FOCUS_SCAN_BYTES = 2 * 1024 * 1024
-const LOG_PREVIEW_LINES = 80
 
-/**
- * Fold code into a signature skeleton, then apply byte-level partial view truncation.
- * If folding doesn't help (unknown lang, short file, or <30% reduction), fall back
- * to the original content's partial view.
- */
-function applyFoldThenPartial(content: string, filePath: string, cap: ModelReadCap): string {
-  const fold = foldCode(content, { filePath, maxLines: 200 })
-  if (fold.wasFolded && fold.foldedLines < fold.originalLines * 0.7) {
-    return buildPartialView(fold.folded, filePath, cap.maxChars, { lines: fold.originalLines, chars: content.length })
-  }
-  return buildPartialView(content, filePath, cap.maxChars)
-}
+
+const LOG_PREVIEW_LINES = 80
 
 /** File extensions known to be binary — read_file rejects them with a clear error
  *  instead of returning garbled UTF-8 to the model. */
@@ -518,14 +509,6 @@ export interface ReadFilePayloadOptions {
    * return) — path validation, gitignore, binary, and cap truncation still run.
    */
   prefetchedContent?: string
-  /**
-   * When a no-range read overflows the cap, serve the fold-skeleton PARTIAL
-   * view (navigable: teaches the model where to re-read with offset/limit)
-   * instead of a blunt head/tail slice. Set by the tool layer only when a
-   * readCapOverride is active (worker sessions) — main sessions keep the
-   * legacy head/tail behavior byte-for-byte.
-   */
-  preferFoldOnOverflow?: boolean
 }
 
 export interface ReadFilePayload {
@@ -591,7 +574,10 @@ export async function readFilePayload(cwd: string, options: ReadFilePayloadOptio
   const hasExplicitRange = options.offset !== undefined || options.limit !== undefined
   const focus = typeof options.focus === 'string' ? options.focus.trim() : ''
   const hasFocus = focus.length > 0 && !hasExplicitRange
-  const policy = decideReadPolicy({ filePath, sizeBytes: fileSize, hasExplicitRange })
+  // cap 在此求值：PARTIAL 门现在由窗口预算决定（read-policy 的 80KB 只是下限），
+  // 下方各分支复用同一个 cap，不再各自 `options.modelCap ?? DEFAULT`。
+  const cap = options.modelCap ?? DEFAULT_MODEL_READ_CAP
+  const policy = decideReadPolicy({ filePath, sizeBytes: fileSize, hasExplicitRange, budgetChars: cap.maxChars })
 
   if (hasFocus && fileSize > MAX_FOCUS_SCAN_BYTES) {
     throw new Error(
@@ -599,34 +585,36 @@ export async function readFilePayload(cwd: string, options: ReadFilePayloadOptio
     )
   }
 
-  if (fileSize > MAX_TOOL_INPUT_BYTES && !hasExplicitRange && !hasFocus) {
-    if (policy.action === 'partial') {
-      // Large source file: read and return PARTIAL view instead of hard error
-      const content = options.prefetchedContent ?? await readFile(filePath, 'utf-8')
-      const cap = options.modelCap ?? DEFAULT_MODEL_READ_CAP
-      const partialContent = applyFoldThenPartial(content, filePath, cap)
-      return {
-        canonicalPath: filePath,
-        rawContent: content,
-        modelContent: partialContent,
-        uiContent: buildFileUiOutput(content, 80),
-      }
+  // reject 是纯语义判定（generated/minified/超大日志），不需文件内容：前移到硬门前
+  if (policy.action === 'reject-with-range' && !hasExplicitRange) {
+    throw new Error(`${policy.reason}. Use offset and limit to read a specific range.`)
+  }
+
+  // 超出预算的 source/unknown 文件在这里转成 PARTIAL 视图。条件里的
+  // max(历史 100KB, 读预算) 是**快捷路径阈值**，不是拦截门——能走到这里的只有
+  // partial：其余 action 的尺寸条件与它互斥（full ≤ 20KB、full-with-hint ≤
+  // max(80KB, cap)、preview 由日志类独占、reject 已在上方 throw）。原先这里的
+  // 「File too large」兜底自预算门改造（2026-09-23）起已不可达，2026-09-24 移除；
+  // 探针覆盖 10 尺寸 × 5 窗口 × 3 文件类共 150 用例，0 命中。
+  // 日志类豁免：policy 已为其备好 preview 分支，内存由 MAX_LOG_PREVIEW_BYTES 兜住。
+  if (policy.action === 'partial' && !hasExplicitRange && !hasFocus
+      && fileSize > Math.max(MAX_TOOL_INPUT_BYTES, cap.maxChars)) {
+    // cap 装得下就整读——比一个读起来像截断、实际没截断的首页更有用。
+    const content = options.prefetchedContent ?? await readFile(filePath, 'utf-8')
+    const partialContent = content.length <= cap.maxChars
+      ? content
+      : applyFoldThenPartial(content, filePath, cap)
+    return {
+      canonicalPath: filePath,
+      rawContent: content,
+      modelContent: partialContent,
+      uiContent: buildFileUiOutput(content, 80),
     }
-    const sizeKB = (fileSize / 1024).toFixed(0)
-    const estLines = Math.ceil(fileSize / 80)
-    throw new Error(
-      `File too large (${sizeKB}KB, ~${estLines} lines). Use offset and limit to read specific ranges.`
-    )
   }
 
   let content = options.prefetchedContent ?? await readFile(filePath, 'utf-8')
   const offset = options.offset ?? 1
   const limit = options.limit
-  const cap = options.modelCap ?? DEFAULT_MODEL_READ_CAP
-
-  if (policy.action === 'reject-with-range' && !hasExplicitRange) {
-    throw new Error(`${policy.reason}. Use offset and limit to read a specific range.`)
-  }
 
   if (hasFocus) {
     const focused = buildFocusedReadView({
@@ -655,7 +643,7 @@ export async function readFilePayload(cwd: string, options: ReadFilePayloadOptio
   }
 
   // PARTIAL view for source files that fit in memory but exceed the model cap
-  if (policy.action === 'partial' && !hasExplicitRange) {
+  if (policy.action === 'partial' && !hasExplicitRange && content.length > cap.maxChars) {
     const partialContent = applyFoldThenPartial(content, filePath, cap)
     return {
       canonicalPath: filePath,
@@ -689,18 +677,18 @@ export async function readFilePayload(cwd: string, options: ReadFilePayloadOptio
   }
 
   // full-with-hint: append editing guidance for medium-sized files.
-  // preferFoldOnOverflow (worker readCapOverride active): a no-range read that
-  // overflows the tightened cap serves the fold skeleton (partial view with
-  // navigation) instead of a blunt head/tail slice — the skeleton teaches the
-  // model WHERE to re-read with offset/limit, the slice doesn't. Gated on the
-  // flag so main sessions keep legacy head/tail behavior byte-for-byte.
+  // 超出 cap 的读取一律交给 applyFoldThenPartial（连续正文页或骨架 + 导航），不再
+  // 按会话类型分叉成头尾拼接（2026-09-24）：拼接丢掉中间正文、又不告诉模型怎么继续
+  // 读，而同一窗口内更大（走 partial）的文件反倒拿连续页——越超预算形态越好。
+  // applyFoldThenPartial 自身按信息量选页（prose ≥ skeleton×3 时用 prose），所以
+  // 大 cap 的主会话仍拿得到正文，无需再靠 flag 区分。
   // Guard: buildPartialView is line-based and keeps at least one line, so a
   // single over-budget line (minified/one-liner) can blow past the cap —
   // fall back to char-exact head/tail truncation in that case. 20% slack
   // absorbs the navigation header (its HEADER_OVERHEAD underestimates long
   // paths) without letting the pathological single-line case through.
   let modelContent: string
-  if (options.preferFoldOnOverflow && !hasExplicitRange && content.length > cap.maxChars) {
+  if (!hasExplicitRange && content.length > cap.maxChars) {
     const folded = applyFoldThenPartial(content, filePath, cap)
     modelContent = folded.length <= Math.floor(cap.maxChars * 1.2)
       ? folded
@@ -879,9 +867,10 @@ export const READ_FILE_TOOL: Tool = {
         debugLog(`[read-ref-degrade] file=${canonical} ref did not help, re-serving full content`)
         repeatWarning = null
       } else if (entryBytes > READ_REF_THRESHOLD) {
-        // relative() 而非 replace(cwd+'/')：Windows 下 canonical 是反斜杠路径，
-        // 字符串拼 '/' 永远不匹配 → 提示里泄漏完整绝对路径（且教模型复读它）。
-        const relPath = relative(params.cwd, canonical!)
+        // 相对化用 relative()/relativePosix 而非 replace(cwd+'/')：Windows 下
+        // canonical 是反斜杠路径，字符串拼 '/' 永远不匹配 → 提示里泄漏完整绝对路径
+        // （且教模型复读它）。relativePosix 再补一层：给模型的相对路径一律正斜杠。
+        const relPath = relativePosix(params.cwd, canonical!)
         const sizeHint = totalLines > 0
           ? `${totalLines} 行，${entryBytes} bytes`
           : `${entryBytes} bytes`
@@ -941,7 +930,6 @@ export const READ_FILE_TOOL: Tool = {
         ...(focusedRead ? { focus, focusMaxMatches: typeof params.input.focus_max_matches === 'number' ? params.input.focus_max_matches : undefined } : {}),
         modelCap: computedCap,
         prefetchedContent,
-        preferFoldOnOverflow: params.readCapOverride !== undefined,
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -1088,9 +1076,8 @@ async function handleMultiRead(
         filePath: trimmed,
         ...(focus ? { focus, focusMaxMatches } : {}),
         modelCap: perFileCap,
-        preferFoldOnOverflow: params.readCapOverride !== undefined,
       })
-      const relPath = relative(params.cwd, payload.canonicalPath).replaceAll('\\', '/')
+      const relPath = relativePosix(params.cwd, payload.canonicalPath)
       sections.push(`── ${relPath} ──\n${payload.modelContent}`)
       totalBytes += payload.rawContent.length
 
@@ -1108,8 +1095,8 @@ async function handleMultiRead(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       // trimmed 可能本来就是相对路径——只有以 cwd 开头时才转相对，避免 relative()
-      // 把无关路径变成一串 ../..。
-      const display = trimmed.startsWith(params.cwd) ? relative(params.cwd, trimmed) : trimmed
+      // 把无关路径变成一串 ../..。输出给模型，故走 relativePosix。
+      const display = trimmed.startsWith(params.cwd) ? relativePosix(params.cwd, trimmed) : trimmed
       sections.push(`── ${display} ──\nError: ${msg}`)
       errors++
     }

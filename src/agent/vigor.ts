@@ -61,6 +61,8 @@ const FAILURE_CLASS_PHASIC_WEIGHT: ReadonlyMap<FailureClass, number> = new Map<F
   ['test_red', 0.0],
   // 反幻影探针脱靶（A5/M3）：证实"不存在"是有效信息收集，轻罚保留信号
   ['probe_miss', 0.3],
+  // 设计性拒绝（fail-closed 允许名单/协议白名单）：预期行为，与权限/环境缺失同档
+  ['refused', 0.2],
   // Other — default full penalty
   ['snapshot', 1.0],
   ['format_error', 1.0],

@@ -46,12 +46,20 @@ test('行为契约：--test-timeout 能把持有活跃 handle 的挂起变成失
   try {
     // setInterval 让事件循环非空 —— 否则 Node 会以「event loop resolved」自行收场，
     // 掩盖掉真实挂死（子进程/socket/watcher 未回收）的情形。
+    // fixture 自带**寿命上限**（第二道防线）：本用例 spawn 的是 runner 批次的孙进程，
+    // 若整棵树被 SIGKILL 端掉（祖父来不及按进程组收场），它会 reparent 到 init ——
+    // 2026-09-24 实测机器上攒下 21 个 PPID=1、存活 11h~3天7h 的孤儿，全是这个 fixture。
+    // 自毁把泄漏上限从「永久」压到 8s：仍远高于要验证的 2s 超时判定，又远短于任何能被
+    // 察觉的时长。进程组收场（scripts/test-child-guard.ts 的 killTree）是第一道，这是兜底。
+    // 顺带：原本要等父用例 30s guard 才收场，现在 8s 自己退——用例也快了。
     writeFileSync(join(dir, 'hang.fixture.mts'), [
       "import { test } from 'node:test'",
       "test('hangs forever', async () => {",
       '  const keepAlive = setInterval(() => {}, 1000)',
       '  try { await new Promise(() => {}) } finally { clearInterval(keepAlive) }',
       '})',
+      // 刻意不 unref：这道定时器必须能 fire —— 它就是「最长存活」本身
+      'setTimeout(() => { process.exit(1) }, 8000)',
       '',
     ].join('\n'))
 

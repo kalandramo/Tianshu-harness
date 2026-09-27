@@ -28,6 +28,11 @@ export interface RuntimeParams {
   /** Session-frozen wire-transform context (e.g. spark truncate N) — resolved
    *  once at session start from meta/defaults, byte-stable across resume. */
   wireContext?: import('./pro-registry.js').WireTransformContext
+  /**
+   * PLAN §3 共享重试预算 getter：provider 重试与 agent 重连共用同一份
+   * （per-run 由 AgentConfig.retryBudgetHolder 承载）。undefined = 历史行为。
+   */
+  retryBudget?: () => import('./retry-budget.js').RetryBudget | undefined
 }
 
 /** 凭据槽位形状——provider 与 provider 下的单个 key 共用（PR-3 多 key）。
@@ -133,6 +138,7 @@ export function createProviderClient(
   // Codex OAuth uses the Responses API, not chat/completions
   if (provider.name === 'codex' && provider.auth?.type === 'oauth') {
     return new CodexClient({
+    retryBudget: params.retryBudget,
       baseUrl: provider.baseUrl,
       model: params.model,
       maxTokens: params.maxTokens,
@@ -147,6 +153,7 @@ export function createProviderClient(
   // client above; the two converge in a later wave.
   if (provider.protocol === 'openai-responses') {
     return new ResponsesClient({
+    retryBudget: params.retryBudget,
       // Same normalization as the OpenAI branch: users paste full request URLs
       // (`…/v1/responses`) or trailing slashes; without stripping, the send path
       // would append a second `/responses` (404).
@@ -188,6 +195,7 @@ export function createProviderClient(
       : undefined
 
     return new AnthropicClient({
+    retryBudget: params.retryBudget,
       baseUrl: provider.baseUrl,
       apiKey: params.apiKey,
       model: params.model,
@@ -197,14 +205,23 @@ export function createProviderClient(
       maxRetries: provider.maxRetries,
       retry: provider.retry,
       temperature: provider.temperature,
+      // 发送前体积护栏（未配置 = 不限制）：与 OpenAI 兼容客户端同一护栏，见 request-body-guard。
+      maxBodyBytes: provider.maxBodyBytes,
       proxy: provider.proxy,
       userAgent: wire?.userAgent,
       sessionId,
       sessionHeader: wire?.sessionHeader,
+      authMode: wire?.anthropicAuthMode,
+      // 档位通道：仅声明 output_config 的端点（火山方舟 Messages）生效；其余
+      // anthropic 提供方继续走上面的 thinkingBudget 换算，行为不变。
+      effortFormat: capabilities.effortFormat,
+      effortCap: capabilities.effortCap,
+      reasoningEffort: params.reasoningEffort,
     })
   }
 
   return new OpenAIClient({
+    retryBudget: params.retryBudget,
     // 用户在 Base URL 里粘贴 curl 全文（`…/v1/chat/completions`）或留个尾斜杠
     // 是常态。发送路径拼的是 `${baseUrl}/chat/completions`，不归一化就会出现
     // `…/chat/completions/chat/completions`（404）或 `…/v1//chat/completions`。

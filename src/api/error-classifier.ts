@@ -23,6 +23,7 @@ export type ErrorCategory =
   | 'context_overflow'
   | 'image_strip'
   | 'stream_parse'
+  | 'malformed_response'
   | 'reasoning_repetition'
   | 'reasoning_echo'
   | 'request_invariant'
@@ -33,7 +34,7 @@ export type ErrorCategory =
  *  以此为单一真源：字段拼错在 loadConfig 时就报错，而不是静默失效。 */
 export const ERROR_CATEGORIES = [
   'rate_limit', 'overloaded', 'server_error', 'timeout', 'auth_error',
-  'client_error', 'context_overflow', 'image_strip', 'stream_parse',
+  'client_error', 'context_overflow', 'image_strip', 'stream_parse', 'malformed_response',
   'reasoning_repetition', 'reasoning_echo', 'request_invariant', 'tls_intercept', 'unknown',
 ] as const satisfies readonly ErrorCategory[]
 
@@ -62,6 +63,11 @@ export interface ClassifiedError {
    *  than the category default — the retry engine keeps such delays fixed
    *  (jitter only, no exponential growth; the server named the wait). */
   retryDelayFromServer?: boolean
+  /** When true, the next attempt should **drop the degenerate partial reasoning
+   *  and append a corrective instruction** instead of replaying it (replaying a
+   *  repetition loop reinforces it). One-shot like stripImages/preserveReasoning
+   *  — the corrective retry either breaks the loop or it doesn't. */
+  reasoningRepeatCorrect?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -351,6 +357,32 @@ function classifyByPattern(error: unknown): ClassifiedError {
     return classifyTlsIntercept(tlsCode, detectTlsInterception())
   }
 
+  // 上游把**响应头**拼坏了（畸形拼接）——undici 在解析响应头阶段就拒绝，抛
+  // HTTPParserError（"Response does not match the HTTP/1.1 protocol (…)"）。
+  //
+  // 必须排在下面那条通用「Connection lost」之前：那条靠 `/fetch failed/i` 会把
+  // 这类错误一并吞掉，于是被报成「连接中断」——把用户指去查自己的网络/代理，而
+  // 上游明明回了响应，只是字节畸形。2026-09-27 用户报告：第三方 provider 的
+  // CloudWAF 某边缘节点往响应头里插了一行空白字符，浅层症状就是这句 parser 原文。
+  //
+  // 重试策略与「连接中断」刻意不同：这类故障是**单节点/单连接**的（同一 LB 后的
+  // 其它节点是好的），每次重试都是一条新 TCP 连接 = 一次换节点的机会，所以给
+  // 「多试几次 + 短间隔」，而不是越退越久的长退避。解析失败在毫秒级返回，整段
+  // 重试窗口仍然只有几秒。
+  if (
+    /HTTPParserError|HPE_[A-Z_]+/.test(searchText) ||
+    /does not match the HTTP\/1\.1 protocol|unexpected whitespace after header value|unexpected space after start line|invalid header token/i.test(searchText)
+  ) {
+    return {
+      retryable: true,
+      retryDelayMs: 800,
+      shouldReconnect: true,
+      category: 'malformed_response',
+      userMessage: 'Upstream sent a malformed HTTP response (gateway/WAF edge node). Reconnecting.',
+      maxRetries: 5,
+    }
+  }
+
   // Connection reset / refused / unreachable — transport-level network failures.
   // "fetch failed" without a recognizable cause still lands here: it is by
   // definition a pre-response network error (DNS/connect/TLS), never a server
@@ -554,9 +586,15 @@ export function classifyApiError(error: unknown): ClassifiedError {
     }
   }
   if (error instanceof ReasoningRepetitionError) {
+    // 复读退化不再一次即中止：先给一次**纠正重试**（去掉退化推理 + 附一句纠正，
+    // 见 openai-client 的 wire 补丁）。理由与代价见 reasoning-repetition.ts 的
+    // 常量注释：flash 线在长对话里成段输出重复短句是固有文风，硬停会让用户丢掉
+    // 整轮工作；而一旦回放那段退化推理，模型只会接着打转，所以纠正而非纯重发。
+    // maxRetries: 1 = 只有一次机会；第二次仍命中就直接冒泡（终态，与从前一致）。
     return {
-      retryable: false, retryDelayMs: 0, shouldReconnect: false,
-      category: 'reasoning_repetition', userMessage: error.message, maxRetries: 0,
+      retryable: true, retryDelayMs: 0, shouldReconnect: false,
+      category: 'reasoning_repetition', userMessage: error.message, maxRetries: 1,
+      reasoningRepeatCorrect: true,
     }
   }
   // Non-SSE 200 (openai-client content-type gate): the endpoint answered but
@@ -664,6 +702,9 @@ export function errorRecoveryGuidance(error: unknown): string {
         + '若持续出现，在该 provider 的 capabilities 里声明 preservedThinkingProtocol: true'
     case 'stream_parse':
       return '流解析失败：重发一次；反复出现用 /logs 打包日志提 issue'
+    case 'malformed_response':
+      return '上游返回了畸形的 HTTP 响应（网关/WAF 边缘节点故障）：已自动换连接重试；'
+        + '仍失败就稍后重发或 /model 换个服务商——不是本机网络问题'
     case 'reasoning_repetition':
       return '检测到推理短句持续重复，已停止请求；建议新建会话或 /model 切换模型后重试'
     default:

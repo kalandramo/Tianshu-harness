@@ -18,6 +18,12 @@ function probe(system: string[], bundled: string[], effective?: string[]): TlsTr
   }
 }
 
+/** 多个拦截产品并存的系统证书存储：6 张同厂商（撑满展示上限）+ 1 张异厂商（排在上限之后）。 */
+const MIXED_MITM_STORE = [
+  ...Array.from({ length: 6 }, (_, i) => PEM(`O=Zscaler Inc, CN=Zscaler Root CA ${i}`)),
+  PEM('C=RU, O=AO KASPERSKY LAB, CN=Kaspersky Anti-Virus Personal Root Certificate'),
+]
+
 describe('findInterceptionCerts', () => {
   it('命中的是中间人厂商根证书（大小写不敏感）', () => {
     const { suspects, vendors, count } = findInterceptionCerts([
@@ -43,6 +49,17 @@ describe('findInterceptionCerts', () => {
     assert.equal(count, 8)
     assert.equal(suspects.length, 5)
     assert.deepEqual(vendors, ['Zscaler'])
+  })
+
+  // 上面那条用的是同一厂商的 8 张证书，所以「vendors 被展示上限一起卡掉」这个缺陷它测不出来：
+  // 8 张全命中 Zscaler，去重后无论卡不卡都是 ['Zscaler']。真实系统证书存储里多个拦截产品
+  // 并存是常态，而 getCACertificates('system') 的返回顺序由 OS 决定，不由我们决定。
+  it('厂商清单不受展示上限影响——排在第 6 张之后的软件也要被点名', () => {
+    const { suspects, vendors, count } = findInterceptionCerts(MIXED_MITM_STORE)
+    assert.equal(count, 7, '计数应为全部命中')
+    assert.equal(suspects.length, 5, 'subjects 仍按展示上限截断')
+    // 用户去改哪个软件的设置，取决于这一条里有没有它的名字。
+    assert.deepEqual(vendors, ['Zscaler', 'Kaspersky'], '第 6 张之后的卡巴斯基被展示上限吞掉——诊断会指错方向')
   })
 
   it('subject 取 PEM 的第一行内容（不是 BEGIN 头）', () => {
@@ -88,6 +105,14 @@ describe('formatTlsTrustLines', () => {
     assert.match(lines, /NODE_EXTRA_CA_CERTS/)
     assert.match(lines, /--use-system-ca/)
     assert.match(lines, /加密连接扫描/)
+  })
+
+  it('摘要行点名的厂商与计数口径一致——不指错要用户去改的那个软件', () => {
+    const report = detectTlsInterception(probe(MIXED_MITM_STORE, ['bundled-a']))
+    const [headline] = formatTlsTrustLines(report)
+    assert.equal(report.suspectCount, 7)
+    assert.match(headline!, /7 条/)
+    assert.match(headline!, /Kaspersky/, '摘要行漏掉真正要用户去设置里排除的那个软件')
   })
 
   it('未检出时只报平安，不刷建议', () => {

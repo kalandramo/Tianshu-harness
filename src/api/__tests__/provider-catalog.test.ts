@@ -325,3 +325,20 @@ test('grok wire: max_completion_tokens + x-grok-conv-id 粘性路由', () => {
   assert.equal(entry?.label, 'Grok (xAI)')
   assert.ok((entry?.notes ?? []).some(n => n.includes('xhigh')))
 })
+
+// issue #272：火山方舟 Messages 端点只认 Authorization: Bearer（x-api-key 401），
+// 用 host 规则覆盖「自定义 provider 名字任意」的场景；OpenAI 面忽略该字段。
+test('resolveProviderWire: 火山方舟 host 声明 anthropicAuthMode=bearer', () => {
+  assert.equal(
+    resolveProviderWire('volc-plan-anthropic', 'https://ark.cn-beijing.volces.com/api/plan')?.anthropicAuthMode,
+    'bearer',
+  )
+  assert.equal(
+    resolveProviderWire('my-custom-plan', 'https://ark.cn-beijing.volces.com/api/plan')?.anthropicAuthMode,
+    'bearer',
+    '自定义 provider 名也必须命中（预设路径之外的入口）',
+  )
+  // 其它主机不注入——Anthropic 官方 API 默认 x-api-key。
+  assert.equal(resolveProviderWire('anthropic', 'https://api.anthropic.com')?.anthropicAuthMode, undefined)
+  assert.equal(resolveProviderWire('custom', 'https://relay.example.com/v1')?.anthropicAuthMode, undefined)
+})

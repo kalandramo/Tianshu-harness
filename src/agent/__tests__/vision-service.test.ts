@@ -197,3 +197,12 @@ test('describeImages 拒绝不支持的 MIME 类型', async () => {
     /图片格式不受视觉模型支持/,
   )
 })
+
+test('describeImages 拒绝 bmp/tiff（provider 不识，输入层必须先转 PNG）', async () => {
+  const client = makeMockClient('should not be called')
+  await assert.rejects(
+    describeImages(client, ['data:image/tiff;base64,' + 'A'.repeat(128)]),
+    /图片格式不受视觉模型支持/,
+    'bmp/tiff 直通会被 provider 拒收并触发剥图，必须在桥前失败',
+  )
+})

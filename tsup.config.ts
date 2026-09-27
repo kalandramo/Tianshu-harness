@@ -46,6 +46,13 @@ verifyConsistency()
 // 条件存在：公开仓经 sync 同步后没有 src/pro/（--exclude 'pro/'），
 // 硬编码 entry 会让开源构建报 entry not found——存在才加入。
 const proEntry = existsSync('src/pro/index.ts') ? ['src/pro/index.ts'] : []
+// pro 执行隔离适配器：产物 dist/pro/runtime/{backend,engine}.js。
+//   - backend.js 供 src/server/execution-backend.ts 的变量路径加载（灰度开关）；
+//   - engine.js 是 fork 出的独立会话执行进程入口，必须是磁盘上的真实文件。
+// 公开仓没有 src/pro/（sync --exclude 'pro/'），存在才加入，否则 entry not found。
+const proRuntimeEntries = existsSync('src/pro/runtime/backend.ts')
+  ? ['src/pro/runtime/backend.ts', 'src/pro/runtime/engine.ts']
+  : []
 // pro computer-use 同理：产物 dist/pro/computer-use/index.js，供
 // tools/computer-use/bridge.ts 的 dist 形态候选路径加载。
 const proComputerUseEntry = existsSync('src/pro/computer-use/index.ts') ? ['src/pro/computer-use/index.ts'] : []
@@ -62,7 +69,7 @@ export default defineConfig({
   // 供 loadProModule 的 dist 形态候选路径加载（桌面 sidecar 运行时）。
   // src/cli/entry.ts 是 npm bin（P0-1/P0-2）：轻量 launcher + V8 编译缓存 +
   // CLI 早期路由；未命中才动态 import main.ts。产物 dist/cli/entry.js。
-  entry: ['src/main.ts', 'src/cli/entry.ts', 'src/workers/cpu-worker.ts', 'src/agent/worker-process/child.ts', ...proEntry, ...proComputerUseEntry],
+  entry: ['src/main.ts', 'src/cli/entry.ts', 'src/workers/cpu-worker.ts', 'src/agent/worker-process/child.ts', ...proEntry, ...proComputerUseEntry, ...proRuntimeEntries],
   format: ['esm'],
   target: 'node24',
   // Inject the package version as a build-time constant so the packaged sidecar

@@ -1,4 +1,6 @@
 import { describe, it } from 'node:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import {
   detectProbes,
@@ -74,6 +76,21 @@ describe('probe-detector', () => {
       assert.equal(hits[0]!.pattern, 'debugger')
     })
 
+    it('行内注释 / 块注释 / 字符串里提到的 debugger 不算探针（降误报）', () => {
+      // `debugger` 在语法上只能作语句出现，因此它前面的最后一个非空白字符必然是
+      // 语句边界（行首 / ; / { / } / ) / :）。此前只有 `\bdebugger\b` + 跳过**行首**
+      // 注释行，于是行内注释与字符串里的提及被一律报成「探针残留」——交付时的乱报来源之一。
+      assert.equal(detectProbes('const x = 1 // debugger\n', 'src/foo.ts').length, 0, '行内注释')
+      assert.equal(detectProbes('foo() /* debugger */\n', 'src/foo.ts').length, 0, '块注释')
+      assert.equal(detectProbes("const s = 'debugger'\n", 'src/foo.ts').length, 0, '字符串字面量')
+      assert.equal(detectProbes('// 忘了删 debugger 的教训\n', 'src/foo.ts').length, 0, '中文注释')
+      // 真语句仍须命中（不许为了降误报把检测能力削掉）
+      assert.equal(detectProbes('  debugger\n', 'src/foo.ts').length, 1, '缩进语句')
+      assert.equal(detectProbes('debugger;\n', 'src/foo.ts').length, 1, '带分号')
+      assert.equal(detectProbes('if (x) debugger\n', 'src/foo.ts').length, 1, '单行 if 体')
+      assert.equal(detectProbes('a(); debugger\n', 'src/foo.ts').length, 1, '分号后同行')
+    })
+
     it('detects .only() test isolation', () => {
       const hits = detectProbes('it.only("test", () => {})\n', 'src/foo.ts')
       assert.equal(hits.length, 1)
@@ -130,6 +147,64 @@ describe('probe-detector', () => {
   })
 
   describe('isWhitelistedPath', () => {
+    it('自指豁免是内容级、不是路径级：讨论探针的文件仍要检出真探针（2026-09-25 二修）', () => {
+      // 二修动机：原实现把 src/prompt/static.ts 与 src/agent/probe-detector.ts 整文件
+      // 进白名单（isWhitelistedPath 返回 true），换来「模式表/文案不误报」，代价是这两个
+      // 真 .ts 里的**真探针一并漏检**——而检测器自身恰恰是最常被临时插桩调试的文件
+      // （deliver_task 的 fs 重扫与 probe-tracking hook 两条通道会同时静默）。
+      // 误报本来只是**行级**问题（模式名、警告文案里的枚举词），就该用行级判据解决。
+      for (const f of ['src/prompt/static.ts', 'src/agent/probe-detector.ts']) {
+        assert.equal(isWhitelistedPath(f), false, `${f} 不再整文件豁免`)
+      }
+      // 真探针（含被识别为「文本」的边界形态）必须检出
+      assert.equal(detectProbes("  console.log('hits', hits)\n", 'src/agent/probe-detector.ts').length, 1)
+      assert.equal(detectProbes('  debugger\n', 'src/prompt/static.ts').length, 1, '独立 debugger 语句')
+      assert.equal(detectProbes('debugger;\n', 'src/prompt/static.ts').length, 1)
+      assert.equal(detectProbes('assert(x === 1)\n', 'src/prompt/static.ts').length, 1)
+      assert.equal(detectProbes("  it.only('x', () => {})\n", 'src/prompt/static.ts').length, 1)
+      // 自指文本仍豁免（误报会诱导后来者删掉模式注册项 = 删掉检测能力）
+      assert.deepEqual(detectProbes("  { name: 'debugger', re: DEBUGGER_RE },\n", 'src/agent/probe-detector.ts'), [])
+      assert.deepEqual(detectProbes("  { name: 'bare assert()', re: ASSERT_PROBE_RE },\n", 'src/agent/probe-detector.ts'), [])
+      assert.deepEqual(detectProbes('  临时探针（console.log、assert、debugger）修复后必须清理。\n', 'src/prompt/static.ts'), [])
+      // 内容级豁免只对这两个文件生效——用**真探针**验证豁免不是全局的。
+      // 注意：不能拿「临时探针（…、debugger）…」这类说明性行来验作用域了——
+      // DEBUGGER_RE 收紧为语句位置判据后，该行在**任何文件**里都不再命中，
+      // 断言会失去前提（2026-09-25）。
+      assert.equal(detectProbes("  console.log('probe')\n", 'src/agent/foo.ts').length, 1, '非自指文件真探针命中')
+      assert.equal(detectProbes('  debugger\n', 'src/agent/foo.ts').length, 1, '非自指文件真语句命中')
+    })
+
+    it('回归护栏：这两个文件的真实内容零命中（新增模式/文案时须同步豁免判据）', () => {
+      // 这是本次二修的验收面：整文件豁免撤掉后，不能再有任何一行被误报——否则新版会比
+      // 旧版更吵，同样会诱导去删模式注册项。文件内容演进（新增模式名、改警告文案）后
+      // 若这条转红，说明 isSelfReferenceLine 的行级判据需要跟着扩，而不是把路径豁免加回去。
+      const cwd = process.cwd()
+      const read = (p: string): string | null => {
+        try { return readFileSync(p, 'utf8') } catch { return null }
+      }
+      for (const f of ['src/agent/probe-detector.ts', 'src/prompt/static.ts']) {
+        assert.deepEqual(scanFilesForProbes([f], cwd, read), [], `${f} 自身内容被检出——豁免判据需同步`)
+      }
+    })
+
+    it('gate 的真实入口 scanFilesForProbes 同样走白名单（测函数 ≠ 测调用路径）', () => {
+      // 缺口记录：前一版只测了 detectProbes，而 deliver-task gate 走的是
+      // scanFilesForProbes（deliver-task.ts:1090）——它在循环开头自己也不扫白名单文件。
+      // 只测纯函数会漏掉入口层的差异，所以两处都要覆盖。
+      const cwd = process.cwd()
+      const read = (p: string): string | null => {
+        try { return readFileSync(p, 'utf8') } catch { return null }
+      }
+      assert.deepEqual(
+        scanFilesForProbes(['src/agent/probe-detector.ts', 'src/prompt/static.ts'], cwd, read),
+        [],
+        'gate 入口对这两个文件不应产出命中',
+      )
+      // 对照：同一入口 + 非白名单路径 → 仍命中。没有它就无法排除「入口因为别的原因
+      // 什么都扫不到」（readFile 抛错等），那会是一条假绿。
+      const control = scanFilesForProbes(['src/agent/foo.ts'], cwd, () => '  debugger\n')
+      assert.equal(control.length, 1, '非白名单路径走同一入口仍应命中')
+    })
     it('whitelists test files', () => {
       assert.equal(isWhitelistedPath('src/agent/foo.test.ts'), true)
       assert.equal(isWhitelistedPath('src/agent/foo.spec.ts'), true)
@@ -145,6 +220,37 @@ describe('probe-detector', () => {
 
     it('does NOT whitelist source files', () => {
       assert.equal(isWhitelistedPath('src/agent/loop.ts'), false)
+    })
+
+    it('绝对路径形态同样遵守白名单（gate 的 fs 重扫/模型传绝对路径时会走到）', () => {
+      // 缺陷：normalized 只 strip 前导 `./`，于是 `/Users/x/repo/scripts/a.ts` 这种
+      // 绝对形态 startsWith('scripts/') 为假 → **整张白名单同时失效**，scripts/、bin/、
+      // *.test.ts、.md、serve.ts 里的 console.log/debugger 全被报成「探针残留」。
+      // 表现为交付时被乱报，且报的内容与本次改动无关。
+      const abs = (p: string): string => join(process.cwd(), p)
+      for (const p of ['scripts/build.ts', 'desktop/scripts/a.js', 'bin/cli.ts', 'src/server/serve.ts', 'src/agent/foo.test.ts', 'docs/x.md']) {
+        assert.equal(isWhitelistedPath(abs(p)), true, `绝对路径 ${p} 应豁免`)
+        assert.equal(isWhitelistedPath(p), true, `相对路径 ${p} 应豁免（回归）`)
+      }
+      // 真源码的绝对路径不得被豁免
+      assert.equal(isWhitelistedPath(abs('src/agent/foo.ts')), false, '非白名单源码不豁免')
+      // 路径段边界：不许把 xscripts/ 当成 scripts/
+      assert.equal(isWhitelistedPath('/tmp/xscripts/a.ts'), false, '前缀须落在路径段边界上')
+    })
+
+    it('gate 真实入口：绝对路径入参下白名单仍生效（测函数 ≠ 测调用路径）', () => {
+      const cwd = process.cwd()
+      const read = (): string => 'console.log("probe")\n'
+      assert.equal(
+        scanFilesForProbes([join(cwd, 'scripts/a.ts')], cwd, read).length,
+        0,
+        'scripts/ 的绝对路径不应产出命中（否则交付时乱报）',
+      )
+      assert.equal(
+        scanFilesForProbes([join(cwd, 'src/a.ts')], cwd, read).length,
+        1,
+        '非白名单的绝对路径仍须命中——否则白名单被放宽成了漏检',
+      )
     })
   })
 

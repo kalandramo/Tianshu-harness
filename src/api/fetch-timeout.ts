@@ -71,6 +71,14 @@ export async function fetchWithTimeout(
     // classifier's cause-chain matching and for logs.
     if (err instanceof Error && /fetch failed/i.test(err.message)) {
       const detail = fetchCauseDetail(err)
+      // 响应头畸形（上游网关/WAF 拼接坏了）单独点破：裸的 parser 原文
+      // （"Response does not match the HTTP/1.1 protocol (Unexpected whitespace
+      // after header value)"）在桌面端就是用户唯一能看到的一行，读起来像
+      // 本地网络/客户端问题。前缀点明「上游响应本身畸形」，尾部保留 parser
+      // 原文供提 issue 对照。`fetch failed` 前缀保留——多处匹配依赖它。
+      if (detail && isHttpResponseParseFailure(detail)) {
+        throw new Error(`fetch failed: upstream HTTP response malformed (gateway/WAF edge) — ${detail}`, { cause: err })
+      }
       if (detail) throw new Error(`${err.message}: ${detail}`, { cause: err })
     }
     throw err
@@ -79,4 +87,16 @@ export async function fetchWithTimeout(
     // under the caller's own signal, unaffected by this timeout.
     clearTimeout(timer)
   }
+}
+
+/**
+ * 这次失败是不是「上游把 HTTP 响应头拼坏了」。
+ *
+ * undici 在解析响应头阶段就拒绝，错误正文是 llhttp 的原文（"Response does not
+ * match the HTTP/1.1 protocol (Unexpected whitespace after header value)"）。
+ * 判据用协议错误正文而不是连接类错误码：连接类（ECONNRESET 等）是**没拿到**
+ * 响应，这里恰恰相反——响应到了，字节不合协议。
+ */
+export function isHttpResponseParseFailure(detail: string): boolean {
+  return /does not match the HTTP\/1\.1 protocol|unexpected whitespace after header value|unexpected space after start line|invalid header token|HTTPParserError|HPE_[A-Z_]+/i.test(detail)
 }

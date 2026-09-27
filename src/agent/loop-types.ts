@@ -147,6 +147,12 @@ export interface AgentConfig {
     /** 每次重连前的退避（ms，可被 abort 打断）。默认 500。 */
     backoffMs?: number
   }
+  /**
+   * 共享重试预算载体（PLAN §3）：onRun 起点写入一份，provider 重试与 agent 重连
+   * 共用同一实例（provider 客户端经 retryBudget getter 读 `current`），两层合计
+   * 才有上界。缺省 undefined = 不启用共享预算（历史行为）。
+   */
+  retryBudgetHolder?: { current?: import('../api/retry-budget.js').RetryBudget }
   lspEnabled?: boolean
   /** Optional LSP manager — notified on file changes for goto-def / find-refs accuracy.
    *  Use `getLspManager` for late-binding (LSP initialized asynchronously after AgentLoop). */
@@ -342,6 +348,8 @@ export interface DomainResolvedPayload {
 }
 
 export interface AgentCallbacks {
+  /** Await durable execution intent before a tool may produce side effects. */
+  beforeToolExecute?: (id: string, name: string, input: Record<string, unknown>) => Promise<void>
   onTextDelta: (text: string) => void
   onThinkingDelta: (thinking: string) => void
   onToolUse: (id: string, name: string, input: Record<string, unknown>) => void
@@ -355,6 +363,9 @@ export interface AgentCallbacks {
    *  据此把会话终态记为 'interrupted' 而非 'completed'（2026-09-16 终态语义修复）。
    *  可选：轻量测试替身无需实现——缺省等价于修复前行为（completed）。 */
   onStreamInterrupted?: (error: Error) => void
+  /** 模型请求中断后**本轮重试**：在重发前触发，带上尝试序号。消费方据此把失败
+   *  尝试的未完成 partial 标为未完成并按尝试替换（避免与重试输出重复）。 */
+  onModelRetry?: (info: { attempt: number; maxAttempts: number }) => void
   onAbort: (reason?: string) => void
   onApprovalRequired: (id: string, name: string, input: Record<string, unknown>) => Promise<ApprovalResult | boolean>
   onCheckpoint?: (hash: string) => void
@@ -386,7 +397,7 @@ export interface AgentCallbacks {
    */
   onIntentNote?: (intent: IntentPreview) => void
   /** Called to drain any pending steer guidance for injection into tool results */
-  onSteerDrain?: () => string | null
+  onSteerDrain?: () => string | null | Promise<string | null>
   /** C3 Auto 模式检查点 — 仅在 auto-safe 模式下、checkpointEveryTurns > 0
    *  时触发。run 暂停等待用户确认（"continue" 继续）。digest 为进度摘要。 */
   onAutonomyCheckpoint?: (info: AutonomyCheckpointInfo) => void

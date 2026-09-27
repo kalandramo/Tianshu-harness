@@ -40,6 +40,14 @@ export interface ProviderWireConfig {
    */
   sessionHeader?: string
   /**
+   * Anthropic-protocol auth header shape. Default (undefined) = Anthropic SDK
+   * convention `x-api-key`; 'bearer' sends `Authorization: Bearer <key>`.
+   * 火山方舟 /api/plan（Agent Plan / Coding Plan 的 Messages 端点）只认 Bearer：
+   * x-api-key 一律 401。官方 Claude Code 接入用 ANTHROPIC_AUTH_TOKEN（→ Bearer）。
+   * 两个 header 不能同发——Anthropic 官方 API 会因「同时提供」直接拒收。
+   */
+  anthropicAuthMode?: 'x-api-key' | 'bearer'
+  /**
    * Thinking-stall default (ms) for providers prone to stalling on pure
    * thinking phases. undefined = disabled (falls back to read timeout).
    * Semantics: chunk-idle window, not total duration — far below the 300s
@@ -100,7 +108,9 @@ const CATALOG_META: Record<string, CatalogMeta> = {
     wire: { userAgent: 'KimiCLI/1.0' },
     notes: [
       'Thinking block: {type: enabled} + reasoning_effort',
-      'K3 / K3-256K: reasoning_effort low|high|max (default high); K2.7 Code is Thinking:ON only',
+      'Kimi Code 会员订阅额度（api.kimi.com/coding；与 Kimi 会员共享，CLI/桌面/第三方工具均计入）',
+      'K3 / K3-256K / K2.8 Preview (kimi-for-coding): low|high|max (default high/high/max); none 关闭思考',
+      'kimi-for-coding-highspeed (K2.7 Code): Thinking:ON，无 effort 档位',
       'No prefix cache support',
     ],
   },
@@ -268,11 +278,19 @@ const CATALOG_META: Record<string, CatalogMeta> = {
  * registered under `name: 'anthropic'` (factory dispatches on `protocol`), so a
  * name-only lookup misses the session header and every request comes back
  * 400 MissingSessionID.
+ *
+ * 火山方舟同型：Agent Plan 的 Messages 端点挂在同一主机上，只有 Anthropic
+ * 客户端读 anthropicAuthMode；自定义 provider（名字任意）也靠 host 规则拿到
+ * Bearer 形态。OpenAI 面忽略该字段。
  */
 const HOST_WIRE_RULES: ReadonlyArray<{ host: string; wire: ProviderWireConfig }> = [
   {
     host: 'opencode.ai',
     wire: { userAgent: TIANSHU_USER_AGENT, sessionHeader: 'x-opencode-session' },
+  },
+  {
+    host: 'ark.cn-beijing.volces.com',
+    wire: { anthropicAuthMode: 'bearer' },
   },
 ]
 

@@ -873,4 +873,53 @@ describe('retry config end-to-end (issue #75)', () => {
     }
     assert.equal(calls, 3, `classifier default (2 retries) should stop at 3 attempts, got ${calls}`)
   })
+
+  it('retryBudget 必须到达四种协议客户端的重试配置（漏一处共享预算即形同虚设）', () => {
+    // PLAN §3：provider 重试与 agent 重连共用一份预算，防 3×3=9 相乘。工厂此前只在
+    // 接口里声明了 retryBudget 参数、一个客户端都没传——客户端永远拿不到，两处重试
+    // 照旧相乘。这条按协议分支逐个钉住接线。
+    const budget = { take: () => true } as unknown as import('../retry-budget.js').RetryBudget
+    const getter = () => budget
+    const capabilities = resolveCapabilities('deepseek')
+    const base = (over: Partial<ProviderConfig>): ProviderConfig => providerSchema.parse({
+      ...deepseekProvider, thinking: 'disabled', ...over,
+    })
+    const cases: Array<[string, ProviderConfig]> = [
+      ['openai', base({})],
+      ['openai-responses', base({ name: 'responses-p', protocol: 'openai-responses' })],
+      ['anthropic', base({ name: 'anthropic-p', protocol: 'anthropic' })],
+      ['codex(oauth)', base({ name: 'codex', auth: { type: 'oauth', provider: 'codex' } })],
+    ]
+    for (const [label, provider] of cases) {
+      const client = createProviderClient(provider, capabilities, { ...runtimeParams, retryBudget: getter })
+      const cfg = (client as unknown as { config?: { retryBudget?: unknown } }).config
+      assert.equal(cfg?.retryBudget, getter, `${label} 协议客户端必须拿到 retryBudget getter`)
+    }
+  })
+
+  it('retryBudget 真的作用到实际请求：预算拒绝时第一次失败就停', async () => {
+    const provider = providerSchema.parse({ ...deepseekProvider, thinking: 'disabled' })
+    let takeCalls = 0
+    const client = createProviderClient(provider, resolveCapabilities('deepseek'), {
+      ...runtimeParams,
+      // 预算拒绝：任何一次重试都不放行。
+      retryBudget: () => ({ take: () => { takeCalls++; return false } } as unknown as import('../retry-budget.js').RetryBudget),
+    })
+    const originalFetch = globalThis.fetch
+    let calls = 0
+    globalThis.fetch = mock.fn(async () => {
+      calls++
+      throw new Error('invalid sse stream chunk')   // 分类为 stream_parse → 默认可重试
+    }) as unknown as typeof fetch
+    try {
+      await assert.rejects(() => client.stream(
+        { model: 'deepseek-r1', messages: [{ role: 'user', content: 'hi' }], max_tokens: 100 },
+        { onTextDelta: () => {}, onThinkingDelta: () => {}, onContentBlock: () => {}, onStopReason: () => {}, onError: () => {} },
+      ))
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+    assert.equal(takeCalls, 1, '预算必须被真正询问（此前工厂没接线，take 一次都不会调）')
+    assert.equal(calls, 1, '预算拒绝后不得再发第二次请求')
+  })
 })

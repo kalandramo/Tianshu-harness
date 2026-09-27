@@ -633,10 +633,6 @@ tianshu config set-approval auto-safe       # 持久化默认档位
     "enabled": true,
     "autoThreshold": 800000       // 触发自动压缩的 token 阈值
   },
-  "cache": {
-    "enabled": true,              // 前缀缓存总开关
-    "showHitRate": true           // GlanceBar 显示命中率
-  },
   "tools": {
     "preset": "minimal"           // minimal（默认）| frontend | full | taiyi
   },

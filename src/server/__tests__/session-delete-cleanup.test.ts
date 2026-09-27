@@ -55,12 +55,15 @@ describe('session delete disk cleanup', () => {
     })
   })
 
-  after(() => {
-    manager.shutdownAll()
+  after(async () => {
+    // 等会话清理链落定再删目录——否则后台写在 rmSync 期间仍可能落盘，命中
+    // ENOTEMPTY（并行负载下必现；Windows 上 EBUSY/ENOTEMPTY 更常见）。
+    await manager.shutdownAll()
     delete process.env.RIVET_SESSION_DIR
     SessionPersist.invalidateListCache()
-    rmSync(dataRoot, { recursive: true, force: true })
-    rmSync(cwd, { recursive: true, force: true })
+    const rmOpts = { recursive: true, force: true, maxRetries: 10, retryDelay: 20 } as const
+    rmSync(dataRoot, rmOpts)
+    rmSync(cwd, rmOpts)
   })
 
   it('hardDelete 清空会话全部落盘文件且列表不再列出', () => {

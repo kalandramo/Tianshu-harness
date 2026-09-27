@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { MAX_SESSION_MESSAGE_JSON_CHARS, SessionPersist, evictOldSessionsInternal, getSessionDir, projectSlug, serializeSessionMessage, formatExitSummary, shouldAutoWriteHandoff } from '../session-persist.js'
+import { SessionPersist, evictOldSessionsInternal, getSessionDir, projectSlug, serializeSessionMessage, serializeOaiSessionMessage, formatExitSummary, shouldAutoWriteHandoff } from '../session-persist.js'
+import { INLINE_TOOL_RESULT_MAX_CHARS, MAX_SESSION_MESSAGE_JSON_CHARS } from '../../compact/constants.js'
 import type { OaiMessage } from '../../api/oai-types.js'
 import { appendChecksum } from '../checksum.js'
 import { decodeTranscriptText, encodeBatch } from '../session-transcript-codec.js'
@@ -59,6 +60,27 @@ describe('SessionPersist', () => {
 
     assert.ok(serialized.length <= MAX_SESSION_MESSAGE_JSON_CHARS + 512)
     assert.match(serialized, /session-message-truncated/)
+  })
+
+  it('落盘上限必须容得下内存侧允许的单条工具结果（不二次削小）', () => {
+    // 回归（2026-09-24）：内存裁顶 50K→120K 后，落盘侧仍是 100K，且 capJsonValue
+    // 按 floor(maxChars * 0.8) 逐字符串截——于是 (80K, 120K] 的单条工具结果在
+    // transcript 里被削到 ~80K 并留下 session-message-truncated。会话恢复/重放时
+    // 模型看到的历史与当时真正发给它的内容不一致。该区间在内存裁顶 50K 时代
+    // 不可达，是 120K 放开后才出现的。
+    const content = Array.from({ length: 1600 }, (_, i) => `line ${i}: ${'x'.repeat(60)}`).join('\n')
+    assert.ok(
+      content.length > 100_000 && content.length <= INLINE_TOOL_RESULT_MAX_CHARS,
+      `夹具必须落在 (落盘旧上限 100K, 内存上限 ${INLINE_TOOL_RESULT_MAX_CHARS}] 区间内（实得 ${content.length}）`,
+    )
+
+    const serialized = serializeOaiSessionMessage({ role: 'tool', tool_call_id: 'call-1', content })
+
+    assert.doesNotMatch(serialized, /session-message-truncated/, '内存允许的内容落盘时不该被截')
+    // 逐字节比对：序列化文本里换行是转义的，必须解析后再比，否则断言本身失效。
+    const parsed = JSON.parse(serialized) as { role: string; content: string; tool_call_id?: string }
+    assert.equal(parsed.tool_call_id, 'call-1')
+    assert.equal(parsed.content, content, '整条内容应原样落盘（含尾部）')
   })
 })
 
@@ -1017,5 +1039,63 @@ describe('SessionPersist list cache incremental update', () => {
     const list = SessionPersist.listSessionsWithMetadata(tempDir)
     assert.equal(list.length, 1)
     assert.ok(list[0]!.updatedAt >= 1_000)
+  })
+
+  it('getTranscriptWatermark counts appended OAI messages (observation only)', async () => {
+    const persist = new SessionPersist('test-session-wm', tempDir)
+    assert.equal(persist.getTranscriptWatermark(), 0)
+    await persist.appendOaiWithChecksum({ role: 'user', content: 'hi' }, { flush: true })
+    await persist.appendOaiWithChecksum({ role: 'assistant', content: 'yo' })
+    assert.equal(persist.getTranscriptWatermark(), 2)
+  })
+
+})
+
+describe('transcript watermark（PLAN §4 第 1 步）', () => {
+  const tmpRoot = () => {
+    const d = mkdtempSync(join(tmpdir(), 'rivet-tw-'))
+    process.env.RIVET_SESSION_DIR = d
+    return d
+  }
+  const oai = (n: number): OaiMessage => ({ role: 'user', content: `m${n}` })
+
+  it('重新加载已有历史后，水位等于转录真实条数（此前恒为 0）', async () => {
+    const d = tmpRoot()
+    try {
+      const s = new SessionPersist('tw-load', '/fake-cwd')
+      await s.appendOaiWithChecksum(oai(1), { flush: true })
+      await s.appendOaiWithChecksum(oai(2), { flush: true })
+      // 新实例 = 恢复/重开进程：旧口径只统计「本实例 append 过多少条」，这里是 0。
+      const reopened = new SessionPersist('tw-load', '/fake-cwd')
+      assert.equal(reopened.loadOai().length, 2, '前置：历史应能读回 2 条')
+      assert.equal(reopened.getTranscriptWatermark(), 2, '水位必须对齐转录真实条数')
+    } finally { rmSync(d, { recursive: true, force: true }) }
+  })
+
+  it('追加后水位随之 +1，且与恢复端同一把尺子', async () => {
+    const d = tmpRoot()
+    try {
+      const s = new SessionPersist('tw-append', '/fake-cwd')
+      await s.appendOaiWithChecksum(oai(1), { flush: true })
+      await s.appendOaiWithChecksum(oai(2), { flush: true })
+      s.loadOai()
+      await s.appendOaiWithChecksum(oai(3), { flush: true })
+      assert.equal(s.getTranscriptWatermark(), 3, '2 条历史 + 1 条追加 = 3')
+    } finally { rmSync(d, { recursive: true, force: true }) }
+  })
+
+  it('历史重写（压缩）后水位落到新条数——它会变小', async () => {
+    const d = tmpRoot()
+    try {
+      const s = new SessionPersist('tw-compact', '/fake-cwd')
+      for (const n of [1, 2, 3, 4]) await s.appendOaiWithChecksum(oai(n), { flush: true })
+      s.loadOai()
+      assert.equal(s.getTranscriptWatermark(), 4)
+      s.compactOai([oai(9)])
+      assert.equal(s.getTranscriptWatermark(), 1, '重写后必须跟着缩短（只增不减会让水位虚高）')
+      assert.equal(s.loadOai().length, 1, '落盘也确实只剩 1 条')
+      await s.compactOaiAsync([oai(8), oai(7)])
+      assert.equal(s.getTranscriptWatermark(), 2)
+    } finally { rmSync(d, { recursive: true, force: true }) }
   })
 })

@@ -76,8 +76,13 @@ async function cleanStaleRawOutputs(): Promise<void> {
 const MODEL_MAX_LINES = 200
 const MODEL_HEAD_LINES = 100
 const MODEL_TAIL_LINES = 80
-const SUCCESS_INLINE_LINES = 20
-const SUCCESS_TAIL_LINES = 20
+// 配对常量：INLINE 是触发阈值（超过才截），TAIL 是截后保留量。两者必须同改——
+// 只放大 TAIL 会产出自相矛盾的 footer（21 行输出显示 "last 40 of 21 — 0 omitted"），
+// 只放大 INLINE 则退化成「略多于 20 行就丢掉大半」。2026-09-25 由 20/20 调到 40/40：
+// 实测头部信息常落在 21–40 行区间（如 44 行输出只留尾 20 时被省 24 行），放宽后
+// 模型少一次 read_file 取全文的往返；代价是每轮最多多 ~20 行上下文。
+const SUCCESS_INLINE_LINES = 40
+const SUCCESS_TAIL_LINES = 40
 // 失败输出超过该行数时，模型路径改用 error-aware 精选（聚焦报错行、丢无关噪声），
 // 而非 raw head/tail —— 与 buildUiOutput 对齐，减少环境报错对模型的干扰。
 const MODEL_ERROR_AWARE_THRESHOLD = 40

@@ -594,7 +594,7 @@ export class ToolExecutionController {
     // before them silently dropped the user's guidance for large results.
     const lastResult = toolResults.length > 0 ? toolResults[toolResults.length - 1]! : null
     if (lastResult && lastResult.type === 'tool_result') {
-      const steerText = input.callbacks.onSteerDrain?.()
+      const steerText = await input.callbacks.onSteerDrain?.()
       if (steerText) {
         const existing = typeof lastResult.content === 'string' ? lastResult.content : ''
         toolResults[toolResults.length - 1] = { ...lastResult, content: existing + '\n\n' + steerText }

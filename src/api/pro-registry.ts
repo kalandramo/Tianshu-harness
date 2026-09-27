@@ -10,6 +10,7 @@
  * sync-to-public.sh:39 的 --exclude 'pro/' 排除，不进公开仓）。
  */
 
+import { existsSync } from 'node:fs'
 import { PROVIDER_PRESETS, providerPresetKeys } from '../config/provider-presets.js'
 import type { ProviderPreset } from '../config/provider-presets.js'
 import type { ProClientFactory } from './pro-types.js'
@@ -159,6 +160,35 @@ export async function loadProModule(): Promise<void> {
   }
 }
 
+/**
+ * 闭源模块是否随本构建存在（同步探测）。
+ *
+ * 为什么不能用 `proRegistry.getPreset()` 当判据：`register` 挂在付费闸门之后
+ * （`src/pro/index.ts` 开头的 `if (!isProFeatureEnabled(config,'spark')) return`），
+ * 未激活时注册表恒空——拿它回答「本构建有没有」，等于把能力存在性与许可证压成
+ * 一个布尔，与 `pro-feature-probe.ts` 声明的 available 语义（与许可证无关）互斥。
+ * `existsSync` 不看许可证只看产物；闸门该管的只是「能不能用」（licensed/enabled）。
+ *
+ * 候选路径与 `loadProModule` 同源：src 形态磁盘上是 .ts，dist 形态是 bundle 出的 .js。
+ * 探**入口文件**而非 preset 自身——bundle 可能把 preset 内联进入口，入口存在性更稳；
+ * 且入口硬 import 了 sparkPreset，两者同生共死。
+ */
+const PRO_PROBE_URLS = [
+  new URL('../pro/index.ts', import.meta.url), // src 形态（tsx / dev）
+  new URL('./pro/index.js', import.meta.url), // dist 形态（bundle 产物）
+]
+
+export function proModulePresent(): boolean {
+  for (const url of PRO_PROBE_URLS) {
+    try {
+      if (existsSync(url)) return true
+    } catch {
+      // 继续探测下一候选；全部失败 = 公开构建（无 src/pro/）
+    }
+  }
+  return false
+}
+
 /** 静态表 + 注册表合并解析：先静态（类型安全），后注册表（运行时） */
 export function resolvePreset(name: string): ProPresetEntry | { static: ProviderPreset } | undefined {
   if ((providerPresetKeys as string[]).includes(name)) {
@@ -179,6 +209,22 @@ export function resolvePresetBaseUrl(name: string): string | undefined {
   const r = resolvePreset(name)
   if (!r) return undefined
   return 'static' in r ? r.static.provider.baseUrl : r.provider.baseUrl
+}
+
+/** 合并视图 defaultModelId 提取——无 /models 端点（火山方舟 Agent Plan 等）的
+ *  连接测试必须拿它做最小补全，否则 key 验证拿不到任何信号。 */
+export function resolvePresetDefaultModel(name: string): string | undefined {
+  const r = resolvePreset(name)
+  if (!r) return undefined
+  return 'static' in r ? r.static.defaultModelId : r.defaultModelId
+}
+
+/** 合并视图 protocol 提取——桌面端预设卡不带 protocol（未配置节点无该字段），
+ *  测试连接/补全探测必须按预设声明的协议走（anthropic 预设尤其重要）。 */
+export function resolvePresetProtocol(name: string): import('../config/schema.js').ProviderProtocol | undefined {
+  const r = resolvePreset(name)
+  if (!r) return undefined
+  return 'static' in r ? r.static.provider.protocol : r.provider.protocol
 }
 
 /** 合并视图 clone provider 配置（setupProvider 写端用；静态优先） */

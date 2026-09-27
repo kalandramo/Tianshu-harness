@@ -361,13 +361,45 @@ export function perMessageToolResultBudget(contextWindow: number): number {
  * Maximum characters of a tool result content to keep inline in SessionContext.oaiMessages.
  * Results exceeding this are truncated in memory (full content remains on disk via artifact).
  *
- * 50KB ~= 0.005% of a 1M window, or ~12.5K tokens. Large enough for the model to get
- * meaningful context from recent results, small enough to bound per-message memory.
+ * Raised 50K → 120K (2026-09-23): the read cap grants a 1M window 120K chars per
+ * read_file call and prune/stale-round sit at 150K, while this memory-side trim still
+ * cut every result at 50K — the cap was only half honoured. A 120K prose page reached
+ * the request already shaved to 50K; that is exactly what the
+ * `<memory-trimmed original_chars="51256" kept_chars="49958" />` marker in transcripts
+ * means (observed twice while diagnosing this). 120K aligns the three layers.
+ * Small windows are unaffected: their read cap (8K/24K) is already below this constant.
  *
  * This is a memory-safety constraint, distinct from the cache-oriented prune thresholds.
  * Prune thresholds control what the API sees; this constant controls what stays in JS heap.
+ *
+ * Consumers must NOT borrow this as a generic "sane single tool output" yardstick:
+ * a modelling budget and a memory bound are different things, and coupling them made
+ * an unrelated feature (surgical-shaper) grow along with this constant. See
+ * `DEFAULT_MAX_TOTAL_CHARS` there.
  */
-export const INLINE_TOOL_RESULT_MAX_CHARS = 50_000
+export const INLINE_TOOL_RESULT_MAX_CHARS = 120_000
+
+/**
+ * 落盘逐字符串裁剪的保留系数：session-persist 的 serializeSessionJsonValue 先用
+ * `floor(maxChars × JSON_VALUE_KEEP_RATIO)` 裁每个字符串值，再整体 stringify——
+ * 留下的 20% 给 JSON 骨架（字段名、引号、转义膨胀）。
+ */
+export const JSON_VALUE_KEEP_RATIO = 0.8
+
+/**
+ * 单条会话消息落盘 JSON 的字符上限。物理家在此：它与 INLINE_TOOL_RESULT_MAX_CHARS
+ * 是同一组约束的两面，分开定义过就会漂移。
+ *
+ * 必须容得下内存侧允许保留的单条工具结果——内存留下的内容若在落盘时被二次削小，
+ * resume / 重放拿到的历史就与当时真正发给模型的内容不一致。逐字符串裁剪按
+ * `floor(cap × JSON_VALUE_KEEP_RATIO)` 进行，故 cap 需反除该系数才能在内容侧不截：
+ * `INLINE_TOOL_RESULT_MAX_CHARS / 0.8 = 150_000`。
+ *
+ * 历史（2026-09-24）：原值 100_000 定于内存裁顶 50K 时代——50K 的内容永远够不着
+ * 80K 的逐字符串门，缺口不可达。内存侧放开到 120K 后 (80K, 120K] 变成可达，单条
+ * 大 read_file 结果在落盘副本里被削到约 80K 并留下 session-message-truncated。
+ */
+export const MAX_SESSION_MESSAGE_JSON_CHARS = Math.ceil(INLINE_TOOL_RESULT_MAX_CHARS / JSON_VALUE_KEEP_RATIO)
 
 /**
  * Per-tool-type budget: independently limits single-call size and cumulative
@@ -393,7 +425,14 @@ export function toolTypeBudgets(contextWindow: number): Record<string, ToolTypeB
   return {
     grep:      { perCall: grepPerCall, perTurnCumulative: grepSummarize * 2, summarizeAfter: grepSummarize },
     search:    { perCall: grepPerCall, perTurnCumulative: grepSummarize * 2, summarizeAfter: grepSummarize },
-    read_file: { perCall: Math.min(w * 0.1, 20_000), perTurnCumulative: Math.min(w * 0.25, 50_000), summarizeAfter: Math.min(w * 0.15, 30_000) },
+    // read_file clamps raised 20K/30K → 40K/60K tokens (2026-09-23). The old
+    // clamps froze both ceilings from a 200K window upward, so on a 1M window the
+    // third large read in one turn already collapsed to a 5-line preview — right
+    // after the per-call cap had granted 120K chars (30K tokens) to the first one.
+    // 40K tokens/call (160K chars) and 60K tokens/turn (240K chars ≈ 6% of a 1M
+    // window) let the granted cap actually reach the model. Below a 400K window the
+    // w*0.1 / w*0.15 scaling binds first, so smaller windows are unchanged.
+    read_file: { perCall: Math.min(w * 0.1, 40_000), perTurnCumulative: Math.min(w * 0.25, 50_000), summarizeAfter: Math.min(w * 0.15, 60_000) },
     bash:      { perCall: 5_000,  perTurnCumulative: 15_000,  summarizeAfter: 8_000 },
     default:   { perCall: 5_000,  perTurnCumulative: 20_000,  summarizeAfter: 10_000 },
   }

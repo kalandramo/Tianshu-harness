@@ -12,6 +12,8 @@ import type {
 /** 基线能力的假 driver——不含帧流方法（模拟不支持 CDP screencast 的实现）。 */
 class BaseFakeDriver implements BrowserDebugDriver {
   closed = false
+  alive = true
+  isAlive() { return this.alive }
   async goto() {}
   async evaluate() { return '' }
   async screenshot() { return Buffer.from('') }
@@ -185,4 +187,60 @@ test('dispatchInput 透传事件；captureFrame 透传帧', async () => {
   assert.equal(frame?.seq, 1)
 
   await closeSession('k7')
+})
+
+test('W2.1 会话重建：帧订阅跨会话迁移，面板无需重连，退订清在新 driver 上', async () => {
+  __resetSessionForTest()
+  const first = new ScreencastFakeDriver()
+  const second = new ScreencastFakeDriver()
+  let useSecond = false
+  const factory = async (_o: DriverLaunchOptions): Promise<BrowserDebugDriver> => (useSecond ? second : first)
+
+  const s1 = await getOrCreateSession({ sessionKey: 'k8', headless: true, userDataDir: 'p', driverFactory: factory })
+  const got: number[] = []
+  const unsub = await s1.subscribeFrames((f) => { got.push(f.seq) })
+  assert.equal(first.startCount, 1)
+
+  // 浏览器死亡：与真实 driver 的 isAlive=false 同路径
+  first.alive = false
+  useSecond = true
+  const s2 = await getOrCreateSession({ sessionKey: 'k8', headless: true, userDataDir: 'p', driverFactory: factory })
+
+  assert.notEqual(s2, s1, '死会话必须重建')
+  assert.equal(s2.frames, s1.frames, '重建必须接管同一个 FrameStream（订阅集合跨会话共享）')
+  assert.equal(second.startCount, 1, '新 driver 必须重启推流')
+  assert.deepEqual(got, [1], '接管时要补一帧（静态页不会自己产帧）')
+
+  second.lastSink?.({ data: 'Y', width: 1, height: 1, seq: 8 })
+  assert.deepEqual(got, [1, 8], '面板继续收到新会话的帧，无需重连')
+
+  unsub()
+  assert.equal(second.stopCount, 1, '退订必须停在新 driver 上（旧实现会漏停，浏览器永远编码）')
+  assert.equal(s2.streaming, false)
+
+  await closeSession('k8')
+})
+
+test('W2.1 重建失败：旧帧订阅被清理，不挂成无主引用', async () => {
+  __resetSessionForTest()
+  const first = new ScreencastFakeDriver()
+  let fail = false
+  const factory = async (_o: DriverLaunchOptions): Promise<BrowserDebugDriver> => {
+    if (fail) throw new Error('launch failed')
+    return first
+  }
+
+  const s1 = await getOrCreateSession({ sessionKey: 'k9', headless: true, userDataDir: 'p', driverFactory: factory })
+  await s1.subscribeFrames(() => {})
+  assert.equal(s1.frames.subscriberCount, 1)
+
+  first.alive = false
+  fail = true
+  await assert.rejects(
+    () => getOrCreateSession({ sessionKey: 'k9', headless: true, userDataDir: 'p', driverFactory: factory }),
+    /launch failed/,
+  )
+  assert.equal(s1.frames.subscriberCount, 0, '重建失败必须清理订阅，避免无主 stream 泄漏')
+
+  __resetSessionForTest()
 })

@@ -36,8 +36,9 @@ export interface TurnStreamCallbacks {
   onError: (error: Error) => void
   onRateLimit?: (retryDelayMs?: number) => void
   /** 413 / 图片被拒导致本次请求剥掉了 image_url——模型这一轮看不到这些图，
-   *  调用方应告知用户，否则会被读成「模型没理我的截图」。 */
-  onImageStripped?: (info: { removedCount: number }) => void
+   *  调用方应告知用户，否则会被读成「模型没理我的截图」。
+   *  uniqueUrlCount = 唯一 image URL 数：agent 层据此把剥离持久化写回历史。 */
+  onImageStripped?: (info: { removedCount: number; uniqueUrlCount?: number }) => void
   /** 网关拒收「历史缺 reasoning_content」，重试已改为保留思考内容重发
    *  （issue #258）。必须可见：wire 形态中途变了，且该 provider 声明
    *  capabilities.preservedThinkingProtocol 就能免掉这次白跑。 */
@@ -67,6 +68,12 @@ export interface TurnStreamDeps {
   recordStreamAttemptAborted?: (info: StreamAttemptAbortedInfo) => void
   /** Monotonic-enough clock for TTFT measurement; injectable for deterministic tests. */
   now?: () => number
+  /**
+   * 服务端明确拒图（唯一 URL）后的持久化钩子：把 image part 替换为占位符写回会话
+   * 历史，下一轮不再重发毒图（Grok `image_strip.rs` 的 ServerRejected 门同款）。
+   * 由 loop-factory 接到 SessionContext；blame 不唯一时实现方必须保持 no-op。
+   */
+  persistStrippedImages?: (info: { removedCount: number; uniqueUrlCount?: number }) => void
 }
 
 export interface TurnStreamInput {
@@ -222,6 +229,9 @@ export class TurnStreamController {
         input.callbacks.onRateLimit?.(retryDelayMs)
       },
       onImageStripped: (info) => {
+        // 服务端明确拒图（唯一 URL）→ 先尝试把剥离持久化写回历史，下一轮不再
+        // 重发毒图；blame 不唯一的启发式剥离由实现方保持 wire-only。
+        try { this.deps.persistStrippedImages?.(info) } catch { /* best-effort：持久化失败不阻断流 */ }
         input.callbacks.onImageStripped?.(info)
       },
       onReasoningEchoRecovered: () => {

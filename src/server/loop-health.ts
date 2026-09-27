@@ -9,17 +9,13 @@
  * Rust supervisor later) label that state honestly: "service busy", not
  * "disconnected".
  *
- * Windowed semantics: each snapshot() reports the delay distribution since the
- * previous snapshot and resets. With the desktop polling /health every 4s the
- * numbers describe the last poll window. Known limitation: while the loop is
- * fully blocked /health cannot answer at all — the spike shows up in the FIRST
- * response after the stall ends (maxMs), which is still enough to attribute
- * the preceding gap.
+ * Samples once per second. Readers share a non-destructive 30 second window.
  */
 import { monitorEventLoopDelay } from 'node:perf_hooks'
 
 export interface LoopLagSnapshot {
   /** p99 event-loop delay in ms over the window since the last snapshot. */
+  sampledAt?: number
   p99Ms: number
   /** Worst single delay in ms over the same window. */
   maxMs: number
@@ -32,27 +28,39 @@ export class LoopHealthMonitor {
   // resolving the multi-hundred-ms stalls we care about.
   private hist = monitorEventLoopDelay({ resolution: 20 })
   private started = false
+  private timer?: ReturnType<typeof setInterval>
+  private samples: Array<LoopLagSnapshot & { sampledAt: number }> = []
 
   start(): void {
     if (this.started) return
     this.hist.enable()
     this.started = true
+    this.timer = setInterval(() => this.sample(), 1000)
+    this.timer.unref()
   }
 
   stop(): void {
     if (!this.started) return
+    clearInterval(this.timer)
     this.hist.disable()
     this.started = false
   }
 
-  /** Report the window since the previous snapshot, then reset the histogram. */
-  snapshot(): LoopLagSnapshot {
-    const p99 = this.hist.percentile(99) / NS_PER_MS
-    const max = this.hist.max / NS_PER_MS
+  private sample(): void {
+    const sampledAt = Date.now()
+    const ms = (value: number) => Number.isFinite(value) ? Math.round(value / NS_PER_MS * 10) / 10 : 0
+    this.samples.push({ sampledAt, p99Ms: ms(this.hist.percentile(99)), maxMs: ms(this.hist.max) })
     this.hist.reset()
+    this.samples = this.samples.filter(sample => sample.sampledAt >= sampledAt - 30_000)
+  }
+
+  /** Conservative maximum of one-second p99 samples, not a pooled percentile. */
+  snapshot(): LoopLagSnapshot {
+    const samples = this.samples.filter(sample => sample.sampledAt >= Date.now() - 30_000)
     return {
-      p99Ms: Number.isFinite(p99) ? Math.round(p99 * 10) / 10 : 0,
-      maxMs: Number.isFinite(max) ? Math.round(max * 10) / 10 : 0,
+      sampledAt: samples.at(-1)?.sampledAt ?? 0,
+      p99Ms: Math.max(0, ...samples.map(sample => sample.p99Ms)),
+      maxMs: Math.max(0, ...samples.map(sample => sample.maxMs)),
     }
   }
 }

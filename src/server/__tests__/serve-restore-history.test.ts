@@ -18,7 +18,8 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { SessionPersist } from '../../agent/session-persist.js'
 import { SessionContext } from '../../agent/context.js'
-import { restoreHistoryMessages } from '../serve.js'
+import { describeRestore, restoreHistoryMessages } from '../serve.js'
+import { resolveHistoryRestore } from '../serve-agent.js'
 import { appendChecksum } from '../../agent/checksum.js'
 import { isAssistantWithTools, type OaiMessage } from '../../api/oai-types.js'
 
@@ -159,4 +160,104 @@ test('restoreHistoryMessages: handles tool_call/tool_result pairs correctly', ()
   assert.equal(assistant.tool_calls.length, 1)
   assert.equal(msgs[2]!.role, 'tool')
   assert.equal(msgs[2]!.tool_call_id, 'call_1')
+})
+
+test('restoreHistoryMessages: records transcript watermark alignment (observation only)', () => {
+  const sessionId = '11111111-2222-3333-4444-555555555555'
+  seedSession(sessionId, [
+    { role: 'user', content: 'hi' },
+    { role: 'assistant', content: 'yo' },
+  ])
+  const persist = new SessionPersist(sessionId, '/fake-cwd')
+
+  // 对齐：检查点水位 ≤ 实际条数
+  const ok = restoreHistoryMessages(persist, new SessionContext(), undefined, 2)
+  assert.equal(ok.transcriptAligned, true)
+  assert.equal(ok.expectedTranscriptWatermark, 2)
+  assert.equal(ok.restored, 2, '观测不影响恢复结果')
+
+  // 不对齐：检查点引用了转录里没有的历史 → 只标记，消息照常恢复
+  const bad = restoreHistoryMessages(persist, new SessionContext(), undefined, 9)
+  assert.equal(bad.transcriptAligned, false)
+  assert.equal(bad.expectedTranscriptWatermark, 9)
+  assert.equal(bad.restored, 2, '不对齐也不改恢复结果（第 2 步只观测）')
+
+  // 不传期望 → 无从比较
+  const none = restoreHistoryMessages(persist, new SessionContext())
+  assert.equal(none.transcriptAligned, undefined)
+})
+
+test('restoreHistoryMessages: structured mode surfaces uncertain tools (UI 待确认)', () => {
+  const sessionId = '99999999-8888-7777-6666-555555555555'
+  seedSession(sessionId, [
+    { role: 'user', content: 'do it' },
+    {
+      role: 'assistant',
+      content: '',
+      tool_calls: [{ id: 'c1', type: 'function', function: { name: 'write_file', arguments: '{}' } }],
+    },
+  ])
+  const persist = new SessionPersist(sessionId, '/fake-cwd')
+  process.env.RIVET_RECOVERY_STRUCTURED_TOOLS = '1'
+  try {
+    const info = restoreHistoryMessages(persist, new SessionContext())
+    assert.deepEqual(info.uncertainTools, [{ id: 'c1', name: 'write_file' }], '注入的工具要回传给 UI')
+    // user + assistant(tool_call) + 注入的 tool 消息 = 3
+    assert.equal(info.restored, 3)
+  } finally {
+    delete process.env.RIVET_RECOVERY_STRUCTURED_TOOLS
+  }
+  // 默认模式不影响：不再回传 uncertainTools
+  const plain = restoreHistoryMessages(persist, new SessionContext())
+  assert.equal(plain.uncertainTools, undefined)
+})
+
+test('describeRestore：待确认工具与水位观测都在收口处', async () => {
+  const sessionId = 'describe-restore-uncertain'
+  const persist = new SessionPersist(sessionId, '/fake-cwd', { recoveryStructuredTools: true })
+  await persist.appendOaiWithChecksum(
+    { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'write_file', arguments: '{}' } }] },
+    { flush: true },
+  )
+  persist.loadOai() // 真实路径一致：解析时做结构化注入，才有 uncertain 可回传
+  assert.equal(persist.getLastInjectedUncertain().length, 1, '前置：结构化注入应已发生')
+
+  const misaligned = describeRestore(persist, 3, 5)
+  assert.deepEqual(misaligned.uncertainTools?.map((x) => x.id), ['c1'], '待确认工具必须回传')
+  assert.equal(misaligned.transcriptAligned, false, '检查点水位 5 > 实际 3 → 必须跑对齐检查')
+  assert.equal(misaligned.expectedTranscriptWatermark, 5)
+
+  const aligned = describeRestore(persist, 5, 5)
+  assert.equal(aligned.transcriptAligned, true)
+  assert.deepEqual(aligned.uncertainTools?.map((x) => x.id), ['c1'], '水位对齐时也要带待确认工具')
+
+  const noExpectation = describeRestore(persist, 2)
+  assert.equal(noExpectation.transcriptAligned, undefined, '未传期望水位就不做对齐判定')
+  assert.deepEqual(noExpectation.uncertainTools?.map((x) => x.id), ['c1'])
+})
+
+test('resolveHistoryRestore：桌面异步预取路径（prepared）同样收口待确认与水位', async () => {
+  // P2 的回归钉：这条分支决策此前写成 `prepared ? { restored } : restoreHistoryMessages(...)`，
+  // 于是桌面真实路径丢了两样东西。把 prepared 分支改回裸 { restored }，本用例即红。
+  const sessionId = 'prepared-path-restore'
+  const persist = new SessionPersist(sessionId, '/fake-cwd', { recoveryStructuredTools: true })
+  await persist.appendOaiWithChecksum(
+    { role: 'assistant', content: '', tool_calls: [{ id: 'c9', type: 'function', function: { name: 'bash', arguments: '{}' } }] },
+    { flush: true },
+  )
+  await persist.loadOaiAsync() // 模拟 buildManagedAgentAsync 的预取
+
+  const session = new SessionContext()
+  const info = resolveHistoryRestore(persist, session, { messages: persist.loadOai() }, '/fake-cwd', 7)
+
+  assert.deepEqual(info.uncertainTools?.map((x) => x.id), ['c9'], 'prepared 路径必须回传待确认工具')
+  assert.equal(info.transcriptAligned, false, 'prepared 路径必须跑转录水位对齐检查')
+  assert.equal(info.expectedTranscriptWatermark, 7)
+  assert.ok(session.getMessages().length > 0, 'prepared 的消息仍须装进上下文')
+
+  // 反面对照：非 prepared 走同步恢复路径，同样收口。
+  const session2 = new SessionContext()
+  const sync = resolveHistoryRestore(persist, session2, undefined, '/fake-cwd', 7)
+  assert.deepEqual(sync.uncertainTools?.map((x) => x.id), ['c9'])
+  assert.equal(sync.transcriptAligned, false)
 })

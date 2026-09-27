@@ -3,6 +3,39 @@ import { join } from 'node:path'
 
 import { createSecretCipher, decodeSecret, encodeSecret, type SecretCipher } from './secure-store.js'
 
+/**
+ * 创始徽章快照（服务端只给原始值：`user_badges.badge_code` 与位次）。
+ * 档位名 / 罗马数字 / 主题色 / 冠饰**不在这里**——它们经 `agent/founding-tiers.ts`
+ * 从 badge_code 或位次查出来，两处各存一份文案是老的坏味道。
+ */
+export interface FoundingBadgeSnapshot {
+  /** `user_badges.badge_code`；可能是历史命名（展示时经 founding-tiers 归一） */
+  badgeCode: string | null
+  /** 注册位次（1 = 第一个注册的人）；取不到为 null */
+  rank: number | null
+  /** 位次所在档位（1|2|3）；取不到为 null */
+  tier: number | null
+  /** 当前创始用户总数 */
+  total: number
+  /** 一档名额（「创世 No.001 / 300」这类展示要用） */
+  limit: number
+}
+
+/**
+ * 账号资料快照：头像与创始身份。
+ *
+ * 与 `identity` 同生命周期（登出 `clear()` 一并消失）——头像和铭牌都是账号的
+ * 属性，账号没了它们没有意义。
+ */
+export interface AccountProfileSnapshot {
+  /** 官网 `profiles.avatar_url`；无头像为 null（客户端回退首字母，不造默认图） */
+  avatarUrl: string | null
+  /** 非创始用户为 null（此时不渲染铭牌，也不显示空壳） */
+  founding: FoundingBadgeSnapshot | null
+  /** 取到时刻（ms）。 */
+  fetchedAt: number
+}
+
 export interface TokenData {
   accessToken: string
   refreshToken?: string
@@ -25,6 +58,12 @@ export interface TokenData {
     /** 取到时刻（ms）。超过 TTL 视为陈旧，由调用方决定是否后台刷新。 */
     fetchedAt: number
   }
+  /**
+   * 账号资料快照（头像 + 创始铭牌）。同样可选、同样与登录态同生命周期。
+   *
+   * ⚠️ 同 `identity`：写入一律走 `saveAccountProfile()`，手搓会抹掉 accessToken。
+   */
+  profile?: AccountProfileSnapshot
 }
 
 /**

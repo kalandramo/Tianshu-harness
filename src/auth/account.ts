@@ -18,7 +18,12 @@
  * token + Rust 验签负责（`desktop/src-tauri/src/activation.rs`）。两者分开存储：
  * `<RIVET_HOME>/account.json` vs `<RIVET_HOME>/license.json`。
  */
-import { TokenStore, type TokenData } from './token-store.js'
+import { TokenStore, type AccountProfileSnapshot, type FoundingBadgeSnapshot, type TokenData } from './token-store.js'
+import { FOUNDING_USER_LIMIT, isFoundingBadge, tierOfBadgeCode, tierOfRank } from '../agent/founding-tiers.js'
+
+// 快照类型是消费方（sidecar 路由、桌面端镜像）要用的形状——从本模块再导出一次，
+// 免得每个调用方都绕到 token-store 去拿。
+export type { AccountProfileSnapshot, FoundingBadgeSnapshot }
 
 /** 官网 Supabase 项目（Edge Functions 基址）。 */
 const DEFAULT_ACCOUNT_API = 'https://grcedmhghzroqnirizcy.supabase.co'
@@ -90,6 +95,18 @@ function accountSiteBase(): string {
 /** 星籍页 URL（桌面端「在官网查看」按钮的目标；官网路由见其 router 的 `/space/identity`）。 */
 export function accountIdentityUrl(): string {
   return `${accountSiteBase()}/space/identity`
+}
+
+/**
+ * 账号与授权页 URL——个人中心权益面板「在官网查看账号与授权」的目标。
+ *
+ * 与 `accountIdentityUrl()` 同源同基址，只是路径不同；域名单一来源因此仍只有
+ * `accountSiteBase()` 一处。**文案刻意不写「管理设备」**：该页上的远程解绑入口
+ * 是账号授权体系的 Task 4.1，至今未实现（Wave 4 未开始）——不给用户指向不存在的
+ * 功能。等官网侧就绪后，改这里一行即可。
+ */
+export function accountManageUrl(): string {
+  return `${accountSiteBase()}/space/account`
 }
 
 // ── 授权请求 ─────────────────────────────────────────────────────────────
@@ -490,5 +507,171 @@ export function cachedAccountIdentity(
 /** 缓存是否已过期（fetchedAt 缺失视为过期 → 触发一次刷新）。 */
 export function isAccountIdentityStale(fetchedAt: number, now: number = Date.now()): boolean {
   return !Number.isFinite(fetchedAt) || fetchedAt <= 0 || now - fetchedAt > ACCOUNT_IDENTITY_TTL_MS
+}
+
+// ── 账号资料快照（头像 + 创始铭牌）───────────────────────────────────────
+//
+// 与星籍同一套通道与口径：PostgREST 直读 + 用户 JWT（RLS 收口本人），
+// 失败一律回 null 不抛——头像与铭牌是装饰性信息，不该让账号状态查询失败。
+
+/**
+ * 头像 URL（`profiles.avatar_url`）。
+ *
+ * 与星籍同理**不按 id 过滤**：003 迁移后 profiles 的策略是 `auth.uid() = id`，
+ * 查询天然只回本人那一行。无头像（列为 null）与取数失败都回 null——两者的
+ * 客户端表现相同（回退首字母），区分它们只会多一个没人消费的状态。
+ */
+export async function fetchAccountAvatar(
+  accessToken: string,
+  opts: FetchInjection = {},
+): Promise<string | null> {
+  const doFetch = opts.fetchImpl ?? fetch
+  try {
+    const res = await doFetch(`${accountApiBase()}/rest/v1/profiles?select=id,avatar_url&limit=1`, {
+      method: 'GET',
+      headers: { ...accountHeaders(), Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+    })
+    if (!res.ok) return null
+    const rows = (await res.json()) as unknown
+    const row = (Array.isArray(rows) ? rows[0] : undefined) as Record<string, unknown> | undefined
+    if (!row) return null
+    // 同一笔对账：行不属于本 token 就丢弃（策略被改宽也不至于显示别人的头像）
+    const sub = jwtSubject(accessToken)
+    if (sub && typeof row.id === 'string' && row.id !== sub) return null
+    const url = row.avatar_url
+    return typeof url === 'string' && url ? url : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 最高档创始徽章 + 位次。
+ *
+ * 两个原始来源：`user_badges.badge_code`（可能多行，取最高档）与
+ * `rpc/get_my_founder_rank`（JSONB，形状见官网 `020`/`032` 迁移）。
+ * **RPC 的形状未在本仓实测过**，所以解析刻意宽容：类型不符就当取不到，
+ * 绝不让一个陌生形状把整个账号状态查询打挂。
+ *
+ * 非创始用户（无徽章且 `is_founder` 非真）回 null——调用方据此不渲染铭牌。
+ */
+export async function fetchFoundingBadge(
+  accessToken: string,
+  opts: FetchInjection = {},
+): Promise<FoundingBadgeSnapshot | null> {
+  const doFetch = opts.fetchImpl ?? fetch
+  const headers = { ...accountHeaders(), Authorization: `Bearer ${accessToken}` }
+
+  const badgeCode = await (async (): Promise<string | null> => {
+    try {
+      const res = await doFetch(`${accountApiBase()}/rest/v1/user_badges?select=badge_code`, {
+        method: 'GET',
+        headers,
+        signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+      })
+      if (!res.ok) return null
+      const rows = (await res.json()) as unknown
+      if (!Array.isArray(rows)) return null
+      // 多行时取档位最高的（tier 数值最小 = 最早 = 最高）
+      const codes = rows
+        .map((r) => (r as Record<string, unknown> | null)?.badge_code)
+        .filter((c): c is string => typeof c === 'string' && c.length > 0 && isFoundingBadge(c))
+        .sort((a, b) => (tierOfBadgeCode(a)?.tier ?? 9) - (tierOfBadgeCode(b)?.tier ?? 9))
+      return codes[0] ?? null
+    } catch {
+      return null
+    }
+  })()
+
+  const rankInfo = await (async (): Promise<{ rank: number | null; total: number } | null> => {
+    try {
+      const res = await doFetch(`${accountApiBase()}/rest/v1/rpc/get_my_founder_rank`, {
+        method: 'POST',
+        headers,
+        body: '{}',
+        signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+      })
+      if (!res.ok) return null
+      const body = (await res.json()) as unknown
+      const obj = (Array.isArray(body) ? body[0] : body) as Record<string, unknown> | undefined
+      if (!obj || typeof obj !== 'object') return null
+      const isFounder = obj.is_founder === true
+      const rank = typeof obj.rank === 'number' && obj.rank > 0 ? obj.rank : null
+      const total = typeof obj.total === 'number' && obj.total >= 0 ? obj.total : 0
+      if (!isFounder && rank === null) return null
+      return { rank, total }
+    } catch {
+      return null
+    }
+  })()
+
+  if (!badgeCode && !rankInfo) return null
+
+  const tier = badgeCode
+    ? (tierOfBadgeCode(badgeCode)?.tier ?? tierOfRank(rankInfo?.rank ?? 0)?.tier ?? null)
+    : (tierOfRank(rankInfo?.rank ?? 0)?.tier ?? null)
+
+  return {
+    badgeCode,
+    rank: rankInfo?.rank ?? null,
+    tier,
+    total: rankInfo?.total ?? 0,
+    limit: FOUNDING_USER_LIMIT,
+  }
+}
+
+/**
+ * 账号资料快照：头像 + 创始身份，一次并发取齐。
+ *
+ * 两者都取不到时回 null（不造"看起来有但是空的"壳）；任一取到就回快照，
+ * 缺的那一半以 null 存在——客户端按"缺就不渲染"处理。
+ */
+export async function fetchAccountProfileSnapshot(
+  accessToken: string,
+  opts: FetchInjection = {},
+): Promise<AccountProfileSnapshot | null> {
+  const [avatarUrl, founding] = await Promise.all([
+    fetchAccountAvatar(accessToken, opts),
+    fetchFoundingBadge(accessToken, opts),
+  ])
+  if (avatarUrl === null && founding === null) return null
+  return { avatarUrl, founding, fetchedAt: Date.now() }
+}
+
+/**
+ * 把账号资料快照写进凭据文件。
+ *
+ * **必须以 token 为底展开**：`TokenStore.save()` 是全量写且不校验，只写 profile
+ * 会把 accessToken 当场抹掉（下次启动表现为「文件在但登录没了」）。
+ */
+export function saveAccountProfile(
+  store: TokenStore,
+  token: TokenData,
+  profile: AccountProfileSnapshot,
+  now: number = Date.now(),
+): TokenData {
+  const next: TokenData = { ...token, profile: { ...profile, fetchedAt: now } }
+  store.save(next)
+  return next
+}
+
+/** 读缓存副本；形状不全（老文件 / 坏数据）时回 null。 */
+export function cachedAccountProfile(token: TokenData | null): AccountProfileSnapshot | null {
+  const p = token?.profile
+  if (!p) return null
+  const avatarUrl = typeof p.avatarUrl === 'string' && p.avatarUrl ? p.avatarUrl : null
+  const founding =
+    p.founding && typeof p.founding === 'object'
+      ? {
+          badgeCode: typeof p.founding.badgeCode === 'string' ? p.founding.badgeCode : null,
+          rank: typeof p.founding.rank === 'number' ? p.founding.rank : null,
+          tier: typeof p.founding.tier === 'number' ? p.founding.tier : null,
+          total: typeof p.founding.total === 'number' ? p.founding.total : 0,
+          limit: typeof p.founding.limit === 'number' ? p.founding.limit : FOUNDING_USER_LIMIT,
+        }
+      : null
+  if (avatarUrl === null && founding === null) return null
+  return { avatarUrl, founding, fetchedAt: typeof p.fetchedAt === 'number' ? p.fetchedAt : 0 }
 }
 

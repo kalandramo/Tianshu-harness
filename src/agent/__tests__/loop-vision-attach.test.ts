@@ -105,15 +105,18 @@ describe('AgentLoop — 用户附图的识图分派', () => {
     assert.ok(!serialized.includes('image_url'), '原图必须从主模型请求里移除')
   })
 
-  it('主模型 text-only 且无识图桥 → 图片仍被原样送入请求（当前行为记录）', async () => {
+  it('主模型 text-only 且无识图桥 → 丢弃图片并留可见提示（不再把 image part 送进请求）', async () => {
     const { agent, session } = makeAgent({ supportsVision: false })
 
     await agent.run('看这张图', callbacks(), [IMG])
 
     const serialized = JSON.stringify(oaiMessages(session))
     assert.ok(
-      serialized.includes('image_url'),
-      '当前行为：无桥时图片仍进请求——与 tool-pipeline 的「不支持则丢弃」不一致，见交付报告',
+      !serialized.includes('image_url'),
+      '无桥时图片没有任何去处：必须丢弃（对齐 tool-pipeline 对工具截图「不支持则丢弃」），'
+      + '否则模型可能对着看不见的图硬猜',
     )
+    assert.ok(serialized.includes('[图片未发送]'), '丢弃必须可见——模型要知道自己没图可看')
+    assert.ok(serialized.includes('看这张图'), '用户原文一个字都不能丢')
   })
 })

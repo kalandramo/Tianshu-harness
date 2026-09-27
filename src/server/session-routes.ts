@@ -916,8 +916,14 @@ export function buildSessionRoutes(
       return { status: 200, body: manager.getSession(params!.id!) }
     }, apiToken),
 
+    'GET /sessions/:id/requests/:requestId': withAuth(async (_body, params) => {
+      if (!manager.getSession(params!.id!)) return { status: 404, body: { error: 'Session not found' } }
+      const receipt = await manager.getRunRequest(params!.id!, params!.requestId!)
+      return receipt ? { status: 200, body: receipt } : { status: 404, body: { error: 'Request not found' } }
+    }, apiToken),
+
     'POST /sessions/:id/prompt': withAuth(async (body, params) => {
-      const data = (body ?? {}) as { prompt?: string; images?: unknown; documents?: unknown }
+      const data = (body ?? {}) as { prompt?: string; images?: unknown; documents?: unknown; requestId?: unknown }
       if (!data.prompt || typeof data.prompt !== 'string' || !data.prompt.trim()) {
         return { status: 400, body: { error: 'Missing or empty "prompt" field' } }
       }
@@ -990,6 +996,22 @@ export function buildSessionRoutes(
       // `running` 仍为 true → 409 busy「会话正在执行中」。停下来的 run 等它真正
       // 收尾再起新轮；仍在跑的 run 立即 409（方法直接返回），steer/queue 语义不变。
       await manager.waitForRunSettled(params!.id!)
+      if (!await manager.prepareSession(params!.id!)) return { status: 404, body: { error: 'Session not found' } }
+      if (data.requestId !== undefined) {
+        if (typeof data.requestId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(data.requestId)) {
+          return { status: 400, body: { error: 'Invalid requestId' } }
+        }
+        try {
+          const result = await manager.submitRun(params!.id!, prompt, images, data.requestId)
+          if (!result.ok) return { status: result.code === 'not_found' ? 404 : 409, body: { error: result.code } }
+          return { status: 200, body: { ...manager.getSession(params!.id!), receipt: 'receipt' in result ? result.receipt : undefined } }
+        } catch (error) {
+          if (error instanceof Error && error.message === 'requestId already belongs to a different request') {
+            return { status: 409, body: { error: error.message, code: 'request_conflict' } }
+          }
+          return { status: 503, body: { error: 'Could not durably accept request; retry with the same requestId', code: 'request_persistence_failed' } }
+        }
+      }
       const ok = manager.run(params!.id!, prompt, images)
       // 区分两种拒绝：session 缺失（404，前端可提示重新打开）与执行中（409 busy，
       // 前端显示"正在执行中"而非错误 toast——用户连续发消息时这是正常排队语义）。

@@ -6,6 +6,7 @@
  */
 
 import { classifyApiError } from './error-classifier.js'
+import type { RetryBudget } from './retry-budget.js'
 import type { ClassifiedError, ErrorCategory } from './error-classifier.js'
 
 // ---------------------------------------------------------------------------
@@ -147,6 +148,11 @@ export interface RetryOptions {
   maxTotalDurationMs?: number
   /** Retry policy from provider config (backoff curve + per-category overrides). */
   policy?: RetryPolicy
+  /**
+   * 共享重试预算（PLAN §3）：与 agent 侧重连共用同一份，防两层相乘。
+   * 每次真要重试前 `take()`；用尽即终止（不再看分类器/上限）。
+   */
+  budget?: RetryBudget
   /** Called before each retry with diagnostic info. */
   onRetry?: (info: RetryInfo) => void
 }
@@ -251,9 +257,11 @@ export async function withStructuredRetry<T>(
       //   1. overrides[category].maxRetries → 该类别显式值（仍受显式 maxTotalRetries 夹取）
       //   2. 显式 maxTotalRetries → 直接生效（抬升分类器默认，消除「调了不生效」）
       //   3. 两者都无 → 分类器默认（历史行为）
-      // stripImages / preserveReasoning 类别带一次性语义（wire 形态只改一次）：
-      // 显式全局值只允许收紧——否则「一次改形态是否奏效」会被无限重试掩盖。
+      // stripImages / preserveReasoning / reasoningRepeatCorrect 类别带一次性语义
+      // （wire 形态只改一次）：显式全局值只允许收紧——否则「一次改形态是否奏效」
+      // 会被无限重试掩盖。
       const oneShot = classified.stripImages === true || classified.preserveReasoning === true
+        || classified.reasoningRepeatCorrect === true
       const override = policy?.overrides?.[classified.category]
       let effectiveMax: number
       if (override?.maxRetries !== undefined) {
@@ -266,9 +274,17 @@ export async function withStructuredRetry<T>(
 
       // +1 because `attempt` starts at 0 (the initial call is attempt 0,
       // first retry is attempt 1, etc.)
-      if (attempt + 1 > effectiveMax) {
-        throw err
-      }
+    if (attempt + 1 > effectiveMax) {
+      throw err
+    }
+
+    // 共享预算：与 agent 侧重连共用，两层合计不超过一份（PLAN §3）。
+    if (options?.budget && !options.budget.take()) {
+      throw new RetryBudgetExhaustedError(
+        `Retry budget exhausted: shared budget spent after ${attempt + 1} retry attempt(s). ` +
+        `Provider may be unavailable — try again later or switch provider.`,
+      )
+    }
 
       // Delay decision — server instruction > configured curve > legacy path.
       const nextDelayMs = computeNextDelay(attempt + 1, classified, override, policy?.backoff)

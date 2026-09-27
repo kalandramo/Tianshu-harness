@@ -90,6 +90,10 @@ export function enforceTurnReadBudget(
   })
 }
 
+/** Head-only preview size per pressure tier (see enforceContextPressureTruncation). */
+const PRESSURE_KEEP_LINES_EXTREME = 30
+const PRESSURE_KEEP_LINES_HIGH = 200
+
 /**
  * Context-pressure truncation: when the overall context usage exceeds 70%,
  * truncate large read_file results to a head-only preview.
@@ -97,6 +101,12 @@ export function enforceTurnReadBudget(
  * This is the "last line of defense" — it fires in the tool-execution layer
  * after per-message and turn-read budgets, catching cases where the context
  * is already heavily loaded from conversation history rather than just this turn's reads.
+ *
+ * Tiered (2026-09-23): a flat "30 lines from 70% upward" was calibrated for 200K
+ * windows, where 70% really does leave little room. On a 1M window 70% still leaves
+ * ~300K tokens free, yet every read was collapsed to 30 lines — the model lost its
+ * working file while no pressure existed. Now 70–90% keeps a 200-line preview and
+ * only ≥90% falls back to 30 lines.
  *
  * @param results Tool results for this batch
  * @param usageRatio estimatedTokens / contextWindow (0–1)
@@ -107,16 +117,17 @@ export function enforceContextPressureTruncation(
   usageRatio: number,
 ): BudgetEntry[] {
   if (usageRatio <= 0.7) return results
+  const keepLines = usageRatio >= 0.9 ? PRESSURE_KEEP_LINES_EXTREME : PRESSURE_KEEP_LINES_HIGH
 
   return results.map(r => {
     if (r.toolName !== 'read_file') return r
     if (r.content.length < 2000) return r // already small
 
     const lines = r.content.split('\n')
-    if (lines.length <= 30) return r // already short
+    if (lines.length <= keepLines) return r // already short
 
-    const head = lines.slice(0, 30)
-    const omitted = lines.length - 30
+    const head = lines.slice(0, keepLines)
+    const omitted = lines.length - keepLines
     const truncated = [
       ...head,
       `... ${omitted} lines omitted (context pressure: ${Math.round(usageRatio * 100)}% used). Use read_file with offset/limit for specific ranges. ...`,

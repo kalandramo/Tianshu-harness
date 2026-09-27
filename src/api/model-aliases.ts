@@ -99,6 +99,11 @@ function buildAliasTable(): ModelAliasEntry[] {
       if (existing) {
         continue
       }
+      // 预设 id 恰好是另一条目的同义名（如火山方舟 Agent Plan fleet 的
+      // `minimax-m3` ⇄ MiniMax 预设的 canonical `MiniMax-M3`）：同义名层已经把它
+      // 定义为别名，再立一条同名 canonical 会造出「既是 canonical 又是 alias」的
+      // 歧义条目（B2 不变量）。跳过；匹配走同义名归并到既有 canonical。
+      if (MODEL_SYNONYMS[id]) continue
       byCanonical.set(id, { canonicalId: id, aliases: [], metadata })
     }
   }

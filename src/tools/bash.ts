@@ -18,7 +18,7 @@ import { probeUserIdleMs, resolveYieldMs, type UserIdleMs } from '../system/user
 import { detectSensitiveGitAdd, AGGREGATE_ADD_MARKER } from './sensitive-file-detector.js'
 import type { Tool, ToolCallParams, ToolResult } from './types.js'
 import { track } from './process-tracker.js'
-import { killProcessTree, spawnShell } from './process-kill.js'
+import { killProcessTreeAsync, killProcessTree, spawnShell } from './process-kill.js'
 import { getShellCommand, getShellDiagnostics, WinStreamDecoder, rewriteWindowsNullRedirect, rewritePowershellNullRedirect } from '../platform.js'
 import { wrapSandboxCommand as sandboxWrap } from './sandbox-profile.js'
 import type { SandboxBackendKind } from './sandbox-profile.js'
@@ -27,7 +27,7 @@ import { classifySandboxDenial, buildSandboxDenialHint, recordSandboxLearn } fro
 import type { SandboxDenial } from './sandbox-diagnose.js'
 import { grantPath } from './path-grants.js'
 import { rivetHome } from '../config/paths.js'
-import { isTypecheckCommand, runAdhocTypecheckShared, tryAcquireAdhocLock, TYPECHECK_CALLER_BUDGET_MS } from '../lsp/typecheck-cache.js'
+import { isTypecheckCommand, resolveCallerTimeoutBudget, TYPECHECK_TIMEOUT_HINT, runAdhocTypecheckShared, tryAcquireAdhocLock, resolveWatchdogTimeout } from '../lsp/typecheck-cache.js'
 import { lowDiskWarning } from '../utils/disk-space.js'
 
 /**
@@ -480,7 +480,7 @@ async function executeBashOnce(params: ToolCallParams): Promise<BashExecResult> 
   const rewrittenWithMirrors = rewriteGitHubUrls(rewritten, mirrorConfig)
   const sandbox = wrapSandboxCommand(rewrittenWithMirrors, params.cwd)
   const command = sandbox.command
-  const timeout = Number(params.input.timeout) > 0 ? Number(params.input.timeout) : 120_000 // 0/负数/NaN/未给 → 默认（#187）
+  const timeout = resolveCallerTimeoutBudget(rawCommand, Number(params.input.timeout), 120_000) // 非正数/NaN → 默认（#187）；typecheck 形态按闸门预算只抬不压
   const startTime = Date.now()
 
   // Background path: explicit run_in_background=true, or auto-detected long-runner
@@ -762,7 +762,7 @@ async function executeBashOnce(params: ToolCallParams): Promise<BashExecResult> 
         const hint = buildNotFoundHint(missing, process.platform)
         modelBody = `环境/配置问题：${reason}。属环境/依赖缺失，非代码缺陷——请修复环境后重试，勿反复重跑相同命令。${hint}`
       } else {
-        modelBody = filtered || (isTimeout ? '命令超时。' : code === 0 ? '' : `退出码：${code}`)
+        modelBody = filtered || (isTimeout ? (isTypecheckCommand(rawCommand) ? TYPECHECK_TIMEOUT_HINT : '命令超时。') : code === 0 ? '' : `退出码：${code}`)
       }
       if (sandboxDenial) modelBody = buildSandboxDenialHint(sandboxDenial) + '\n\n' + modelBody
 
@@ -891,14 +891,14 @@ async function executeBashOnce(params: ToolCallParams): Promise<BashExecResult> 
     // 没有这一步，bash 子进程会在 abort 后继续在后台运行（detached），是会话"假死"
     // 期间资源泄漏与副作用的来源。结果值本身可能被 withToolTimeout 的竞速丢弃，
     // 真正的目的是确保进程被杀。
-    const onAbort = () => {
+    const onAbort = async () => {
       if (settled) return
       settled = true
       if (timer) clearTimeout(timer)
       stopExecutionGuards()
       cleanupAbort()
-      killProcessTree(child, 'SIGTERM')
-      forceKillTimer = setTimeout(() => killProcessTree(child, 'SIGKILL'), 3000)
+      const cleanupResult = await killProcessTreeAsync(child)
+      if (cleanupResult !== 'exited') console.warn(`[process-cleanup] pid=${child.pid} status=${cleanupResult}`)
       const stdoutTail = stdoutDecoder.end()
       const stderrTail = stderrDecoder.end()
       const finalStdout = stdout + stdoutTail
@@ -1060,21 +1060,21 @@ export const BASH_TOOL: Tool = {
     name: 'bash',
     description: `执行 shell 命令，用于构建、测试、git 和系统操作。
 
-用 && 串联独立命令。长时间运行的命令（dev server、watcher、install）传 run_in_background=true 转入后台，用 job 工具查看/等待/终止。自动检测已知长跑命令也会后台化。`,
+用 && 串联独立命令。长时间运行的命令（dev server、watcher、install）与要排跨进程闸门的长验证（typecheck）都传 run_in_background=true 转入后台，用 job 工具查看/等待/终止。自动检测已知长跑命令也会后台化。`,
     input_schema: {
       type: 'object',
       properties: {
         command: { type: 'string', description: '要执行的 shell 命令' },
-        timeout: { type: 'integer', minimum: 1, description: '超时毫秒数（默认 120000；非正数按默认值处理）' },
+        timeout: { type: 'integer', minimum: 1, description: '超时毫秒数（默认 120000；非正数按默认值处理；typecheck 形态自动抬到闸门预算，传更小值无效）' },
         run_in_background: { type: 'boolean', description: '设为 true 转入后台并返回 job id。自动检测已知长跑命令。' },
       },
       required: ['command'],
     },
   },
 
-  /** typecheck 形态要在跨进程闸门后排队，预算须覆盖其等待上限（TYPECHECK_CALLER_BUDGET_MS）。 */
+  /** typecheck 形态要在跨进程闸门后排队，声明预算须覆盖等待上限**并留余量**（见 resolveWatchdogTimeout）。 */
   timeoutMs: (params) =>
-    isTypecheckCommand(String(params?.input?.command ?? '')) ? TYPECHECK_CALLER_BUDGET_MS : 120_000,
+    resolveWatchdogTimeout(String(params?.input?.command ?? ''), Number(params?.input?.timeout), 120_000),
 
   async execute(params: ToolCallParams) {
     // issue #235 Wave 2 —「用户接管即让出」：命中可用性危害签名（合成键鼠 / 前台抢占）

@@ -183,7 +183,12 @@ function functionSpan(source: string, header: string): string | null {
 function readRepoFile(rel: string): string {
   const abs = join(REPO_ROOT, rel)
   if (!existsSync(abs)) throw new Error(`源码文件缺失：${rel}`)
-  return readFileSync(abs, 'utf-8')
+  // 源码文本在读入处统一归一化 CRLF → LF。下面的解析原语（换行计数、函数边界
+  // 正则、V3 的 CvmInjectionSource 块）都以 `\n` 为边界；Windows runner 的
+  // core.autocrlf=true 会把 checkout 出的源码变成 CRLF，`\n\n` 在 `\r\n\r\n` 里
+  // 匹配不到，V3 会误报「无法解析联合类型」——这是平台假设，不是内容差异。
+  // 放在这里而不是各调用点：这是读源码文本的唯一底层入口，新检查不会再重犯。
+  return readFileSync(abs, 'utf-8').replace(/\r\n/g, '\n')
 }
 
 function lineOf(source: string, offset: number): number {
@@ -296,7 +301,11 @@ export function runChecks(mutate?: (view: ManifestView) => void): Report {
   const warnings: string[] = []
   const fail = (check: string, message: string): void => { failures.push({ check, message }) }
 
-  const readSrc = (rel: string): string => view.sourceOverrides[rel] ?? readRepoFile(rel)
+  // overrides 走同一条归一化口径：测试注入的文本必须与真实文件同样处理，否则
+  // 「归一化是否生效」只能靠 Windows CI 才能验出来（本修复的缺陷正是只在 win
+  // runner 上暴露）。两处都归一化是刻意的——readRepoFile 管真实路径，这里管注入。
+  const readSrc = (rel: string): string =>
+    (view.sourceOverrides[rel] ?? readRepoFile(rel)).replace(/\r\n/g, '\n')
   const volatileSrc = readSrc(VOLATILE)
   const engineSrc = readSrc(ENGINE)
   const pressureSrc = readSrc(PRESSURE)
@@ -338,7 +347,7 @@ export function runChecks(mutate?: (view: ManifestView) => void): Report {
       fail('V2', `${s.id}：锚点文件不存在 ${s.anchor.file}`)
       continue
     }
-    const src = readFileSync(abs, 'utf-8')
+    const src = readRepoFile(s.anchor.file)
     if (!src.includes(s.anchor.symbol)) {
       fail('V2', `${s.id}：${s.anchor.file} 中找不到符号 ${JSON.stringify(s.anchor.symbol)}`)
       continue

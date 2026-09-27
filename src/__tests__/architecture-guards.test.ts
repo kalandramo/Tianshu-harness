@@ -14,6 +14,7 @@ import { join, relative, sep } from 'node:path'
 import { MAX_LINES_BASELINE, MAX_LINES_REDLINE, countPhysicalLines } from '../agent/structure-gate.js'
 
 const SRC_ROOT = join(process.cwd(), 'src')
+const SCRIPTS_ROOT = join(process.cwd(), 'scripts')
 
 /**
  * POSIX 形式路径——所有比较与展示都走它。
@@ -34,6 +35,21 @@ function collectTsFiles(dir: string, results: string[] = []): string[] {
     if (statSync(full).isDirectory()) {
       collectTsFiles(full, results)
     } else if (entry.endsWith('.ts') && !entry.endsWith('.d.ts')) {
+      results.push(full)
+    }
+  }
+  return results
+}
+
+/** 同 collectTsFiles，但收 `.js` / `.mjs`——scripts/ 下多为脚本（构建、运维、验收），
+ *  只收 .ts 会整片漏掉。spawn 守卫用它把 scripts/ 纳入语料：issue #103 的遗漏正因
+ *  扫描根只有 src/，让 scripts/ 的调用点在无控制台宿主（mintty / Tauri GUI）下持续闪窗。 */
+function collectScriptFiles(dir: string, results: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry)
+    if (statSync(full).isDirectory()) {
+      collectScriptFiles(full, results)
+    } else if (/\.(ts|js|mjs)$/.test(entry) && !entry.endsWith('.d.ts')) {
       results.push(full)
     }
   }
@@ -180,7 +196,14 @@ export function scanSpawnCallSites(content: string, aliases: readonly string[] =
     if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return
     if (trimmed.includes('import ')) return
     if (!callRe.test(trimmed)) return
-    if (METHOD_SIG_RE.test(lines.slice(i, Math.min(i + 3, lines.length)).join(' '))) return
+    // ③ 窗口内先剔除控制流语句头：`} catch (err: any) {` 会被方法签名正则误命中
+    //    （`(` + 标识符 + `:` 形态），让 try 块里紧随其后的真实调用整条被跳过——
+    //    实测 scripts/test-incremental.ts 的第三处调用点因此漏检。接口方法定义
+    //    （守卫要排除的东西）不会以 catch/if/for/while/switch 开头，剔除不伤原意。
+    const sigWindow = lines
+      .slice(i, Math.min(i + 3, lines.length))
+      .filter(l => !/^\s*\}?\s*(?:catch|if|for|while|switch)\b/.test(l))
+    if (METHOD_SIG_RE.test(sigWindow.join(' '))) return
     const window = lines.slice(Math.max(0, i - 10), Math.min(i + 10, lines.length)).join('\n')
     sites.push({ line: i + 1, content: trimmed, hasWindowsHide: /windowsHide\s*:\s*true/.test(window) })
   })
@@ -188,6 +211,8 @@ export function scanSpawnCallSites(content: string, aliases: readonly string[] =
 }
 
 const allSrcFiles = collectTsFiles(SRC_ROOT)
+/** spawn 守卫的第二份语料：scripts/ 下的 .ts/.js/.mjs（理由见 collectScriptFiles 的注释）。 */
+const allScriptFiles = collectScriptFiles(SCRIPTS_ROOT)
 
 // —— max-lines 棘轮 ——
 // 基线表与红线值住在 src/agent/structure-gate.ts（deliver_task 的 YELLOW
@@ -245,7 +270,9 @@ describe('architecture guards', () => {
     // 登记标准严格——跨平台命令（node/git/npm/where/reg/taskkill/soffice）
     // 一律不豁免，新增调用点自己带 windowsHide，而不是往这里加名字。
     const PLATFORM_SPECIFIC = ['src/pro/computer-use/macos-driver.ts']
-    const guardFiles = allSrcFiles.filter(f => {
+    // 语料 = src/ + scripts/：scripts/ 此前从未被扫过（issue #103 的遗漏），
+    // 而安装/构建链与开发脚本同样在有 GUI 无控制台的宿主上跑（npm install / 构建）。
+    const guardFiles = [...allSrcFiles, ...allScriptFiles].filter(f => {
       const p = toPosix(f)
       if (p.includes('/__tests__/')) return false
       return !PLATFORM_SPECIFIC.some(x => p.endsWith(x))
@@ -272,7 +299,7 @@ describe('architecture guards', () => {
       for (const site of scanSpawnCallSites(content, aliases)) {
         callSites++
         if (!site.hasWindowsHide) {
-          violations.push({ file: toPosix(relative(SRC_ROOT, file)), line: site.line, content: site.content })
+          violations.push({ file: toPosix(relative(process.cwd(), file)), line: site.line, content: site.content })
         }
       }
     }
@@ -352,6 +379,19 @@ describe('architecture guards', () => {
     const okSites = scanSpawnCallSites(okSource, collectSpawnAliases(okSource))
     assert.equal(okSites.length, 1, '注释行不得计入调用点')
     assert.equal(okSites[0]?.hasWindowsHide, true, '带 windowsHide 的调用点不应报违例')
+    // 去噪规则 ③ 的假阴性回归：调用点后紧跟 `} catch (err: any) {` 时，catch 的参数
+    // 曾被方法签名正则误命中，整条调用点被跳过——scripts/test-incremental.ts 的第三处
+    // 调用点实测漏报（守卫只报了同文件另外两处）。剔除控制流语句头后必须重新可见。
+    const catchAfter = [
+      `try {`,
+      `  ${call('execSync', "{ encoding: 'utf-8', cwd: CWD }")}`,
+      `} catch (err: any) {`,
+      `  console.error(err)`,
+      `}`,
+    ].join('\n')
+    const catchSites = scanSpawnCallSites(catchAfter)
+    assert.equal(catchSites.length, 1, 'catch 参数不得让前置调用点被跳过（去噪规则 ③ 假阴性）')
+    assert.equal(catchSites[0]?.hasWindowsHide, false, '该调用点缺 windowsHide 应报违例')
     // 别名声明本身不是调用（跨文件导出场景下，库文件只有声明）。
     const libSource = [cpImport, utilImport, `export const sharedExecP = promisify(execFile)`].join('\n')
     assert.equal(scanSpawnCallSites(libSource, collectSpawnAliases(libSource)).length, 0, '别名声明不是调用点')

@@ -31,6 +31,26 @@ if ($NodeMajor -lt 24) {
   Die "Node.js 版本过低（$(node -v)，需要 >= 24）。请升级后重跑。"
 }
 
+# 1.6 npm 全局目录可写性预检。
+#     Node 若由系统级安装包落在受保护位置（如 Program Files），普通用户
+#     npm install -g 会失败（EACCES/EPERM）。提前给出结论与修法，而不是把它
+#     误诊成网络问题。必须排在旧包迁移之前——那一步的 npm uninstall -g 同样要写全局目录。
+$NpmPrefix = (& npm prefix -g 2>$null | Select-Object -First 1)
+if ($LASTEXITCODE -eq 0 -and $NpmPrefix) {
+  $ProbeDir = Join-Path $NpmPrefix "lib\node_modules"
+  if (-not (Test-Path $ProbeDir)) { $ProbeDir = $NpmPrefix }
+  $Writable = $false
+  try {
+    $ProbeFile = Join-Path $ProbeDir (".tianshu-wtest-" + [System.Guid]::NewGuid().ToString("N"))
+    [System.IO.File]::WriteAllText($ProbeFile, "")
+    Remove-Item $ProbeFile -Force -ErrorAction SilentlyContinue
+    $Writable = $true
+  } catch { $Writable = $false }
+  if (-not $Writable) {
+    Die "npm 全局目录不可写：$ProbeDir —— npm install -g 会因权限不足失败。修法：改用用户级 prefix「npm config set prefix `"$env:APPDATA\npm`"」后重开终端；或改用 nvm-windows / fnm / volta 安装 Node。详见 docs/guides/troubleshooting.md 第 12 节。"
+  }
+}
+
 # 2. 改名迁移：旧包 tianshu-tui 若仍全局安装，它的 rivet bin 链接会让
 #    npm install -g tianshu-harness 直接 EEXIST——先卸旧包装新包。
 npm ls -g --depth=0 tianshu-tui 2>$null | Out-Null

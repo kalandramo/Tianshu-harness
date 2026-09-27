@@ -19,7 +19,7 @@ import { extractClaimsFromToolResult } from '../context/claim-extractor.js'
 import { appendProjectMemory, compactProjectMemory } from '../context/project-memory-writer.js'
 import { detectConflicts } from '../context/conflict-detect.js'
 import { createAntibodyProposal } from '../context/antibody.js'
-import { touchActivity } from './stall-observer.js'
+import { touchActivity, setActivityPhase } from './stall-observer.js'
 import { buildImportGraphAsync, invalidateFile } from './import-graph.js'
 import { generateImpactHint } from './impact-hint.js'
 import { analyzeImpact } from '../repo/meridian-impact.js'
@@ -27,6 +27,7 @@ import { shouldRunDiagnostics, filterDiagnosticsForEdit } from '../lsp/client.js
 import type { LspManager } from '../lsp/manager.js'
 import { startTraceEvent, finishTraceEvent, fingerprintToolCall, fingerprintToolClass, recordToolFingerprint, recordTraceEvent, offendingFingerprints, getDoomLoopThresholds } from './trace-store.js'
 import { summarizeRepairTelemetry } from './repair-pipeline.js'
+import { extractErrorHead, generateToolSummary } from './tool-summary.js'
 import type { InterventionLevel } from './prediction-error.js'
 import { assessToolRisk, CONFIDENCE_THRESHOLDS, hasOutOfWorkspaceWriteTarget, isDestructiveGitAction, isSafeWriteOnly, requiresBashWriteApproval, requiresUnconditionalApproval } from './approval-risk.js'
 import type { Sensorium } from './sensorium.js'
@@ -209,7 +210,7 @@ async function emitToolResultTrace(input: {
   id: string
   name: string
   isError: boolean | undefined
-  contentLen: number
+  contentLen: number; errorKind?: string // errorKind = 结构化失败分类（trace 归因用）
   source: 'pipeline' | 'bridge' | 'tui'
 }): Promise<void> {
   try {
@@ -223,7 +224,7 @@ async function emitToolResultTrace(input: {
       name: input.name,
       isError: input.isError,
       contentLen: input.contentLen,
-      source: input.source,
+      source: input.source, errorKind: input.errorKind,
     })
     await appendFile(join(sessionDir, 'tool-result-trace.jsonl'), `${line}\n`, 'utf8')
   } catch {
@@ -628,76 +629,6 @@ async function artifactIntercept(
  }
 }
 
-/** Extract the most diagnostic lines from error output (max ~600 chars). */
-function extractErrorHead(content: string): string {
-  const lines = content.split('\n')
-  // Prioritize lines with error/fail keywords — use word boundaries to avoid matching identifiers like errorHandler
-  const errorLines = lines.filter(l => /\b(?:error|Error|FAIL|AssertionError|TypeError|ReferenceError)\b|expect\(/.test(l))
-  if (errorLines.length > 0) {
-    return errorLines.slice(0, 8).map(l => l.trim().slice(0, 120)).join('\n')
- }
-  // Fallback: last 8 lines (often contain the summary)
-  return lines.slice(-8).map(l => l.trim().slice(0, 120)).join('\n')
-}
-
-function generateToolSummary(content: string, toolName: string, input: Record<string, unknown>): string {
-  const lines = content.split('\n')
-  const lineCount = lines.length
-  const charCount = content.length
-
-  switch (toolName) {
-    case 'run_tests': {
-      // Extract test summary from content
-      const testLine = lines.find(l => /tests?\s*(?:pass|passed|fail|failed)|total/i.test(l))
-        ?? lines.find(l => /\d+\s+pass/i.test(l))
-      const errorLines = lines.filter(l => /error|Error|FAIL/i.test(l)).slice(0, 2)
-      const parts = [`[run_tests] ${lineCount} lines.`]
-      if (testLine) parts.push(testLine.trim())
-      if (errorLines.length > 0) parts.push(`Errors: ${errorLines.map(l => l.trim().slice(0, 60)).join('; ')}`)
-      return parts.join(' ')
-   }
-    case 'diff': {
-      const files = lines.filter(l => l.startsWith('diff --git')).map(l => {
-        const m = l.match(/b\/(.+)$/)
-        return m ? m[1] : ''
-     }).filter(Boolean)
-      return `[diff] ${files.length} files changed, ${lineCount} lines. Files: ${files.slice(0, 5).join(', ')}${files.length > 5 ? ` (+${files.length - 5})` : ''}`
-   }
-    case 'glob': {
-      const matches = lines.filter(l => l.trim())
-      const pattern = typeof input.pattern === 'string' ? input.pattern : '?'
-      return `[glob "${pattern}"] ${matches.length} files found. First: ${matches.slice(0, 3).join(', ')}${matches.length > 3 ? ` (+${matches.length - 3})` : ''}`
-   }
-    case 'web_fetch': {
-      const url = typeof input.url === 'string' ? input.url : '?'
-      return `[web_fetch ${url}] ${charCount} chars, ${lineCount} lines fetched.`
-   }
-    case 'repo_map': {
-      return `[repo_map] ${lineCount} lines. ${lines.find(l => /\d+ files/.test(l))?.trim() ?? `${lineCount} entries`}`
-   }
-    case 'inspect_project': {
-      return `[inspect_project] ${lineCount} lines of project analysis.`
-   }
-    case 'bash': {
-      const cmd = typeof input.command === 'string' ? input.command.slice(0, 80) : '?'
-      // Detect test/typecheck output
-      if (/\b(tsc|typecheck|type-check)\b/.test(cmd)) {
-        const errorCount = lines.filter(l => /error TS\d+/.test(l)).length
-        return `[bash typecheck] ${errorCount} errors, ${lineCount} lines. cmd: ${cmd}`
-     }
-      if (/\b(test|jest|vitest|mocha|pytest)\b/.test(cmd)) {
-        const passLine = lines.find(l => /pass|fail|tests?\s+\d+/i.test(l))?.trim().slice(0, 80) ?? ''
-        return `[bash test] ${lineCount} lines. ${passLine} cmd: ${cmd}`
-     }
-      return `[bash] ${charCount} chars, ${lineCount} lines. cmd: ${cmd}`
-   }
-    default: {
-      // Generic: first meaningful line + stats
-      const firstLine = lines.find(l => l.trim().length > 10)?.trim().slice(0, 80) ?? ''
-      return `[${toolName}] ${charCount} chars, ${lineCount} lines. ${firstLine}`
-   }
- }
-}
 
 /**
  * Best-effort HEAD probe for the deliver_task abort path. Never throws;
@@ -1487,6 +1418,9 @@ async function executeToolUseInner(
       input: tu.input,
       turn,
       execute: async () => {
+        setActivityPhase(activityKey, 'saving', Date.now() + 30_000)
+        await callbacks.beforeToolExecute?.(tu.id, tu.name, tu.input)
+        deps.abortSignal?.throwIfAborted()
         // 无进展哨兵打点：工具执行起止（CLI/server 共用 agent 内核）。start
         // 后无 end = 卡在工具内（stall-observer 90s 后指认）；end 后无下一
         // start = 卡在回合处理。finally 保证 end 在成功/失败/超时都触达。
@@ -1499,6 +1433,7 @@ async function executeToolUseInner(
           // (smaller) cap; serving cached content here would re-introduce the
           // truncation regression. fs.readFile + OS page cache is fast enough.
           const toolTimeout = toolDef?.timeoutMs?.(params) ?? DEFAULT_TOOL_TIMEOUT_MS
+          setActivityPhase(activityKey, 'tool', Date.now() + toolTimeout)
           // P0/H1: compose a per-tool timeout AbortController with the loop signal,
           // so a tool-level timeout cascades an abort into the underlying op
           // (child proc / fetch) instead of merely rejecting the wrapper Promise.
@@ -1535,6 +1470,7 @@ async function executeToolUseInner(
           rawToolResult = r
           return { content: r.content, isError: r.isError }
         } finally {
+          setActivityPhase(activityKey, 'running')
           touchActivity(activityKey, `tool:${tu.name}:end`)
         }
      },
@@ -1759,7 +1695,7 @@ async function executeToolUseInner(
     // commits to scrollback. Force false so terminal results render.
     // DEBUG: unconditional trace for TUI rendering-loss investigation.
     // Log file: ~/.rivet/sessions/<project-slug>/<sessionId>/tool-result-trace.jsonl
-    void emitToolResultTrace({ cwd: deps.cwd, sessionId: deps.sessionId, id: tu.id, name: tu.name, isError: harnessResult.isError, contentLen: finalContent.length, source: 'pipeline' })
+    void emitToolResultTrace({ cwd: deps.cwd, sessionId: deps.sessionId, id: tu.id, name: tu.name, isError: harnessResult.isError, contentLen: finalContent.length, source: 'pipeline', errorKind: rawToolResult?.errorKind ?? harnessResult.errorClass })
     callbacks.onToolResult(tu.id, tu.name, finalContent, harnessResult.isError ?? false, rawToolResult?.rawPath, rawToolResult?.uiContent)
 
     deps.recordToolHistory(tu.name, tu.input, harnessResult.isError, harnessResult.content, rawToolResult?.errorClass, rawToolResult?.errorKind)
@@ -2278,4 +2214,3 @@ function extractGrepMatchPaths(grepOutput: string, cwd: string): string[] {
 
   return paths
 }
-

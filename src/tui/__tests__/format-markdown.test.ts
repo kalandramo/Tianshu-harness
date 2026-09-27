@@ -222,3 +222,56 @@ describe('formatMarkdown', () => {
     assert.ok(lastLine.replace(/\x1b\[0?m/g, '').includes('\x1b['), '行内代码高亮应保留')
   })
 })
+
+// ── 结构感（2026-09-26）：块留白 + 有序列表序号 ──────────────────────
+// 用户反馈「分点挤在一起、没有结构」。三条根因：① hasMarkdown 不认编号列表
+// （^\d+\. ）→ 编号列表降级走纯文本快速路径，连"块"概念都不存在；② 块之间零
+// 留白；③ 列表项之间零留白。终端无字号能力，「小标题大一号」只能由字重/符号/
+// 留白补偿——本组锁定留白与序号这两条可测的。
+describe('结构感：块留白与有序列表（2026-09-26）', () => {
+  it('hasMarkdown 识别编号列表（否则永远走纯文本路径）', () => {
+    assert.ok(hasMarkdown('1. 做了什么'), '编号列表必须进 markdown 解析')
+    assert.ok(hasMarkdown('   3. 缩进项'), '缩进编号项同样识别')
+    assert.equal(hasMarkdown('第一行\n第二行'), false, '无标记的普通文本不受影响')
+  })
+
+  it('编号列表保留序号，不退化成菱形符号', () => {
+    const plain = formatMarkdown({ text: '1. alpha\n2. beta', columns: 80 }, theme).map(stripAnsi)
+    assert.ok(plain.some(l => /^1\.\s*alpha/.test(l.trim())), `序号 1. 在场：${JSON.stringify(plain)}`)
+    assert.ok(plain.some(l => /^2\.\s*beta/.test(l.trim())), '序号 2. 在场')
+    assert.ok(!plain.some(l => l.includes('◇')), '有序列表不该出现菱形符号')
+  })
+
+  it('无序列表仍用菱形符号', () => {
+    const plain = formatMarkdown({ text: '- alpha\n- beta', columns: 80 }, theme).map(stripAnsi)
+    assert.ok(plain.some(l => l.includes('◇')), '无序列表保持 ◇')
+  })
+
+  it('列表项之间留白——分开每个分点', () => {
+    const plain = formatMarkdown({ text: '1. alpha\n2. beta', columns: 80 }, theme).map(stripAnsi)
+    const i1 = plain.findIndex(l => l.includes('alpha'))
+    const i2 = plain.findIndex(l => l.includes('beta'))
+    assert.ok(i2 - i1 >= 2, `项间应有空行，实际行距 ${i2 - i1}：${JSON.stringify(plain)}`)
+  })
+
+  it('块之间留白——标题/段落/列表互不粘连', () => {
+    const plain = formatMarkdown({ text: '## 小标题\n\n正文一句\n\n- 项', columns: 80 }, theme).map(stripAnsi)
+    const h = plain.findIndex(l => l.includes('小标题'))
+    const p = plain.findIndex(l => l.includes('正文一句'))
+    const li = plain.findIndex(l => l.includes('项'))
+    assert.ok(p - h >= 2, `标题与正文之间留白：${JSON.stringify(plain)}`)
+    assert.ok(li - p >= 2, `正文与列表之间留白：${JSON.stringify(plain)}`)
+  })
+
+  it('纯文本路径保持紧凑（工具/普通文本不被撑开）', () => {
+    const lines = formatMarkdown({ text: 'plain a\nplain b', columns: 80 }, theme)
+    assert.equal(lines.length, 2, '无 markdown 标记的文本不插空行')
+  })
+
+  it('代码块内部结构不被改写', () => {
+    const plain = formatMarkdown({ text: '```ts\nconst a = 1\n\nconst b = 2\n```', columns: 80 }, theme).map(stripAnsi)
+    const ia = plain.findIndex(l => l.includes('const a'))
+    const ib = plain.findIndex(l => l.includes('const b'))
+    assert.ok(ia >= 0 && ib > ia, '代码块内保留原有换行结构')
+  })
+})

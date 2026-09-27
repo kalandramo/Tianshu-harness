@@ -47,6 +47,36 @@ export const WRITE_TOOL_NAMES = new Set([
   'apply_patch',
 ])
 
+/**
+ * 可安全重跑的工具白名单（**判据是白名单，不是黑名单**）。
+ *
+ * 用途：恢复期「已发出但结果未知」的工具要告诉模型能不能重放。反向枚举（「哪些
+ * 工具会写文件」）永远漏——bash / git / MCP 发送类工具都不是文件编辑工具，却各有
+ * 副作用，漏掉一个就是诱导重复执行外部操作（发消息、推分支、跑迁移）。
+ * 白名单漏一个的代价只是提示保守一点。
+ *
+ * 收录口径：只读本地文件、或只读本地索引 / 查询，且不改变任何外部状态。
+ * 故意**不含** web_fetch / web_crawl 一类网络读取（可能触发非幂等的远端副作用与
+ * 限流）、也不含 todo / memory 这类会写自身状态的工具。
+ */
+export const READ_ONLY_TOOL_NAMES = new Set([
+  'read_file',
+  'read_section',
+  'grep',
+  'glob',
+  'ast_grep',
+  'semantic_search',
+  'repo_graph',
+  'repo_map',
+  'related_tests',
+  'file_info',
+])
+
+/** 结果未知时是否可安全重跑：只有白名单内的只读工具可以，其余一律按有副作用处理。 */
+export function isSafeToRerun(toolName: string): boolean {
+  return READ_ONLY_TOOL_NAMES.has(toolName)
+}
+
 /** 四编辑工具（不含 apply_patch，其语义不同） */
 const EDIT_TOOLS_WITH_CONTENT = new Set([
   'edit_file',

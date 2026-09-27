@@ -20,6 +20,7 @@ describe('backfillModelFromPreset', () => {
     const stale: ModelConfig = { id: 'MiniMax-M3', contextWindow: 1_000_000, maxTokens: 131072 }
     const fixed = backfillModelFromPreset('minimax', stale)
     assert.equal(fixed.supportsVision, true)
+    assert.equal(fixed.supportsVideo, true, 'video declaration backfills too')
     assert.equal(fixed.tier, 'strong')
     assert.ok(fixed.pricing, 'pricing comes back too')
   })
@@ -44,6 +45,7 @@ describe('backfillModelFromPreset', () => {
       contextWindow: 1_000_000,
       maxTokens: 64000,
       supportsVision: false,
+      supportsVideo: false,
       tier: 'cheap',
       pricing: { input: 99 },
       description: '用户自己的描述',
@@ -51,6 +53,7 @@ describe('backfillModelFromPreset', () => {
     const out = backfillModelFromPreset('minimax', stored)
     assert.equal(out, stored, 'nothing to fill — same object back')
     assert.equal(out.supportsVision, false)
+    assert.equal(out.supportsVideo, false)
     assert.equal(out.tier, 'cheap')
     assert.equal(out.description, '用户自己的描述')
   })
@@ -96,7 +99,7 @@ describe('backfillModelFromPreset', () => {
   })
 
   it('only touches fields on the allowlist', () => {
-    assert.deepEqual([...BACKFILLED_MODEL_FIELDS], ['supportsVision', 'tier', 'pricing', 'reasoningEffort', 'description'])
+    assert.deepEqual([...BACKFILLED_MODEL_FIELDS], ['supportsVision', 'supportsVideo', 'tier', 'pricing', 'reasoningEffort', 'description'])
   })
 })
 
@@ -113,6 +116,7 @@ describe('backfillProviderFromPreset', () => {
     const out = backfillProviderFromPreset('minimax', provider)
     assert.equal(out.apiKey, 'sk-user')
     assert.equal(out.models[0]?.supportsVision, true)
+    assert.equal(out.models[0]?.supportsVideo, true)
     assert.equal(out.models[1]?.supportsVision, undefined, 'unknown models stay untouched')
     assert.equal(out.models.length, 2, 'preset-only models are never injected')
   })

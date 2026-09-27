@@ -1,14 +1,21 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  touchActivity,
+  touchActivity as rawTouch,
+  beginRun, withActivityRun, finishRun,
   getLastActivity,
-  markIdle,
+  markIdle as rawIdle,
   clearActivity,
   installStallObserver,
   _resetStallObserverForTest,
   type StallObserverHandle,
 } from '../stall-observer.js'
+
+const touchActivity = (key: string, source: string) => {
+  if (!getLastActivity(key).generation) beginRun(key, key)
+  withActivityRun(key, key, () => rawTouch(key, source))
+}
+const markIdle = (key: string) => withActivityRun(key, key, () => rawIdle(key))
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -78,7 +85,7 @@ test('getLastActivity returns the most recent touch', () => {
   assert.ok(Math.abs(Date.now() - a.ts) < 1000)
 })
 
-test('markIdle suppresses warnings while idle; a fresh touch resumes monitoring', async () => {
+test('late activity cannot reactivate a completed run', async () => {
   _resetStallObserverForTest()
   const warned: string[] = []
   const handle = installStallObserver({ intervalMs: 10, thresholdMs: 40, warn: (m) => warned.push(m) })
@@ -88,7 +95,11 @@ test('markIdle suppresses warnings while idle; a fresh touch resumes monitoring'
     await sleep(120) // well past the threshold, but idle must NOT warn
     assert.equal(warned.length, 0, `idle session must not warn: ${warned}`)
 
-    touchActivity('session-a', 'evt:user-message') // new turn activity resumes monitoring
+    touchActivity('session-a', 'evt:hook_result')
+    await sleep(70)
+    assert.equal(warned.length, 0, 'late hook must not reactivate monitoring')
+    beginRun('session-a', 'session-a')
+    touchActivity('session-a', 'evt:user-message')
     await sleep(120)
     assert.equal(warned.length, 1, 'activity after idle must be monitored again')
     assert.ok(warned[0]!.includes('session-a'))
@@ -114,4 +125,17 @@ test('clearActivity removes a finished session so it never warns again', async (
   } finally {
     handle.dispose()
   }
+})
+
+ test('an old generation cannot refresh or finish a new run', () => {
+  _resetStallObserverForTest()
+  beginRun('s', 'old')
+  beginRun('s', 'new')
+  withActivityRun('s', 'old', () => { rawTouch('s', 'late'); rawIdle('s') })
+  assert.equal(getLastActivity('s').source, 'run:start')
+  assert.equal(getLastActivity('s').idle, false)
+  finishRun('s', 'new')
+  rawTouch('s', 'unscoped hook')
+  assert.equal(getLastActivity('s').idle, true)
+  _resetStallObserverForTest()
 })

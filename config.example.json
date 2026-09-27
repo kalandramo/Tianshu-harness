@@ -52,10 +52,5 @@
     "autoFloor": 500000,
     "provider": "deepseek",
     "model": "deepseek-v4-flash"
-  },
-  "cache": {
-    "enabled": true,
-    "minSystemTokens": 256,
-    "showHitRate": true
   }
 }

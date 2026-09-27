@@ -84,6 +84,86 @@ describe('probeForTestKey', () => {
     assert.equal(result.status, 404)
   })
 
+  // ── issue #272：无 /models 端点（火山方舟 Agent Plan）必须能验证 Key ─────────
+  function sseResponse(): Response {
+    return new Response(
+      `data: ${JSON.stringify({ choices: [{ delta: { content: 'hi' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    )
+  }
+
+  it('models-unavailable 端点带模型 id 时改走最小补全，ok 反映补全结果', async () => {
+    const urls: string[] = []
+    global.fetch = mock.fn(async (url: string | URL | Request) => {
+      urls.push(String(url))
+      return sseResponse()
+    }) as typeof fetch
+
+    const result = await probeForTestKey({
+      baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+      apiKey: 'sk-plan',
+      providerName: 'volc-plan',
+      probeModel: 'ark-code-latest',
+    })
+    assert.equal(result.ok, true)
+    assert.equal(result.modelsUnavailable, true, '标明端点没有模型列表（前端显示专用指引）')
+    assert.deepEqual(result.models, [])
+    assert.equal(result.probedModel, 'ark-code-latest')
+    assert.equal(urls.some(u => u.includes('/models')), false, `不得请求 /models：${urls.join(', ')}`)
+    assert.ok(urls.some(u => u.endsWith('/chat/completions')), '必须向补全端点发请求')
+  })
+
+  it('models-unavailable 端点没有模型 id 时返回 models-unavailable（不拿 404 冒充 baseUrl 错）', async () => {
+    global.fetch = mock.fn(async () => {
+      throw new Error('should not fetch')
+    }) as typeof fetch
+
+    const result = await probeForTestKey({
+      baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+      apiKey: 'sk-plan',
+      providerName: 'volc-plan',
+    })
+    assert.equal(result.ok, false)
+    assert.equal(result.error, 'models-unavailable')
+    assert.equal((global.fetch as unknown as ReturnType<typeof mock.fn>).mock.calls.length, 0)
+  })
+
+  it('未知端点 /models 404 且带模型 id：回落最小补全，成功即连接有效', async () => {
+    const urls: string[] = []
+    global.fetch = mock.fn(async (url: string | URL | Request) => {
+      const u = String(url)
+      urls.push(u)
+      return u.endsWith('/models') ? fetchResponse(404, { error: 'not found' }) : sseResponse()
+    }) as typeof fetch
+
+    const result = await probeForTestKey({
+      baseUrl: 'https://relay.example.com/v1',
+      apiKey: 'sk-x',
+      providerName: 'my-relay',
+      probeModel: 'some-model',
+    })
+    assert.equal(result.ok, true)
+    assert.equal(result.modelsUnavailable, true)
+    assert.equal(result.probedModel, 'some-model')
+    assert.deepEqual(urls.map(u => u.replace('https://relay.example.com/v1', '')), ['/models', '/chat/completions'])
+  })
+
+  it('回落补全失败时返回补全层的结构化错误（auth-failed），不误报 404 baseUrl', async () => {
+    global.fetch = mock.fn(async (url: string | URL | Request) => {
+      return String(url).endsWith('/models') ? fetchResponse(404, { error: 'not found' }) : fetchResponse(401, { error: 'invalid key' })
+    }) as typeof fetch
+
+    const result = await probeForTestKey({
+      baseUrl: 'https://relay.example.com/v1',
+      apiKey: 'bad',
+      providerName: 'my-relay',
+      probeModel: 'some-model',
+    })
+    assert.equal(result.ok, false)
+    assert.equal(result.error, 'auth-failed')
+    assert.equal(result.status, 401)
+  })
+
   it('classifies a 5xx with code http-500', async () => {
     global.fetch = mock.fn(async () => fetchResponse(500, { error: 'boom' })) as typeof fetch
     const result = await probeForTestKey({ baseUrl: 'https://api.example.com/v1', apiKey: 'sk-x' })

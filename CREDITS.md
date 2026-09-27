@@ -86,6 +86,8 @@ contributions for this graph`；`including commit co-authors` 仅 GHES 版本成
 - #15 docs(readme): renumber sections to fix duplicate '### 3.' heading（CLOSED）
 - #13 Feat rivet shell completions（MERGED）
 - #12 feat(completions): add fish and Windows-shell completion scripts（CLOSED）
+- #283 fix(config): 删掉示例配置与四语 README 里 schema 不认的 cache 旋钮 + 键存在性守卫（issue #282）（CLOSED）
+- #281 fix(platform): 加密连接扫描探测的厂商清单不再被展示上限吞掉（issue #280）（CLOSED）
 
 ## @Wanming08
 
@@ -209,6 +211,8 @@ contributions for this graph`；`including commit co-authors` 仅 GHES 版本成
 - #67 fix(server): disk-evidence self-heal for apply_edit delegation stalls (#61)（CLOSED）
 - #53 chore: .gitignore 加 .env/.env.*/!.env.example 防护（安全：API key 永不进 git）（MERGED）
 - #52 feat: add Windows one-click installer for Tianshu desktop（CLOSED）
+- #270 fix(scripts): 安装/构建链的 spawn 补 windowsHide——消除无控制台宿主下的闪窗（OPEN）
+- #267 fix(scripts): 注入点申报表在 CRLF 检出下误报——windows-smoke job 长期红的根因（OPEN）
 
 ## @yq04
 
@@ -268,3 +272,27 @@ contributions for this graph`；`including commit co-authors` 仅 GHES 版本成
 - #81 fix(agent): 会话转录写入失败丢批、flush 竞态击穿落盘屏障（CLOSED）
 - #79 fix(worker): Unix 上 OOP worker 以 detached 拉起——让 killProcessTree 组杀真正生效（MERGED）
 - #78 fix(worker): OOP worker 结算后摘除 abort 监听——不再把运行闭包钉死在会话信号上（MERGED）
+
+## @elysia395
+
+署名：elysia395 <182482545+elysia395@users.noreply.github.com>
+
+- #271 docs: 补充 dsh-wallpaper-engine 上游署名与 MIT 声明（agent 自定义壁纸功能）（OPEN）
+
+## @YV3507
+
+署名：YV3507 <184193300+YV3507@users.noreply.github.com>
+
+- #271 dsh-wallpaper-engine 壁纸引擎渲染技术顾问——为「自定义壁纸与分区玻璃」的合成与材质设计提供指导（上游核心开发）
+
+## @yuxilao
+
+署名：yuxilao <50688264+yuxilao@users.noreply.github.com>
+
+- #271 dsh-wallpaper-engine 壁纸引擎渲染技术顾问——为「自定义壁纸与分区玻璃」的合成与材质设计提供指导（上游核心开发）
+
+## @oneincase
+
+署名：oneincase <57388318+oneincase@users.noreply.github.com>
+
+- #271 dsh-wallpaper-engine 壁纸引擎渲染技术顾问——为「自定义壁纸与分区玻璃」的合成与材质设计提供指导（上游核心开发）

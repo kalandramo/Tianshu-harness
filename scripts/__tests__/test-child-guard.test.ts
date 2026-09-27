@@ -110,3 +110,53 @@ test('挂起被看门狗收场时：报告已见进度与末帧片段（而非�
   assert.equal(r.seenChecks?.fail, 1, '已见 1 条失败')
   assert.match(r.tailExcerpt, /delta suite/, '末帧片段应含最后一条输出，用于定位卡在哪')
 })
+
+test('看门狗收场必须带走孙进程——祖父被杀时孙进程不能 reparent 到 init 继续跑', async () => {
+  // 线上形态（2026-09-24 实测）：scripts/__tests__/test-runner-flags.test.ts 会 spawn
+  // 一个「永不退出」的 fixture runner（故意持有 setInterval，模拟真挂死）。它是本
+  // runner 批次的**孙进程** —— 批次被看门狗/信号收场时只 kill 直接子进程，孙进程就
+  // reparent 到 init 永久存活：机器上实测攒下 21 个 PPID=1、存活 11 小时~3 天 7 小时
+  // 的孤儿（同为 `node … hang.fixture.mts`）。所以收场必须按**进程组**杀。
+  let grandchildPid = 0
+  try {
+    const r = await runGuardedChild({
+      args: [
+        '-e',
+        `
+          const { spawn } = require('node:child_process')
+          const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })
+          console.log('GRANDCHILD_PID=' + grandchild.pid)
+          setInterval(() => {}, 1000)
+        `,
+      ],
+      env: process.env,
+      idleMs: 1_500,
+      hardMs: 10_000,
+      forwardOutput: false,
+    })
+    assert.equal(r.killed, 'idle', '本用例的前提是看门狗收的尾')
+
+    const m = /GRANDCHILD_PID=(\d+)/.exec(r.tailExcerpt)
+    assert.ok(m, `末帧里应能读到孙进程 pid，实得：${r.tailExcerpt}`)
+    grandchildPid = Number(m[1])
+
+    // kill 是异步生效的，给一小段窗口再判定
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    let alive = true
+    try {
+      process.kill(grandchildPid, 0)
+    } catch {
+      alive = false
+    }
+    assert.equal(alive, false, '孙进程必须随批次一起被带走——留下来就是那个跑满一天的孤儿')
+  } finally {
+    // 兜底：断言失败（RED 阶段）时别让本用例自己制造一个孤儿
+    if (grandchildPid > 0) {
+      try {
+        process.kill(grandchildPid, 'SIGKILL')
+      } catch {
+        /* 已经不在了 */
+      }
+    }
+  }
+})

@@ -625,8 +625,14 @@ test('resumeRun 沿用原模型建 agent 并注入续跑提示（缓存亲和）
   assert.deepEqual(res, { ok: true, model: 'kimi-x', switched: false })
   assert.deepEqual(factoryModels, ['kimi-x'], 'agent 必须直接建在原模型上，而非默认模型')
   const { RESUME_PROMPT } = await import('../session-manager.js')
-  const userEvents = mgr.getEvents('crash', 0)!.events.filter((e) => e.type === 'user')
-  assert.equal(userEvents[userEvents.length - 1]!.data.text, RESUME_PROMPT, '续跑注入恢复提示而非空 prompt')
+  // PLAN §4：恢复不再追加伪造的用户 [续跑] 消息——提示落在 recovery_status，
+  // 用户消息导航里不应出现它。两边独立修了这处陈旧断言、结论一致，合并取更严格的
+  // 「点名提示本体不得出现在 user 事件里」，并保留「用户事件只有 seed 那条」。
+  const events = mgr.getEvents('crash', 0)!.events
+  const recovery = events.filter((e) => e.type === 'recovery_status')
+  assert.equal(recovery[recovery.length - 1]!.data.text, RESUME_PROMPT, '续跑注入恢复提示而非空 prompt')
+  assert.ok(!events.some((e) => e.type === 'user' && e.data.text === RESUME_PROMPT), '不得伪造用户 [续跑] 消息')
+  assert.equal(events.filter((e) => e.type === 'user').length, 1, '恢复路径不得追加伪造的 user 消息（只有 seed 里那条真实用户输入）')
 })
 
 test('resumeRun 识别 provider:modelId 记录（2026-09-08 假阴性回归）', async () => {

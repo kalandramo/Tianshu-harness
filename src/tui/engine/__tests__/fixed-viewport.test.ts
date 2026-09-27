@@ -11,13 +11,15 @@
  *  3. 空闲期与活动期同口径（高水位跨轮保留）——高度单调不缩，输入框不来回弹。
  *  4. 小终端（rows=10）预算收缩，live region 不超屏。
  *  5. liveMaxRowsFor 终端高度感知（min(28, rows-1)，下限 4）。
+ *  6. 半屏缓解阈值 <32：30 行窗口 cap=ceil(30/2)=15（峰值预留不吃掉半屏以上），
+ *     32 行窗口回到常规 cap 28。
  */
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { padDynamicRegion, type LiveRegionLine } from '../live-engine.js'
 import { liveMaxRowsFor } from '../app.js'
-import { makeApp } from './_harness.js'
+import { makeApp, stripAnsi } from './_harness.js'
 
 const L = (...texts: string[]): LiveRegionLine[] => texts.map(text => ({ text }))
 
@@ -206,6 +208,45 @@ test('小终端（rows=10）预算收缩，live region 不超屏', async () => {
     await flush()
     assert.ok(liveRows(app) <= 10, `live region 超屏: ${liveRows(app)} > 10`)
   }
+})
+
+test('30 行窗口：高水位压到半屏（cap=15）——峰值预留不吃掉半屏以上', async () => {
+  const { app } = makeApp({ cols: 80, rows: 30 })
+  const priv = app as unknown as {
+    getDynamicBudget: (chromeRows: number, dynamicRows: number) => number
+    renderLive: () => void
+    setPhase: (p: string) => void
+    agentBusy: boolean
+  }
+  priv.agentBusy = true
+  priv.setPhase('thinking')
+  // 一轮大峰值：动态 20 + chrome 6 = 26 > cap 15 → 压到 15，预算 = 15 − 6 = 9
+  assert.equal(priv.getDynamicBudget(6, 20), 9)
+  // 高水位被 cap 钳住：后续小内容不会突破 15
+  assert.equal(priv.getDynamicBudget(6, 2), 9)
+  priv.renderLive()
+  await flush()
+  assert.equal(liveRows(app), 15, `30 行窗口 live region 应恰好等于半屏 cap: ${liveRows(app)}`)
+})
+
+test('32 行窗口（阈值边界上沿）：回到常规 cap 28，不受半屏限制', () => {
+  const { app } = makeApp({ cols: 80, rows: 32 })
+  const priv = app as unknown as {
+    getDynamicBudget: (chromeRows: number, dynamicRows: number) => number
+    setPhase: (p: string) => void
+    agentBusy: boolean
+  }
+  priv.agentBusy = true
+  priv.setPhase('thinking')
+  assert.equal(priv.getDynamicBudget(6, 20), 20)
+})
+
+test('半屏 cap 不截掉审批状态行：rows=30 审批挂起时「等待审批」仍可见', async () => {
+  const { app, out } = makeApp({ cols: 80, rows: 30 })
+  void app.callbacks.onApprovalRequired!('1', 'read_file', { file_path: '/tmp/x' })
+  await flush()
+  const frame = stripAnsi(out.chunks.join(''))
+  assert.ok(frame.includes('等待审批 read_file'), '半屏 cap 下审批状态行不得被截掉')
 })
 
 /**

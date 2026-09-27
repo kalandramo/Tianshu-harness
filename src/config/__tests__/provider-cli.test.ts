@@ -67,6 +67,13 @@ describe('toModelDescriptors', () => {
     assert.deepEqual(notes, [])
   })
 
+  it('carries multimodal declarations (supportsVision / supportsVideo) from the alias table', () => {
+    const { models } = toModelDescriptors(matchModelIds(['k3']))
+    assert.equal(models[0]?.id, 'k3')
+    assert.equal(models[0]?.supportsVision, true)
+    assert.equal(models[0]?.supportsVideo, true, '视频声明必须随描述符回填（展示用）')
+  })
+
   it('emits bare skeletons + TODO notes for unknown ids', () => {
     const { models, notes } = toModelDescriptors(matchModelIds(['brand-new-model-9000']))
     assert.deepEqual(models, [{ id: 'brand-new-model-9000' }])

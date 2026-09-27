@@ -9,6 +9,21 @@ import { isUiFilePath, isVisualVerifyTool } from './hooks/render-verify-hook.js'
 import { POINTER_GUARD_ERROR_MARKER } from '../tools/pointer-guard.js'
 
 /**
+ * 预期失败的双豁免判据（抽成纯函数以便测试，也避免 recordToolHistory 里
+ * 两处条件各自漂移）：
+ * - 免疫豁免：环境缺失 / 设计性拒绝不该被放大成"agent 生病了"；
+ * - 收敛豁免：syntax_error（格式瞬错，下轮可修）与 refused（确定性拒绝，
+ *   换目标即可）不该计入 errorPenalty。
+ */
+export function isImmunityNeutralized(errorClass?: ToolErrorClass, errorKind?: FailureClass): boolean {
+  return errorClass === 'environment' || errorKind === 'refused'
+}
+
+export function isConvergenceTransient(errorKind?: FailureClass, result?: string): boolean {
+  return (result?.includes(POINTER_GUARD_ERROR_MARKER) ?? false) || errorKind === 'syntax_error' || errorKind === 'refused'
+}
+
+/**
  * Record tool execution history and trigger deferred post-tool processing.
  * Extracted from AgentLoop.recordToolHistory.
  */
@@ -25,7 +40,9 @@ export function recordToolHistory(
     // not competence failures. The immune system must not amplify them into
     // quarantine/doom, otherwise benign command-name differences make the agent
     // recoil. Visible status stays honest; only the immune amplifier is neutralised.
-    const immuneError = errorClass === 'environment' ? false : isError
+    // refused（设计性拒绝：fail-closed 允许名单/协议白名单）同理——工具按设计
+    // 拒绝执行，不该被免疫系统当成"agent 生病了"放大。
+    const immuneError = isImmunityNeutralized(errorClass, errorKind) ? false : isError
     const target = toolTargetFromInput(name, input ?? {})
     const bashActivity = name === 'bash' && typeof input.command === 'string'
       ? classifyBashCommandActivity(input.command)
@@ -41,10 +58,8 @@ export function recordToolHistory(
     // syntax_error 走结构化 errorKind 管道（edit/apply-patch/hash-edit/write-file
     // 的结果对象自带）——不再按「已自动回滚」子串匹配：agent 在本仓库跑失败的
     // 测试套件时，断言文本里的同一子串会把真实失败误标为 transient。
-    const isTransientGuard = isError && (
-      result.includes(POINTER_GUARD_ERROR_MARKER) ||
-      errorKind === 'syntax_error'
-    )
+    // refused 同列：拒绝是确定性结论，模型换目标即可，不是收敛意义上反复失败。
+    const isTransientGuard = isError && isConvergenceTransient(errorKind, result)
     self.recentToolHistory.push({
       tool: name,
       target,

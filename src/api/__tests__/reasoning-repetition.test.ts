@@ -48,8 +48,13 @@ describe('DeepSeek streaming reasoning repetition', () => {
     assert.equal(result.blocks.length, 0)
     assert.equal(result.aborted.length, 1)
     assert.equal(result.cancelled, true)
-    assert.equal(classifyApiError(result.error).retryable, false)
-    assert.equal(classifyApiError(result.error).shouldReconnect, false)
+    // 2026-09-24 起：复读命中不再一次即终态——分类器放行**一次**纠正重试
+    // （丢掉退化推理 + 尾部纠正指令，见下一个 describe）；第二次仍命中才冒泡。
+    const classified = classifyApiError(result.error)
+    assert.equal(classified.retryable, true, '给一次纠正重试的机会')
+    assert.equal(classified.maxRetries, 1, '只给一次——纠正无效就别再无限重试')
+    assert.equal(classified.reasoningRepeatCorrect, true, '重试要走「丢退化推理 + 纠正」而不是纯重发')
+    assert.equal(classified.shouldReconnect, false)
     assert.match(errorRecoveryGuidance(result.error), /重复/)
   })
 
@@ -76,6 +81,30 @@ describe('DeepSeek streaming reasoning repetition', () => {
     assert.equal((await parse([{ reasoning_content: '好。\n'.repeat(12) }])).error, undefined)
     assert.equal((await parse([{ reasoning_content: '好。\n'.repeat(300) }], { provider: 'mimo' })).error, undefined)
     assert.equal((await parse([{ content: '好。\n'.repeat(300) }])).error, undefined)
+  })
+
+  // ── 阈值放宽（2026-09-24）──────────────────────────────────────────────
+  // 4.1 flash 线在长对话里会成段输出「重复短句」式推理（别的 agent 也遇到过），
+  // 那是这个模型的文风而非「卡死」，硬停等于把整轮工作丢掉。判据从
+  // 「≤4 个短句占 ≥90%」放宽到「≤3 个短句占 ≥95%」——下面两条钉住被放过的形态，
+  // 上面那两条钉住仍然要拦的形态（1 句与 3 句原地打转、EOF 残余帧）。
+
+  it('tolerates a rotating chant of four or more short phrases (no longer a stop signal)', async () => {
+    const cycle = '再看一下。\n马上就好。\n检查完毕。\n继续推进。\n'.repeat(80)
+    const result = await parse([{ reasoning_content: cycle }, { content: '完成' }])
+    assert.equal(result.error, undefined)
+    assert.equal(result.thinking, cycle, '整段推理原样保留，不被截断')
+  })
+
+  it('tolerates a three-phrase chant with a few novel short lines mixed in', async () => {
+    // 每 16 行夹一句新短句（8/128 ≈ 6%），覆盖率跌破 95% 即不再中止。
+    const line = (i: number) => (i % 16 === 0
+      ? `另外还有第 ${i} 点要确认。\n`
+      : ['再看一下。', '马上就好。', '检查完毕。'][i % 3] + '\n')
+    const text = Array.from({ length: 300 }, (_, i) => line(i)).join('')
+    const result = await parse([{ reasoning_content: text }, { content: '完成' }])
+    assert.equal(result.error, undefined)
+    assert.equal(result.thinking, text)
   })
 
   it('does not classify late reasoning after tool-call progress as a thinking-only loop', async () => {
@@ -117,20 +146,50 @@ describe('DeepSeek streaming reasoning repetition', () => {
     assert.equal(result.error, expected)
   })
 
-  it('does not retry or re-inject a degenerate reasoning prefix', async () => {
+  // 2026-09-24 改判（issue #260）：这条原本钉的是「命中即终态、一次都不重试」。
+  // 现在改成「**先纠正重试一次**，第二次仍命中才终态」——不变的那一半是
+  // 「绝不回放退化推理」（回放会强化循环），本条把它钉得更死了。
+  it('retries once with a corrective tail, and never re-injects the degenerate prefix', async () => {
     const original = globalThis.fetch
-    let attempts = 0
-    globalThis.fetch = async () => {
-      attempts++
+    const bodies: Array<Record<string, unknown>> = []
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>)
       return new Response(frame({ reasoning_content: '好。\n'.repeat(300) }) + 'data: [DONE]\n\n', {
         headers: { 'content-type': 'text/event-stream' },
       })
-    }
+    }) as unknown as typeof fetch
     try {
       const noop = () => {}
       const cb: StreamCallbacks = { onTextDelta: noop, onThinkingDelta: noop, onContentBlock: noop, onStopReason: noop, onError: noop }
       await assert.rejects(new OpenAIClient(config).stream({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 4096 }, cb), { name: 'ReasoningRepetitionError' })
-      assert.equal(attempts, 1)
+      assert.equal(bodies.length, 2, '第一次命中 + 恰好一次纠正重试；第二次仍命中即终态，不无限重试')
+      const second = JSON.stringify(bodies[1])
+      assert.match(second, /reasoning-repeat/, '重发必须带上纠正指令')
+      assert.doesNotMatch(second, /好。\\n/, '重发绝不能回放那段退化推理')
+    } finally { globalThis.fetch = original }
+  })
+
+  it('a corrective retry that comes back healthy keeps the turn alive', async () => {
+    const original = globalThis.fetch
+    let attempt = 0
+    globalThis.fetch = (async () => {
+      attempt++
+      const payload = attempt === 1
+        ? frame({ reasoning_content: '好。\n'.repeat(300) }) + 'data: [DONE]\n\n'
+        : frame({ reasoning_content: '换一条思路核对。\n' }) + frame({ content: '完成' }, 'stop') + 'data: [DONE]\n\n'
+      return new Response(payload, { headers: { 'content-type': 'text/event-stream' } })
+    }) as unknown as typeof fetch
+    try {
+      const text: string[] = []
+      await new OpenAIClient(config).stream(
+        { model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 4096 },
+        {
+          onTextDelta: (s) => text.push(s), onThinkingDelta: () => {}, onContentBlock: () => {},
+          onStopReason: () => {}, onError: () => {},
+        },
+      )
+      assert.equal(attempt, 2, '命中一次 → 纠正重发一次')
+      assert.equal(text.join(''), '完成', '纠正后这一轮照常产出，不再整轮丢掉')
     } finally { globalThis.fetch = original }
   })
 })

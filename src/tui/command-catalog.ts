@@ -68,6 +68,7 @@ export const COMMAND_CATALOG: readonly CommandMeta[] = [
   { name: '/mode', description: '查看或切换提示词模式（标准/详尽/摘要，影响输出详细度）' },
   { name: '/verify', description: '显示本会话所有改动的验证状态——提交前自检哪些验证通过/未跑' },
   { name: '/verbose', description: '开关详细工具输出（显示完整的工具调用参数与返回，排查问题用）' },
+  { name: '/new', description: '开新会话——重置上下文但不重启进程（项目记忆/配置/工作目录保留）。旧会话存档，/resume 可回访', tier: 'core' },
   { name: '/clear', description: '清屏（只清当前显示，不删会话历史）', tier: 'core' },
   { name: '/sessions', description: '列出所有历史会话——找历史/继续之前的工作', tier: 'core', hotkey: 'F8' },
   { name: '/resume', description: '继续一个历史会话（无参打开选择器；/sessions 看列表）', argsHint: '[id|序号]', tier: 'core' },

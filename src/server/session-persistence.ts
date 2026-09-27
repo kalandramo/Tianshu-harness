@@ -57,6 +57,43 @@ export class FileSessionPersistence implements SessionPersistenceAdapter {
    *  flush is one batched write() (not fsync); the threat model is process
    *  death, where page-cache contents survive. */
   private eventBuffers = new Map<string, BufferedLine[]>()
+  private writtenWatermarks = new Map<string, number>()
+
+  healthSnapshot(): { failedSessions: number; pendingEvents: number } {
+    return {
+      failedSessions: new Set([...this.eventChainFailures.keys(), ...this.recordChainFailures.keys()]).size,
+      pendingEvents: [...this.eventBuffers.values()].reduce((count, rows) => count + rows.length, 0),
+    }
+  }
+
+  /** A barrier confirms writes and fsync; a drained queue alone is not evidence. */
+  async flushThrough(sessionId: string, seq: number, signal?: AbortSignal): Promise<number> {
+    if (!Number.isSafeInteger(seq) || seq < 0) throw new Error('Invalid persistence watermark')
+    const deadline = AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])])
+    deadline.throwIfAborted()
+    this.kickWriteChain(sessionId)
+    const operation = async () => {
+      while ((this.writtenWatermarks.get(sessionId) ?? 0) < seq) {
+        deadline.throwIfAborted()
+        if (this.eventChainFailures.get(sessionId)?.permanent) throw new Error('Event persistence failed')
+        await new Promise(resolve => setTimeout(resolve, 10))
+      }
+      if (seq === 0) return 0
+      const file = await open(join(this.dir(sessionId), 'events.jsonl'), 'r+')
+      // Capture before sync: later writes must not borrow this acknowledgement.
+      const watermark = this.writtenWatermarks.get(sessionId) ?? 0
+      try { await file.sync() } finally { await file.close() }
+      deadline.throwIfAborted()
+      return watermark
+    }
+    let onAbort!: () => void
+    try {
+      return await Promise.race([operation(), new Promise<never>((_, reject) => {
+        onAbort = () => reject(deadline.reason)
+        deadline.addEventListener('abort', onAbort, { once: true })
+      })])
+    } finally { deadline.removeEventListener('abort', onAbort) }
+  }
   private flushTimer: ReturnType<typeof setTimeout> | null = null
   /** 每会话写失败状态（events 链）：短暂错误计数 + 永久停链位。 */
   private eventChainFailures = new Map<string, WriteFailureState>()
@@ -247,7 +284,10 @@ export class FileSessionPersistence implements SessionPersistenceAdapter {
     ) {
       this.kickWriteChain(sessionId)
     } else if (!this.flushTimer) {
-      this.flushTimer = setTimeout(() => this.flushAll(), FileSessionPersistence.FLUSH_INTERVAL_MS)
+      this.flushTimer = setTimeout(() => {
+        this.flushTimer = null
+        for (const id of this.eventBuffers.keys()) this.kickWriteChain(id)
+      }, FileSessionPersistence.FLUSH_INTERVAL_MS)
       this.flushTimer.unref?.()
     }
   }
@@ -291,6 +331,7 @@ export class FileSessionPersistence implements SessionPersistenceAdapter {
           try {
             await mkdir(d, { recursive: true })
             await appendFile(join(d, 'events.jsonl'), text, { encoding: 'utf8', mode: 0o600 })
+            this.writtenWatermarks.set(sessionId, buf.at(-1)!.seq)
             this.eventChainFailures.delete(sessionId) // 写成功 = 环境健康，清失败状态
           } catch (err) {
             // 失败重排队首 + 退避（持续失败不热循环；行不丢）。
@@ -423,6 +464,7 @@ export class FileSessionPersistence implements SessionPersistenceAdapter {
     try {
       d = this.ensureDir(sessionId)
       appendFileSync(join(d, 'events.jsonl'), buf.map((b) => b.line).join(''), { encoding: 'utf8', mode: 0o600 })
+      this.writtenWatermarks.set(sessionId, buf.at(-1)!.seq)
       this.eventChainFailures.delete(sessionId) // 同步排空成功同样清停链状态
     } catch {
       // Re-queue on failure — better to retry than lose events.

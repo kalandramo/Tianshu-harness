@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'child_process'
-import { spawn, spawnSync, type SpawnOptions } from 'node:child_process'
+import { spawn, type SpawnOptions } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,15 +12,43 @@ type KillableChild = Pick<ChildProcess, 'pid' | 'kill'>
 export type RunTaskkill = (args: string[]) => void
 
 function defaultRunTaskkill(args: string[]): void {
-  try {
-    spawnSync('taskkill', args, {
-      stdio: ['ignore', 'ignore', 'ignore'],
-      timeout: 5000,
-      windowsHide: true,
-    })
-  } catch {
-    // Best-effort
-  }
+  void runTaskkillAsync(args).then(result => {
+    if (result !== 'exited') console.warn(`[process-cleanup] status=${result}`)
+  })
+}
+
+export type ProcessCleanupResult = 'exited' | 'failed' | 'unknown'
+
+function runTaskkillAsync(args: string[]): Promise<ProcessCleanupResult> {
+  return new Promise(resolve => {
+    let done = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const finish = (result: ProcessCleanupResult) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      resolve(result)
+    }
+    try {
+      const command = spawn('taskkill', args, { stdio: 'ignore', windowsHide: true })
+      command.once('error', () => finish('failed'))
+      command.once('close', code => finish(code === 0 ? 'exited' : 'failed'))
+      timer = setTimeout(() => { command.kill(); finish('unknown') }, 5000)
+    } catch { finish('failed') }
+  })
+}
+
+/** Only the caller-owned child is eligible; never terminate by executable name. */
+export async function killProcessTreeAsync(child: ChildProcess, signal: NodeJS.Signals = 'SIGTERM'): Promise<ProcessCleanupResult> {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return 'exited'
+  if (process.platform === 'win32') return runTaskkillAsync(taskkillArgs(child.pid))
+  return new Promise(resolve => {
+    const timer = setTimeout(() => { child.removeListener('exit', exited); resolve('unknown') }, 5000)
+    const force = setTimeout(() => killProcessTree(child, 'SIGKILL'), 3000)
+    const exited = () => { clearTimeout(timer); clearTimeout(force); resolve('exited') }
+    child.once('exit', exited)
+    killProcessTree(child, signal)
+  })
 }
 
 /**

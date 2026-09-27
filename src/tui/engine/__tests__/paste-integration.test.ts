@@ -4,14 +4,18 @@
  * 契约：
  * - start() 写 \x1B[?2004h，dispose() 写 \x1B[?2004l。
  * - 粘贴多行（含 \r）经 200~/201~ 包裹 → 整段插入输入框，不触发 submit。
+ * - 「一整段图片路径」（单行或多行）→ 挂成附件而不是文本（见 image-paste.ts）。
  */
 
 import { test, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { ReadStream, WriteStream } from 'node:tty'
 import { TuiApp } from '../app.js'
 import { setClipboardReader } from '../clipboard-image.js'
-import { MockOut, MockIn } from './_harness.js'
+import { MockOut, MockIn, stripAnsi } from './_harness.js'
 
 // 粘贴测试隔离系统剪贴板——onPaste 现在会先尝试读剪贴板图片（修复右键粘贴丢图），
 // 测试环境注入「无图」reader 确保走文本路径，不受本机剪贴板当前内容影响。
@@ -137,4 +141,94 @@ test('防乱码防御未退化：乱码粘贴仍读剪贴板并附图', async ()
   assert.equal(app.getInputImagesCount(), 1, '应附加 1 张图片')
   assert.equal(app.getInputValue(), '', '乱码文本不应进入输入框')
   app.dispose()
+})
+
+// ── 图片路径粘贴（多行一次贴完）────────────────────────────────────────────────
+
+// 1x1 透明 PNG：provider 安全格式、远小于软目标，加载不需要图像工具。
+const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+
+async function withPngFiles(names: string[], fn: (paths: string[]) => Promise<void>): Promise<void> {
+  const dir = mkdtempSync(join(tmpdir(), 'rivet-paste-'))
+  const paths = names.map((n) => join(dir, n))
+  for (const p of paths) writeFileSync(p, Buffer.from(PNG_1X1, 'base64'))
+  try {
+    await fn(paths)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+test('多行图片路径一次粘贴 → 全部挂成附件，路径文本不进输入框', async () => {
+  await withPngFiles(['a.png', 'b.png'], async ([a, b]) => {
+    const { app, stdin } = makeApp()
+    app.start()
+    stdin.dataHandler!(`\x1B[200~${a}\r\n${b}\x1B[201~`)
+    await tick(60)
+    assert.equal(app.getInputImagesCount(), 2, '两行路径都要成为附件')
+    assert.equal(app.getInputValue(), '', '路径文本不该进输入框')
+    app.dispose()
+  })
+})
+
+test('单行路径仍是老行为：1 张附件、无文本', async () => {
+  await withPngFiles(['only.png'], async ([only]) => {
+    const { app, stdin } = makeApp()
+    app.start()
+    stdin.dataHandler!(`\x1B[200~${only}\x1B[201~`)
+    await tick(60)
+    assert.equal(app.getInputImagesCount(), 1)
+    assert.equal(app.getInputValue(), '')
+    app.dispose()
+  })
+})
+
+test('路径与文本混着粘 → 整段按文本插入（不挑路径、不吞行）', async () => {
+  const { app, out, stdin } = makeApp()
+  app.start()
+  stdin.dataHandler!('\x1B[200~看这张\r\n/tmp/whatever.png\x1B[201~')
+  await tick(60)
+  assert.equal(app.getInputImagesCount(), 0, '混了文本就不是图片粘贴')
+  assert.equal(app.getInputValue(), '看这张\n/tmp/whatever.png', '两行都得原样保留')
+  assert.ok(!stripAnsi(out.chunks.join('')).includes('图片加载失败'))
+  app.dispose()
+})
+
+test('部分加载失败：成功的挂上、失败的报错，路径文本不塞进输入框', async () => {
+  const missing = join(tmpdir(), `rivet-missing-${Date.now()}.png`)
+  await withPngFiles(['ok.png'], async ([ok]) => {
+    const { app, out, stdin } = makeApp()
+    app.start()
+    stdin.dataHandler!(`\x1B[200~${ok}\r\n${missing}\x1B[201~`)
+    await tick(60)
+    assert.equal(app.getInputImagesCount(), 1, '成功的那张贴上')
+    assert.equal(app.getInputValue(), '', '不能把失败的路径当文本插进去')
+    assert.ok(stripAnsi(out.chunks.join('')).includes('图片加载失败'), '失败必须可见')
+    app.dispose()
+  })
+})
+
+test('全部加载失败 → 回退为普通文本粘贴（保留单图旧行为）', async () => {
+  const missing = join(tmpdir(), `rivet-missing-${Date.now()}.png`)
+  const { app, out, stdin } = makeApp()
+  app.start()
+  stdin.dataHandler!(`\x1B[200~${missing}\x1B[201~`)
+  await tick(60)
+  assert.equal(app.getInputImagesCount(), 0)
+  assert.equal(app.getInputValue(), missing, '加载失败时路径仍作为文本可编辑')
+  assert.ok(stripAnsi(out.chunks.join('')).includes('图片加载失败'))
+  app.dispose()
+})
+
+test('超过 MAX_IMAGES：加载到上限并提示已跳过（不静默丢）', async () => {
+  await withPngFiles(['1.png', '2.png', '3.png', '4.png', '5.png'], async (paths) => {
+    const { app, out, stdin } = makeApp()
+    app.start()
+    stdin.dataHandler!(`\x1B[200~${paths.join('\r\n')}\x1B[201~`)
+    await tick(120)
+    assert.equal(app.getInputImagesCount(), 4, '上限 4 张')
+    assert.equal(app.getInputValue(), '')
+    assert.ok(stripAnsi(out.chunks.join('')).includes('已跳过 1 张'), '跳过多少要说明')
+    app.dispose()
+  })
 })

@@ -29,6 +29,10 @@
   <a href="https://discord.gg/XjWTATCHB"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
+<p align="center">
+  <a href="https://trendshift.io/repositories/100440" target="_blank"><img src="https://trendshift.io/api/badge/trendshift/repositories/100440/daily?language=TypeScript" alt="Trendshift: TypeScript repository of the day" width="250" height="55"></a>
+</p>
+
 ---
 
 ### A coding-agent runtime for real engineering work
@@ -995,10 +999,6 @@ Write only the fields you want to override; defaults are deep-merged. Full schem
     "enabled": true,
     "autoThreshold": 800000       // token threshold that triggers auto-compaction
   },
-  "cache": {
-    "enabled": true,              // master prefix-cache switch
-    "showHitRate": true           // show hit rate in the GlanceBar
-  },
   "tools": {
     "preset": "frontend"          // minimal | frontend (default) | full | taiyi
   },
@@ -1117,3 +1117,8 @@ trailers (auto-recorded by scripts/credit-contributors.sh) — contributor wall 
 ## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE). Copyright 2025-2026 Tianshu Contributors.
+
+## Acknowledgments
+
+- The desktop app's custom-wallpaper and per-surface glass **design** references <a href="https://github.com/elysia395/dsh-wallpaper-engine">dsh-wallpaper-engine</a> (MIT License). The implementation is original and contains no upstream code; see <a href="THIRD-PARTY-NOTICES.md">THIRD-PARTY-NOTICES.md</a> for the design scope and license text.
+- Special thanks to the author and core developers of dsh-wallpaper-engine — <a href="https://github.com/elysia395">@elysia395</a>, <a href="https://github.com/YV3507">@YV3507</a>, <a href="https://github.com/yuxilao">@yuxilao</a>, <a href="https://github.com/oneincase">@oneincase</a> — who served as **technical advisors on wallpaper-engine rendering** and provided guidance throughout the design and implementation of the wallpaper compositing and per-surface glass materials.

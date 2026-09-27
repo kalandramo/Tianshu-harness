@@ -25,6 +25,30 @@
  */
 export const PROTOCOL_VERSION = 1
 
+/**
+ * 运行时能力表 —— `GET /health` 的 `capabilities` 字段（issue #266 的环境面）。
+ *
+ * 为什么不是「版本号 ≥ x」：桌面端与 sidecar 是**可分开升级**的两个实体（Windows
+ * 分头打包、updater 撤包、远程 sidecar 都会让两边错配），而版本阈值要靠前端硬编码
+ * 「哪个版本引入了哪个接口」——猜错的症状就是「点了没反应」。改成运行时**自报**它
+ * 能处理什么：前端只问能力，不问版本。
+ *
+ * 加性字段：新增能力**不** bump PROTOCOL_VERSION；老运行时缺 `capabilities` 时，
+ * 前端回退到版本比较（见 desktop/src/lib/runtime-capabilities.ts 的
+ * SCHEDULE_PATCH_MIN_VERSION）。本文件同时被桌面端 type-only 引用，两侧不会漂移。
+ */
+export interface RuntimeCapabilities {
+  /** `PATCH /schedule/:id` —— 自动化定义的原地更新（#236 起，见 3.24.0）。 */
+  requestLookup?: boolean
+  schedulePatch: boolean
+}
+
+/** 本构建实际具备的能力：加能力 = 这里加一行 `true`。 */
+export const RUNTIME_CAPABILITIES: RuntimeCapabilities = {
+  schedulePatch: true,
+  requestLookup: true,
+}
+
 export type SessionStatus = 'idle' | 'running' | 'completed' | 'failed' | 'aborted' | 'interrupted'
 
 /**
@@ -134,6 +158,11 @@ export type SessionEventType =
   // data: { model: string|null, domain: string } — 续跑必须沿用原模型/星域
   // （前缀缓存亲和）；模型不可用时由 POST /resume fail-closed。
   | 'resume_offer'
+  | 'recovery_status'
+  // 阶段 2 恢复 — 模型请求中断后本轮重试（按尝试替换）。data: { attempt,
+  // maxAttempts, replaceAttempt: true }。桌面端据此丢弃失败尝试的未完成 partial
+  // （否则与重试输出重复），只留一条「未完成/重试」标记；旧版 UI 忽略即可。
+  | 'retry'
   // /handoff 归档完成 — 交接 run 收尾时项目内 .rivet/HANDOFF.md 已拷贝归档到
   // 会话目录 <id>.handoff.md（loadPrevHandoff 注入管线认的位置）。
   // data: { text: string, src: string, dest: string }。旧版 UI 忽略即可。
@@ -156,6 +185,8 @@ export type SessionEventType =
   | 'job_snapshot'
 
 export interface SessionEvent {
+  runId?: string
+  attemptId?: string
   seq: number
   ts: number
   type: SessionEventType
@@ -192,6 +223,10 @@ export type ZenPhaseMirror = {
 }
 
 export interface SessionRecord {
+  persistenceState?: 'saved' | 'failed'
+  durableWatermark?: number
+  runId?: string
+  attemptId?: string
   id: string
   status: SessionStatus
   createdAt: number

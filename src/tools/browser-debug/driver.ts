@@ -3,7 +3,18 @@
  */
 
 import { shouldCaptureResponseBody, truncateResponseBody } from './log-capture.js'
-import { PLAYWRIGHT_INSTALL_HINT, isBrowserMissingError, loadPlaywrightCore } from '../net/playwright-driver.js'
+export type { BrowserCookie } from './pw-surface.js'
+import { PLAYWRIGHT_INSTALL_HINT, isBrowserMissingError } from '../net/playwright-driver.js'
+import {
+  loadPlaywright,
+  type BrowserCookie,
+  type PwCDPSession,
+  type PwConsoleMessage,
+  type PwContext,
+  type PwPage,
+  type PwRequest,
+  type PwResponse,
+} from './pw-surface.js'
 
 export interface DriverEvents {
   onConsole(level: string, text: string): void
@@ -23,17 +34,6 @@ export interface DriverEvents {
 export type LoadState = 'load' | 'domcontentloaded' | 'networkidle'
 export type ScrollTarget = 'top' | 'bottom'
 export type StorageKind = 'local' | 'session'
-
-export interface BrowserCookie {
-  name: string
-  value: string
-  domain?: string
-  path?: string
-  expires?: number
-  httpOnly?: boolean
-  secure?: boolean
-  sameSite?: string
-}
 
 export interface ScreenshotOptions {
   /** Take a full-page screenshot instead of just the viewport. Default: false. */
@@ -118,6 +118,12 @@ export interface BrowserDebugDriver {
   bringToFront(): Promise<void>
   close(): Promise<void>
   /**
+   * 会话存活能力——**可选**：浏览器/CDP 连接仍在且 context 未关闭。
+   * 不实现 = 视为存活（测试桩）；真实 driver 由 `disconnected`/`close`
+   * 事件维护（见 docs/analysis/2026-09-25-browser_debug-归因复核与优化设计.md W2）。
+   */
+  isAlive?(): boolean
+  /**
    * 实时帧流能力——**可选**：仅 Chromium 系 driver 提供，测试桩/假 driver 可不实现
    * （调用方先做能力探测再使用）。启动后每次页面绘制回调一帧。
    */
@@ -158,78 +164,6 @@ export interface DriverLaunchOptions {
 }
 
 export type BrowserDebugDriverFactory = (opts: DriverLaunchOptions) => Promise<BrowserDebugDriver>
-
-interface PwRequest {
-  method(): string
-  url(): string
-  resourceType(): string
-  failure(): { errorText: string } | null
-  headers(): Record<string, string>
-  postData(): string | null
-}
-interface PwResponse {
-  status(): number
-  request(): PwRequest
-  headers(): Record<string, string>
-  text(): Promise<string>
-}
-interface PwConsoleMessage {
-  type(): string
-  text(): string
-}
-interface PwKeyboard {
-  press(key: string): Promise<void>
-}
-interface PwPage {
-  goto(url: string, opts: Record<string, unknown>): Promise<unknown>
-  evaluate(expr: string): Promise<unknown>
-  screenshot(opts: Record<string, unknown>): Promise<Buffer>
-  click(selector: string, opts: Record<string, unknown>): Promise<void>
-  fill(selector: string, text: string, opts: Record<string, unknown>): Promise<void>
-  press(selector: string, key: string, opts: Record<string, unknown>): Promise<void>
-  selectOption(selector: string, value: string, opts: Record<string, unknown>): Promise<string[]>
-  hover(selector: string, opts: Record<string, unknown>): Promise<void>
-  textContent(selector: string, opts?: Record<string, unknown>): Promise<string | null>
-  waitForSelector(selector: string, opts: Record<string, unknown>): Promise<unknown>
-  waitForLoadState(state: string, opts: Record<string, unknown>): Promise<void>
-  reload(opts: Record<string, unknown>): Promise<unknown>
-  goBack(opts: Record<string, unknown>): Promise<unknown>
-  goForward(opts: Record<string, unknown>): Promise<unknown>
-  setViewportSize(size: { width: number; height: number }): Promise<void>
-  viewportSize(): { width: number; height: number } | null
-  keyboard: PwKeyboard
-  url(): string
-  bringToFront(): Promise<void>
-  on(event: string, handler: (arg: never) => void): void
-}
-/** Playwright CDPSession 的最小面——只声明本模块用到的三件事。 */
-interface PwCDPSession {
-  send(method: string, params?: Record<string, unknown>): Promise<unknown>
-  on(event: string, handler: (arg: never) => void): void
-  detach(): Promise<void>
-}
-interface PwContext {
-  pages(): PwPage[]
-  newPage(): Promise<PwPage>
-  close(): Promise<void>
-  cookies(urls?: string | string[]): Promise<BrowserCookie[]>
-  addCookies(cookies: unknown[]): Promise<void>
-  clearCookies(): Promise<void>
-  on(event: string, handler: (arg: never) => void): void
-  newCDPSession(page: PwPage): Promise<PwCDPSession>
-}
-interface PwBrowser {
-  contexts(): PwContext[]
-  close(): Promise<void>
-}
-interface PwChromium {
-  launchPersistentContext(userDataDir: string, opts: Record<string, unknown>): Promise<PwContext>
-  connectOverCDP(endpointUrl: string): Promise<PwBrowser>
-}
-
-async function loadPlaywright(): Promise<{ chromium: PwChromium }> {
-  return (await loadPlaywrightCore()) as never
-}
 
 function stringifyEvalResult(result: unknown): string {
   if (result === undefined) return 'undefined'
@@ -334,7 +268,11 @@ function wireEvents(page: PwPage, events: DriverEvents, counter: { seq: number }
 }
 
 export interface PageTracker {
-  getActivePage(): PwPage
+  /** 解析一个可用页面：active 已关闭→回退剩余活页；一个都没有→新建。
+   *  页面级自愈的主入口（见 docs/analysis/2026-09-25-browser_debug-归因复核与优化设计.md W1）。 */
+  resolvePage(): Promise<PwPage>
+  /** 当前 active 指针（可能为 null 或已关闭）——供 currentUrl/viewportSize 等同步方法容错读取。 */
+  activePage(): PwPage | null
   pageUrls(): string[]
 }
 
@@ -343,6 +281,11 @@ export interface PageTracker {
  * opened one (so OAuth popups become the action target); when the active page
  * closes we fall back to the last remaining open page (back to the app after
  * the login popup closes). Every page's console/network is wired to the sink.
+ *
+ * 关掉**最后一个** page 不会关闭 context/browser（实测：context.isClosed()=false、
+ * browser.isConnected()=true、newPage() 仍可用）。所以 active 关闭后必须允许置 null，
+ * 由 resolvePage() 按需补页——否则每个后续 action 都会在死 page 上各报一次
+ * "Target page, context or browser has been closed"。
  */
 export function attachPageTracker(
   context: PwContext,
@@ -350,7 +293,8 @@ export function attachPageTracker(
   initial: PwPage,
 ): PageTracker {
   const counter = { seq: 0 }
-  let active = initial
+  let active: PwPage | null = initial
+  let creating: Promise<PwPage> | null = null
   const known = new WeakSet<PwPage>()
   const track = (page: PwPage): void => {
     if (known.has(page)) return
@@ -359,8 +303,8 @@ export function attachPageTracker(
     active = page
     page.on('close', (() => {
       if (active !== page) return
-      const open = context.pages().filter((p) => p !== page)
-      if (open.length > 0) active = open[open.length - 1]!
+      const open = context.pages().filter((p) => p !== page && !p.isClosed())
+      active = open.length > 0 ? open[open.length - 1]! : null
     }) as never)
   }
   track(initial)
@@ -368,16 +312,34 @@ export function attachPageTracker(
     try { track(page) } catch { /* ignore */ }
   }) as never)
   return {
-    getActivePage: () => active,
+    resolvePage: (): Promise<PwPage> => {
+      if (active && !active.isClosed()) return Promise.resolve(active)
+      const open = context.pages().filter((p) => !p.isClosed())
+      if (open.length > 0) {
+        active = open[open.length - 1]!
+        return Promise.resolve(active)
+      }
+      // 浏览器还活着但没有页面（用户关窗/关标签）——补一个。并发 action 共用
+      // 同一个创建 Promise，避免同时 newPage() 造出两个标签页。
+      if (!creating) {
+        creating = context.newPage()
+          .then((page) => { active = page; return page })
+          .finally(() => { creating = null })
+      }
+      return creating
+    },
+    activePage: () => active,
     pageUrls: () => context.pages().map((p) => p.url()),
   }
 }
 
 function buildDriver(
-  getPage: () => PwPage,
+  resolvePage: () => Promise<PwPage>,
+  activePage: () => PwPage | null,
   context: PwContext,
   pageUrls: () => string[],
   closeFn: () => Promise<void>,
+  isAlive: () => boolean,
 ): BrowserDebugDriver {
   // ── 实时帧流（可选能力）────────────────────────────────────────────────
   // 一个 driver 同时只跑一条 screencast；CDP session 惰性建立并绑定 active page，
@@ -401,7 +363,7 @@ function buildDriver(
 
   /** 绑定到当前 active page；page 换了就重建（旧 session 先 detach）。 */
   const ensureCdp = async (): Promise<PwCDPSession> => {
-    const page = getPage()
+    const page = await resolvePage()
     if (cdp && cdpPage === page) return cdp
     await detachCdp()
     cdp = await context.newCDPSession(page)
@@ -411,7 +373,7 @@ function buildDriver(
 
   return {
     goto: async (url, signal) => {
-      const page = getPage()
+      const page = await resolvePage()
       const merged = mergeAbortSignal(30_000, signal)
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000, signal: merged.signal })
@@ -419,9 +381,9 @@ function buildDriver(
         merged.cleanup?.()
       }
     },
-    evaluate: async (expression) => stringifyEvalResult(await getPage().evaluate(expression)),
+    evaluate: async (expression) => stringifyEvalResult(await (await resolvePage()).evaluate(expression)),
     screenshot: async (opts) => {
-      const page = getPage()
+      const page = await resolvePage()
       const fullPage = opts?.fullPage ?? false
       const raw = opts?.raw ?? false
 
@@ -470,21 +432,21 @@ function buildDriver(
       }
     },
     snapshot: async (selector) => {
-      const page = getPage()
+      const page = await resolvePage()
       if (selector) return (await page.textContent(selector, { timeout: 10_000 })) ?? ''
       return String(await page.evaluate('document.body?.innerText ?? ""'))
     },
-    click: (selector) => getPage().click(selector, { timeout: 10_000 }),
-    type: (selector, text) => getPage().fill(selector, text, { timeout: 10_000 }),
+    click: async (selector) => { const page = await resolvePage(); await page.click(selector, { timeout: 10_000 }) },
+    type: async (selector, text) => { const page = await resolvePage(); await page.fill(selector, text, { timeout: 10_000 }) },
     press: async (selector, key) => {
-      const page = getPage()
+      const page = await resolvePage()
       if (selector) await page.press(selector, key, { timeout: 10_000 })
       else await page.keyboard.press(key)
     },
-    selectOption: (selector, value) => getPage().selectOption(selector, value, { timeout: 10_000 }),
-    hover: (selector) => getPage().hover(selector, { timeout: 10_000 }),
+    selectOption: async (selector, value) => { const page = await resolvePage(); return page.selectOption(selector, value, { timeout: 10_000 }) },
+    hover: async (selector) => { const page = await resolvePage(); await page.hover(selector, { timeout: 10_000 }) },
     scroll: async (selector, to) => {
-      const page = getPage()
+      const page = await resolvePage()
       if (selector) {
         const sel = JSON.stringify(selector)
         await page.evaluate(
@@ -499,7 +461,7 @@ function buildDriver(
     waitForSelector: async (selector, timeoutMs = 10_000, signal) => {
       const merged = mergeAbortSignal(timeoutMs, signal)
       try {
-        await getPage().waitForSelector(selector, { state: 'visible', timeout: timeoutMs, signal: merged.signal })
+        await (await resolvePage()).waitForSelector(selector, { state: 'visible', timeout: timeoutMs, signal: merged.signal })
       } finally {
         merged.cleanup?.()
       }
@@ -507,7 +469,7 @@ function buildDriver(
     waitForLoadState: async (state, timeoutMs = 10_000, signal) => {
       const merged = mergeAbortSignal(timeoutMs, signal)
       try {
-        await getPage().waitForLoadState(state, { timeout: timeoutMs, signal: merged.signal })
+        await (await resolvePage()).waitForLoadState(state, { timeout: timeoutMs, signal: merged.signal })
       } finally {
         merged.cleanup?.()
       }
@@ -515,7 +477,7 @@ function buildDriver(
     reload: async (signal) => {
       const merged = mergeAbortSignal(30_000, signal)
       try {
-        await getPage().reload({ waitUntil: 'domcontentloaded', timeout: 30_000, signal: merged.signal })
+        await (await resolvePage()).reload({ waitUntil: 'domcontentloaded', timeout: 30_000, signal: merged.signal })
       } finally {
         merged.cleanup?.()
       }
@@ -523,7 +485,7 @@ function buildDriver(
     goBack: async (signal) => {
       const merged = mergeAbortSignal(30_000, signal)
       try {
-        const res = await getPage().goBack({ waitUntil: 'domcontentloaded', timeout: 30_000, signal: merged.signal })
+        const res = await (await resolvePage()).goBack({ waitUntil: 'domcontentloaded', timeout: 30_000, signal: merged.signal })
         return res !== null
       } finally {
         merged.cleanup?.()
@@ -532,7 +494,7 @@ function buildDriver(
     goForward: async (signal) => {
       const merged = mergeAbortSignal(30_000, signal)
       try {
-        const res = await getPage().goForward({ waitUntil: 'domcontentloaded', timeout: 30_000, signal: merged.signal })
+        const res = await (await resolvePage()).goForward({ waitUntil: 'domcontentloaded', timeout: 30_000, signal: merged.signal })
         return res !== null
       } finally {
         merged.cleanup?.()
@@ -546,7 +508,7 @@ function buildDriver(
     storage: async (kind) => {
       const varName = kind === 'session' ? 'sessionStorage' : 'localStorage'
       const expr = `(() => { const s = ${varName}; const o = {}; for (let i = 0; i < s.length; i++) { const k = s.key(i); if (k != null) o[k] = s.getItem(k); } return o; })()`
-      const result = await getPage().evaluate(expr)
+      const result = await (await resolvePage()).evaluate(expr)
       return result && typeof result === 'object' ? (result as Record<string, string>) : {}
     },
     addCookie: async (cookie) => {
@@ -559,20 +521,29 @@ function buildDriver(
     clearCookies: () => context.clearCookies(),
     setStorage: async (kind, key, value) => {
       const varName = kind === 'session' ? 'sessionStorage' : 'localStorage'
-      await getPage().evaluate(`${varName}.setItem(${JSON.stringify(key)}, ${JSON.stringify(value)})`)
+      await (await resolvePage()).evaluate(`${varName}.setItem(${JSON.stringify(key)}, ${JSON.stringify(value)})`)
     },
     clearStorage: async (kind) => {
       const varName = kind === 'session' ? 'sessionStorage' : 'localStorage'
-      await getPage().evaluate(`${varName}.clear()`)
+      await (await resolvePage()).evaluate(`${varName}.clear()`)
     },
     setViewport: async (width, height) => {
-      await getPage().setViewportSize({ width, height })
+      await (await resolvePage()).setViewportSize({ width, height })
     },
-    viewportSize: () => getPage().viewportSize(),
-    currentUrl: () => getPage().url(),
+    viewportSize: () => {
+      const page = activePage()
+      if (!page) return null
+      try { return page.viewportSize() } catch { return null }
+    },
+    currentUrl: () => {
+      // 已关闭 page 的 url() 仍返回最后 URL——status/console 等只读路径靠它保持可用；
+      // 真取不到（无 active）时给空串，调用方自行兜底。
+      try { return activePage()?.url() ?? '' } catch { return '' }
+    },
     pageUrls,
-    bringToFront: () => getPage().bringToFront(),
+    bringToFront: async () => { const page = await resolvePage(); await page.bringToFront() },
     close: closeFn,
+    isAlive,
     startScreencast: async (opts, onFrame) => {
       const session = await ensureCdp()
       frameSink = onFrame
@@ -625,7 +596,7 @@ function buildDriver(
           quality: opts?.quality ?? 60,
         })) as { data?: string } | undefined
         if (!res?.data) return null
-        const size = getPage().viewportSize()
+        const size = activePage()?.viewportSize() ?? null
         frameSeq += 1
         return { data: res.data, width: size?.width ?? 0, height: size?.height ?? 0, seq: frameSeq }
       } catch {
@@ -645,6 +616,53 @@ function buildDriver(
   }
 }
 
+/**
+ * 挂死亡信号并给出存活判定：浏览器断开（进程被杀/CDP 断）或 context 关闭即为死。
+ * 关掉最后一个 page 不算死（context 仍活）——页面级自愈由 PageTracker.resolvePage 负责。
+ * 事件与同步探测同时用：事件覆盖"死亡已发生"，探测覆盖"监听挂上之前就已死"。
+ */
+function wireLiveness(context: PwContext): () => boolean {
+  let dead = false
+  const markDead = () => { dead = true }
+  try {
+    context.on('close', markDead as never)
+    context.browser()?.on('disconnected', markDead as never)
+  } catch {
+    /* 事件能力缺失时退化为同步探测 */
+  }
+  return () => {
+    if (dead) return false
+    try {
+      if (context.isClosed()) return false
+      return context.browser()?.isConnected() ?? true
+    } catch {
+      return false
+    }
+  }
+}
+
+/** Chromium 在 profile 被占用时会把请求转发给既有实例后自己退出，输出这行；
+ *  也可能以 ProcessSingleton/SingletonLock 形式出现。 */
+const PROFILE_IN_USE_RE = /正在现有的浏览器会话中打开|Opening in existing browser session|ProcessSingleton|SingletonLock/i
+
+/**
+ * Playwright 的 launch 失败会把**整条启动命令行**塞进 "Browser logs"（实测 4.3KB，
+ * 其中 90%+ 是噪音）。只保留能说明病因的行，上限 800 字符。
+ */
+export function trimBrowserLogs(message: string, maxLen = 800): string {
+  const idx = message.indexOf('Browser logs:')
+  if (idx < 0) return message
+  const head = message.slice(0, idx).trimEnd()
+  const logs = message.slice(idx + 'Browser logs:'.length)
+  const interesting = logs
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /\[pid=\d+\]|process did exit|Failed to launch|Target page, context or browser/i.test(line))
+  const tail = interesting.slice(-6).join('\n')
+  const trimmed = tail.length > maxLen ? tail.slice(-maxLen) : tail
+  return trimmed ? `${head}\nBrowser logs（截尾）:\n${trimmed}` : head
+}
+
 export const playwrightDriverFactory: BrowserDebugDriverFactory = async (opts) => {
   const mod = await loadPlaywright()
   // 安装提示只挂在真正"浏览器可执行文件缺失"的启动失败上（与 net/playwright-driver
@@ -661,12 +679,27 @@ export const playwrightDriverFactory: BrowserDebugDriverFactory = async (opts) =
       const msg = err instanceof Error ? err.message : String(err)
       throw new Error(`${PLAYWRIGHT_INSTALL_HINT}\n（原始错误：${msg.split('\n')[0]}）`)
     }
-    throw err
+    const raw = err instanceof Error ? err.message : String(err)
+    if (PROFILE_IN_USE_RE.test(raw)) {
+      throw new Error(
+        `浏览器 profile 已被另一个 Chrome 实例占用（${opts.userDataDir}）——`
+        + '通常来自另一个 agent 会话或未关闭的旧浏览器。请先 close 旧会话；'
+        + '默认已按 sessionId 隔离 profile（RIVET_BROWSER_SHARED_PROFILE=1 才会共享，共享时同一时刻只能有一个浏览器实例）。',
+      )
+    }
+    throw new Error(trimBrowserLogs(raw))
   }
   const existing = context.pages()
   const page = existing.length > 0 ? existing[0]! : await context.newPage()
   const tracker = attachPageTracker(context, opts.events, page)
-  return buildDriver(tracker.getActivePage, context, tracker.pageUrls, () => context.close())
+  return buildDriver(
+    tracker.resolvePage,
+    tracker.activePage,
+    context,
+    tracker.pageUrls,
+    () => context.close(),
+    wireLiveness(context),
+  )
 }
 
 export const playwrightConnectFactory: BrowserDebugDriverFactory = async (opts) => {
@@ -686,7 +719,14 @@ export const playwrightConnectFactory: BrowserDebugDriverFactory = async (opts) 
   // silently reshaping it would be a surprising side effect of connecting.
   if (opts.viewport) await page.setViewportSize(opts.viewport)
   const tracker = attachPageTracker(context, opts.events, page)
-  return buildDriver(tracker.getActivePage, context, tracker.pageUrls, () => browser.close())
+  return buildDriver(
+    tracker.resolvePage,
+    tracker.activePage,
+    context,
+    tracker.pageUrls,
+    () => browser.close(),
+    wireLiveness(context),
+  )
 }
 
 export const defaultDriverFactory: BrowserDebugDriverFactory = async (opts) =>

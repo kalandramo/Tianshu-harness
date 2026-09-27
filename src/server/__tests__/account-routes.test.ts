@@ -22,9 +22,12 @@ import { buildAccountRoutes, type AccountApi } from '../account-routes.js'
 import { TokenStore } from '../../auth/token-store.js'
 import {
   accountIdentityUrl,
+  accountManageUrl,
   cachedAccountIdentity,
+  cachedAccountProfile,
   isAccountIdentityStale,
   saveAccountIdentity,
+  saveAccountProfile,
   type DeviceCreateResult,
   type DevicePollResult,
   type StellarIdentity,
@@ -73,7 +76,12 @@ function stubApi(over: Partial<AccountApi> = {}): AccountApi {
     saveAccountIdentity,
     cachedAccountIdentity,
     isAccountIdentityStale,
+    // 账号资料（头像 + 创始铭牌）同规矩：缓存与写盘用真实实现，网络面默认回 null。
+    fetchAccountProfileSnapshot: async () => null,
+    saveAccountProfile,
+    cachedAccountProfile,
     accountIdentityUrl,
+    accountManageUrl,
     ...over,
   }
 }
@@ -438,6 +446,20 @@ test('GET /account/status：带上官网星籍页 URL（供「在官网查看」
   }
 })
 
+test('GET /account/status：带上账号与授权页 URL（「设备与授权」区的入口目标）', async () => {
+  const { home, cleanup } = makeHome()
+  try {
+    new TokenStore(home, 'account').save({ accessToken: 'AT', expiresAt: Date.now() + 3600_000 })
+    const res = await routerFor(home)('GET', '/account/status', {}, AUTH)
+    assert.equal((res.body as { manageUrl: string }).manageUrl, accountManageUrl())
+    // 路径锚定在 /space/account：文案刻意不承诺「管理设备」（官网解绑入口 Task 4.1 未做），
+    // 但入口指向的页面必须是账号与授权页，不是星籍页——两者同基址，只有路径能区分。
+    assert.match(accountManageUrl(), /\/space\/account$/)
+  } finally {
+    cleanup()
+  }
+})
+
 test('GET /account/status：带上次同步时刻（有缓存才有，供界面解释"可能是旧的"）', async () => {
   const { home, cleanup } = makeHome()
   try {
@@ -534,6 +556,142 @@ test('POST /account/identity/refresh：刷新期间换了账号 → 不写盘（
     const after = store.load()
     assert.equal(after?.accessToken, 'AT-B')
     assert.equal(after?.identity, undefined, 'A 的星籍不许落到 B 的凭据上')
+  } finally {
+    cleanup()
+  }
+})
+
+// ── 账号资料（头像 + 创始铭牌）─────────────────────────────────────────
+//
+// 与星籍同一套语义：缓存优先、陈旧后台刷新、没取到就回 null（不造空壳）。
+// 桩只换网络面（fetchAccountProfileSnapshot），缓存与落盘走真实实现。
+
+const FOUNDING_SNAPSHOT = { badgeCode: 'FOUNDER_TIER_1', rank: 7, tier: 1, total: 300, limit: 300 }
+
+test('GET /account/status：回头像与创始铭牌（有缓存时）', async () => {
+  const { home, cleanup } = makeHome()
+  try {
+    const store = new TokenStore(home, 'account')
+    store.save({ accessToken: 'AT', expiresAt: Date.now() + 3600_000 })
+    saveAccountProfile(
+      store,
+      store.load()!,
+      { avatarUrl: 'https://cdn.example/a.png', founding: FOUNDING_SNAPSHOT, fetchedAt: 0 },
+      999,
+    )
+
+    const res = await routerFor(home)('GET', '/account/status', {}, AUTH)
+    assert.equal(res.status, 200)
+    const body = res.body as {
+      avatarUrl: string | null
+      founding: typeof FOUNDING_SNAPSHOT | null
+      profileFetchedAt: number | null
+    }
+    assert.equal(body.avatarUrl, 'https://cdn.example/a.png')
+    assert.equal(body.founding?.badgeCode, 'FOUNDER_TIER_1')
+    assert.equal(body.founding?.rank, 7)
+    assert.equal(body.profileFetchedAt, 999, '带上次同步时刻，让界面能解释"为什么这可能是旧的"')
+  } finally {
+    cleanup()
+  }
+})
+
+test('GET /account/status：二档创始（有 rank 无 badge）原样透传，档位不丢', async () => {
+  // 二/三档正是「位次分母恒 300」那条缺陷的唯一曝光面（消费侧见 desktop 的
+  // founding-view）：路由只保证快照如实透传，不做任何档位推导。
+  const { home, cleanup } = makeHome()
+  try {
+    const store = new TokenStore(home, 'account')
+    store.save({ accessToken: 'AT', expiresAt: Date.now() + 3600_000 })
+    const tier2 = { badgeCode: null, rank: 450, tier: 2, total: 640, limit: 300 }
+    saveAccountProfile(store, store.load()!, { avatarUrl: null, founding: tier2, fetchedAt: 0 }, 1)
+
+    const res = await routerFor(home)('GET', '/account/status', {}, AUTH)
+    assert.equal(res.status, 200)
+    const body = res.body as { founding: typeof tier2 | null }
+    assert.equal(body.founding?.tier, 2, '档位由 sidecar 算好，路由不得吞掉')
+    assert.equal(body.founding?.rank, 450, '位次是这条形状里唯一不可再生的信息')
+    assert.equal(body.founding?.badgeCode, null, '缺徽章不等于非创始——不该整块消失')
+  } finally {
+    cleanup()
+  }
+})
+
+test('GET /account/status：无资料缓存 → 两字段回 null，并在后台补缓存', async () => {
+  const { home, cleanup } = makeHome()
+  try {
+    new TokenStore(home, 'account').save({ accessToken: 'AT', expiresAt: Date.now() + 3600_000 })
+    const router = routerFor(home, {
+      fetchAccountProfileSnapshot: async () => ({
+        avatarUrl: 'https://cdn.example/b.png',
+        founding: FOUNDING_SNAPSHOT,
+        fetchedAt: 0,
+      }),
+    })
+
+    const res = await router('GET', '/account/status', {}, AUTH)
+    const body = res.body as { avatarUrl: string | null; founding: unknown }
+    assert.equal(body.avatarUrl, null, '首次请求先给 null，不为装饰性信息多等一次网络')
+    assert.equal(body.founding, null)
+
+    await waitFor(() => new TokenStore(home, 'account').load()?.profile?.avatarUrl === 'https://cdn.example/b.png')
+    const cached = new TokenStore(home, 'account').load()?.profile
+    assert.equal(cached?.avatarUrl, 'https://cdn.example/b.png', '后台应把资料补进缓存')
+    assert.equal(cached?.founding?.rank, 7)
+  } finally {
+    cleanup()
+  }
+})
+
+test('GET /account/status：资料陈旧 → 先回旧值，后台刷新出新值', async () => {
+  const { home, cleanup } = makeHome()
+  try {
+    const store = new TokenStore(home, 'account')
+    store.save({ accessToken: 'AT', expiresAt: Date.now() + 3600_000 })
+    // fetchedAt=1 直接写成"很旧"（绕过 TTL，不依赖测试运行时刻）
+    saveAccountProfile(
+      store,
+      store.load()!,
+      { avatarUrl: 'https://cdn.example/old.png', founding: null, fetchedAt: 1 },
+      1,
+    )
+
+    const router = routerFor(home, {
+      fetchAccountProfileSnapshot: async () => ({
+        avatarUrl: 'https://cdn.example/new.png',
+        founding: FOUNDING_SNAPSHOT,
+        fetchedAt: 0,
+      }),
+    })
+    const res = await router('GET', '/account/status', {}, AUTH)
+    assert.equal((res.body as { avatarUrl: string | null }).avatarUrl, 'https://cdn.example/old.png', '陈旧时先给旧值')
+
+    await waitFor(() => new TokenStore(home, 'account').load()?.profile?.avatarUrl === 'https://cdn.example/new.png')
+    assert.equal(new TokenStore(home, 'account').load()?.profile?.avatarUrl, 'https://cdn.example/new.png')
+  } finally {
+    cleanup()
+  }
+})
+
+test('POST /account/poll approved：账号资料顺带落盘，且响应体不含凭据', async () => {
+  const { home, cleanup } = makeHome()
+  try {
+    const router = routerFor(home, {
+      checkDeviceOnce: async () => ({ status: 'approved', accessToken: 'AT-NEW', expiresIn: 3600 }),
+      fetchAccountProfileSnapshot: async () => ({
+        avatarUrl: 'https://cdn.example/c.png',
+        founding: FOUNDING_SNAPSHOT,
+        fetchedAt: 0,
+      }),
+    })
+    const res = await router('POST', '/account/poll', { deviceCode: 'dc-1' }, AUTH)
+    assert.equal(res.status, 200)
+
+    const disk = new TokenStore(home, 'account').load()
+    assert.equal(disk?.accessToken, 'AT-NEW', '凭据落盘')
+    assert.equal(disk?.profile?.avatarUrl, 'https://cdn.example/c.png', '资料随登录顺带落盘')
+    assert.equal(disk?.profile?.founding?.badgeCode, 'FOUNDER_TIER_1')
+    assert.ok(!JSON.stringify(res.body).includes('AT-NEW'), '凭据不得进响应体（不变量）')
   } finally {
     cleanup()
   }

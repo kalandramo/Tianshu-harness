@@ -41,6 +41,35 @@ export const PROVIDER_ENDPOINT_MAP: Record<string, Partial<EndpointPaths>> = {
   // Add entries here for exotic deployments (azure query params, etc.).
 }
 
+/**
+ * 火山方舟订阅制端点没有 GET /models（issue #272 根因）：Agent Plan
+ * `/api/plan/v3` 与 Coding Plan `/api/coding/v3` 的 OpenAI 兼容面只提供
+ * chat/completions 与 responses，模型目录走控制台 / 控制面 OpenAPI。连接测试打
+ * 到 `/models` 会 404，把「能对话的 Key」误判成「baseUrl 填错」，provider 直接
+ * 卡在保存前。
+ *
+ * 双判据：
+ *  - provider 名 → 覆盖内置预设（自定义名不命中）；
+ *  - base URL → 覆盖照官方文档手填该地址的自定义 provider（issue #272 用户的
+ *    实际路径）。
+ * 命中后探测降级为最小补全，需要调用方给 probeModel（预设 defaultModelId /
+ * 用户手填模型 / 已存 provider 首个模型）。base URL 判据刻意只认官方域名+路径，
+ * 避免误伤「只是碰巧 404 /models」的普通网关（那条走 probeForTestKey 的 404
+ * 兜底，语义更保守）。
+ */
+const NO_MODELS_LIST_PROVIDERS = new Set(['volc-plan', 'volc-plan-anthropic'])
+const NO_MODELS_LIST_BASE_URL_PATTERNS: readonly RegExp[] = [
+  // OpenAI 面 /api/plan/v3、Coding Plan /api/coding/v3、Anthropic 面 /api/plan
+  /^https:\/\/ark\.cn-beijing\.volces\.com\/api\/(?:plan|coding)(?:\/v3)?$/i,
+]
+
+/** 该端点是否有 OpenAI 形态的 GET /models 模型列表。 */
+export function hasModelsListEndpoint(providerName: string | undefined, baseUrl: string): boolean {
+  if (providerName && NO_MODELS_LIST_PROVIDERS.has(providerName)) return false
+  const base = normalizeBaseUrl(baseUrl)
+  return !NO_MODELS_LIST_BASE_URL_PATTERNS.some(pattern => pattern.test(base))
+}
+
 /** Tails users paste from curl/docs that are request paths, not the base URL.
  *  Longest first; the version segment (/v1) stays — it belongs to the base. */
 const STRIPPABLE_SUFFIXES = [

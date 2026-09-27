@@ -485,3 +485,18 @@ describe('withStructuredRetry policy config', () => {
     assert.equal(calls, 1, `expected a single call, got ${calls}`)
   })
 })
+
+it('共享预算：provider 侧消费后 agent 侧无额度（PLAN §3，防两层相乘）', async () => {
+  const { RetryBudget } = await import('../retry-budget.js')
+  let calls = 0
+  const budget = new RetryBudget({ maxAttempts: 1 })
+  await assert.rejects(
+    withStructuredRetry(async () => {
+      calls += 1
+      throw new FakeApiError('Internal server error', 500)
+    }, undefined, { budget }),
+    /shared budget/,
+  )
+  assert.equal(calls, 2, '首次 + 预算内 1 次重试')
+  assert.equal(budget.take(), false, '预算已被 provider 侧耗尽，agent 侧不能再重连')
+})

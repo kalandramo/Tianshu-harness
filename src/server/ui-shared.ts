@@ -43,6 +43,8 @@ export {
   BROWSER_NAVIGATED_PREFIX,
   BROWSER_SCREENSHOT_OF_PREFIX,
   COMPUTER_USE_A11Y_TREE_PREFIX,
+  SCREENSHOT_ARTIFACT_MARKER,
+  screenshotArtifactIdOf,
 } from '../tools/output-markers.js'
 
 // browser_debug 日志行解析（ToolGroup 渲染网络/控制台行）
@@ -107,3 +109,18 @@ export {
   type StellarIdentityLike,
   type StellarIdentityView,
 } from '../agent/stellar-identity.js'
+
+// 创始用户档位（创始铭牌）：badge_code / 位次 → 档位名、罗马数字、主题色、冠饰。
+// 零依赖叶子——文案与配色不在服务端（DB 只有 badge_code），客户端必须持有一份；
+// 单一事实源在官网仓，本叶子的结构由不变量测试护住（见叶子头注释）。
+export {
+  FOUNDING_TIERS,
+  FOUNDING_USER_LIMIT,
+  FOUNDING_TOTAL_LIMIT,
+  badgeDisplayName,
+  isFoundingBadge,
+  tierOfBadgeCode,
+  tierOfRank,
+  type FounderSigil,
+  type FoundingTier,
+} from '../agent/founding-tiers.js'

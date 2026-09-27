@@ -17,8 +17,9 @@
  *    across sessions (B4).
  */
 import type { AgentCallbacks, ApprovalMode } from '../agent/loop-types.js'
-import { touchActivity, markIdle } from '../agent/stall-observer.js'
+import { touchActivity, setActivityPhase, beginRun as beginActivityRun, finishRun as finishActivityRun, withActivityRun } from '../agent/stall-observer.js'
 import { randomUUID } from 'node:crypto'
+import { describeFailure } from '../api/failure-scope.js'
 import { debugLog } from '../utils/debug.js'
 import { collectPostBoundaryEditIds } from '../agent/file-history.js'
 import { loadConfig } from '../config/manager.js'
@@ -256,6 +257,7 @@ export interface DelegateActivityUpdate {
 }
 
 export interface ManagedAgent {
+  getRecoverySnapshot?(): unknown
   /**
    * 包装 `AgentLoop.run`。返回值透传其 outcome——`skipped-already-running`
    * 表示 re-entry guard 命中、本次没起任何轮次；sidecar 自身不消费它，但不能把
@@ -380,11 +382,13 @@ export interface ManagedAgent {
    * otherwise the user silently talks to a model that remembers nothing.
    * Optional so lightweight test doubles need not implement it.
    */
-  getHistoryRestore?(): { restored: number; error?: string }
+  getHistoryRestore?(): { restored: number; error?: string; uncertainTools?: Array<{ id: string; name: string }> }
   /** Rewind: replace the message list (truncate to a prior point). */
   replaceMessages(msgs: OaiMessage[]): void
   /** Rewind: like replaceMessages but also resets turnCount/filesRead/filesModified etc. */
   rewindToMessages(msgs: OaiMessage[]): void
+  /** Drain history mutations before an isolated engine acknowledges a rewrite. */
+  flushPersistence?(): Promise<void>
   /** Precise rewind: the session's per-edit FileHistory (write_file/edit_file
    *  backups keyed by tool_use id). Absent on lightweight doubles / when no
    *  history is wired. */
@@ -412,7 +416,7 @@ export interface ManagedAgent {
    * resolved model id, or null when the model id is unknown / unauthorized.
    * Optional for lightweight test doubles.
    */
-  switchModel?(modelId: string): string | null
+  switchModel?(modelId: string): string | null | Promise<string | null>
   /**
    * PlusMenu (skills) — set the per-session disabled skill set. Filters the
    * discovery block so disabled skills are hidden from the model. Optional for
@@ -430,6 +434,8 @@ export interface ManagedAgent {
   getTotalUsage?(): Partial<Usage>
   /** Completed turn count（中断补发事件的 turnNumber）。 */
   getTurnCount?(): number
+  /** 转录水位（观测，PLAN §4 恢复设计第 1 步）：已 append 的 OAI 消息条数。只写不判。 */
+  getTranscriptWatermark?(): number
   /** Model context window size (max tokens). */
   getContextWindow?(): number
   /**
@@ -492,6 +498,7 @@ export type AgentFactory = (
    * 默认全量（行为不变）。工厂实现可忽略（test doubles）。
    */
   allowedTools?: string[],
+  signal?: AbortSignal,
 ) => ManagedAgent | Promise<ManagedAgent>
 
 /**
@@ -650,6 +657,8 @@ export interface EventsTail {
  * (partial write) on load — never throw, just drop it.
  */
 export interface SessionPersistenceAdapter {
+  healthSnapshot?(): { failedSessions: number; pendingEvents: number }
+  flushThrough?(sessionId: string, seq: number, signal?: AbortSignal): Promise<number>
   saveRecord(record: SessionRecord): void
   appendEvent(sessionId: string, event: SessionEvent): void
   /** Flush buffered writes to disk (batched adapters). Optional — no-op if absent. */
@@ -719,6 +728,8 @@ export interface SessionPersistenceAdapter {
 }
 
 export interface RuntimeSessionManagerOptions {
+  runLedger?: import('./run-ledger.js').RunLedger
+  recoveryJournal?: import('./recovery-journal.js').RecoveryJournal
   createAgent: AgentFactory
   defaultCwd?: string
   now?: () => number
@@ -966,6 +977,7 @@ interface InternalSession {
   diskFirstSeq?: number
   seq: number
   running: boolean
+  preparationController?: AbortController
   activeRunSettlement?: ActiveRunSettlement
   /** Increments when durability ownership is permanently revoked. */
   lifecycleGeneration: number
@@ -1133,7 +1145,7 @@ export type DelegateResult =
  *  marks the no-configured-fallback path: the run continues on the default
  *  model with an explicit warning instead of fail-closing the session. */
 export type ResumeRunResult =
-  | { ok: true; model: string; switched: boolean; degraded?: boolean; warning?: string }
+  | { ok: true; model: string; switched: boolean; degraded?: boolean; warning?: string; unknownTools?: string[] }
   | { ok: false; code: 'not_found' | 'busy' | 'model_unavailable'; error: string }
 
 /** Injected user prompt for a resumed run — the model context was restored
@@ -1262,6 +1274,8 @@ export class RuntimeSessionManager {
    *  Serializes builds; entries removed when the shared promise settles. */
   private readonly agentBuilds = new Map<string, Promise<ManagedAgent>>()
   private readonly createAgent: AgentFactory
+  private readonly runLedger?: import('./run-ledger.js').RunLedger
+  private readonly recoveryJournal?: import('./recovery-journal.js').RecoveryJournal
   private readonly defaultCwd: string
   private readonly now: () => number
   private readonly idGenerator: () => string
@@ -1312,6 +1326,8 @@ export class RuntimeSessionManager {
   private readonly coordinatorBySession = new Map<string, () => import('../agent/coordinator.js').DelegationCoordinator | undefined>()
 
   constructor(opts: RuntimeSessionManagerOptions) {
+    this.runLedger = opts.runLedger
+    this.recoveryJournal = opts.recoveryJournal
     this.createAgent = opts.createAgent
     this.defaultCwd = opts.defaultCwd ?? process.cwd()
     this.now = opts.now ?? Date.now
@@ -2458,10 +2474,60 @@ export class RuntimeSessionManager {
     return { ...session.record }
   }
 
+  async submitRun(id: string, prompt: string, images: string[] | undefined, requestId: string) {
+    if (!this.sessions.has(id)) return { ok: false as const, code: 'not_found' }
+    if (!this.runLedger) return { ok: this.run(id, prompt, images), code: 'busy' }
+    const receipt = await this.runLedger.accept(id, requestId, { prompt, images }, receipt => this.run(id, prompt, images, false, receipt))
+    return { ok: receipt.state !== 'rejected', code: 'busy', receipt }
+  }
+
+  getRunRequest(id: string, requestId: string) {
+    return this.runLedger?.get(id, requestId) ?? Promise.resolve(undefined)
+  }
+
+  async prepareSession(id: string): Promise<boolean> {
+    const session = this.sessions.get(id)
+    if (!session) return false
+    await this.ensureEventsAsync(session)
+    return this.sessions.get(id) === session && !session.tombstoned
+  }
+
+  getStorageHealth() {
+    return this.persistence?.healthSnapshot?.() ?? { failedSessions: 0, pendingEvents: 0 }
+  }
+
+  /**
+   * 失败呈现字段（PLAN §3）：能判定时才附 scope/kind，未知类别不假装知道。
+   * 供 error 事件携带，桌面据此按「断网 / DNS-代理-TLS / 鉴权 / 限流 / 服务端」呈现。
+   */
+  private failureFields(err: unknown): { scope?: 'local' | 'provider'; kind?: string } {
+    try {
+      const f = describeFailure(err)
+      return f.category === 'unknown' && f.kind === 'other' ? {} : { scope: f.scope, kind: f.kind }
+    } catch { return {} }
+  }
+
+  /** 阶段 2 — 读取会话恢复检查点（诊断 / 恢复入口用）；无台账时 undefined。 */
+  getRecoveryCheckpoint(id: string): Promise<import('./recovery-journal.js').RecoveryCheckpoint | undefined> {
+    return this.recoveryJournal?.load(id) ?? Promise.resolve(undefined)
+  }
+
+  /** 阶段 2 — 只读恢复决策（不消耗自动恢复预算）：检查点 + 工具恢复分类。 */
+  getRecoveryDecision(id: string): Promise<import('./recovery-journal.js').RecoveryInspection | undefined> {
+    return this.recoveryJournal?.inspect(id) ?? Promise.resolve(undefined)
+  }
+
   /** Start an agent run on an idle session. Returns false if missing or busy. */
-  run(id: string, prompt: string, images?: string[]): boolean {
+  run(id: string, prompt: string, images?: string[], recovery = false, receipt?: import('./run-ledger.js').RunReceipt): boolean {
     const session = this.sessions.get(id)
     if (!session || session.running) return false
+    // 阶段 2 — 逻辑 runId：恢复台账用它把多次尝试归到同一逻辑运行。
+    let runId = receipt?.runId ?? randomUUID()
+    const attemptId = receipt?.attemptId ?? randomUUID()
+    session.record.runId = runId
+    session.record.attemptId = attemptId
+    session.preparationController = new AbortController()
+    beginActivityRun(id, attemptId)
     const wasAutoResubmit = session.watchdogAutoResubmit === true
     session.watchdogAutoResubmit = false
     session.watchdogRecoveryCancelled = false
@@ -2481,7 +2547,7 @@ export class RuntimeSessionManager {
     session.watchdogPolicy ??= new WatchdogRecoveryPolicy()
     // 用户主动提交恢复续跑预算；自动续跑注入的 'continue' 不算（与 TUI 的
     // onSubmitCallback 直呼路径一致，否则 consecutive cap 形同虚设）。
-    if (!wasAutoResubmit) session.watchdogPolicy.recordUserSubmit()
+    if (!wasAutoResubmit && !recovery) session.watchdogPolicy.recordUserSubmit()
     // Materialize the on-disk log before appending — otherwise a reconnecting
     // viewer (since=0) would replay only this run's events, not the history.
     this.ensureEvents(session)
@@ -2521,6 +2587,25 @@ export class RuntimeSessionManager {
     session.activeRunSettlement = runSettlement
     const ownsDurability = (): boolean => this.ownsSessionLifecycle(session, runGeneration)
 
+    let storageFailed = false
+    const journalWrites = new Set<Promise<void>>()
+    const storageFailure = () => {
+      if (storageFailed || !ownsDurability() || session.activeRunSettlement !== runSettlement || session.preparationController?.signal.aborted) return
+      storageFailed = true
+      session.watchdogRecoveryCancelled = true
+      session.record.status = 'failed'
+      session.record.error = 'Recovery storage unavailable; task stopped. Check disk space and directory permissions.'
+      session.record.persistenceState = 'failed'
+      this.append(session, 'error', { error: session.record.error, code: 'recovery_storage_failed' })
+      this.persistRecord(session)
+      try { session.agent?.abort() } catch { /* already stopped */ }
+    }
+    const journalWrite = (write: () => Promise<void> | undefined) => {
+      if (storageFailed) return
+      let pending!: Promise<void>
+      pending = Promise.resolve().then(write).catch(storageFailure).finally(() => journalWrites.delete(pending))
+      journalWrites.add(pending)
+    }
     const startWithAgent = (agent: ManagedAgent) => {
       // Abort/archive raced a dynamic serve-agent import — never start a turn.
       if (!ownsDurability() || session.record.status === 'aborted') {
@@ -2544,7 +2629,7 @@ export class RuntimeSessionManager {
       // Snapshot "first user message" BEFORE appending — the auto-title hook
       // below needs to know whether this run is the conversation opener.
       const wasFirstUser = !session.events.some((e) => e.type === 'user')
-      this.append(session, 'user', {
+      this.append(session, recovery ? 'recovery_status' : 'user', {
         text: prompt,
         ...(images?.length
           ? { imageCount: images.length, ...(imageIds.length ? { imageIds } : {}) }
@@ -2567,25 +2652,50 @@ export class RuntimeSessionManager {
         void this.maybeAutoTitle(id, prompt)
       }
       this.bindPlanModeChange(session, agent, runGeneration)
-      const callbacks = this.buildCallbacks(session)
-      void agent
-        .run(prompt, callbacks, images)
-        .then(() => {
-          if (!ownsDurability()) return
-          if (session.record.status === 'running') {
-            session.record.status = 'completed'
+      const callbacks = this.buildCallbacks(session, journalWrite)
+      callbacks.beforeToolExecute = async (toolId, name, input) => {
+        if (!ownsDurability() || session.activeRunSettlement !== runSettlement || storageFailed || session.record.status !== 'running') throw new Error('Execution cancelled')
+        try {
+          if (this.recoveryJournal) {
+            await this.confirmPersistence(session, session.seq)
+            const intentRef = await this.recoveryJournal.saveDependency(id, { toolId, name, input, runId, attemptId, kind: 'intent' })
+            await this.recoveryJournal.recordTool(id, { id: toolId, name, status: 'unknown', intentRef })
           }
-        })
+          if (!ownsDurability() || storageFailed || session.record.status !== 'running') throw new Error('Execution cancelled')
+        } catch (error) { storageFailure(); throw error }
+      }
+      void withActivityRun(id, attemptId, () => agent.run(prompt, callbacks, images))
         .catch((err: unknown) => {
           if (!ownsDurability()) return
           if (session.record.status === 'running') {
             session.record.status = 'failed'
             session.record.error = redactText((err as Error)?.message ?? String(err))
-            this.append(session, 'error', { error: session.record.error })
+            this.append(session, 'error', { error: session.record.error, ...this.failureFields(err) })
           }
         })
-        .finally(() => {
+        .finally(async () => {
           if (runSettlement.settled) return
+          await Promise.all(journalWrites)
+          if (ownsDurability() && !storageFailed) {
+            try {
+              if (this.recoveryJournal) {
+                const watermark = await this.confirmPersistence(session, session.seq)
+                await agent.flushPersistence?.()
+                // 转录水位（PLAN §4 第 1 步）：只写不判，先攒观测数据；第 2 步才拿它
+                // 与「实际恢复出多少条消息」对账。取不到就不写该字段，绝不影响收尾。
+                let transcriptWatermark: number | undefined
+                try { transcriptWatermark = agent.getTranscriptWatermark?.() } catch { /* 观测字段 */ }
+                const snapshot = agent.getRecoverySnapshot?.()
+                if (snapshot !== undefined && session.record.status === 'running') await this.recoveryJournal.commitSnapshot(id, watermark, snapshot, transcriptWatermark)
+                else await this.recoveryJournal.checkpoint(id, { watermark, state: 'settled', transcriptWatermark })
+              }
+            } catch { storageFailure() }
+          }
+          if (ownsDurability() && session.record.status === 'running') session.record.status = 'completed'
+          if (receipt) {
+            try { await this.runLedger?.settle(id, receipt.requestId, session.record.status) }
+            catch { storageFailure() }
+          }
           runSettlement.settled = true
           try {
             if (session.activeRunSettlement === runSettlement) {
@@ -2614,10 +2724,10 @@ export class RuntimeSessionManager {
             this.scanArtifacts(session)
             this.settleHandoffArchive(session)
             this.append(session, 'done', { status: session.record.status })
-            // run 收尾 done 已落盘（append 内 touchActivity 无条件置 idle:false）——
-            // 此后会话进入等待态（等用户下一条输入/harness 续轮），补 markIdle 收口：
-            // 交付后静默等待不被 stall-observer 误报；新 run 的首个事件 append 即自动解除。
-            markIdle(session.record.id)
+            // 收尾置空闲：此后会话在等用户下一步，交付后的静默不该被 stall-observer
+            // 报成无进展。打点在 run 收尾而非 wrapCallbacksWithHeartbeat.onTurnComplete
+            // （那里只到「最后一轮完成」，之后还有 done/工件/交接）；解除只能靠下一轮 beginRun。
+            finishActivityRun(id, attemptId)
             this.persistRecord(session)
             // Fast-path reconciliation; abort-specific delayed cleanup is
             // handled by the settlement-aware retry chain.
@@ -2644,7 +2754,7 @@ export class RuntimeSessionManager {
       if (ownsDurability() && session.record.status === 'running') {
         session.record.status = 'failed'
         session.record.error = redactText((err as Error)?.message ?? String(err))
-        this.append(session, 'error', { error: session.record.error })
+        this.append(session, 'error', { error: session.record.error, ...this.failureFields(err) })
       }
       if (!runSettlement.settled) {
         runSettlement.settled = true
@@ -2662,24 +2772,35 @@ export class RuntimeSessionManager {
         }
         if (ownsDurability()) {
           this.append(session, 'done', { status: session.record.status })
-          // 同正常收尾：done 落盘后会话进等待态，补 markIdle（失败/中止 run 后
-          // 同样等待用户下一步，不属于 stall）。
-          markIdle(session.record.id)
+          // 同正常收尾：done 落盘后会话进等待态并置空闲（失败/中止 run 之后同样在
+          // 等用户下一步，不属于 stall）。
+          finishActivityRun(id, attemptId)
           this.persistRecord(session)
         }
         runSettlement.resolve()
       }
     }
 
-    try {
+    const ensure = () => {
       const agentOrPromise = this.ensureAgent(session)
       if (agentOrPromise && typeof (agentOrPromise as Promise<ManagedAgent>).then === 'function') {
-        void (agentOrPromise as Promise<ManagedAgent>).then(startWithAgent, failEnsure)
+        void (agentOrPromise as Promise<ManagedAgent>).then(startWithAgent).catch(failEnsure)
       } else {
         startWithAgent(agentOrPromise as ManagedAgent)
       }
-    } catch (err) {
-      failEnsure(err)
+    }
+    if (this.recoveryJournal) {
+      void this.recoveryJournal.beginRun({
+        sessionId: id, runId, attemptId, watermark: 0, autoResume: wasAutoResubmit,
+        model: session.record.model, domain: session.record.domain, approvalMode: session.record.approvalMode,
+      }).then(checkpoint => {
+        runId = checkpoint.runId
+        session.record.runId = runId
+        if (!ownsDurability() || session.record.status === 'aborted') { failEnsure(new Error('Cancelled')); return }
+        try { ensure() } catch (error) { failEnsure(error) }
+      }, (error) => { storageFailure(); failEnsure(error) })
+    } else {
+      try { ensure() } catch (error) { failEnsure(error) }
     }
     return true
   }
@@ -2829,13 +2950,25 @@ export class RuntimeSessionManager {
         this.persistRecord(session)
       }
     }
-    const started = this.run(id, RESUME_PROMPT)
+    // PLAN §4：结果未知的工具不可通用重放。自动路径已由看门狗闸门阻断；显式续跑
+    // 也要把「待确认」摆出来（并落事件），而不是静默把同一副作用再打一遍。
+    const unknownTools = (await this.recoveryJournal?.inspect(id))?.needsConfirmation.map((t) => t.id) ?? []
+    if (unknownTools.length > 0) {
+      this.append(session, 'recovery_status', {
+        state: 'needs_attention',
+        reason: 'unknown-tool-outcome',
+        unknownTools,
+      })
+      this.persistRecord(session)
+    }
+    const started = this.run(id, RESUME_PROMPT, undefined, true)
     if (!started) return { ok: false, code: 'busy', error: 'Session is already running' }
     return {
       ok: true,
       model: session.record.model ?? target ?? '',
       switched,
       ...(degraded ? { degraded, warning } : {}),
+      ...(unknownTools.length > 0 ? { unknownTools } : {}),
     }
   }
 
@@ -2918,6 +3051,7 @@ export class RuntimeSessionManager {
       session.approvalMode,
       session.record.model,
       session.record.allowedTools,
+      session.preparationController?.signal,
     )
     const finish = (agent: ManagedAgent): ManagedAgent => {
       session.agent = agent
@@ -2979,6 +3113,18 @@ export class RuntimeSessionManager {
   private warnIfHistoryLost(session: InternalSession): void {
     const info = session.agent?.getHistoryRestore?.()
     if (!info) return
+    // PLAN §4 第 3 步：结构化恢复注入「结果未知」的工具 → 时间线标待确认（幂等）。
+    for (const t of info.uncertainTools ?? []) {
+      const already = session.events.some((e) => e.type === 'tool_result' && e.data.uncertain === true && e.data.id === t.id)
+      if (already) continue
+      this.append(session, 'tool_result', {
+        id: t.id,
+        name: t.name,
+        isError: true,
+        uncertain: true,
+        result: '结果未知：进程中断未收到该工具结果；不要自动重放，核实后再决定是否重做。',
+      })
+    }
     if (!info.error && info.restored > 0) return
     const hadConversation = session.events.some((e) => e.type === 'user')
     if (!hadConversation) return
@@ -3201,7 +3347,7 @@ export class RuntimeSessionManager {
     const agent = await this.ensureAgentAsync(session)
     let resolved: string | null
     try {
-      resolved = agent.switchModel?.(modelId) ?? null
+      resolved = await agent.switchModel?.(modelId) ?? null
     } catch {
       return false
     }
@@ -4452,6 +4598,8 @@ export class RuntimeSessionManager {
     const s = this.sessions.get(id)
     if (!s) return false
     const wasRunning = s.running
+    s.preparationController?.abort()
+    if (s.record.attemptId) finishActivityRun(id, s.record.attemptId)
     const settlement = s.activeRunSettlement
     // Is there actually anything to stop? Must be sampled before the timers
     // below are cleared. rehydrate() loads EVERY persisted session into memory,
@@ -5605,9 +5753,27 @@ export class RuntimeSessionManager {
     if (a.status !== 'running') startedMap.delete(attemptKey)
   }
 
-  private buildCallbacks(session: InternalSession): AgentCallbacks {
+  private buildCallbacks(session: InternalSession, journalWrite: (write: () => Promise<void> | undefined) => void): AgentCallbacks {
     const lifecycleGeneration = session.lifecycleGeneration
+    const activeRun = session.activeRunSettlement
+    /**
+     * 本回调批是否仍属于当前会话生命周期（归档 / 删除 / 新 run 会吊销）。
+     * 这是既有语义，**不要**把它收紧成「run 未 settle」：下面近 20 处守卫全靠它，
+     * 而 run 收尾之后到达的回调恰恰是该采纳的——onStreamInterrupted 要把终态如实
+     * 记成 interrupted、onTurnComplete 要补发累计 usage 快照（onAbort 那段注释里
+     * 是同款理由）、onDelegationActivity 要落 worker 活动。收紧这一个谓词 =
+     * 一次性改写这近 20 处的行为，且失效方式是静默丢事件。
+     */
     const isActive = (): boolean => this.ownsSessionLifecycle(session, lifecycleGeneration)
+    /**
+     * isActive 的收窄版：本回调批所属的那次 run 仍是当前在跑、且尚未 settle 的 run。
+     * 只给「会登记待决状态 / 架定时器」的入口用——目前唯一一处是 onApprovalRequired：
+     * run 已收尾后再送达的审批请求会往 session.pending 挂一条并起审批超时定时器，
+     * 而没有任何 run 会回来消费它（陈旧审批 = 泄漏的 pending + 孤儿定时器）。
+     * 其余回调只 append 事件、没有待决状态，收紧它们没有收益、只有静默丢数据。
+     */
+    const isLiveAttempt = (): boolean =>
+      isActive() && session.activeRunSettlement === activeRun && activeRun?.settled !== true
     // plan 工具 action=submit 的 toolId 登记（onToolUse 写入 / onToolResult 消费）。
     // 携带 slug+title（onPlanSubmitted 同款 slugify 推导）：emitPlanSubmitted 直接
     // 用确定 slug 发卡，不再从磁盘 plans[0] 顶替——多会话共享 cwd 时 plans[0]
@@ -5662,6 +5828,7 @@ export class RuntimeSessionManager {
       onToolUse: (toolId, name, input) => {
         if (!isActive()) return
         this.append(session, 'tool_use', { id: toolId, name, input: redactValue(input) })
+        journalWrite(() => this.recoveryJournal?.recordTool(session.record.id, { id: toolId, name, status: 'unknown' }))
         // plan 工具 action=submit 的调用登记——onToolResult 没有 input，靠这里的
         // toolId 集合在结果回调里精确识别"提交成功"，避免 plan 其它 action
         //（enter_mode/close/list）误发 plan_submitted。title 一并登记：submit 的
@@ -5741,6 +5908,14 @@ export class RuntimeSessionManager {
         this.flushToolResultBuf(session)
         session.toolResultStream = undefined
         this.append(session, 'tool_result', eventData)
+        const watermark = session.seq
+        journalWrite(async () => {
+          if (!this.recoveryJournal) return
+          await this.confirmPersistence(session, watermark)
+          const resultRef = await this.recoveryJournal.saveDependency(session.record.id, { toolId, name, result, isError })
+          // 终态（成败）一律记引用；status 待 commitSnapshot 提升——见 ToolRecoveryStatus。
+          await this.recoveryJournal.recordTool(session.record.id, { id: toolId, name, status: 'unknown', resultRef })
+        })
         if (DELEGATION_TOOLS.has(name)) {
           this.append(session, 'delegation', {
             workerId: toolId,
@@ -5793,10 +5968,16 @@ export class RuntimeSessionManager {
           ...(isFinal && evidenceSummary ? { evidence: evidenceSummary } : {}),
           ...(typeof continuationReason === 'string' && continuationReason ? { continuationReason } : {}),
         })
+        const watermark = session.seq
+        journalWrite(async () => {
+          if (!this.recoveryJournal) return
+          await this.confirmPersistence(session, watermark)
+          await this.recoveryJournal.recordProgress(session.record.id, watermark, { ...usage } as Record<string, unknown>)
+        })
       },
       onError: (err) => {
         if (!isActive()) return
-        this.append(session, 'error', { error: redactText(err.message) })
+        this.append(session, 'error', { error: redactText(err.message), ...this.failureFields(err) })
       },
       onStreamInterrupted: () => {
         if (!isActive()) return
@@ -5843,6 +6024,12 @@ export class RuntimeSessionManager {
         if (!isActive()) return
         this.append(session, 'checkpoint', { hash })
       },
+      onModelRetry: ({ attempt, maxAttempts }) => {
+        if (!isActive()) return
+        // 按尝试替换：桌面端读到本条即丢弃失败尝试的未完成 partial，避免与重试
+        // 输出拼接重复；同时留一条「未完成/重试」标记。
+        this.append(session, 'retry', { attempt, maxAttempts, replaceAttempt: true })
+      },
       onPhaseChange: (phase, detail) => {
         if (!isActive()) return
         session.record.currentPhase = phase
@@ -5880,8 +6067,17 @@ export class RuntimeSessionManager {
           severity: shift.severity ?? 'info',
         })
       },
-      onApprovalRequired: (toolId, name, input) =>
-        this.requestApproval(session, lifecycleGeneration, toolId, name, input),
+      onApprovalRequired: async (toolId, name, input) => {
+        // 陈旧 run 的审批请求直接拒绝，不进 requestApproval——它会挂 pending 并起
+        // 审批超时定时器，而没有任何 run 会来消费（陈旧审批 = 泄漏的 pending +
+        // 孤儿定时器）。这里返回 deny 而不是抛错：requestApproval 在生命周期被吊销时
+        // 的既有契约就是 `{ approved: false }`，「拒绝」已经是 fail-closed 的答案；
+        // 抛错只会把 Error 灌进一个已经收尾的 agent 循环，换回一个没人读的 error 事件。
+        if (!isLiveAttempt()) return { approved: false }
+        setActivityPhase(session.record.id, 'approval')
+        try { return await this.requestApproval(session, lifecycleGeneration, toolId, name, input) }
+        finally { setActivityPhase(session.record.id, 'running') }
+      },
       // E4 — client landing delegation (mirrors onApprovalRequired injection).
       onToolDelegate: (kind, payload) =>
         this.requestToolDelegate(session, lifecycleGeneration, kind, payload),
@@ -6143,17 +6339,47 @@ export class RuntimeSessionManager {
         ...policy.snapshot(),
       })
       if (!decision.autoContinue) return
-      const timer = setTimeout(() => {
-        session.watchdogContinueTimer = undefined
+      const arm = () => {
+        const timer = setTimeout(() => {
+          session.watchdogContinueTimer = undefined
+          if (!this.ownsSessionDurability(session)) return
+          // 倒计时后复核同一组守卫——期间用户可能已 abort / 提交新 prompt / 归档。
+          if (session.running || session.record.status !== 'aborted' || session.record.archived) return
+          if (session.watchdogRecoveryCancelled) return
+          session.watchdogAutoResubmit = true
+          if (!this.run(session.record.id, 'continue')) session.watchdogAutoResubmit = false
+        }, delayMs)
+        timer.unref?.()
+        session.watchdogContinueTimer = timer
+      }
+      const journal = this.recoveryJournal
+      if (!journal) { arm(); return }
+      // 阶段 2 闸门，三种拒绝理由都转待处理并**闩住**自动续跑：
+      //   · unknown-tool-outcome  —— 结果未知的工具不可通用重放，必须先核实；
+      //   · auto-resume-exhausted —— 同一运行没有新真实进展，已用掉唯一一次自动恢复；
+      //   · no-checkpoint         —— 检查点不完整（快照/依赖缺失或不可解析），退回既有路径。
+      const needsAttention = (reason: string, unknownTools?: string[]) => {
         if (!this.ownsSessionDurability(session)) return
-        // 倒计时后复核同一组守卫——期间用户可能已 abort / 提交新 prompt / 归档。
         if (session.running || session.record.status !== 'aborted' || session.record.archived) return
         if (session.watchdogRecoveryCancelled) return
-        session.watchdogAutoResubmit = true
-        if (!this.run(session.record.id, 'continue')) session.watchdogAutoResubmit = false
-      }, delayMs)
-      timer.unref?.()
-      session.watchdogContinueTimer = timer
+        session.watchdogRecoveryCancelled = true
+        this.append(session, 'recovery_status', {
+          state: 'needs_attention',
+          reason,
+          ...(unknownTools?.length ? { unknownTools } : {}),
+        })
+        this.persistRecord(session)
+      }
+      // 台账故障取 fail-closed（并入 main 时保留 main 的策略）：存储不可用即停下来转
+      // 待处理，而不是 arm() 放行自动续跑——与本轮建立的「存储失败停任务」政策一致。
+      // 分支原实现是 catch → arm()（fail-open），此处刻意不采纳。
+      void journal.recoveryDecision(session.record.id).then((decision) => {
+        if (!this.ownsSessionDurability(session)) return
+        if (session.running || session.record.status !== 'aborted' || session.record.archived) return
+        if (session.watchdogRecoveryCancelled) return
+        if (decision.allowed) { arm(); return }
+        needsAttention(decision.reason ?? 'auto-resume-blocked', decision.unknownTools)
+      }).catch(() => needsAttention('recovery-storage-failed'))
     })
   }
 
@@ -6502,7 +6728,9 @@ export class RuntimeSessionManager {
     if (!this.ownsSessionDurability(session)) return
     // 无进展哨兵打点（stall-observer）：事件落盘 = 回合进展。回合死锁时
     // jsonl 停止写入 → 此 touch 停止 → 观察器 90s 后告警并指认最后事件。
-    touchActivity(session.record.id, `evt:${type}`)
+    if (type !== 'hook_result' && !(type === 'phase' && data.phase === 'heartbeat')) {
+      touchActivity(session.record.id, `evt:${type}`)
+    }
     if (type !== 'tool_result') {
       this.flushToolResultBuf(session)
       session.toolResultStream = undefined
@@ -6514,6 +6742,15 @@ export class RuntimeSessionManager {
     this.appendRaw(session, type, data, opts)
   }
 
+  private async confirmPersistence(session: InternalSession, seq: number): Promise<number> {
+    if (!this.persistence?.flushThrough) throw new Error('Storage does not support durable recovery')
+    const watermark = await this.persistence.flushThrough(session.record.id, seq, session.preparationController?.signal)
+    if (watermark < seq) throw new Error('Incomplete persistence barrier')
+    session.record.durableWatermark = watermark
+    session.record.persistenceState = 'saved'
+    return watermark
+  }
+
   private appendRaw(
     session: InternalSession,
     type: SessionEventType,
@@ -6522,7 +6759,9 @@ export class RuntimeSessionManager {
   ): void {
     if (!this.ownsSessionDurability(session)) return
     const persistData = opts?.persistData ?? liveData
-    const stored: SessionEvent = { seq: ++session.seq, ts: this.now(), type, data: persistData }
+    const stored: SessionEvent = { seq: ++session.seq, ts: this.now(), type, data: persistData,
+      ...(session.record.runId ? { runId: session.record.runId, attemptId: session.record.attemptId } : {}),
+    }
     session.events.push(stored)
     if (session.events.length > this.maxEvents) {
       session.events = trimEventRing(session.events, this.maxEvents)

@@ -6,6 +6,7 @@
  * 命中该检查号。基线用例反而是最弱的一条。
  */
 
+import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { runChecks, listPushSites, type Report } from '../verify-injection-surfaces.js'
@@ -41,12 +42,25 @@ describe('注入点申报表 · 基线', () => {
     assert.equal(report.ok, true)
   })
 
+  it('CRLF 检出不误报：源码归一化后 V3 仍能解析（Windows core.autocrlf=true）', () => {
+    // 复现 win runner 上长期红的形态（收编公开仓 PR #267）：
+    //   AssertionError: [V3] 无法从 src/context/pressure-monitor.ts 解析 CvmInjectionSource 联合类型
+    // V3 的枚举块边界是 `\n\n`，在 CRLF 文本里（`\r\n\r\n`）匹配不到——平台差异，
+    // 不是内容差异。这条用例锁住「读入处归一化」不被打回：删掉归一化它立刻变红。
+    const rel = 'src/context/pressure-monitor.ts'
+    const lf = readFileSync(new URL('../../src/context/pressure-monitor.ts', import.meta.url), 'utf-8')
+    const crlf = lf.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n')
+    assert.ok(crlf.includes('\r\n'), 'CRLF 构造失败——源文件本身已是 CRLF？')
+    const report = runChecks(v => { v.sourceOverrides[rel] = crlf })
+    assert.deepEqual(report.failures, [], report.failures.map(f => `[${f.check}] ${f.message}`).join('\n'))
+  })
+
   it('规模与通道数符合当前实现', () => {
     const { stats } = runChecks()
-    // 27 个普通 appendix 块 + 2 个受保护块 + 9 个通道级条目
+    // 27 个普通 appendix 块 + 2 个受保护块 + 10 个通道级条目
     assert.equal(stats.appendix, 27)
     assert.equal(stats.appendixProtected, 2)
-    assert.equal(stats.surfaces, 38)
+    assert.equal(stats.surfaces, 39)
     assert.equal(stats.channels, 7)
     // CvmInjectionSource 七源全部被认领
     assert.equal(stats.metered, 7)

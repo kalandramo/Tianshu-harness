@@ -11,13 +11,26 @@ import type { RouteHandler } from './index.js'
 import type { RuntimeSessionManager } from './session-manager.js'
 import type { LoopLagSnapshot } from './loop-health.js'
 import { isAuthorizedRequest } from './auth.js'
-import { PROTOCOL_VERSION } from './protocol.js'
+import { PROTOCOL_VERSION, RUNTIME_CAPABILITIES, type RuntimeCapabilities } from './protocol.js'
+import { randomUUID } from 'node:crypto'
+
+export const RUNTIME_INSTANCE_ID = process.env.RIVET_INSTANCE_ID || randomUUID()
 
 /** 带 token 请求拿到的全量 health 体。`GET /events` 的心跳复用同一份（阶段 4）。 */
 export interface HealthBody {
+  storage?: { failedSessions: number; pendingEvents: number }
+  snapshotAt?: number
+  buildId?: string
+  nodeVersion?: string
+  memory?: { rss: number; heapUsed: number }
+  instanceId: string
+  readiness: 'ready' | 'initializing' | 'failed'
   ok: boolean
   version: string
   protocolVersion: number
+  /** 本运行时**自报**能处理哪些请求族（issue #266）——前端据此决定要不要禁用入口，
+   *  而不是靠版本号猜。加性字段：老运行时缺它时前端回退版本比较。 */
+  capabilities: RuntimeCapabilities
   uptimeMs: number
   sessionCount: number
   runningCount: number
@@ -40,6 +53,7 @@ export function createHealthSnapshot(
   registryReady?: () => boolean,
   configured?: () => boolean,
   loopLag?: () => LoopLagSnapshot,
+  initializationError?: () => string | undefined,
 ): HealthSnapshot {
   return () => {
     const registryOk = registryReady ? registryReady() : true
@@ -47,9 +61,17 @@ export function createHealthSnapshot(
     const { sessionCount, runningCount } = manager.stats()
     const lag = loopLag?.()
     return {
+      snapshotAt: Date.now(),
+      storage: manager.getStorageHealth(),
+      buildId: process.env.RIVET_BUILD_ID ?? 'unknown',
+      nodeVersion: process.version,
+      memory: { rss: process.memoryUsage().rss, heapUsed: process.memoryUsage().heapUsed },
+      instanceId: RUNTIME_INSTANCE_ID,
+      readiness: initializationError?.() ? 'failed' : registryOk ? 'ready' : 'initializing',
       ok: registryOk && configuredOk,
       version,
       protocolVersion: PROTOCOL_VERSION,
+      capabilities: RUNTIME_CAPABILITIES,
       uptimeMs: Date.now() - startedAt,
       sessionCount,
       runningCount,
@@ -68,9 +90,17 @@ export function buildHealthRoute(
   registryReady?: () => boolean,
   configured?: () => boolean,
   loopLag?: () => LoopLagSnapshot,
+  initializationError?: () => string | undefined,
 ): Record<string, RouteHandler> {
-  const snapshot = createHealthSnapshot(manager, startedAt, version, registryReady, configured, loopLag)
+  const snapshot = createHealthSnapshot(manager, startedAt, version, registryReady, configured, loopLag, initializationError)
   return {
+    'GET /readyz': (_body, _params, headers) => {
+      if (!isAuthorizedRequest({ headers: headers ?? {} }, apiToken)) {
+        return { status: 401, body: { error: 'Unauthorized' } }
+      }
+      const body = snapshot()
+      return { status: body.registryOk ? 200 : 503, body }
+    },
     'GET /health': (_body, _params, headers) => {
       if (!isAuthorizedRequest({ headers: headers ?? {} }, apiToken)) {
         const registryOk = registryReady ? registryReady() : true

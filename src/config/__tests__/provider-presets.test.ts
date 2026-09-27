@@ -3,13 +3,14 @@ import assert from 'node:assert/strict'
 import { providerSchema, modelConfigSchema } from '../schema.js'
 import { PROVIDER_PRESETS, cloneProviderPreset, providerPresetKeys } from '../provider-presets.js'
 import { resolveCapabilities, resolveEffortSupported } from '../../api/provider.js'
+import { hasModelsListEndpoint } from '../../api/endpoint-map.js'
 import { MODEL_ALIAS_TABLE } from '../../api/model-aliases.js'
 import { DEFAULT_CONFIG } from '../default.js'
 import { migratePresetModelBackfill } from '../preset-model-backfill.js'
 
 describe('provider presets', () => {
   it('contains required built-in provider modes', () => {
-    assert.deepEqual([...providerPresetKeys].sort(), ['ccswitch', 'codex', 'dashscope', 'deepseek', 'glm', 'grok', 'kimi', 'longcat', 'mimo', 'mimo-api', 'minimax', 'ollama', 'openai', 'opencode-go', 'opencode-go-anthropic', 'openrouter', 'relay', 'siliconflow', 'stepfun', 'volc', 'zhipu-vision'].sort())
+    assert.deepEqual([...providerPresetKeys].sort(), ['ccswitch', 'codex', 'dashscope', 'deepseek', 'glm', 'grok', 'kimi', 'longcat', 'mimo', 'mimo-api', 'minimax', 'ollama', 'openai', 'opencode-go', 'opencode-go-anthropic', 'openrouter', 'relay', 'siliconflow', 'stepfun', 'volc', 'volc-plan', 'volc-plan-anthropic', 'zhipu-vision'].sort())
   })
 
   it('ollama is the only keyless preset (local, no auth)', () => {
@@ -155,31 +156,103 @@ describe('provider presets', () => {
     assert.deepEqual(flash.pricing, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
   })
 
+  it('glm Coding Plan 档位映射：off→none、medium→high（官方 Coding Plan 口径）', () => {
+    const glm = PROVIDER_PRESETS.glm
+    assert.deepEqual(glm.provider.capabilities?.effortCap, { off: 'none', medium: 'high' })
+    assert.equal(resolveEffortSupported('glm', glm.provider), true, '档位控件必须放行')
+  })
+
+  it('siliconflow：官方支持清单外的型号模型级关闭档位通道', () => {
+    const sf = PROVIDER_PRESETS.siliconflow
+    for (const id of ['moonshotai/Kimi-K2.7-Code', 'Qwen/Qwen3.6-27B']) {
+      const model = sf.provider.models.find(m => m.id === id)!
+      assert.deepEqual(model.capabilities, { effortFormat: 'none' }, `${id} 必须模型级关闭`)
+      assert.equal(
+        resolveEffortSupported('siliconflow', sf.provider, model.capabilities),
+        false,
+        `${id} 不在官方 reasoning_effort 支持清单内`,
+      )
+    }
+    const flash = sf.provider.models.find(m => m.id === 'deepseek-ai/DeepSeek-V4-Flash')!
+    assert.equal(resolveEffortSupported('siliconflow', sf.provider, flash.capabilities), true)
+  })
+
   // Kimi Code（会员订阅端点）与 CLI 内置 DEFAULT_CONFIG.kimi 必须同源。
   // 2026-09 之前预设走 Moonshot 开放平台（api.moonshot.cn + MOONSHOT_API_KEY + kimi-k3），
   // 与内置的 Kimi Code 配置（api.kimi.com/coding + KIMI_API_KEY + k3）两套并存：
   // 用户在预设卡填的开放平台 Key 拿不到内置模型，反之亦然。以官方 Kimi Code 文档为准
-  // （https://www.kimi.com/coding/docs/：Base URL api.kimi.com/coding/v1、模型 id k3 系）。
-  it('kimi 预设走 Kimi Code 订阅端点，模型为 k3 系', () => {
+  // （kimi.com/code/docs/kimi-code/models.html：Base URL api.kimi.com/coding/v1；
+  // CLI/VS Code/桌面端/第三方工具请求均计入 Kimi 会员共享额度）。
+  it('kimi 预设：Kimi Code 订阅额度标记 + 官方 4 个模型 ID', () => {
     const kimi = cloneProviderPreset('kimi')
     assert.equal(kimi.baseUrl, 'https://api.kimi.com/coding/v1')
     assert.equal(kimi.apiKeyEnv, 'KIMI_API_KEY')
     assert.equal(PROVIDER_PRESETS.kimi.defaultModelId, 'k3')
     assert.equal(PROVIDER_PRESETS.kimi.keyUrl, 'https://www.kimi.com/code/console', 'Key 在 Kimi Code 控制台创建，不是开放平台')
+    // 订阅额度标记：label/description 明示「Kimi Code 会员订阅额度」
+    assert.match(PROVIDER_PRESETS.kimi.label, /Kimi Code/)
+    assert.match(PROVIDER_PRESETS.kimi.description, /Kimi Code 会员订阅额度/)
+    assert.match(PROVIDER_PRESETS.kimi.description, /与 Kimi 会员共享/)
+    assert.deepEqual(
+      kimi.models.map(m => m.id),
+      ['k3', 'k3-256k', 'kimi-for-coding', 'kimi-for-coding-highspeed'],
+      '官方模型页列 4 个模型 ID',
+    )
     const k3 = kimi.models.find(m => m.id === 'k3')
     assert.ok(k3, 'k3 必须在 kimi 预设模型列表')
-    assert.equal(k3.contextWindow, 1_000_000)
+    assert.equal(k3.contextWindow, 1_048_576, '官方 1M（1048576；Moderato/Plus 档限 256K，Allegretto/Pro 解锁 1M）')
     assert.equal(k3.maxTokens, 131_072)
     assert.equal(k3.reasoningEffort, 'max')
-    assert.deepEqual(k3.pricing, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, 'Kimi Code 会员订阅不按 token 计费')
-    const code = kimi.models.find(m => m.id === 'kimi-for-coding')
-    assert.ok(code, 'kimi-for-coding 必须在 kimi 预设模型列表')
+    assert.equal(k3.supportsVision, true, '官方多模态：图片+视频输入（schema 只建模图片）')
+    assert.equal(k3.supportsVideo, true, '官方多模态：视频输入声明')
+    assert.deepEqual(k3.pricing, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, 'Kimi Code 会员订阅额度：不按 token 计费')
     // 官方 4 个模型 ID 里的 k3-256k：256K 上下文省额度版，k3（1M）消耗约为其两倍。
     const budget = kimi.models.find(m => m.id === 'k3-256k')
     assert.ok(budget, 'k3-256k 必须在 kimi 预设模型列表（官方 256K 省额度版）')
     assert.equal(budget.contextWindow, 262_144)
     assert.equal(budget.reasoningEffort, 'max')
+    assert.equal(budget.supportsVision, true, '官方：仅图片输入（视频不支持）')
+    assert.equal(budget.supportsVideo, undefined, '仅图片档不得声明视频输入')
     assert.deepEqual(budget.pricing, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
+  })
+
+  it('kimi-for-coding = K2.8 Preview（1M/默认 max）；highspeed = K2.7 Code（Thinking:ON 无档位）', () => {
+    const kimi = PROVIDER_PRESETS.kimi.provider
+    const code = kimi.models.find(m => m.id === 'kimi-for-coding')!
+    assert.match(code.description ?? '', /K2\.8 Preview/, '官方 2026-09-11 起 kimi-for-coding 直接升级 K2.8 Preview')
+    assert.equal(code.contextWindow, 1_048_576, 'K2.8 Preview 最高 1M 上下文')
+    assert.equal(code.reasoningEffort, 'max', '官方默认思考档 max')
+    assert.equal(code.supportsVision, true, '官方：图片+视频输入')
+    assert.equal(code.supportsVideo, true, '官方：视频输入声明')
+    assert.deepEqual(code.pricing, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
+
+    const highspeed = kimi.models.find(m => m.id === 'kimi-for-coding-highspeed')!
+    assert.ok(highspeed, '官方 4 个模型 ID 之一：高速版')
+    assert.equal(highspeed.contextWindow, 262_144)
+    assert.equal(highspeed.supportsVision, true, '官方：图片+视频输入')
+    assert.equal(highspeed.supportsVideo, true, '官方：视频输入声明')
+    assert.deepEqual(
+      highspeed.capabilities,
+      { effortFormat: 'none' },
+      'Thinking:ON 无档位——模型级关闭档位通道，不发 reasoning_effort',
+    )
+    assert.equal(
+      resolveEffortSupported('kimi', kimi, highspeed.capabilities),
+      false,
+      '档位控件对 highspeed 禁用',
+    )
+    assert.equal(resolveEffortSupported('kimi', kimi, code.capabilities), true, 'K2.8 的 low/high/max 档位放行')
+  })
+
+  it('官方视频输入声明：stepfun step-5-preview + MiniMax-M3（声明式，尚无投喂通道）', () => {
+    const step = PROVIDER_PRESETS.stepfun.provider.models.find(m => m.id === 'step-5-preview')!
+    assert.equal(step.supportsVision, true)
+    assert.equal(step.supportsVideo, true, '官方：原生文本/图片/视频输入')
+    const mm = PROVIDER_PRESETS.minimax.provider.models.find(m => m.id === 'MiniMax-M3')!
+    assert.equal(mm.supportsVision, true)
+    assert.equal(mm.supportsVideo, true, '官方多模态 Chat 输入：文本/图片/视频')
+    const mm27 = PROVIDER_PRESETS.minimax.provider.models.find(m => m.id === 'MiniMax-M2.7')!
+    assert.equal(mm27.supportsVideo, undefined, 'M2.x 纯文本档不得声明视频')
   })
 
   // PR-4 收口：DeepSeek 默认档从旗舰（v4-pro）改为快速档（v4-flash），预设表内也把
@@ -301,6 +374,112 @@ describe('stepfun preset (阶跃星辰 StepFun)', () => {
       '默认档必须在 fleet 里（否则首轮就发一个列表外的 id）',
     )
     assert.equal(preset.keyUrl, 'https://platform.stepfun.com/interface-key')
+  })
+})
+
+// ── issue #272：火山方舟 Agent Plan（订阅制）第一方接入 ──────────────────────
+// 官方文档（agent-plan-personal-get-started / other-tools / deepseek-harness）：
+// OpenAI 兼容 Base URL = /api/plan/v3（chat + responses），Anthropic = /api/plan；
+// 专属 Key 与按量/Coding Plan 互不通用；端点没有 GET /models（连接测试走补全）。
+describe('volc-plan preset (火山方舟 Agent Plan, issue #272)', () => {
+  const preset = PROVIDER_PRESETS['volc-plan']
+
+  it('固定官方订阅端点与专属 Key 环境变量（不与按量 volc 混用）', () => {
+    assert.equal(preset.provider.baseUrl, 'https://ark.cn-beijing.volces.com/api/plan/v3')
+    assert.equal(preset.provider.protocol, 'openai')
+    assert.equal(preset.provider.apiKeyEnv, 'ARK_PLAN_API_KEY')
+    assert.notEqual(
+      preset.provider.apiKeyEnv,
+      PROVIDER_PRESETS.volc.provider.apiKeyEnv,
+      'Agent Plan 专属 Key 与按量方舟 Key 互不通用，环境变量必须分开',
+    )
+    assert.ok(preset.keyUrl?.startsWith('https://console.volcengine.com/ark'), 'keyUrl 指向 Agent Plan 控制台')
+  })
+
+  it('默认 ark-code-latest 在 fleet 内，全部型号带完整 ctx/max 元数据与零单价', () => {
+    assert.equal(preset.defaultModelId, 'ark-code-latest')
+    const ids = preset.provider.models.map(m => m.id)
+    assert.ok(ids.includes('ark-code-latest'))
+    assert.ok(ids.includes('deepseek-v4-flash'), '官方文本生成标准档必须在 fleet 里')
+    assert.ok(ids.includes('glm-5.3'))
+    assert.ok(ids.includes('kimi-k3'))
+    for (const m of preset.provider.models) {
+      assert.ok(m.contextWindow !== undefined, `${m.id} 必须带上下文窗口（否则向导补参）`)
+      assert.ok(m.maxTokens !== undefined, `${m.id} 必须带最大输出（否则向导补参）`)
+      assert.deepEqual(
+        m.pricing,
+        { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        `${m.id} 走套餐 AFP 额度，单价必须清零`,
+      )
+    }
+  })
+
+  it('档位通道按官方 deep-thinking 表接入：7 档透传 + off→none + 未支持型号模型级关闭', () => {
+    const caps = preset.provider.capabilities!
+    assert.equal(caps.thinkingBlock, 'none', '只走 reasoning_effort，不发 thinking 块')
+    assert.equal(caps.effortFormat, 'reasoning_effort')
+    assert.deepEqual(caps.effortCap, { off: 'none' }, '内部 off 映射官方 none，永不直发')
+    assert.equal(resolveEffortSupported('volc-plan', preset.provider), true, '桌面档位带必须放行')
+    // 未列入方舟支持表的第三方型号：模型级 opt-out 必须压过 provider 级通道
+    for (const id of ['kimi-k2.7-code', 'kimi-k3', 'kimi-k2.8-preview', 'minimax-m3']) {
+      const model = preset.provider.models.find(m => m.id === id)!
+      assert.deepEqual(model.capabilities, { effortFormat: 'none' }, `${id} 必须模型级关闭档位`)
+      assert.equal(
+        resolveEffortSupported('volc-plan', preset.provider, model.capabilities),
+        false,
+        `${id} 的档位控件不得放行（未验证支持）`,
+      )
+    }
+    // 支持表内型号保持通道
+    for (const id of ['ark-code-latest', 'deepseek-v4-pro', 'glm-5.3-flash', 'doubao-seed-evolving']) {
+      const model = preset.provider.models.find(m => m.id === id)!
+      assert.equal(
+        resolveEffortSupported('volc-plan', preset.provider, model.capabilities),
+        true,
+        `${id} 在方舟支持表内，档位通道保持开启`,
+      )
+    }
+  })
+
+  it('volc 按量预设：通道在 doubao-seed-2.0-pro 模型级（探测异构型号不被误发）', () => {
+    const volc = PROVIDER_PRESETS.volc
+    assert.equal(volc.provider.capabilities?.effortFormat, undefined, 'provider 级不声明，保护探测来的异构型号')
+    const pro = volc.provider.models.find(m => m.id === 'doubao-seed-2.0-pro')!
+    assert.deepEqual(pro.capabilities, {
+      thinkingBlock: 'none',
+      effortFormat: 'reasoning_effort',
+      effortCap: { off: 'none' },
+    })
+    assert.equal(resolveEffortSupported('volc', volc.provider, pro.capabilities), true)
+    const flash = volc.provider.models.find(m => m.id === 'doubao-seed-2.0-flash')!
+    assert.equal(flash.capabilities, undefined, '未验证型号不开通道')
+    assert.equal(resolveEffortSupported('volc', volc.provider, flash.capabilities), false)
+  })
+
+  it('别名表吸收预设 fleet：ark-code-latest 回填 256K + 视觉', () => {
+    const entry = MODEL_ALIAS_TABLE.find(e => e.canonicalId === 'ark-code-latest')
+    assert.ok(entry, 'ark-code-latest 必须在别名表（探测/手填元数据回填来源）')
+    assert.equal(entry.metadata.contextWindow, 256_000)
+    assert.equal(entry.metadata.supportsVision, true)
+  })
+
+  it('Anthropic 兄弟预设：/api/plan + anthropic 协议，fleet/Key 与 OpenAI 面同源', () => {
+    const anthropic = PROVIDER_PRESETS['volc-plan-anthropic']
+    assert.equal(anthropic.provider.baseUrl, 'https://ark.cn-beijing.volces.com/api/plan')
+    assert.equal(anthropic.provider.protocol, 'anthropic')
+    assert.equal(anthropic.provider.apiKeyEnv, preset.provider.apiKeyEnv)
+    assert.deepEqual(
+      anthropic.provider.models.map(m => m.id),
+      preset.provider.models.map(m => m.id),
+      '两个协议端点共用同一份套餐 fleet',
+    )
+    // 端点同样没有 /models（探测跳过列表走 /v1/messages 补全）
+    assert.equal(hasModelsListEndpoint('volc-plan-anthropic', anthropic.provider.baseUrl), false)
+    // Messages 面的官方档位通道是 output_config.effort——声明后 UI 才放行
+    // （resolveEffortSupported 对 anthropic 只认这一条通道）。
+    assert.equal(anthropic.provider.capabilities?.effortFormat, 'output_config')
+    assert.deepEqual(anthropic.provider.capabilities?.effortCap, { off: 'none' })
+    assert.equal(resolveEffortSupported('volc-plan-anthropic', anthropic.provider), true)
   })
 })
 

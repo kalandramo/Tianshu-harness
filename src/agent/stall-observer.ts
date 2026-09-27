@@ -22,11 +22,18 @@
  * 超阈值，告警时机不损失。
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { randomUUID } from 'node:crypto'
+
+const runContext = new AsyncLocalStorage<{ key: string; generation: string }>()
+
 export interface StallActivity {
+  phase?: 'running' | 'tool' | 'approval' | 'saving'
+  deadlineAt?: number
+  generation?: string
   ts: number
   source: string
-  /** true = 会话显式声明空闲（回合完成等待用户），观察器跳过——下一次
-   *  touchActivity 自动解除。防「交付完成等用户」被误报为 stall。 */
+  /** Only beginRun may activate a completed run. */
   idle?: boolean
 }
 
@@ -42,13 +49,45 @@ const MAX_ACTIVITY_KEYS = 1000
  *  （CLI/server/桌面端）只要开始打点即有观测，不依赖入口显式接线；显式
  *  installStallObserver 可覆盖参数（幂等）。 */
 export function touchActivity(key: string, source: string): void {
+  const current = activityByKey.get(key)
+  const context = runContext.getStore()
+  if (!current || current.idle || context?.key !== key || context.generation !== current.generation) return
+  activityByKey.set(key, { ...current, ts: Date.now(), source })
+}
+
+export function setActivityPhase(key: string, phase: StallActivity['phase'], deadlineAt?: number): void {
+  const current = activityByKey.get(key)
+  const context = runContext.getStore()
+  if (!current || current.idle || context?.key !== key || context.generation !== current.generation) return
+  activityByKey.set(key, { ...current, phase, deadlineAt, ts: Date.now() })
+}
+
+export function beginRun(key: string, generation: string): void {
   if (!installed) installStallObserver()
   if (!activityByKey.has(key) && activityByKey.size >= MAX_ACTIVITY_KEYS) {
     // 清理最老的一半（按 ts 排序取前 500）
     const sorted = [...activityByKey.entries()].sort((a, b) => a[1].ts - b[1].ts)
     for (let i = 0; i < sorted.length / 2; i++) activityByKey.delete(sorted[i]![0])
   }
-  activityByKey.set(key, { ts: Date.now(), source, idle: false })
+  activityByKey.set(key, { ts: Date.now(), source: 'run:start', idle: false, generation, phase: 'running' })
+}
+
+export function withActivityRun<T>(key: string, generation: string, fn: () => T): T {
+  return runContext.run({ key, generation }, fn)
+}
+
+export async function observeRun<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const inherited = runContext.getStore()
+  if (inherited?.key === key) return fn()
+  const generation = randomUUID()
+  beginRun(key, generation)
+  try { return await withActivityRun(key, generation, fn) }
+  finally { finishRun(key, generation) }
+}
+
+export function finishRun(key: string, generation: string): void {
+  const cur = activityByKey.get(key)
+  if (cur?.generation === generation) activityByKey.set(key, { ...cur, idle: true })
 }
 
 /** 会话显式声明进入空闲（如用户回合完成、等待下一条输入）：观察器跳过该
@@ -56,7 +95,8 @@ export function touchActivity(key: string, source: string): void {
  *  用户阅读回复的静默期不应被报为无进展。 */
 export function markIdle(key: string): void {
   const cur = activityByKey.get(key)
-  if (cur) activityByKey.set(key, { ...cur, idle: true })
+  const context = runContext.getStore()
+  if (cur && context?.key === key && context.generation === cur.generation) finishRun(key, context.generation)
 }
 
 /** 会话终结（worker 收尾/会话 close）：从活动表移除，杜绝结束后残留条目被
@@ -115,7 +155,7 @@ export function installStallObserver(opts?: StallObserverOptions): StallObserver
     const now = Date.now()
     for (const [key, act] of activityByKey) {
       // 空闲会话（markIdle：回合完成等待用户等）跳过——不是 stall。
-      if (act.idle) continue
+      if (act.idle || act.phase === 'approval' || (act.deadlineAt !== undefined && now <= act.deadlineAt)) continue
       const elapsedMs = now - act.ts
       if (elapsedMs > thresholdMs) {
         const lastWarn = lastWarnByKey.get(key) ?? 0
@@ -125,7 +165,7 @@ export function installStallObserver(opts?: StallObserverOptions): StallObserver
           warn(
             `[stall-observer] session "${key}" no activity for ${elapsedS}s`
             + ` (last: ${act.source} @ ${new Date(act.ts).toISOString()})`
-            + ' — possible turn stall (loop healthy, async hang); check the in-flight tool',
+            + ' — no run progress observed; inspect execution phase and loop-delay metrics',
           )
         }
       }

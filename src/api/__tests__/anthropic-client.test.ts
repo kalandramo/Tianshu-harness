@@ -1,14 +1,16 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { AnthropicClient } from '../anthropic-client.js'
+import { AnthropicClient, type AnthropicClientConfig } from '../anthropic-client.js'
 import { parseRetryAfterMs, classifyApiError } from '../error-classifier.js'
+import type { BodyGuardNotice } from '../request-body-guard.js'
 
-function makeClient() {
+function makeClient(over: Partial<AnthropicClientConfig> = {}) {
   return new AnthropicClient({
     baseUrl: 'https://api.anthropic.com',
     apiKey: 'test-key',
     model: 'claude-opus-4-7',
     maxTokens: 4096,
+    ...over,
   })
 }
 
@@ -601,6 +603,68 @@ describe('AnthropicClient HTTP request construction', () => {
     ;(globalThis as any).fetch = undefined
   })
 
+  // issue #272：火山方舟 Messages 端点只认 Authorization: Bearer——x-api-key 会
+  // 401。两种形态互斥（同发会被 Anthropic 官方 API 拒收），由 authMode 二选一。
+  it('authMode=bearer sends Authorization instead of x-api-key', async () => {
+    let capturedHeaders: Record<string, string> = {}
+    ;(globalThis as any).fetch = async (_url: string, init?: Record<string, unknown>) => {
+      capturedHeaders = (init?.headers as Record<string, string>) ?? {}
+      return new Response(JSON.stringify({ type: 'message_start', message: { usage: { input_tokens: 1 } } }), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    }
+    const client = new AnthropicClient({
+      baseUrl: 'https://ark.cn-beijing.volces.com/api/plan',
+      apiKey: 'sk-plan-123',
+      model: 'ark-code-latest',
+      maxTokens: 4096,
+      authMode: 'bearer',
+    })
+    await client.stream(
+      { model: 'ark-code-latest', messages: [{ role: 'user', content: 'hi' }], max_tokens: 4096 },
+      NOOP_CALLBACKS as any,
+      undefined,
+    ).catch(() => {})
+    assert.equal(capturedHeaders['authorization'], 'Bearer sk-plan-123')
+    assert.equal(capturedHeaders['x-api-key'], undefined, '两种鉴权头不得同发')
+    assert.equal(capturedHeaders['anthropic-version'], '2023-06-01')
+    ;(globalThis as any).fetch = undefined
+  })
+
+  // 火山方舟 Messages 的官方档位字段：output_config.effort
+  // （none/minimal/low/medium/high/xhigh/max）。与 budget_tokens 形态互斥——
+  // 声明该通道时不再发 thinking 块，思考强度完全由 effort 表达。
+  it('effortFormat=output_config：写 output_config.effort，不发 thinking 块', () => {
+    const client = makeClient({
+      thinkingBudget: 4096,
+      effortFormat: 'output_config',
+      effortCap: { off: 'none' },
+      reasoningEffort: 'medium',
+    })
+    const body = client.buildRequestBodyForTest({
+      model: 'ark-code-latest',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 1024,
+    })
+    assert.deepEqual(body.output_config, { effort: 'medium' })
+    assert.equal(body.thinking, undefined, 'output_config 与 budget_tokens 形态互斥')
+  })
+
+  it('output_config：off 经 effortCap 映射为 none；请求级档位优先于初始档位', () => {
+    const client = makeClient({
+      thinkingBudget: 4096,
+      effortFormat: 'output_config',
+      effortCap: { off: 'none' },
+      reasoningEffort: 'medium',
+    })
+    const request = { model: 'ark-code-latest', messages: [{ role: 'user' as const, content: 'hi' }], max_tokens: 1024 }
+    const off = client.buildRequestBodyForTest({ ...request, reasoning_effort: 'off' })
+    assert.deepEqual(off.output_config, { effort: 'none' }, '内部 off 不得原样上线')
+    const high = client.buildRequestBodyForTest({ ...request, reasoning_effort: 'high' })
+    assert.deepEqual(high.output_config, { effort: 'high' })
+  })
+
   it('accepts a baseUrl without trailing slash normally', async () => {
     let capturedUrl = ''
     const mockFetch = (globalThis as any).fetch = async (url: string) => {
@@ -706,18 +770,36 @@ describe('image_strip recovery', () => {
     }
   })
 
-  it('剥离必须通知调用方（用户可见提示）', async () => {
-    const calls = mockFetchSequence([413])
+  it('剥图后的后续重试（500）必须保持剥图——毒图不许回魂', async () => {
+    const calls = mockFetchSequence([413, 500])
+    try {
+      const client = makeClient({ retry: { backoff: { baseDelayMs: 1, jitterRatio: 0 } } })
+      await client.stream(IMAGE_REQUEST as never, NOOP_CALLBACKS, undefined)
+
+      assert.equal(calls.length, 3, '带图 → 剥图 → 500 后再重试')
+      assert.ok(!userBlocks(calls[1]!.body).some(b => b.type === 'image'), '第二次 attempt 已剥图')
+      assert.ok(
+        !userBlocks(calls[2]!.body).some(b => b.type === 'image'),
+        '第三次 attempt 必须仍剥图：每次 attempt 从原始 request 重建，剥离要幂等重放',
+      )
+    } finally {
+      restoreFetch()
+    }
+  })
+
+  it('剥离必须通知调用方（用户可见提示 + 唯一 URL 数）', async () => {
+    // 副作用是安装 fetch mock（变量本身不需要断言）；下划线前缀按 lint 约定。
+    const _calls = mockFetchSequence([413])
     try {
       const client = makeClient()
-      const strippedCounts: number[] = []
+      const strippedInfos: Array<{ removedCount: number; uniqueUrlCount?: number }> = []
       await client
         .stream(IMAGE_REQUEST as never, {
           ...NOOP_CALLBACKS,
-          onImageStripped: (info: { removedCount: number }) => { strippedCounts.push(info.removedCount) },
+          onImageStripped: (info) => { strippedInfos.push(info) },
         }, undefined)
         .catch(() => {})
-      assert.deepEqual(strippedCounts, [1])
+      assert.deepEqual(strippedInfos, [{ removedCount: 1, uniqueUrlCount: 1 }])
     } finally {
       restoreFetch()
     }
@@ -755,6 +837,71 @@ describe('image_strip recovery', () => {
       assert.equal(calls.length, 2)
     } finally {
       restoreFetch()
+    }
+  })
+
+  it('maxBodyBytes 护栏驱逐图片后 413：按「刚发出的体已无图」判 context_overflow，不再剥图重发', async () => {
+    // 否则会去剥一次护栏已经驱逐掉的图：白烧一轮，还把「图没了」的占位符再走一遍。
+    const calls = mockFetchSequence([413])
+    const big = `data:image/png;base64,${'A'.repeat(40 * 1024)}`
+    const request = {
+      model: 'claude-opus-4-7',
+      max_tokens: 4096,
+      messages: [
+        { role: 'user', content: [{ type: 'image_url', image_url: { url: big } }] },
+        ...Array.from({ length: 8 }, (_, i) => ({ role: i % 2 === 0 ? 'user' : 'assistant', content: `tail ${i}` })),
+      ],
+    }
+    try {
+      const client = makeClient({ maxBodyBytes: 16 * 1024 })
+      await client.stream(request as never, NOOP_CALLBACKS as never, undefined).catch(() => {})
+      assert.equal(calls.length, 1, '已驱逐图片的体再吃 413 = 纯上下文超限，不得剥图重发')
+      assert.ok(!userBlocks(calls[0]!.body).some(b => b.type === 'image'), '发出去的体里图已被驱逐')
+    } finally {
+      restoreFetch()
+    }
+  })
+
+  it('maxBodyBytes 护栏：Anthropic 形态超限 → 截断历史 tool_result 后照发并上报', async () => {
+    // 网关按字节截断 body 时用户看到的是英文 serde 报错（unexpected end of hex escape），
+    // 护栏要在发出前自己把体降到上限内——anthropic 侧的落点是 tool_result block。
+    const origFetch = globalThis.fetch
+    let sentBody = ''
+    globalThis.fetch = (async (_url: unknown, init?: { body?: unknown }) => {
+      sentBody = String(init?.body ?? '')
+      return new Response('event: message_stop\ndata: {"type":"message_stop"}\n\n', {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    }) as typeof fetch
+    try {
+      const notices: BodyGuardNotice[] = []
+      const big = 'A'.repeat(60 * 1024)
+      const messages = [
+        { role: 'tool', tool_call_id: 'c1', content: big },
+        // 尾部留够不可动消息：客户端会把连续同角色折叠成一条（首条 tool 转 user 后与
+        // 紧随的 user 合并），折叠后再按 GUARD_KEEP_RECENT_MESSAGES 划可截断前缀——
+        // 候选必须落在那里面，否则护栏只能抛错（本例正是要覆盖「降级后照发」）。
+        ...Array.from({ length: 8 }, (_, i) => ({
+          role: i % 2 === 0 ? 'user' : 'assistant',
+          content: `tail ${i}`,
+        })),
+      ]
+      const client = makeClient({ maxBodyBytes: 16 * 1024 })
+      await client.stream(
+        { model: 'claude-opus-4-7', messages, max_tokens: 4096 } as never,
+        { ...NOOP_CALLBACKS, onBodyGuard: (info: BodyGuardNotice) => notices.push(info) } as never,
+        undefined,
+      ).catch(() => {})
+
+      assert.ok(sentBody.length > 0, '请求必须真的发出（护栏降级，而不是直接抛错）')
+      assert.ok(Buffer.byteLength(sentBody) <= 16 * 1024, '发出的体必须已在上限内')
+      assert.ok(sentBody.includes('已省略约'), 'wire 上是截断后的 tool_result')
+      assert.equal(notices[0]?.kind, 'degraded')
+      assert.equal(notices[0]?.degradedCount, 1)
+      assert.equal((messages[0] as { content: string }).content.length, 60 * 1024, '调用方的 messages 一字不动')
+    } finally {
+      globalThis.fetch = origFetch
     }
   })
 })

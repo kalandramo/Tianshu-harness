@@ -85,6 +85,65 @@ const STALE_LOCK_MS = 10 * 60_000
  * +3 分钟给 tsc 在等待结束后自己跑完。
  */
 export const TYPECHECK_CALLER_BUDGET_MS = STALE_LOCK_MS + 3 * 60_000
+/**
+ * 调用方（bash 工具）本次该给这条命令多少超时预算——**只抬不压**。
+ *
+ * typecheck 形态要先过本模块的跨进程共享闸门，等待上限是
+ * `TYPECHECK_CALLER_BUDGET_MS`。调用方给更小的值不会让它更快：只会让命令在
+ * 闸门前被 SIGTERM，拿到 exit=-1 与（被 `| tail` 吞成）零输出，于是 ledger 记
+ * 「验证超时」、`deliver_task` 拒绝提交、harness 再重试两轮。
+ *
+ * 2026-09-25 取证：tianshu-3.15 最近 7 个会话里含 typecheck 的 bash 调用 21 次，
+ * 模型最常显式传 420000（8 次）。此前只有**声明侧**（`BASH_TOOL.timeoutMs`，
+ * 2026-09-14）对齐了闸门预算，**执行侧**仍按调用方值落刀，比闸门早 6 分钟；
+ * 交付门 31 次调用 20 次 error、RED 为 0，全部出自这条链。
+ *
+ * `RIVET_TYPECHECK_SHARE=0`（与共享锁同一逃生口）下闸门不生效，原样返回。
+ */
+export function resolveCallerTimeoutBudget(command: string, requestedMs: number, defaultMs: number): number {
+  const requested = requestedMs > 0 ? requestedMs : defaultMs
+  if (process.env.RIVET_TYPECHECK_SHARE === '0') return requested
+  if (!isTypecheckCommand(command)) return requested
+  return Math.max(requested, TYPECHECK_CALLER_BUDGET_MS)
+}
+
+/**
+ * typecheck 形态命令超时时给模型的下一步。
+ *
+ * 放在这里而不是 bash 工具里：它不只是文案，是闸门语义的一部分（「被杀 = 本次
+ * 没结果」≠「代码有问题」）；且 bash.ts 是点名巨石、只降不升（见
+ * `scripts/source-budgets.manifest.json` 的 budgets）。
+ */
+export const TYPECHECK_TIMEOUT_HINT =
+  '命令超时（typecheck 形态）：该命令要过跨进程共享闸门，排队等待可能长于本次预算，中途被杀不会产出任何结果。'
+  + '\n下一步：用 run_in_background=true 重跑，再 job(action="await", id=...) 取结果——不要据此判定代码有问题。'
+
+/**
+ * 外层工具看门狗（`tool-pipeline` 读 `toolDef.timeoutMs`）比内层执行预算多留的余量。
+ *
+ * 两侧预算**相等**时看门狗必然先落刀：它在 tool-pipeline 读到声明值时就武装
+ * （`execute` 之前），而内层 SIGTERM 定时器要等子进程起来才武装。后果是上面那段
+ * `TYPECHECK_TIMEOUT_HINT`（专教模型改走 `run_in_background` 的引导）永远投递不
+ * 出去，模型只拿到通用超时文案，于是重试同一条会挂死的路径——4a6380d5c 想改善的
+ * 场景没生效（2026-09-25 二修）。
+ *
+ * 余量给内层「杀进程树（SIGTERM → 3s 后 SIGKILL）→ 整理输出 → 返回」留时间；
+ * 30s 相对 13 分钟的总预算不到 4%，不会把兜底拖成实质失效。
+ */
+export const TYPECHECK_WATCHDOG_MARGIN_MS = 30_000
+
+/**
+ * 工具级**声明**预算（外层看门狗）——必须**严格大于**执行侧的 `resolveCallerTimeoutBudget`。
+ * 这个大小关系是不变量而非巧合：相等即专用超时文案不可达（见上一段的机制）。
+ * `bash-typecheck-timeout.test.ts` 的「声明侧必须严格大于执行侧」钉住它。
+ *
+ * 非 typecheck 形态原样返回 `defaultMs`（不参与抬升，与修复前一致）。
+ */
+export function resolveWatchdogTimeout(command: string, requestedMs: number, defaultMs: number): number {
+  if (!isTypecheckCommand(command)) return defaultMs
+  return resolveCallerTimeoutBudget(command, requestedMs, defaultMs) + TYPECHECK_WATCHDOG_MARGIN_MS
+}
+
 /** 缓存条目保留数量。多会话交替修改时各自的指纹会轮换，只留一份等于互相踢掉。 */
 const MAX_CACHE_ENTRIES = 8
 const WAIT_POLL_MS = 200

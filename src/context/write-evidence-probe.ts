@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
+import { opendir, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { validatePathSafe } from '../tools/path-validate.js'
 import type { OaiMessage } from '../api/oai-types.js'
@@ -225,6 +226,44 @@ export function shouldReconcileDisk(
   meta: { cleanExit?: boolean } | undefined,
 ): meta is { cleanExit: false } {
   return meta?.cleanExit === false
+}
+
+/** Count directory entries too: a directory-only tree must still be bounded. */
+export async function findRecentUnrecordedWritesAsync(
+  cwd: string, messages: OaiMessage[], options: { sinceMs?: number; signal?: AbortSignal } = {},
+): Promise<{ writes: RecentUnrecordedWrite[]; complete: boolean }> {
+  const deadline = performance.now() + 5000
+  const mentioned = collectMentionedWritePaths(messages, cwd)
+  const writes: RecentUnrecordedWrite[] = []
+  const pending = [{ dir: cwd, depth: 0 }]
+  let visited = 0
+  let complete = true
+  while (pending.length) {
+    options.signal?.throwIfAborted()
+    if (visited >= 5000 || performance.now() >= deadline || writes.length >= 8) { complete = false; break }
+    const { dir, depth } = pending.pop()!
+    try {
+      const entries = await opendir(dir)
+      for await (const entry of entries) {
+        options.signal?.throwIfAborted()
+        if (++visited > 5000 || performance.now() >= deadline || writes.length >= 8) { complete = false; break }
+        if (entry.isSymbolicLink() || entry.name.startsWith('.')) continue
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) {
+          if (!RECENT_SCAN_EXCLUDED_DIRS.has(entry.name) && depth < 10) pending.push({ dir: full, depth: depth + 1 })
+          continue
+        }
+        if (!entry.isFile() || mentioned.has(full)) continue
+        try {
+          const info = await stat(full)
+          if (info.mtimeMs >= (options.sinceMs ?? Date.now() - 7200_000)) {
+            writes.push({ path: relative(cwd, full).split('\\').join('/'), bytes: info.size, mtimeMs: info.mtimeMs })
+          }
+        } catch { complete = false }
+      }
+    } catch { options.signal?.throwIfAborted(); complete = false }
+  }
+  return { writes: writes.sort((a, b) => b.mtimeMs - a.mtimeMs), complete }
 }
 
 /** Render the reconciliation note, or null when there is nothing to disclose. */

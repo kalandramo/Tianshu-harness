@@ -12,8 +12,19 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { detectImageMime } from './image-attach.js'
+import { detectImageMime, isProviderSafeImageMime, MAX_EDGE, TARGET_IMAGE_BYTES } from './image-attach.js'
+import {
+  makeImageTempDir,
+  pickSmallerImage,
+  pngHasAlpha,
+  removeImageTempDir,
+  resizeCandidates,
+  resizeJpegCandidates,
+  runImageTool,
+  runImageToolAuto,
+} from './image-tool.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -51,6 +62,53 @@ let _reader: ClipboardReader | null = null
 
 export function setClipboardReader(reader: ClipboardReader | null): void {
   _reader = reader
+}
+
+// ── 大图 ingest 归一化（Grok/Kimi 都在粘贴时做）──
+
+/**
+ * 粘贴的图先压到单图软目标（TARGET_IMAGE_BYTES）再交给模型。5K 截图 PNG 常有
+ * 5–10MB，一张就顶满很多网关 4MB 的 body 上限；4 张更是 50MB+ base64。
+ * 压不动时保留原图——丢给请求体护栏（provider.maxBodyBytes）/413 恢复兜底，
+ * 绝不因为「没装图像工具」把粘贴变成静默失败。
+ *
+ * PNG 与 JPEG 各渲染一遍取更小者（同 image-attach 的选择律）：照片类图重编码成
+ * PNG 常比原图还大，只走 PNG 等于白跑一趟。产物格式由 magic 判定，调用方
+ * （bufToClipboardImage）据此标注 data URL，不必也不该在这里假定。
+ */
+export async function shrinkClipboardImage(buf: Buffer): Promise<Buffer> {
+  if (buf.length <= TARGET_IMAGE_BYTES) return buf
+  const dir = await makeImageTempDir()
+  const inPath = join(dir, 'in.img')
+  const pngPath = join(dir, 'out.png')
+  const jpgPath = join(dir, 'out.jpg')
+  try {
+    await writeFile(inPath, buf)
+    const png = await runImageTool(resizeCandidates(inPath, pngPath, MAX_EDGE), pngPath)
+    // 带 alpha 的 PNG 不进 JPEG 阶梯：透明会被压成黑底（同 image-attach 的 allowJpeg 判据）。
+    const allowJpeg = !(detectImageMime(buf, 'clipboard') === 'image/png' && pngHasAlpha(buf))
+    const jpeg = allowJpeg
+      ? (await runImageToolAuto(resizeJpegCandidates(inPath, jpgPath, MAX_EDGE), jpgPath))?.data ?? null
+      : null
+    // 只接受真的更小的产物：预算按原图字节算，压完没变小就保留原图。
+    const picked = pickSmallerImage(png, jpeg, buf.length)
+    return picked && picked.data.length < buf.length ? picked.data : buf
+  } catch {
+    return buf
+  } finally {
+    await removeImageTempDir(dir)
+  }
+}
+
+let _imageShrinker: ((buf: Buffer) => Promise<Buffer>) | null = null
+
+/** 测试注入：给定 buffer 返回归一化后的 buffer（默认真实系统工具链）。 */
+export function setClipboardImageShrinker(fn: ((buf: Buffer) => Promise<Buffer>) | null): void {
+  _imageShrinker = fn
+}
+
+function activeImageShrinker(): (buf: Buffer) => Promise<Buffer> {
+  return _imageShrinker ?? shrinkClipboardImage
 }
 
 /**
@@ -144,9 +202,14 @@ async function tryNativeClipboard(): Promise<ClipboardImage | null> {
     // @ts-expect-error — optional dependency, may not be installed
     const clipboard = await import('@mariozechner/clipboard')
     if (typeof clipboard.readImage !== 'function') return null
-    const buf: Buffer = await clipboard.readImage()
-    if (!buf || buf.length === 0) return null
-    return bufToClipboardImage(buf, 'clipboard.png')
+    const raw: Buffer = await clipboard.readImage()
+    if (!raw || raw.length === 0) return null
+    const buf = await activeImageShrinker()(Buffer.from(raw))
+    const img = bufToClipboardImage(buf, 'clipboard.png')
+    // native 包理论恒回 PNG。若个别平台给 TIFF/BMP，返回 null 让位给 shell 路径
+    // （macOS 侧有 sips 转换），绝不把 provider 不支持的原样格式塞进请求。
+    if (!isProviderSafeImageMime(img.mime)) return null
+    return img
   } catch {
     // Package not installed, native binding failed, or any other error — silent
     return null
@@ -253,9 +316,15 @@ async function tryMacOSClipboard(
     const mime = detectImageMime(buf, 'clipboard.png')
     if (mime === 'image/tiff' || mime === 'image/bmp') {
       const pngBuf = await convertToPng(pf, buf, target, ef, td, uuid, rf)
-      if (pngBuf) return bufToClipboardImage(pngBuf, 'clipboard.png')
+      if (pngBuf) return bufToClipboardImage(await activeImageShrinker()(pngBuf), 'clipboard.png')
+      // 转换失败：绝不把 provider 常态拒收的 tiff/bmp 原样交给调用方——发出去只会
+      // 触发 400/413 → 客户端「全量剥图重试」，用户这一轮所有图都看不到。
+      if (process.env['RIVET_DEBUG']) {
+        console.error(`[clipboard] ${mime} → PNG 转换失败，放弃本次读图`)
+      }
+      return null
     }
-    return bufToClipboardImage(buf, 'clipboard.png')
+    return bufToClipboardImage(await activeImageShrinker()(buf), 'clipboard.png')
   } finally {
     // 三条路径都清——嵌套脚本可能在任何一级命中或失败，残余文件不留
     await Promise.all([pngPath, tiffPath, jpgPath].map((p) => unlink(p).catch(() => {})))
@@ -278,7 +347,7 @@ async function tryLinuxClipboard(
       if (!r.stdout || r.stdout.length === 0) continue
       const buf = Buffer.from(r.stdout, 'latin1') // binary data comes through stdout
       if (buf.length === 0) continue
-      return bufToClipboardImage(buf, 'clipboard.png')
+      return bufToClipboardImage(await activeImageShrinker()(buf), 'clipboard.png')
     } catch {
       // Try next
     }
@@ -305,7 +374,7 @@ else { exit 1 }
     await ef('powershell', ['-NoProfile', '-Command', script])
     const buf = await rf(tmpPath)
     if (!buf || buf.length === 0) return null
-    return bufToClipboardImage(buf, 'clipboard.png')
+    return bufToClipboardImage(await activeImageShrinker()(buf), 'clipboard.png')
   } catch {
     return null
   } finally {
