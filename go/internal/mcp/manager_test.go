@@ -2,9 +2,12 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kalandramo/tianshu/go/internal/tools"
 )
@@ -296,5 +299,91 @@ func TestManagerAllToolsOrderStable(t *testing.T) {
 					i, j, again[j].Definition().Name, first[j].Definition().Name)
 			}
 		}
+	}
+}
+
+// ---- W4 接线引入的 ctx 语义 ----
+
+// TestManagerInitializeRespectsCtxCancel —— ★ ctx 取消时 Initialize 立即返回。
+//
+// **为什么必须有这条**（本刀接线时补的 `ctx` 行为）：
+// 接进 CLI 前 `Initialize(ctx)` 的 `ctx` 是**死参数**（传了从不读）。
+// 接进 CLI 后它有了真实需求：用户在慢 server（npx 首次拉包可达数十秒）
+// 启动时按 Ctrl+C，若 `Initialize` 不认 ctx，会一直等到每个 server 的
+// 60s 超时才返回——用户明明取消了，进程却卡一分钟。
+//
+// 本用例用一个**永不应答 initialize** 的假 server 钉住这条：
+// 无 ctx 感知时它会挂满超时预算（数秒），有 ctx 感知时立刻返回。
+func TestManagerInitializeRespectsCtxCancel(t *testing.T) {
+	// 假 server：恒不应答任何请求（协议层"哑巴 server"——真实世界里的
+	// 挂死 server / 卡在启动期的 server）
+	dir := t.TempDir()
+	dumb := filepath.Join(dir, "dumb.sh")
+	// `sleep` 长于测试超时——保证 initialize 永远等不到响应
+	if err := os.WriteFile(dumb, []byte("#!/bin/sh\nsleep 300\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewManager(Config{
+		Enabled: true,
+		Servers: map[string]ServerConfig{"dumb": {Command: dumb}},
+	}, "")
+	defer m.Shutdown()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err := m.Initialize(ctx)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Error("ctx 超时应返回错误")
+	}
+	if err != context.DeadlineExceeded && !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("错误应为 DeadlineExceeded，实得 %v", err)
+	}
+	// 关键断言：**远早于** MCP 的 60s 请求超时返回
+	if elapsed > 3*time.Second {
+		t.Errorf("ctx 取消后应立刻返回（远早于 60s 请求超时），实耗 %v", elapsed)
+	}
+}
+
+// TestManagerCallToolIgnoresCanceledCtx —— tools/call 走超时兜底（不认 ctx）。
+//
+// **为什么要显式钉住「不认 ctx」这个事实**：它是有意的取舍，不是遗漏。
+// `tools.Tool.Execute(ctx, ...)` 的 ctx 在 wrapper 层未透传到 RPC——
+// 工具调用由 `Timeout()`（60s）兜底。若将来要支持「工具调用可取消」，
+// 这条测试会提醒实现者「还有这条路径没接」。
+func TestManagerCallToolIgnoresCanceledCtx(t *testing.T) {
+	m := NewManager(fakeServerConfig("srv"), "")
+	defer m.Shutdown()
+
+	if err := m.Initialize(context.Background()); err != nil {
+		t.Fatalf("Initialize 报错：%v", err)
+	}
+
+	var echo tools.Tool
+	for _, tl := range m.AllTools() {
+		if tl.Definition().Name == "mcp__srv__echo" {
+			echo = tl
+		}
+	}
+	if echo == nil {
+		t.Fatal("未找到 echo 工具")
+	}
+
+	// 传一个**已取消**的 ctx——调用仍应成功（证明 wrapper 层不透传 ctx）
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	res, err := echo.Execute(canceled, &tools.CallParams{
+		ToolUseID: "t1", Input: map[string]any{"text": "ok"},
+	})
+	if err != nil {
+		t.Fatalf("Execute 不该因 ctx 取消而失败（ctx 未透传，属有意的设计取舍）：%v", err)
+	}
+	if res.IsError {
+		t.Errorf("调用应成功，实得错误：%s", res.Content)
 	}
 }

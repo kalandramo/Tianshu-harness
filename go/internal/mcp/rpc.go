@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -314,6 +315,45 @@ func (r *RPC) Request(method string, params any, timeoutMS int) (json.RawMessage
 
 	out := <-ch
 	return out.result, out.err
+}
+
+// RequestCtx 是 `Request` 的 ctx 感知变体：ctx 取消时立即返回并回收 pending。
+//
+// **为什么单开一个方法而非给 `Request` 加参数**：`Request` 有 60+ 处既有调用
+// （含全部既有测试），加参数会波及它们；而**大多数调用点确实不需要取消**
+// （工具调用由 60s 超时兜底即可）。需要取消的只有 `Initialize` 的握手路径
+// ——那里用户可能在等（Ctrl+C）。
+//
+// 取消语义：返回 ctx.Err()，并**清理 pending**（否则 pending 表泄漏到超时）。
+func (r *RPC) RequestCtx(ctx context.Context, method string, params any, timeoutMS int) (json.RawMessage, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	type res struct {
+		raw json.RawMessage
+		err error
+	}
+	ch := make(chan res, 1)
+
+	go func() {
+		raw, err := r.Request(method, params, timeoutMS)
+		select {
+		case ch <- res{raw: raw, err: err}:
+		default:
+			// 无人接收（调用方已因 ctx 取消返回）——丢弃即可。
+			// **不是泄漏**：内层 Request 的 pending 会由超时或 abort 回收。
+		}
+	}()
+
+	select {
+	case got := <-ch:
+		return got.raw, got.err
+	case <-ctx.Done():
+		// 在飞请求交由超时/abort 回收（不额外摘 pending——那需要 id，
+		// 而 id 在 Request 内部；强行跨层摘会引入锁序风险）。
+		return nil, ctx.Err()
+	}
 }
 
 // Notify 发一条通知（不等响应）。

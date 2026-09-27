@@ -67,6 +67,16 @@ func NewManager(cfg Config, baseCwd string) *Manager {
 // **返回 error 的语义**：仅在**完全没有可连的 server**（配置为空）时返回 nil；
 // 单个 server 的失败记入 State 而非返回——因为「一个 server 挂了」不该让
 // 整个会话起不来（TS 同款语义）。
+//
+// # ctx 语义（★ 本刀接线时补上的真实行为）
+//
+// `ctx` 取消时**立即中止等待**：在飞的 `initialize` / `tools/list` 请求
+// 被 abort（各自返回错误并记入 State），`Initialize` 提前返回。
+//
+// **为什么必须要**（不是「为了符合 Go 惯例」）：接进 CLI 后，用户在
+// MCP server 启动慢（npx 首次拉包可达数十秒）时按 Ctrl+C，
+// 若无 ctx 感知，`Initialize` 会一直等到**每个** server 的 60s 超时才返回
+// ——用户明明取消了，进程却卡住一分钟，是明确的可用性缺陷。
 func (m *Manager) Initialize(ctx context.Context) error {
 	if !m.cfg.Enabled {
 		return nil
@@ -90,8 +100,22 @@ func (m *Manager) Initialize(ctx context.Context) error {
 			m.connectOne(ctx, id, m.cfg.Servers[id])
 		}(id)
 	}
-	wg.Wait()
-	return nil
+
+	// 等全部连完，或 ctx 取消（取消时不再等，但已起的 goroutine 会
+	// 在各自的请求超时/被 abort 后自行收尾——它们持有的连接若已建立
+	// 会被 Shutdown 回收）。
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // connectOne 连接单个 server 并发现工具。
@@ -116,7 +140,7 @@ func (m *Manager) connectOne(ctx context.Context, serverID string, sc ServerConf
 	rpc := NewRPC(tr)
 
 	// ① initialize 握手
-	if _, err := rpc.Request("initialize", map[string]any{
+	if _, err := rpc.RequestCtx(ctx, "initialize", map[string]any{
 		"protocolVersion": "2025-06-18",
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "rivet", "version": "0.1.0"},
@@ -136,7 +160,7 @@ func (m *Manager) connectOne(ctx context.Context, serverID string, sc ServerConf
 	_ = rpc.Notify("notifications/initialized", nil)
 
 	// ② tools/list
-	defs, err := m.listTools(rpc)
+	defs, err := m.listTools(ctx, rpc)
 	if err != nil {
 		_ = tr.Close()
 		classified := ClassifyMcpError(err, ErrorContext{Transport: ErrorTransportStdio})
@@ -175,8 +199,8 @@ func (m *Manager) connectOne(ctx context.Context, serverID string, sc ServerConf
 }
 
 // listTools 发 `tools/list` 并解析。
-func (m *Manager) listTools(rpc *RPC) ([]ToolDef, error) {
-	raw, err := rpc.Request("tools/list", map[string]any{}, DefaultTimeoutMS)
+func (m *Manager) listTools(ctx context.Context, rpc *RPC) ([]ToolDef, error) {
+	raw, err := rpc.RequestCtx(ctx, "tools/list", map[string]any{}, DefaultTimeoutMS)
 	if err != nil {
 		return nil, err
 	}

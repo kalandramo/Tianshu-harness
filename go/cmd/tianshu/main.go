@@ -33,8 +33,10 @@ import (
 	"github.com/kalandramo/tianshu/go/internal/config"
 	ctxstore "github.com/kalandramo/tianshu/go/internal/context"
 	"github.com/kalandramo/tianshu/go/internal/lsp"
+	"github.com/kalandramo/tianshu/go/internal/mcp"
 	"github.com/kalandramo/tianshu/go/internal/prompt"
 	"github.com/kalandramo/tianshu/go/internal/retry"
+	"github.com/kalandramo/tianshu/go/internal/rivetpath"
 	"github.com/kalandramo/tianshu/go/internal/session"
 	"github.com/kalandramo/tianshu/go/internal/skills"
 	"github.com/kalandramo/tianshu/go/internal/tools"
@@ -69,7 +71,12 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	loop := buildLoop(app, *jsonOut)
+	loop, mcpMgr := buildLoop(app, *jsonOut)
+	// MCP 子进程回收：必须在进程退出前（否则 npx 起的 server 变孤儿常驻）。
+	// 对账 TS `bootstrap.ts:1393` 的 `killChildrenSync?.()`。
+	if mcpMgr != nil {
+		defer mcpMgr.Shutdown()
+	}
 
 	if *prompt != "" {
 		// headless 单次提示
@@ -78,6 +85,12 @@ func main() {
 		loop.FlushSession()
 		if err != nil {
 			reportError(err, *jsonOut)
+			// ★ 必须显式回收：`os.Exit` **不执行 defer**，故上面那个
+			// `defer mcpMgr.Shutdown()` 在这条路径上不会跑——若不在此显式
+			// 回收，headless 失败退出会留下孤儿 MCP server 进程常驻。
+			if mcpMgr != nil {
+				mcpMgr.Shutdown()
+			}
 			os.Exit(1)
 		}
 		return
@@ -200,7 +213,13 @@ func loadConfig(model, baseURL, approval string, maxTurns int, systemPrompt stri
 	}, nil
 }
 
-func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
+// buildLoop 装配并返回 Agent 主循环，以及需在退出时回收的 MCP manager。
+//
+// **为什么返回 manager**（而非在此内部回收）：MCP manager 持有子进程，
+// 必须在**进程退出前**显式 `Shutdown()`——否则 npx 起的 server 会变孤儿常驻。
+// 回收时机由调用方（`main`）掌握，故此处把所有权交出去。
+// 未配置 MCP 时返回 `nil`（调用方须判空）。
+func buildLoop(app *appConfig, jsonOut bool) (*agent.Loop, *mcp.Manager) {
 	cl := client.New(app.Client)
 	// ── LSP 导航装配 ──
 	//
@@ -222,7 +241,23 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 	if lspNav != nil {
 		nav = &lspNavigatorAdapter{nav: lspNav}
 	}
-	reg := tools.NewDefaultRegistry(tools.Options{Cwd: app.Agent.Cwd, LspNavigator: nav})
+
+	// ── MCP 装配（第一百零九刀 W4）──
+	//
+	// 对账 TS `bootstrap.ts` 的 mcp 初始化：读配置 → 建 manager → 发现工具
+	// → 注册进工具表。
+	//
+	// **为什么要「先读配置，再决定是否建 manager」**（而非无条件建）：
+	// 未配置 MCP 的用户占绝大多数，其请求体的 `tools` 段必须**逐字节不变**
+	// ——否则会破坏既有前缀缓存。故 `Enabled` 为假或无 server 时
+	// **完全不进入** MCP 路径（连 `SpawnStdio` 都不碰）。
+	mcpTools, mcpMgr := assembleMcpTools(app.Agent.Cwd)
+
+	reg := tools.NewDefaultRegistry(tools.Options{
+		Cwd:          app.Agent.Cwd,
+		LspNavigator: nav,
+		Extra:        mcpTools, // nil 时等价于不传（对账 Options.Extra 的用法）
+	})
 	// 会话 ID：启用状态容器 + 持久化（缺省时 Loop.State/Persist 恒为 nil）
 	if app.Agent.SessionID == "" {
 		app.Agent.SessionID = session.NewID()
@@ -615,7 +650,7 @@ func buildLoop(app *appConfig, jsonOut bool) *agent.Loop {
 		}
 		emitHuman(e)
 	}
-	return loop
+	return loop, mcpMgr
 }
 
 // emitJSON 输出 JSON 事件（供脚本消费）。
@@ -807,4 +842,57 @@ func convertLspLocations(in []lsp.Location) []tools.LspLocation {
 		})
 	}
 	return out
+}
+
+// ── MCP 工具装配（第一百零九刀 W4）──
+
+// assembleMcpTools 读 `mcp` 配置并返回发现到的 MCP 工具。
+//
+// 返回 `(nil, nil)` 的情形（**都不进入 MCP 路径、不 spawn 任何进程**）：
+//   - 配置文件不存在 / 无 `mcp` 键（用户未配置——绝大多数场景）
+//   - `enabled: false`
+//   - `servers` 为空 / 全部 `disabled: true`
+//
+// **为什么不返回 error**：与 `config.LoadPermissionsOrNil` 同款——
+// 装配层不该因 MCP 配置问题中断启动。MCP 不可用时用户看到的是「没有那些工具」，
+// 而非「程序起不来」。**代价**：配置语法错误会静默降级；诊断入口是对应的
+// 单测与 `mcp.LoadConfigFromFile`（它**会**报错）。
+//
+// 返回的 manager 由调用方负责 `Shutdown()`（见 `main` 的退出路径）——
+// 但注意本函数返回的 manager 可能是 nil（未配置时），调用方须判空。
+func assembleMcpTools(cwd string) ([]tools.Tool, *mcp.Manager) {
+	cfg, err := mcp.LoadConfigFromFile(rivetpath.UserConfigPath())
+	if err != nil {
+		// 配置坏——与 LoadPermissionsOrNil 同款静默降级。
+		fmt.Fprintf(os.Stderr, "MCP 配置读取失败（已跳过 MCP 工具）：%v\n", err)
+		return nil, nil
+	}
+	if !cfg.Enabled || len(cfg.Servers) == 0 {
+		// 未配置：完全不建 manager（零开销、不改请求体）
+		return nil, nil
+	}
+
+	mgr := mcp.NewManager(cfg, cwd)
+
+	// 用带超时的 ctx：配置里的 timeoutMs 是**单次调用**超时，
+	// 而这里是整体连接预算。给足余量（多个 server 并发，取单次超时 + 5s 握手余量）。
+	budget := time.Duration(cfg.TimeoutMS+5000) * time.Millisecond
+	if cfg.TimeoutMS <= 0 {
+		budget = time.Duration(mcp.DefaultTimeoutMS+5000) * time.Millisecond
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+
+	if err := mgr.Initialize(ctx); err != nil {
+		// 超时/取消：已连上的 server 仍可用（部分成功），只是不等剩下的。
+		fmt.Fprintf(os.Stderr, "MCP 初始化未完成：%v\n", err)
+	}
+
+	found := mgr.AllTools()
+	if len(found) == 0 {
+		// 一个都没连上——回收已起的连接，返回 nil 让工具表保持原样
+		mgr.Shutdown()
+		return nil, nil
+	}
+	return found, mgr
 }
