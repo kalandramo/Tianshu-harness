@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kalandramo/tianshu/go/internal/api/wire"
+	"github.com/kalandramo/tianshu/go/internal/artifact"
 	"github.com/kalandramo/tianshu/go/internal/contract"
 	tnet "github.com/kalandramo/tianshu/go/internal/net"
 )
@@ -21,14 +22,15 @@ import (
 //
 // crawl BFS 内核（第九十四刀）+ sitemap 阶梯 + fetch 内核。
 //
-// # 有意收窄（诚实披露）
+// # artifact 接线（第九十八刀）
 //
-// **artifact 落盘未接**——TS 把每页 markdown 汇总为 artifact（sections 按页
-// 切分，模型可 `read_section` 分页细读）。Go 侧的 artifact.Store 存在但
-// web_crawl 未接线，故摘要里**恒无** artifact 注记。
+// 本工具落地时（第九十五刀）**有意收窄**——每页 markdown 汇总为 artifact
+// 的能力未接，摘要里恒无 artifact 注记，内容超过 15 页时只能重新爬取。
 //
-// **这是功能收窄**：内容超过摘要展示的 15 页时，TS 会落 artifact 供细读，
-// Go 侧那部分内容**只能重新爬取**。消费方若需要，须先接 artifact.Store。
+// 第九十八刀已接线：`Execute` 走 `p.ArtifactStore.Save(...)`，
+// 语义与消费方同 TS（`tool.ts:177-192`）——`ArtifactStore` 非 nil 且
+// `pages > 0` 时落盘；失败时**明示降级**为「（artifact 持久化失败，仅返回摘要）」
+// 而不是静默省略。
 
 // 常量（对账 TS）。
 const (
@@ -147,8 +149,7 @@ func (t *webCrawlTool) Execute(ctx context.Context, p *CallParams) (contract.Res
 		SitemapURLs:   sitemapURLs,
 	})
 
-	// **artifact 未接线**（见文件头）——注记恒为空。
-	return contract.Result{Content: formatCrawlSummary(rawURL, result, "")}, nil
+	return contract.Result{Content: formatCrawlSummary(rawURL, result, t.saveCrawlArtifact(p, rawURL, result))}, nil
 }
 
 // RequiresApproval 恒 true（对账 TS `() => true`）——发起大量网络请求。
@@ -227,18 +228,10 @@ func compileRegexList(raw any) ([]*regexp.Regexp, string) {
 
 // ── artifact 构建（对账 TS `buildCrawlArtifact`）────────────────────────
 
-// artifactSection 对账 TS `ArtifactSection` 的裁剪版（Go 侧未接 artifact.Store）。
-type artifactSection struct {
-	Name      string
-	LineStart int
-	LineEnd   int
-	CharCount int
-}
-
 // buildCrawlArtifact 对账 TS `buildCrawlArtifact`——sections 按页切分。
-func buildCrawlArtifact(pages []tnet.CrawlPage) (string, []artifactSection) {
+func buildCrawlArtifact(pages []tnet.CrawlPage) (string, []artifact.ArtifactSection) {
 	var chunks []string
-	var sections []artifactSection
+	var sections []artifact.ArtifactSection
 	lineCursor := 1
 
 	for _, page := range pages {
@@ -246,7 +239,7 @@ func buildCrawlArtifact(pages []tnet.CrawlPage) (string, []artifactSection) {
 		body := page.Markdown + "\n\n---\n\n"
 		text := header + body
 		lines := strings.Count(text, "\n")
-		sections = append(sections, artifactSection{
+		sections = append(sections, artifact.ArtifactSection{
 			Name:      page.URL,
 			LineStart: lineCursor,
 			LineEnd:   lineCursor + lines - 1,
@@ -256,6 +249,38 @@ func buildCrawlArtifact(pages []tnet.CrawlPage) (string, []artifactSection) {
 		chunks = append(chunks, text)
 	}
 	return strings.Join(chunks, ""), sections
+}
+
+// saveCrawlArtifact 把各页正文汇总落 artifact，返回摘要尾部的注记。
+//
+// 对账 TS `tool.ts:177-192`：
+//
+//	let artifactNote = ''
+//	if (params.artifactStore && result.pages.length > 0) {
+//	  try { … artifactNote = `\n\n完整内容已存 artifact：${id}（可用 read_section 分页细读）` }
+//	  catch { artifactNote = '\n\n（artifact 持久化失败，仅返回摘要）' }
+//	}
+//
+// **失败是明示降级**（不是静默省略）——对账 TS 的 `catch` 分支，
+// 逐字保留其文案。**没有 ArtifactStore 时注记为空**（对账 TS 的
+// `params.artifactStore &&` 短路）——那是「调用方没配」而非「写失败了」，
+// 两者必须可区分。
+func (t *webCrawlTool) saveCrawlArtifact(p *CallParams, rawURL string, result tnet.CrawlResult) string {
+	if p == nil || p.ArtifactStore == nil || len(result.Pages) == 0 {
+		return ""
+	}
+	rawContent, sections := buildCrawlArtifact(result.Pages)
+	id, err := p.ArtifactStore.Save(artifact.SaveInput{
+		Tool:       "web_crawl",
+		Target:     rawURL,
+		RawContent: rawContent,
+		Summary:    fmt.Sprintf("crawl %s：%d 页正文", rawURL, len(result.Pages)),
+		Sections:   sections,
+	})
+	if err != nil {
+		return "\n\n（artifact 持久化失败，仅返回摘要）"
+	}
+	return "\n\n完整内容已存 artifact：" + id + "（可用 read_section 分页细读）"
 }
 
 // ── 摘要格式化（对账 TS `formatCrawlSummary`）───────────────────────────
