@@ -2,9 +2,9 @@
 
 > 生成时间：2026-09-26（初版）· 最后更新：2026-09-27 · 设备：macOS（Darwin 25.6.0，作者 moweilong）
 > 仓库：`/Users/moweilong/Workspace/go/src/github.com/kalandramo/Tianshu-harness`
-> 分支：`go-runtime` · HEAD：`82410b69` · 工作树 **clean**
-> 本会话共 **45 个提交**（`e866fad8^..82410b69`，含起点），全部在 `go-runtime` 分支
-> **最新段**：第 10 段（LSP 导航子系统，第一百零一刀，工具数 **39 → 41**）
+> 分支：`go-runtime` · HEAD：`029a289e` · 工作树 **clean**
+> 本会话共 **48 个提交**（`e866fad8^..029a289e`，含起点），全部在 `go-runtime` 分支
+> **最新段**：第 11 段（undo 快照层 + undo 工具，第一百零二刀，工具数 **41 → 42**）
 > 本文自包含——读者无需本会话任何上下文。
 >
 > **更新轨迹**：`8d5c9853`（初版，20 提交，第七十一刀止）→ `f13a73c1`/`5609187d`/`b78a5b4d`/`903e9855`（增量补刀）→ `f760cb7b`（补齐至第七十九刀 + 修头部元数据 + 消矛盾）→ 第八十刀（job 子系统）→ 第八十一刀（`request_path_access` + 修授权形同虚设）→ **第八十二..九十七刀（工具移植 + web_search 全包，见「第 7 段」）**。
@@ -584,7 +584,7 @@ go/internal/agent/job_wiring_test.go               (9 条端到端)
 | `cd go && gofmt -l .` | 零违规 |
 | `cd go && go test ./internal/net/ -v` | **199 PASS** |
 | `cd go && go test ./internal/search/ -v` | **84 PASS** |
-| 工具数（`NewDefaultRegistry(...).Definitions()` **实测**） | **41** |
+| 工具数（CLI 装配下 `NewDefaultRegistry(...).Definitions()` **实测**） | **42** |
 | 工作树 `git status --short` | 仅 plan 文件未跟踪 |
 | 探针残留 `find . -name 'zz_*' -o -name '*.good'` | 0 |
 
@@ -825,7 +825,7 @@ grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test
 - 仓库根：`/Users/moweilong/Workspace/go/src/github.com/kalandramo/Tianshu-harness`
 - Go module：`github.com/kalandramo/tianshu/go`（`go/` 子目录）
 - Node：24.18.0（`package.json` engines 声明 >=24）
-- 分支：`go-runtime` · HEAD：`82410b69` · 工作树 clean
+- 分支：`go-runtime` · HEAD：`029a289e` · 工作树 clean
 - 仓库双 remote：`origin`（私有镜像）、`tianshu`（公开仓库，**绝不直接 push**——历史不同步会被拒；正确流程见项目 `AGENTS.md` 的 `scripts/sync-to-public.sh`）
 - `go/internal/` 包（30 个，`go list ./...` 实测）：`cmd/tianshu` + `internal/{agent,api,api/sse,api/stablejson,api/wire,apierr,artifact,cache,client,compact,config,context,contract,filediff,hooks,net,pathsafe,plan,platform,prompt,recovery,retry,rivetpath,search,session,skills,syntaxcheck,tools,trust}`
 - **测试命令**：`cd go && go test ./... -count=1`（基线 28 包 ok / 0 FAIL）
@@ -987,7 +987,127 @@ Go 用零值会让 **0 字节文件不输出大小**。已改 `Size *int64` / `F
 
 ---
 
-## 下一步（第一百零一刀后）
+## 第 11 段：undo 快照层 + undo 工具（第一百零二刀 · W1–W3）
+
+**区间**：`ee9f30c6..029a289e`（3 提交）· **工具数 41 → 42**（CLI 装配下）
+
+### 为什么是这一刀（承第 10 段的形态判据）
+
+第 10 段把候选按**消费点形态**排了序，`undo` 列为首选：
+「`internal/recovery/stack.go`（333 行）已就位，缺的只是 FileHistory 快照层」。
+
+**★ 落地时核实的差距**（比原判断更细）：
+
+| 维度 | `recovery.Stack`（已有） | `FileHistory`（本刀新建） |
+|---|---|---|
+| 键 | `(cwd, relPath)` | **`messageId`（= tool_use id）→ 文件 → 备份** |
+| 历史深度 | 每文件**仅最近一次** | **100 个快照**，按 messageId 分组 |
+| 方向 | **写前**捕获旧内容（失败回滚用） | **写后**读取当前内容（历史分层） |
+| 能力 | `RestoreLatestBackup` | `rewind(id)` 精确回滚 + `getDiffStats` 预览 |
+| 哨兵 | 无 | `FileName==""`=当时不存在（unlink）/ `Unreadable`=读不到（**跳过**） |
+
+**方向相反**是关键：本刀之前在文件头误以为 `checkpoint.go` 是同类
+（它实为 `compaction-controller` 的会话历史压缩）；真正相近的是 `recovery`，
+但**方向相反**（写前 vs 写后）。
+
+### ★★ 落地前发现的既有缺陷：`ToolCallID` 传的是工具名
+
+四处写工具调 `TrackFileChange` 时传的全是**硬编码工具名**：
+
+| 位置 | 原值 |
+|---|---|
+| `go/internal/tools/file_tools.go:100` | `"write_file"` |
+| `go/internal/tools/file_tools.go:260` | `"edit_file"` |
+| `go/internal/tools/applypatch.go:217` | `"apply_patch"` |
+| `go/internal/tools/hashedit.go:513` | `"hash_edit"` |
+
+而 FileHistory 的分组键正是 tool_use id——**不改就是 undo 撤错范围**
+（同一轮两次 `write_file` 归入同一快照）。真实 id 现成：
+`artifact_intercept.go:194` 的 `buildToolCallParams` 早已填 `ToolUseID: tc.id`。
+
+**修法**：改传 `fileChangeToolID(p, "write_file")`（空 id 回退工具名，
+保持既有行为）。**两条待验证假设在计划期就验掉了**：
+① `FileChangeRecord.ToolCallID` **零读取点**（改值无破坏）
+② 它**不进 journal 落盘**（`RecoveryEntry` 不含该字段）
+
+### 分波与产出
+
+| 波 | 提交 | 内容 |
+|---|---|---|
+| W1 | `2fced2b9` | `internal/filehistory/`（462 行 + 19 用例）+ 修四处 `ToolCallID` |
+| W2 | `a0713afd` | `internal/tools/undo.go`（300 行 + 18 用例）+ 注册 |
+| W3 | `029a289e` | 装配（Loop 持有 + 双回调注入）+ 四写工具接线 + 端到端（225 行） |
+
+**测试**：filehistory 19 + undo 24（含 4 端到端）；`-race` 干净。
+
+### ★ 本段最有价值的三处「不显眼的正确性」
+
+1. **`Unreadable` 哨兵**（TS 注释明写的**数据丢失**防线）：
+   「备份读失败」≠「文件当时不存在」。按后者处理会把 undo 变成**删除**。
+   测试用「目录占位备份路径」精确构造读失败，验证 rewind 后文件**仍在**。
+2. **`OwnedFiles` 的口径陷阱**：它是**相对路径**，而 History 返回**绝对路径**
+   → 直接比较会把**所有文件**误判为「不属于当前任务」（每份预览都带误导告警）。
+   修法：展示前统一归一化，展示与比较**共用同一形态**（避免两处各自转换而漂移）。
+3. **审计 best-effort**：文件此刻已恢复，审计写失败若冒泡成「撤销失败」
+   → 模型重试 → 把刚恢复的旧内容又盖掉（**二次伤害**）。
+
+### 一处设计修正（执行中改的）
+
+初版让装配层维护 per-Loop 的「当前调用 id」供 `TrackFileEdit` 回调读取。
+**放弃**：并发工具调用下会串号。改为**回调签名带 `toolUseID`**——
+写工具本来就持有 `p.ToolUseID`，直接传出，无共享可变状态。
+
+### 本段新增的坑（第 50 条起）
+
+50. **「备份读失败」与「文件当时不存在」是两种世界**，前者绝不能触发删除。
+    这类哨兵语义容易在移植时被压扁成一个 `null`——必须用**专门构造读失败**
+    的测试钉住（本段用「目录占位备份路径」）。
+51. **路径口径必须在一处统一**：绝对 vs 相对混用会让「归属比较」全量误判。
+    归一化放在**展示前**一次完成、展示与比较共用，避免两处各自转换而漂移。
+52. **「写进私有字段的字面量」行为不可观测**（无导出读取接口）——
+    验证它有三条路：给生产 API 加测试专用读取方法（**最差**，为测试改接口）、
+    reflect 读私有字段（脆弱）、**源码级断言**（确定性，失败信息直指「忘了接线」）。
+    本段取第三条（四处 `ToolCallID` 的接线验证）。
+53. **回调签名带上调用标识**（如 `toolUseID`），比让装配层维护「当前调用」
+    的共享可变字段安全——后者在并发调用下会串号。
+54. **工具数随装配而变**：「未注入 navigator 时 LSP 工具不计入 `Definitions()`」
+    是设计（不可用 == 不存在），故验收时不能拿固定数字当基准，
+    **先确认注入了什么**（本段实测：不注入 LSP 时 40、CLI 装配下 42）。
+
+---
+
+## 下一步（第一百零二刀后）
+
+**undo 已完成**（工具数 42）。剩余候选（按第 10 段的形态判据重排）：
+
+1. **delegate 族的提示词缺口 —— 现在唯一的「真实缺口」形态**。
+   `go/internal/prompt/modeblocks.go:24` 引导模型调用 `delegate_task`/
+   `delegate_batch`，而 Go 侧无此工具（`CheckPlanMode` 不校验注册，
+   失败在更下游的 `registry.Execute` → `ErrUnknownTool`）。
+   **最小修法**：改那处提示词文案（不建内核）；完整解是建 worker 派发内核
+   （≈11744 行），应另立计划。**成本量级差两个数量级，值得先做最小修法**。
+2. **LSP 的 W4（诊断回流）**：`tool-pipeline.ts:1581-1607` 的 `[LSP Diagnostics]`
+   注入（编辑后把诊断拼进工具结果，`modelText`/`uiText` 分离，
+   `MODEL_INREGION_CAP=10` / `UI_DIAGNOSTIC_CAP=20`）。**前置已就位**
+   （LSP 子系统 + `getFileDiagnostics` 相位已在），但仍触达 `agent/loop.go`。
+3. **monitor —— 建了会是休眠**：唯一消费方是 `advisory.go:44` 的常量；
+   `SessionJobs.OnEvent` 零生产订阅者。
+4. **仓库索引 / 语义搜索** —— 需 Meridian 图 + embedding（零基础），规模不可控。
+5. **不可做**：`computer_use`（TS 侧开源桩 + `src/pro/` 闭源）、
+   `sandbox_exec`（语义前提是「隔离的 Node.js 子进程」）。
+
+**注**：本刀发现 `apply_patch` 是**多文件**补丁（逐文件登记历史），
+若将来做「按 hunk 的精细回滚」，需在 `filehistory` 里引入 hunk 级标识——
+当前粒度是「文件级」（对账 TS 的同粒度）。
+
+## 下一步（第一百零一刀后）——**已被上方「第一百零二刀后」取代，保留以示修正轨迹**
+
+> ⚠️ 本节已过期（undo 已完成）。最新结论见上方「## 下一步（第一百零二刀后）」。
+
+<details>
+<summary>原内容（点击展开）</summary>
+
+
 
 **LSP 导航已完成**（工具数 41）。剩余候选按「消费点形态」重排（见第 10 段的形态表）：
 
@@ -1013,6 +1133,10 @@ Go 用零值会让 **0 字节文件不输出大小**。已改 `Size *int64` / `F
 注入（编辑后把诊断拼进工具结果，`modelText`/`uiText` 分离，`MODEL_INREGION_CAP=10`/
 `UI_DIAGNOSTIC_CAP=20`）**独立于 goto/refs** 且触达 `agent/loop.go`——风险面更大，
 待需要时另立计划。
+
+</details>
+
+---
 
 ## 下一步（第一百刀后）——**已被上方「第一百零一刀后」取代，保留以示修正轨迹**
 
