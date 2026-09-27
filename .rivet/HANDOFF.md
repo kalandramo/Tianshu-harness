@@ -2,9 +2,9 @@
 
 > 生成时间：2026-09-26（初版）· 最后更新：2026-09-27 · 设备：macOS（Darwin 25.6.0，作者 moweilong）
 > 仓库：`/Users/moweilong/Workspace/go/src/github.com/kalandramo/Tianshu-harness`
-> 分支：`go-runtime` · HEAD：`de3d805f` · 工作树 **clean**（仅 plan 文件未跟踪）
-> 本会话共 **35 个提交**（`e866fad8^..de3d805f`，含起点），全部在 `go-runtime` 分支
-> **最新段**：第 7 段（工具移植 W1–W3 + web_search 全包，第八十二..九十七刀，新增 **34 提交**、工具数 **27 → 38**）
+> 分支：`go-runtime` · HEAD：`8bba0875` · 工作树 **clean**
+> 本会话共 **40 个提交**（`e866fad8^..8bba0875`，含起点），全部在 `go-runtime` 分支
+> **最新段**：第 9 段（`import_resource` + 一处上游缺陷的修正，第一百刀，工具数 **38 → 39**）
 > 本文自包含——读者无需本会话任何上下文。
 >
 > **更新轨迹**：`8d5c9853`（初版，20 提交，第七十一刀止）→ `f13a73c1`/`5609187d`/`b78a5b4d`/`903e9855`（增量补刀）→ `f760cb7b`（补齐至第七十九刀 + 修头部元数据 + 消矛盾）→ 第八十刀（job 子系统）→ 第八十一刀（`request_path_access` + 修授权形同虚设）→ **第八十二..九十七刀（工具移植 + web_search 全包，见「第 7 段」）**。
@@ -584,7 +584,7 @@ go/internal/agent/job_wiring_test.go               (9 条端到端)
 | `cd go && gofmt -l .` | 零违规 |
 | `cd go && go test ./internal/net/ -v` | **199 PASS** |
 | `cd go && go test ./internal/search/ -v` | **84 PASS** |
-| 工具数（`NewDefaultRegistry(...).Definitions()` **实测**） | **38** |
+| 工具数（`NewDefaultRegistry(...).Definitions()` **实测**） | **39** |
 | 工作树 `git status --short` | 仅 plan 文件未跟踪 |
 | 探针残留 `find . -name 'zz_*' -o -name '*.good'` | 0 |
 
@@ -825,14 +825,107 @@ grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test
 - 仓库根：`/Users/moweilong/Workspace/go/src/github.com/kalandramo/Tianshu-harness`
 - Go module：`github.com/kalandramo/tianshu/go`（`go/` 子目录）
 - Node：24.18.0（`package.json` engines 声明 >=24）
-- 分支：`go-runtime` · HEAD：`de3d805f` · 工作树 clean（仅 plan 文件未跟踪）
+- 分支：`go-runtime` · HEAD：`8bba0875` · 工作树 clean
 - 仓库双 remote：`origin`（私有镜像）、`tianshu`（公开仓库，**绝不直接 push**——历史不同步会被拒；正确流程见项目 `AGENTS.md` 的 `scripts/sync-to-public.sh`）
 - `go/internal/` 包（30 个，`go list ./...` 实测）：`cmd/tianshu` + `internal/{agent,api,api/sse,api/stablejson,api/wire,apierr,artifact,cache,client,compact,config,context,contract,filediff,hooks,net,pathsafe,plan,platform,prompt,recovery,retry,rivetpath,search,session,skills,syntaxcheck,tools,trust}`
 - **测试命令**：`cd go && go test ./... -count=1`（基线 28 包 ok / 0 FAIL）
 
 ---
 
-## 下一步（第九十九刀后）
+## 第 9 段：`import_resource`（第一百刀）+ 一处上游缺陷的修正
+
+**区间**：`337223f7..8bba0875`（3 提交）· **工具数 38 → 39**
+
+### 为什么只有这一个工具（三路调研的结论）
+
+| 调研路径 | 结论 |
+|---|---|
+| ① 工具差集 | TS 70 vs Go 38 = **32 项**差异 |
+| ② 零消费扫描 | 9 项零消费，但归因后 **(b) 忘接线 = 0**（6 项消费方未移植、3 项 TS 同样零消费） |
+| ③ 重子系统前置 | 4 项**全部**需先建子系统 |
+
+`import_resource` 是**唯一**「依赖已就位」项——7 个依赖组件实测全在位
+（`expandHome`/`DetectSensitiveFile`/`HTTPFetchGuarded`/`artifact.Store.Save`/
+`ResolveGitCommand`/`relPosix`/`UTF16Len`），且 `net/fetchcore_test.go:253`
+**早已断言**错误文案提示该工具（门链在等）。
+
+### ★ 发现并修正一处**上游缺陷**（本段最重要的产出）
+
+**缺陷**：`import_resource` 用 `symlink` 把外部资源「放进」工作区，但
+`pathsafe.Validate` 会 `EvalSymlinks` 解析到**源路径（工作区外）** →
+`read_file`/`grep` 读它时被拒。
+
+**实测证据**：导入后 `read_file` 读 `.rivet/external/note-xxx.md` 报
+「Path outside project directory」——即摘要里「该资源现可通过项目内路径访问……
+请使用 read_file、grep、glob 配合此路径」这句承诺**是假的**。
+
+**核实上游**：TS `path-validate.ts:50` 同样 `realpathSync`；
+`import-resource.ts` **既无 grantPath 也无豁免名单**（grep 零命中）——
+**TS 侧同样有此缺陷**，这是「忠实移植」会把缺陷一起搬过来的典型。
+
+**修正（用户拍板）**：Go 侧改为**复制**而非符号链接。
+代价（用户已知情）**：磁盘占用 + 源更新不同步**。
+
+**验收判据**（不给任何授权时）：产物 `symlink=false`；
+`read_file` `isError=false` 且读到原文；`grep` 同样命中。
+→ **「导入后可用」这句承诺现在是真的**。
+
+### 提交后审查的 4 条 HIGH（逐条核实为真后修复）
+
+1. **URL 分支超时**：Go `Options{}` → 15s；TS 显式 60s → 15~60s 下载在 Go 超时。已修。
+2. **GitHub file 情形丢 `files`**：TS 恒传 `files` 且**从无 size**；Go 覆盖成 `{file,size}`。已修。
+3. **checkout 缺 `.git` 守卫**：TS 有 `ref && existsSync(.git)`。已补。
+4. **尾斜杠 URL 的 filename**：JS `basename('/')` 返回 `'/'`（truthy）故保留；Go 排除 `"/"`。已对齐。
+
+**额外自查发现**：`stats.size !== undefined`（TS）是**字段有无**判定——
+Go 用零值会让 **0 字节文件不输出大小**。已改 `Size *int64` / `Files *int`。
+
+### 本段新增的坑（第 41 条起）
+
+41. **「只读常量的测试」是恒真断言**——`func f() int { return constX }` 的测试，
+    删掉调用点也不红。要抓「漏传参数」必须断言**构造出的对象**
+    （本段 M-B 变异首版红 0 就是这个原因）。
+42. **符号链接放进工作区 + realpath 校验天然冲突**：symlink 让路径「看起来」在内，
+    realpath 让它「实际」在外。移植时遇到这种组合要**判断上游是否真的可用**，
+    而不是照搬（本段的核心发现）。
+43. **测「阈值/边界」逻辑的样本必须跨越阈值**（第 35 条的延续）：
+    100 个中文（100 UTF-16 unit / 300 字节）远小于 4000，换口径照样绿；
+    要 2000 个中文（2000 unit 未超 / **6000 字节已超**）才能区分。
+
+---
+
+## 下一步（第一百刀后）
+
+**本节已按第一百刀的三路调研更新**——原「下一步」的候选均已在第 9 段完成归因。
+
+**核心结论：32 项工具差集里，只有 `import_resource` 依赖已就位**（已完成）。
+其余按阻塞点分类（详见第 9 段）：
+
+1. **需先建子系统**（缺的是整套设施，非一个工具）：
+   `lsp_goto_definition`/`lsp_find_references`（需 `go/internal/lsp/`，TS 侧含
+   client+rpc+manager+server-registry+typecheck-cache）、`repo_graph`/`semantic_search`
+   （需 Meridian 索引 + embedding）、`deliver_task`/`delegate_task`/`team_orchestrate`
+   /`galaxy`/`starflow`（需 coordinator/work-order/plan-executor）、`monitor`
+   （需 MonitorRegistry + 投递 hook）、`undo`（需 file-history 快照层）、
+   `generate_image`（需 provider 配置体系）、`schedule_*`（需 cron 调度器）、
+   `ast_grep`/`ast_edit`（需先决策 cgo/纯 Go AST 路线）、`browser`/`browser_debug`
+   （需 Playwright 驱动层）
+2. **不可做**：`computer_use`（TS 侧是开源桩 + `src/pro/` 闭源实现）、
+   `sandbox_exec`（语义前提是「隔离的 Node.js 子进程」，与 Go 重写冲突）
+3. **零消费符号无需清理**：9 项中 **(b) 忘接线 = 0**（见第 9 段的归因表）
+
+**判缺口的方法**（已验证有效）：`grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test`
+——排除定义与测试后若零命中，才是真缺口；**不要照文件头注释判**（第七十八刀教训）。
+
+## 下一步（第九十九刀后）——**已被上方「第一百刀后」取代，保留以示修正轨迹**
+
+> ⚠️ 本节内容已过期。最新结论见上方「## 下一步（第一百刀后）」。
+> 保留原因：记录「当时认为该做什么」与「实际归因后该做什么」的差异——那次调研推翻了本节的大部分判断。
+
+<details>
+<summary>原内容（点击展开）</summary>
+
+
 
 **本节已按第九十八/九十九刀的核实更新**——原「下一步」的 2 条已在本节处理。
 
@@ -845,6 +938,10 @@ grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test
 
 **判缺口的方法**（已验证有效）：`grep -rn "函数名" go/internal/ --include="*.go" | grep -v _test`
 ——排除定义与测试后若零命中，才是真缺口；**不要照文件头注释判**（第七十八刀教训）。
+
+---
+
+</details>
 
 ---
 
