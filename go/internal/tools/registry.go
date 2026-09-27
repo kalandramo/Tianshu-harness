@@ -101,6 +101,20 @@ type CallParams struct {
 	//
 	// nil = 当前上下文不可用（fail-closed）。
 	ExitPlanMode func()
+	// ActivePlanFilePath 是当前活动计划文件（项目相对路径），plan mode 中为
+	// `enter_mode` 建的草稿路径；非 plan mode 时为空。
+	//
+	// 对账 TS `params.activePlanFilePath`（`tools/types.ts:301` /
+	// `tool-pipeline.ts:853,1065` 的 `deps.config.activePlanFilePath`）。
+	//
+	// **消费方**：`planSubmitExecute`——省略 `plan` 字段时从这里回读草稿正文
+	// （对账 TS `plan.ts:399-424`）。空值 = 无草稿可取，此时 `plan` 必填。
+	//
+	// **为什么是值而非回调**：它是每轮快照（loop 的 `ActivePlanFilePath` 字段
+	// 在 enter/exit 时变更），无晚绑定需求——与 `EnterPlanMode`（回调，因需
+	// 触发副作用）不同。空串即「无活动计划文件」，与 TS 的
+	// `string | null | undefined` 在此处的消费语义等价（只做空判）。
+	ActivePlanFilePath string
 	// SessionID 用于隔离按会话的状态（读历史、去重跟踪），
 	// 防同 cwd 的并发会话交叉污染。
 	SessionID string

@@ -20,16 +20,20 @@ import (
 //
 // # 与 TS 的差异（**明示，非等价**）
 //
-//  1. **enter_mode / exit_mode 是诚实声明而非实现**。TS 侧它们调用
-//     `params.enterPlanMode()` / `params.exitPlanMode()` 切换写锁状态机；
-//     **Go 侧无任何「写工具禁用」机制**（已 grep 核实：`EnterPlanMode` /
-//     `WriteDisabled` / `PlanModeActive` 全仓零命中）。若只搬这两个 action
-//     的壳而不接状态机，会产出「声称进入计划模式、实际没禁用写工具」的
-//     **静默失效**——故此处**明确报错**并说明缺失，对齐 `run_in_background`
-//     的诚实声明先例。
-//  2. **无 TUI 审批回调**。TS 的 `params.onPlanSubmitted` 推审批卡给 TUI；
+//  1. ~~**enter_mode / exit_mode 是诚实声明而非实现**~~ → **第七十九刀已接线**。
+//     本节原文写于机制未接线时（称「Go 侧无任何写工具禁用机制」）——**该断言已失效**：
+//     `go/internal/agent/planmode.go` 的 `CheckPlanMode` + `Loop.PlanModeState` +
+//     `executeTool` 门链三者已接（由 `planmode_wiring_test.go` 的
+//     `TestPlanModeBlocksWriteTools` 钉住），`CallParams.EnterPlanMode` 回调已注入。
+//     **保留的语义**：无回调时仍 fail-closed 报错（对账 TS——子代理不得切主代理的
+//     计划模式），但那是「当前上下文不可用」而非「暂不支持」。
+//     （本行与工具描述于第一百零七刀一并订正——此前只订正了测试。）
+//  2. ~~**无 plan 草稿回读**~~ → **第一百零七刀已补**。原文称「Go 侧无 plan mode
+//     草稿路径，故只能显式传 plan」——`enter_mode` 会真建 `.rivet/plans/draft-<ms>.md`，
+//     故 `submit` 现按 TS `plan.ts:399-425` 回读该草稿，成功后回收（`IsDraftSlug` 守卫）。
+//  3. **无 TUI 审批回调**。TS 的 `params.onPlanSubmitted` 推审批卡给 TUI；
 //     Go 侧无渲染层，故不移植。submit 成功后只在文本里说明「等待批准」。
-//  3. **无交付门禁回调**（`params.assessDelivery`）。TS 的 close 会用它做
+//  4. **无交付门禁回调**（`params.assessDelivery`）。TS 的 close 会用它做
 //     evidence-gated closure（声称 GREEN 而真实门禁 RED 时拦截）；Go 侧
 //     尚无该门禁接口，故 close 走 legacy（信任声明）路径——**这是安全性的
 //     降低，已记明**。
@@ -107,7 +111,7 @@ func Plan() Tool {
 
 提交门禁——提交前必须自检六项：标题级「需求提炼」章节（H1 之后，用户原话提炼目标 + 非目标）、至少一张 mermaid 图、标题级「反证/复现」章节、大计划（checkbox 任务 >8 或引用文件 >15）的 ` + "`### Wave N`" + ` 分波 + 每波验证命令、无占位符簇/空章节（硬门禁，重提不豁免）、file:line 锚点与当前工作树一致。未达标项会在一次驳回中逐条列出，补完后用相同 title 重提（每项软门禁只拦一次）。
 
-省略 ` + "`plan`" + ` 字段则从活动计划文件提交（Go 侧暂无 plan mode 草稿，故必须显式传 plan）。
+省略 ` + "`plan`" + ` 字段则从活动计划文件（plan mode 草稿）提交。先用 write_file/edit_file 把计划增量写入草稿。
 
 计划包含多个方案时，传 ` + "`options`" + `（最多 3 个）供用户在审批时选择。
 
@@ -116,8 +120,11 @@ func Plan() Tool {
 
 仅支持 docs/superpowers/plans/ 或 .rivet/plans/ 下的 Markdown 文件。
 
-### Action: enter_mode / exit_mode
-**Go 运行时暂不支持**——写工具禁用机制尚未移植。调用会返回明确错误说明。`,
+### Action: enter_mode
+自主进入计划模式，先规划再动手（写工具将被禁用；会创建计划草稿文件）。命中以下任一情况时主动使用：新功能实现、多文件（>2-3 个）改动、存在多个有效方案、架构决策、需求不清需要先探索。不要用于：单点小修、用户已给出详细逐步指令的任务、纯研究/问答。进入**无需用户确认**——用户的审批门在计划提交时，不在进入时。已在规划中时重复调用幂等。用户通过会话内审批卡（桌面端）或 /plan-approve（TUI）批准提交的计划；全部任务完成后 ` + "`plan close`" + ` apply=true 会把计划标记为 EXECUTED。
+
+### Action: exit_mode
+退出计划模式、解除写锁。不修改计划文件（不标记 EXECUTED、不勾选 checkbox）。审批即自动退出，仅在系统未自动退出、或用户明确要求「直接开始写代码」时调用。`,
 		InputSchema: objSchemaOrdered([]string{"action", "title", "plan", "options", "file_path", "tasks", "apply", "verifiedCommands", "deliveryState", "note", "updateClosure"}, map[string]any{
 			"action": enumPropOrdered("语义见上方各 Action 章节。", []string{"submit", "close", "enter_mode", "exit_mode"}),
 			"title":  strProp("[submit] 简短描述性计划标题（用于生成文件 slug）"),
@@ -240,13 +247,48 @@ func planSubmitExecute(p *CallParams) contract.Result {
 		return contract.Result{Content: "错误：title 必填", IsError: true}
 	}
 
+	// ── plan 正文来源：显式传入 或 活动计划草稿回读 ──
+	//
+	// 对账 TS `planSubmitExecute`（`plan.ts:399-425`）：
+	//
+	//	let submittedFromDraft: string | null = null
+	//	if (typeof planContent !== 'string' || !planContent.trim()) {
+	//	  const draftPath = params.activePlanFilePath
+	//	  if (!draftPath) return 错误「未设置活动计划文件时 plan 必填」
+	//	  draftText = await readFile(join(cwd, draftPath), 'utf-8')   ← 读失败/为空各有分支
+	//	  planContent = draftText; submittedFromDraft = draftPath
+	//	}
+	//
+	// **为什么必须有这条**：`plan` 的描述与此前的 plan-mode 指令块
+	// （`prompt/modeblocks.go` 的 `<plan-mode>`）都告诉模型「省略 `plan` 字段则
+	// 从活动计划文件读取」。缺这条时那句是**假话**——模型照办必失败。它的
+	// 上游 `enter_mode`（建草稿）自第七十九刀起已工作，故缺口在 submit 这一环。
 	planContent, _ := p.Input["plan"].(string)
+	submittedFromDraft := ""
 	if strings.TrimSpace(planContent) == "" {
-		// Go 侧无 plan mode 草稿路径（无 enterPlanMode），故只能显式传 plan。
-		return contract.Result{
-			Content: "错误：plan 必填。Go 运行时暂无 plan mode 活动计划文件（enter_mode 未支持），请在 plan 字段写出完整计划正文。",
-			IsError: true,
+		draftRel := p.ActivePlanFilePath
+		if draftRel == "" {
+			return contract.Result{
+				Content: "错误：未设置活动计划文件时 plan 必填。请先写入计划文件，或直接传入 plan 内容。",
+				IsError: true,
+			}
 		}
+		draftAbs := filepath.Join(p.Cwd, filepath.FromSlash(draftRel))
+		raw, readErr := os.ReadFile(draftAbs)
+		if readErr != nil {
+			return contract.Result{
+				Content: "读取活动计划文件失败（" + draftRel + "）：" + readErr.Error(),
+				IsError: true,
+			}
+		}
+		if strings.TrimSpace(string(raw)) == "" {
+			return contract.Result{
+				Content: "错误：活动计划文件为空（" + draftRel + "）。请先写入计划，再提交。",
+				IsError: true,
+			}
+		}
+		planContent = string(raw)
+		submittedFromDraft = draftRel
 	}
 
 	submitOptions, optErr := parseSubmitOptions(p.Input["options"])
@@ -377,6 +419,27 @@ func planSubmitExecute(p *CallParams) contract.Result {
 		return contract.Result{Content: "写入计划失败：" + err.Error(), IsError: true}
 	}
 
+	// ── 草稿回收 ──
+	//
+	// 对账 TS `plan.ts:583-590`：
+	//
+	//	if (submittedFromDraft && isDraftSlug(basename(submittedFromDraft, '.md'))) {
+	//	  await rm(join(params.cwd, submittedFromDraft), { force: true }).catch(() => {})
+	//	}
+	//
+	// **两道守卫，缺一不可**：
+	//  1. `submittedFromDraft != ""`——只有**真从草稿提交**才删。显式传 plan 的
+	//     修订会话不该被动到活动文件。
+	//  2. `plan.IsDraftSlug`——只有**草稿形态**（`draft-<n>`）才删。修订会话里
+	//     `ActivePlanFilePath` 可能就指向**用户已批准的计划本身**，删它等于
+	//     毁掉用户的工作（这是防数据丢失的守卫，有对抗性测试钉住）。
+	//
+	// **best-effort**：清理失败不阻塞 submit（对账 TS 的 `.catch(() => {})`）
+	// ——内容已安全落进规范文件，草稿只是残留物。
+	if submittedFromDraft != "" && plan.IsDraftSlug(draftSlugOf(submittedFromDraft)) {
+		_ = os.Remove(filepath.Join(p.Cwd, filepath.FromSlash(submittedFromDraft)))
+	}
+
 	optionsHint := ""
 	if len(submitOptions) >= 2 {
 		labels := make([]string, len(submitOptions))
@@ -397,6 +460,16 @@ func planSubmitExecute(p *CallParams) contract.Result {
 	sb.WriteString("\n\n**请在此等待——在用户批准前不要继续推进。**")
 
 	return contract.Result{Content: sb.String()}
+}
+
+// draftSlugOf 从项目相对路径取 slug（basename 去 `.md`）。
+//
+// 对账 TS `plan.ts:588` 的 `basename(submittedFromDraft, '.md')`。
+// 用途：判定活动计划文件是否**草稿形态**（`plan.IsDraftSlug`）——
+// 只有草稿才可回收，用户已批准的规范计划文件绝不能删。
+func draftSlugOf(relPath string) string {
+	base := filepath.Base(filepath.ToSlash(relPath))
+	return strings.TrimSuffix(base, ".md")
 }
 
 // parsePlanPointerPath 从 plan 指针首行解析出项目相对路径。

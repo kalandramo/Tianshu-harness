@@ -262,6 +262,22 @@ func (l *Loop) buildToolCallParams(tc toolCall) *tools.CallParams {
 		// `len()` 与 `range`，无 typed-nil 解引用）——**不需要** `xxxOrNil()`
 		// 式包装（那是接口字段才有的坑，如 `Jobs` / `Grants`）。
 		SessionModifiedFiles: l.sessionModifiedFiles(),
+		// ActivePlanFilePath：当前活动计划草稿（plan mode 中）。
+		//
+		// 对账 TS `tool-pipeline.ts:853,1065` 的
+		// `activePlanFilePath: deps.config.activePlanFilePath`。
+		//
+		// **消费方**：`planSubmitExecute`——省略 `plan` 字段时从这里回读草稿正文
+		// （对账 TS `plan.ts:399-424`）。空串 = 无草稿，此时 `plan` 必填。
+		//
+		// **为什么必须在此注入**：本构造点是 `CallParams` 的**唯一**装配点。
+		// 漏填则「enter_mode 建了草稿，但 submit 读不到」——plan-mode 指令块
+		// 那句「省略 plan 字段则从活动计划文件读取」仍是假话（那是本次修的缺口）。
+		//
+		// **形态**：纯字符串快照（`Loop.ActivePlanFilePath` 在 enter/exit 时改写），
+		// 与 `EnterPlanMode`（需触发副作用的回调）不同。空串与 TS 的
+		// `string | null | undefined` 在此消费语义等价（只做空判）。
+		ActivePlanFilePath: l.ActivePlanFilePath,
 	}
 }
 
