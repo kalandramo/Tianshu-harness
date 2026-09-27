@@ -151,7 +151,20 @@ type CallParams struct {
 	// 在**会话建立后**才存在（late-bound），且 cwd 变更时需重建。
 	// 与 `EnterPlanMode` / `GrantPath` 同一注入模式。
 	FileHistory func() UndoHistory
-	// SessionModifiedFiles 是本会话已修改的文件。
+	// SessionModifiedFiles 是本会话已修改的文件（**路径集合**，非计数）。
+	//
+	// 源：`Loop.sessionModifiedFiles()`（派生自 `session.FileIndex` 的
+	// `ModifiedByMe` 条目，**保持插入序**），经 `buildToolCallParams` 注入
+	// ——对账 TS `tool-pipeline.ts:838` 的
+	// `sessionModifiedFiles: [...deps.evidence.getState().filesModified]`。
+	//
+	// **消费方**：`git.go` 的 `gitCommit`（提交归属范围回退）与 `gitStash`
+	// 内的 `getScopedCommitFiles`（后者外层门只看 `OwnedFiles`）。
+	//
+	// **与 OwnedFiles 的分野**：本字段是 pre-baseline 近似（本会话碰过的
+	// 文件），`OwnedFiles` 是 post-baseline 严格归属；`getScopedCommitFiles`
+	// **优先后者**、空才回退本字段（对账 TS `git.ts:163`）。两者的精度差异
+	// 是 TS 的既有设计，不是 Go 的偏离。
 	SessionModifiedFiles []string
 	// Jobs 是本会话的后台任务注册表（bash 的 run_in_background 与 job 工具用）。
 	//

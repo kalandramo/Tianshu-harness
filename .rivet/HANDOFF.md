@@ -1474,9 +1474,102 @@ TS 在 `src/agent/pre-write-claims.ts:29-32` 明确回退取前一行的 `--- ` 
     `declared and not used` 编译失败（坑 48 的变体）。
     **判据**：变异后先确认 build 通过且 diff 非空，再跑测试。
 
-## 下一步（第一百零三刀后）
+## 第一百零六刀：接线 `SessionModifiedFiles`（修 `git commit` 归属回退的静默缺口）
 
-**LSP 诊断回流已完成**（工具数 42——本刀不新增工具）。剩余候选：
+> 工具数不变（42）——本刀**不新增工具**，而是修一个**从未被记录的**接线缺口。
+
+### 选刀依据（先称量，未按「下一步」推荐）
+
+上节「下一步（第一百零三刀后）」的四个候选，逐条核实后**全不选**：
+delegate 内核（≈11744 行，且「改文案」已被第一百零三刀证伪为伪修复）、
+LSP pull 模型（本机有 gopls，但补 pull 属**新功能**非修缺口）、
+monitor（建了是休眠）、仓库索引/语义搜索（零基础）。
+
+**改选判据**：沿用第一百零四刀自己写的「**已知的静默失效 > 新增功能**」。
+按此找到的缺口——见下。
+
+### ★ 缺口：字段「有读取方、零写入方」（**本仓库高频模式，但这次没被记录**）
+
+`CallParams.SessionModifiedFiles` 有两处生产**读取方**、**零写入方**：
+
+| 位置 | 角色 |
+|---|---|
+| `internal/tools/registry.go` | 声明（注释仅一行） |
+| `internal/tools/git.go:236` | 读——`gitCommit` 的 `getScopedCommitFiles(cwd, p.OwnedFiles, p.SessionModifiedFiles)` |
+| `internal/tools/git.go:372` | 读——`gitStash` 内（外层门只看 `OwnedFiles`） |
+| **写入方** | **无** |
+
+对账 TS `tool-pipeline.ts:838`——同一字段在 TS **有写入方**：
+
+```ts
+sessionModifiedFiles: [...deps.evidence.getState().filesModified],
+ownedFiles: deps.ownershipLedger?.getOwnedFiles(),   // ← Go 侧未移植（已登记）
+```
+
+**后果链**：`getScopedCommitFiles`（`git.go`）语义是「优先 `ownedFiles`，空则回退
+`sessionModifiedFiles`」。Go 侧两个源**同时为空** → `scopedFiles` 恒空 →
+`git commit` 在有会话改动但无暂存时**报错**（「未提供会话归属文件给 git commit…」），
+而 TS 会 `git add -- <本会话文件>` + `git commit --only -- <本会话文件>`。
+
+**为什么特别隐蔽**：`OwnedFiles` 被第一百零二刀的审查**显式登记**为休眠接线
+（`registry.go` 有 20+ 行说明），而**同一个 `getScopedCommitFiles` 里的另一个源
+被漏了**——`grep -n "SessionModifiedFiles" .rivet/HANDOFF.md` 在本刀之前**零命中**。
+一个被盯住、一个漏网，是「同族缺口的成对性」这一教训的新实例。
+
+### 修法：只补注入点（不动 git 工具）
+
+**为什么数据源现成**：`session.FileIndex` 是「保持插入序的文件记录表」，
+`ModifiedByMe` 即「被 edit/write 改过」——与 TS 的 `Set<string>` 同源同序。
+写入点 `loop.go` 的 `observeToolResult` 早已在维护它（write/edit/hash_edit 传
+`file_path`、apply_patch 传 `ExtractPatchTargetPaths` 的结果）。
+
+**为什么不复用它者**（`registry.go` 的既有论证已被验证正确）：
+`evidenceState.filesModified` 是**计数**（`EvidenceStateFromSession` 返回 `int`）
+——语义不符，当集合用会产出**错的**提交范围（比恒空更危险：恒空是 fail-loud，
+错值会输出错的告警把用户引向错误结论）。`OwnedFiles` 需未移植的 `ownershipLedger`。
+
+**改动**：
+- `internal/agent/artifact_intercept.go`：新增 `sessionModifiedFiles()` helper
+  + `buildToolCallParams` 注入一行（唯一 `CallParams` 构造点，对账 TS `:838`）。
+- `internal/tools/registry.go`：订正字段注释（写明源 + 消费方 + 与 `OwnedFiles` 的分野）。
+- `OwnedFiles` 的注释**保留不动**——它记录的缺口依然成立。
+
+**为什么修复点不在 `git` 工具**：`getScopedCommitFiles` 对账 TS、逻辑正确，
+缺的只是**喂进来的数据**。在工具内兜底是掩盖，不是修复。
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| **RED 反证（决定性）** | 临时移回注入行 → `TestGitCommitScopesToSessionModifiedFiles` 报的正是「未提供会话归属文件给 git commit…」——计划里的「待验证假设」转为**实测事实** |
+| 接线层 V1–V4/V7 | `TestSessionModifiedFiles{CollectsWriteTools,ExcludesReads,ApplyPatchTargets,NilStateSafe}` 全绿 |
+| 端到端 V5/V6 | 真临时 git 仓：本会话文件入提交、**事先就脏的旁路文件仍留在工作树**；无归属无暂存仍 fail-loud |
+| 装配层可达性 | `TestAssemblyNewCreatesStateSoSessionModifiedFilesHasSource`——用**生产构造器** `New()`（非手搭 Loop）锁住 `loop.go:396` 的 `if cfg.SessionID != ""` 建 State 那条链 |
+| 变异反证 4 个全红 | M1（去注入行）红 3 / M2（去 `ModifiedByMe` 判据）红 1 / M3（改成排序）红 1 / M4（`getScopedCommitFiles` 回退源恒空）红 2 |
+| 全量 | `go test ./... -count=1` **exit=0 / 30 包 ok / 0 FAIL**（`go list ./...` = 32，含 2 无测试包） |
+| vet / gofmt | `go vet ./...` exit=0；`gofmt -l .` 零违规 |
+
+### 诚实标注（代价与边界）
+
+- **`SessionModifiedFiles` 是 pre-baseline 近似**，精度**低于** `OwnedFiles`
+  （post-baseline 严格归属）：本会话碰过的 pre-existing 文件会被纳入提交范围。
+  **这正是 TS 的行为**（TS 也是这个回退源），属 parity——但**不等于**
+  「归属问题已解决」。`OwnedFiles` 仍是缺口，仍待 `ownershipLedger` 子系统。
+- **`git stash` 的门不受本刀影响**：其外层门是 `len(p.OwnedFiles) > 0`
+  （`git.go`），TS 对应处同为 `params.ownedFiles?.length`——parity 保持。
+- 本刀是 `ownershipLedger` 的**前置占位**（`OwnedFiles` 仍优先），非替代。
+
+### 本刀新增的坑（第 73 条起）
+
+73. **同族缺口的「成对性」**：一个函数里多个同型字段（`getScopedCommitFiles` 的
+    `ownedFiles` / `sessionModifiedFiles`），修缺口时容易只盯住**已被记录**的那个。
+    判据：修一处「有读取方零写入方」时，**同函数/同签名里其它参数一并 grep 写入方**。
+74. **计划里的行号锚点会在执行期漂移**：本刀规划期记 `registry.go:148`，
+    执行期实测为 `:155`。凡写入计划的 file:line，**执行第一步先复核**。
+75. **回归清单里的常数要当场数**：我写「git 工具 9 个 action」，实测 `grep -c 'case "'`
+    = **7**。清单项可 grep 时必须真跑一次，不能凭印象填。
+
+
 
 1. **delegate 派发内核**（≈11744 行）——「改文案」已被证伪为伪修复
    （见本段选刀依据）。要么建内核，要么**显式记录为已知缺口**。
