@@ -143,6 +143,12 @@ func NewDefaultRegistry(opts Options) *Registry {
 	// 复用 crawl BFS 内核（第九十四刀）+ sitemap 阶梯 + fetch 内核。
 	// **artifact 落盘未接**（见 webcrawl.go 文件头披露）。
 	r.Register(WebCrawl(cwd))
+	// web_map：站点 URL 发现（第九十六刀 · W3-5c）。
+	//
+	// **为什么需要**：模型「先看看这个站有哪些页面」或为 web_crawl 探路。
+	// 轻量（不爬全站）：sitemap 阶梯 + 种子页链接 + site: 搜索三路汇合。
+	// **搜索路当前不可用**（依赖 web_search 后端链，见 webmap.go 文件头披露）。
+	r.Register(WebMap(cwd))
 	r.Register(RunTests(cwd))
 
 	// ── 任务 ──
