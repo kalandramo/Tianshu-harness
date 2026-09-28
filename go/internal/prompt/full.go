@@ -111,6 +111,26 @@ func BuildFullSystemPrompt(ctx Context, cwd string, host HostEnv) string {
 		// verify-commands：对账 TS 的 renderDeclaredVerify(cwd)。
 		// 同 RuntimeEnv，**必须在这里调**——BuildStableVolatileBlock 只插位置。
 		DeclaredVerify: DetectDeclaredVerifyBlock(cwd),
+		// ★ locus：自我识别（第一百一十二刀接线）。
+		//
+		// 对账 TS：`buildStaticPrompt` 里 `cwdRelation: detectCwdRelation(cwd)`
+		// 填入 `VolatileContext`，最终由 `buildStableVolatileBlock` 渲染成
+		// `<locus relation="self|world">`。
+		//
+		// **必须在这里填**（与上面 RuntimeEnv / DeclaredVerify 同款模式）：
+		// `BuildStableVolatileBlock` 只负责把块插到正确位置，不自己判定——
+		// 那让它保持纯函数（不碰文件系统）。
+		//
+		// **漏了这一步的后果是静默的**（本刀修的正是它）：
+		// `CwdRelation` 恒为 ""，`volatile.go` 的两个 locus 分支
+		// （`== "self"` / `== "world"`）**都不可达**，块从不出现且无任何报错。
+		//
+		// **缓存安全**（为什么它能进 frozen 前缀）：判定结果对给定 cwd 在
+		// 一个会话内是**常量**（与 rivetMd 同类），不随轮次变化——
+		// 对账 TS 的 `self-recognition.ts` 文件头注释明文背书
+		// （"Pure + session-constant … safe to render into the FROZEN
+		// volatile prefix (prefix-cache safe — same class as rivetMd)"）。
+		CwdRelation: DetectCwdRelation(cwd),
 		// shell 族：随 host 注入（host.ShellKind）——决定是否注入 <shell-note>
 		// （非 Windows 恒为 "sh" → 不注入）。**注入化**让 win32 渲染可测
 		// （见 HostEnv.ShellKind 注释）。
