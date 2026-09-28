@@ -616,6 +616,58 @@ server→client 回 MethodNotFound），**分帧须新写**。Go 侧零 MCP SDK�
     用**回退变异**（把接线摘回缺陷状态）跑测试，红 4 且失败信息与缺陷描述
     逐字对应，既补了 RED 证据又验证了判据。
 
+### 第 9 段：接线模式块与 `<context-update>` 信封（第一百一十一刀，3 提交 `562da4f9`→`32551ca6`）
+
+**起点**：按总纲 §6 第 1 步「内核收口——已知的静默失效 > 新增功能」排查。
+delegate_batch 四路只读侦察后，收敛到**「三块纯函数已实现却零消费者」**。
+
+**缺口**（两条真 parity 缺口）：
+1. `prompt/modeblocks.go` 的 `RenderPlanModeBlock` / `RenderPlanExitReminder`
+   已完整移植且带逐字节 oracle，但**生产零调用** →
+   Go 侧 plan mode 是**哑的**：门链在拦写操作，模型却不知道自己在计划模式。
+   根因：`dynamic_appendix.go` 注释称「需要 Go 侧不存在的状态载体」——
+   该断言在第七十九刀（plan mode 状态机接线）后**已过期**。**载体就位了，没人来取。**
+2. `BuildDynamicAppendix` **缺 TS 的 `<context-update>` 信封**（裸拼接）。
+
+| 波 | 提交 | 内容 | 用例 |
+|---|---|---|---|
+| W1 | `562da4f9` | `<context-update>` 信封（`agent` 包） | +3 |
+| W2 | `b2a13afe` | plan-mode / plan-mode-exit 块接线 + `PlanExitReminderPending` 状态 | +7 |
+| W3 | `32551ca6` | 5 条端到端 + 两处注释订正 | +5 |
+
+**执行期假设解算**（计划列的 H1–H3 全部解开，**两处推翻原计划**）：
+
+| # | 原计划 | 实测结论 |
+|---|---|---|
+| H1 | 「顺序需对账 TS」（未定） | `volatile.ts:824-841` 是 **if/else-if 互斥**（planning 优先）；块序在 terseness **之前** |
+| H2 | 猜字段名 `planModeJustExited` | **错**。真名是 `engine.ts:229` 的 **`planExitReminderPending`**（"One-shot: emit on the next rendered turn"） |
+| H3 | 新增 `CallParams.MarkPlanModeJustExited` 回调 | **不必**。注入点 `loop.go:966-967` 是 `p.ExitPlanMode = l.exitPlanMode`——`Loop` 方法本身就是注入源，直接在其中置位即可 |
+
+**波末自证**：全量 31 包 ok / 0 FAIL；`go vet ./...` exit=0；`gofmt -l .` 零违规；
+回归清单 9 条逐条核销（12 命中 + mcp/trust/lsp/tools 四包 ok）。
+
+**范围边界**（明示）：`RenderAskModeBlock` **不接**——Go 侧**确实无** ask mode
+状态载体（`grep -i 'askmode\|AskModeState' go/internal go/cmd` 零命中），
+接它属「先造模式机」，独立一刀。appendix 的 seq/delta 增量机制亦不做
+（需跨轮持久化三字段 + 与「压缩后重发 baseline」耦合）。
+
+**本刀新增的坑（续第 51 条）**：
+
+52. **「同一函数的两个版本」必须确认哪个在主路径**——我按 `volatile.ts:868` 的
+    `join('\n')` 判断 Go 的 `"\n\n"` 是错的，核验 `engine.ts:1383/:1395/:1401`
+    三处**主路径**后确认全是 `join('\n\n')`（`volatile.ts:866` 的 wrapper 主路径
+    不用，`engine.ts:9` 只 import `buildDynamicAppendixParts`）。
+    **判据**：见到 `foo` 与 `fooInternal`/`fooLegacy` 并存时，先看谁被 import。
+53. **端到端判据要区分「本轮新注入」与「历史累积」**——首版断言「第二轮请求体
+    不含 exit 提示」实测红，探针显示状态流转**正确**，红的是判据：第二轮那处
+    来自**对话历史**（第一轮 user 消息留在 history）。正确判据是比对两轮
+    **出现次数**（第二轮不得比第一轮多）。**且必须验证订正未放水**——
+    变异 M4（去掉清除）仍红 1 并报 `first=1 second=2`。
+54. **one-shot 标志的清除要覆盖所有分支**——`BuildDynamicAppendix` 在 planning
+    态下走 if 分支**不读** `PlanExitReminderPending`；若只在读到它时清除，
+    标志会挂到退出 planning 后才突然发一条早已过期的提示（时点错位）。
+    清除点放在消费函数入口，与分支无关。
+
 ### 本会话新增文件全表（`git log --diff-filter=A e866fad8^..HEAD`）
 
 ```
