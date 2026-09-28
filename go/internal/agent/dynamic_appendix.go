@@ -23,8 +23,31 @@
 // 就会让整个前缀缓存失效（DeepSeek 侧全价重算）。TS 源码反复强调
 // 「Cache-safe: dynamic appendix only」正是此意。
 //
-// **本文件当前接的块**：仅 `RenderPermissionNote`（只依赖 `ApprovalMode`，
-// 零新增状态）。其余块的接入见 HANDOFF 的遗留段。
+// **本文件当前接的块**（截至第一百一十一刀 W2，**以此处为准**）：
+//
+//  1. `<permission-note>`  —— 仅 dangerously-skip-permissions 档（第五十五刀）
+//  2. `<plan-mode>` / `<plan-mode-exit>` —— 计划模式指令与退出提示（第一百一十一刀 W2）
+//  3. `<output-style>`    —— terse 输出风格（第五十七刀）
+//
+// 外层统一包 `<context-update>` 信封（第一百一十一刀 W1，对账 `engine.ts:1383`）。
+//
+// # ★ 订正：此前三处断言已过期（第一百一十一刀）
+//
+// 本节原文写过「**本文件当前接的块**：仅 `RenderPermissionNote`」以及
+// 「其余块（plan/ask/terseness）都需要 Go 侧**不存在的状态载体**」——
+// **两句都已失效**，是「注释落后于实现」的又一实例（本项目纪律 §8.5）：
+//
+//   - terseness 早在第五十七刀就接了（见下方 `<output-style>` 分支）
+//   - plan mode 的状态载体 `Loop.PlanModeState` / `Loop.ActivePlanFilePath`
+//     在**第七十九刀**（plan mode 状态机接线）就已存在——
+//     但**直到第一百一十一刀才有人来取**（三块纯函数零消费者）
+//
+// **仍未接**：`RenderAskModeBlock`——Go 侧**确实没有** ask mode 状态载体
+// （`grep -i 'askmode\|AskModeState' go/internal go/cmd` 零命中），
+// 接它属于「先造模式机」，是独立一刀。这一条**不是**过期断言，仍有效。
+//
+// **教训（写给下个人）**：判断「某块因缺载体而未接」前，先 grep 那个载体
+// 是否真的不存在——本文件这句注释骗过了不止一次排查。
 package agent
 
 import (

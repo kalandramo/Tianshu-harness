@@ -12,6 +12,18 @@
 // **缓存安全**（TS 注释反复强调）：这些块只进**动态 appendix**，绝不进
 // frozen 前缀——planModeState / askModeState 会在会话中途翻转，进前缀会
 // 打断精确前缀缓存。
+//
+// # 消费者（第一百一十一刀订正）
+//
+// `RenderPlanModeBlock` 与 `RenderPlanExitReminder` **已接线**——
+// 消费者是 `internal/agent` 的 `BuildDynamicAppendix`（对账 TS
+// `volatile.ts:824-841` 的 if/else-if 互斥门控）。
+//
+// **此前本节写「零生产消费者」——该断言已失效**（第五十五/五十六刀写下时
+// 确实如此：状态载体在第七十九刀才就位，接线在第一百一十一刀才做）。
+//
+// **仍未接线**：`RenderAskModeBlock`——Go 侧无 ask mode 状态载体
+// （`AskModeState` 零命中），接它需先造模式机，属独立一刀。
 package prompt
 
 // planModeHead 是 `renderPlanModeBlock` 模板的前半（到「活动计划文件除外）。」为止）。
