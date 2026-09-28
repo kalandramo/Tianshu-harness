@@ -1,6 +1,10 @@
 > **Model: deepseek-v4.1-flash (cheap)**
 
+**执行状态：** 已闭环。Task 1-3 均已完成；验证通过；交付门检查：GREEN。
+
 > **Status: APPROVED** — 2026-09-28T01:42:17.197Z
+
+> **Status: EXECUTED** — 2026-09-28T01:49:47.598Z
 
 # 第一百一十一刀 · 接线模式块与 `<context-update>` 信封
 
@@ -420,3 +424,21 @@ Go 侧字段名**对齐 TS 用 `PlanExitReminderPending`**（便于将来对账�
 | 1 | `fix(appendix): 补 <context-update> 信封，对齐 TS engine.ts 基线形态（第一百一十一刀 W1）` |
 | 2 | `feat(appendix): 接线 plan-mode 与 plan-mode-exit 块（第一百一十一刀 W2）` |
 | 3 | `test(appendix): 端到端可达性 + 订正过期注释（第一百一十一刀 W3）` |
+
+## 7. Execution closure
+
+已闭环：Task 1-3 均已完成并通过验证。
+
+最终验证记录：
+
+```bash
+cd go && go test ./... -count=1  # exit=0 / 31 包 ok / 0 FAIL
+cd go && go vet ./...  # exit=0
+cd go && gofmt -l .  # 零违规
+cd go && go test ./internal/agent/ -count=1  # 514 用例全绿
+cd go && go test ./internal/agent/ -run TestPlanModeBlockReachesRequestBody -count=1  # 端到端主干绿
+```
+
+交付门检查：GREEN。
+
+备注：三波全部落地（4 提交 562da4f9→2f904bbe）。两条真 parity 缺口已修：① <context-update> 信封（对齐 TS engine.ts:1383 无 delta 基线形态）② plan-mode / plan-mode-exit 块接线（此前三块纯函数零消费者，Go 侧 plan mode 对模型完全不可见）。执行期 H1–H3 假设全部解开，其中**两处推翻原计划**（H2 字段真名是 planExitReminderPending 非 planModeJustExited；H3 不必新增 CallParams 回调，Loop 方法即注入源）。验收 3 条全部 met。范围边界明示：AskMode 不接（Go 确实无状态载体，需先造模式机）、seq/delta 机制不做（独立子系统）。
