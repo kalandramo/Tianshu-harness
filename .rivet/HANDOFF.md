@@ -668,6 +668,48 @@ delegate_batch 四路只读侦察后，收敛到**「三块纯函数已实现却
     标志会挂到退出 planning 后才突然发一条早已过期的提示（时点错位）。
     清除点放在消费函数入口，与分支无关。
 
+### 第 10 段：移植 self-recognition 并接线 `<locus>` 块（第一百一十二刀，2 提交 `faae78d2`→`a2df3b79`）
+
+**起点**：按总纲 §6 第 1 步「内核收口」排查。经 delegate_batch 三路只读侦察后
+收敛到 **`<locus>` 块恒空**——一类比「零调用方」更隐蔽的缺陷。
+
+**缺口**（type-without-producer）：
+`prompt/volatile.go` 的两个 locus 消费分支（`== "self"` / `== "world"`）与
+两个常量块**一直都在**，但唯一生产装配点 `prompt/full.go` 构造 `VolatileContext`
+时不填 `CwdRelation` → 字段恒空 → **两分支都不可达**。判定函数
+（TS 的 `detectCwdRelation`）在 Go 侧**根本不存在**。
+**读代码会以为功能已就绪**——分支整齐、常量完整，实测才知输入永空。
+
+| 波 | 提交 | 内容 | 用例 |
+|---|---|---|---|
+| W1 | `faae78d2` | `prompt/self_recognition.go`（`DetectCwdRelation` + 常量 + 访问器） | prompt 135→142 |
+| W2/W3 | `a2df3b79` | `full.go` 接线 `CwdRelation` + 4 条端到端 | 142→146 |
+
+**为什么是真场景**：本仓库**确实含** `.rivet/SELF`（`glob` 命中）→ 就是 `self` 场景。
+TS 侧渲染 `<locus relation="self">`，Go 侧此前不会——同一 cwd 两边文本不同。
+
+**波末自证**：全量 31 包 ok / 0 FAIL；`go vet ./...` exit=0；`gofmt -l .` 零违规；
+回归清单 20 命中全绿；既有 oracle 未破（接线前后 prompt 全包皆绿）。
+
+**范围边界**（明示，其余 6 个恒空块本刀不做）：`project-memory` / `knowledge-manifest` /
+`seed-capsule` / `codebase-index` / `working-set` / `star-domain`——各自的输入
+依赖**未移植的子系统**（memory / repo / 星域选择器），属独立刀。
+
+**本刀新增的坑（续第 54 条）**：
+
+55. **「消费分支 + 常量 + 字段类型」齐备 ≠ 功能可用**（type-without-producer）——
+    必须追问「**谁填这个字段**」。排查判据：对每个被消费的可选字段
+    `grep '<字段名>:'`，若只在类型定义/测试里命中、生产装配点无赋值，
+    即恒空。比「零调用方」更隐蔽，因为读代码时**看起来已就绪**。
+56. **「防重复」类断言要确认假想风险是否结构上可能**——M6（把互斥的
+    if/else-if 改成两个独立 if）→ 绿 0，因为单值字符串下两条件
+    **结构上互斥**，「两分支都命中」不成立。**但该断言并非无效**：
+    改测真实形态（重复 append）→ 红 1。教训：变异要选**可达的**错误形态，
+    否则「红 0」测的是「不可能发生的事」而非「实现正确」。
+57. **Go 数组是值类型**——`[2]string` 赋值/传参整体拷贝，结构上不可能被
+    外部共享写脏。若担心包级卫生，用数组比用切片强（切片会被 `append` 复用
+    底层数组）。本次选数组让「污染」担忧从根上不成立（M3 因此等价变异）。
+
 ### 本会话新增文件全表（`git log --diff-filter=A e866fad8^..HEAD`）
 
 ```
