@@ -56,6 +56,38 @@ type AppendixContext struct {
 	// 未识别值），把解析放在 `ResolveTersenessFlags` 里而非装配层，避免
 	// 两处各写一套解析逻辑（第五十七刀已有 110 个 oracle 用例覆盖该函数）。
 	TerseEnv string
+
+	// PlanModeState 是当前计划模式状态（对账 TS `volatile.ts:379` 的
+	// `planModeState`）。
+	//
+	// **取值差异（已核实的既有架构选择）**：TS 是三态
+	// `'off' | 'planning' | 'approved'`，而 Go 的 `PlanModeState`
+	// （`planmode.go`）是**两态**——它的用途是**工具拦截**，而 `approved`
+	// 在拦截层等价于 `off`（计划已批准即解锁写入）。
+	//
+	// 本字段消费 `<plan-mode>` 块，需要的是「是否正在规划」——
+	// 故 `PlanModePlanning` → 出块，`PlanModeOff` → 不出块。
+	PlanModeState PlanModeState
+
+	// ActivePlanFilePath 是活动计划文件路径（对账 TS `volatile.ts:824` 的
+	// `ctx.activePlanFilePath`）。空串 = 无活动计划文件。
+	//
+	// TS 把它直接透传给 `renderPlanModeBlock`，由后者做 truthy 判定
+	// （nil / null / 空串三者输出相同，见 `modeblocks.go` 的说明与
+	// `TestRenderPlanModeBlockTruthySemantics`）。
+	ActivePlanFilePath string
+
+	// PlanExitReminderPending 是「下一个渲染轮次发一次 plan-mode 退出提示」
+	// 的一次性标志。
+	//
+	// **字段名对齐 TS**（`src/prompt/engine.ts:229`）：
+	//
+	//	/** One-shot: emit the plan-mode exit reminder on the next rendered turn. */
+	//	private planExitReminderPending?: boolean
+	//
+	// **与 PlanModeState 互斥**（对账 `volatile.ts:824-841` 的 `if/else if`）：
+	// planning 时出 plan 块，**否则**才看本标志。故两者同时为真时只出 plan 块。
+	PlanExitReminderPending bool
 }
 
 // BuildDynamicAppendix 装配动态 appendix（user message 尾部的增量块）。
@@ -81,6 +113,36 @@ func BuildDynamicAppendix(ctx AppendixContext) string {
 	// 其余块（plan/ask/terseness）都需要 Go 侧不存在的状态载体。
 	if note := prompt.RenderPermissionNote(ctx.ApprovalMode); note != "" {
 		parts = append(parts, note)
+	}
+
+	// ── <plan-mode> / <plan-mode-exit> ──（第一百一十一刀 W2）
+	//
+	// 对账 TS `volatile.ts:824-841`（逐字）：
+	//
+	//	if (ctx.planModeState === 'planning') {
+	//	  push(renderPlanModeBlock(ctx.activePlanFilePath))
+	//	} else if (ctx.planExitReminderPending) {
+	//	  push(renderPlanExitReminder())
+	//	}
+	//
+	// **两条要点**（执行期解 H1 所得，非凭推测）：
+	//  ① **if / else if 互斥**——planning 优先。若写成两个独立 if，
+	//    两者同时成立时会一起出现（TS 明确不会）。
+	//  ② 块序在 **terseness 之前**（`volatile.ts:824` vs `:838`）。
+	//
+	// **为什么此前没接**：文件头注释曾称「需要 Go 侧不存在的状态载体」——
+	// 该断言在第七十九刀（plan mode 状态机接线）之后**已过期**：
+	// `Loop.PlanModeState` / `Loop.ActivePlanFilePath` 早已存在。
+	if ctx.PlanModeState == PlanModePlanning {
+		// `ModeState` 与 `ActivePlanFilePath` 的转换：无草稿时传 nil
+		// （对账 TS 的 `ctx.activePlanFilePath` 为 undefined 的情形）。
+		var planFilePath *string
+		if ctx.ActivePlanFilePath != "" {
+			planFilePath = &ctx.ActivePlanFilePath
+		}
+		parts = append(parts, prompt.RenderPlanModeBlock(planFilePath))
+	} else if ctx.PlanExitReminderPending {
+		parts = append(parts, prompt.RenderPlanExitReminder())
 	}
 
 	// ── <output-style>（terse 输出风格）──
@@ -134,17 +196,36 @@ func BuildDynamicAppendix(ctx AppendixContext) string {
 
 // appendDynamicAppendix 把 appendix 追加到 user message 内容尾部。
 //
-// **调用点**：`Loop.Run` 里构造 user 消息时（`loop.go:502` 附近）。
+// **调用点**：`Loop.Run` 里构造 user 消息时。
 //
 // **为什么在 user message 而非 system**：见本文件头部的架构约束说明。
 //
 // **空 appendix 时原样返回**：保证未配置/非 skip 档的请求体与接线前
 // **逐字节相同**——不引入任何缓存差异。
+//
+// # plan mode 状态的传参（第一百一十一刀 W2）
+//
+// 三处状态来自 `Loop` 字段（plan mode 状态机，第七十九刀接线）：
+// `PlanModeState` / `ActivePlanFilePath` / `PlanExitReminderPending`。
+//
+// **`PlanExitReminderPending` 是消费式的**（one-shot，对账 TS 的字段语义）：
+// 本轮发过提示后立即清除，保证「只提示一次」——
+// 否则退出后的**每一轮**都会重复附上 `<plan-mode-exit>`。
 func (l *Loop) appendDynamicAppendix(content string) string {
 	appendix := BuildDynamicAppendix(AppendixContext{
-		ApprovalMode: l.cfg.ApprovalMode,
-		TerseEnv:     l.cfg.TerseEnv,
+		ApprovalMode:            l.cfg.ApprovalMode,
+		TerseEnv:                l.cfg.TerseEnv,
+		PlanModeState:           l.PlanModeState,
+		ActivePlanFilePath:      l.ActivePlanFilePath,
+		PlanExitReminderPending: l.PlanExitReminderPending,
 	})
+	// one-shot 消费：已发出的提示不再重复。
+	//
+	// **注意清除的时机**：无论 appendix 是否为空都要清——`BuildDynamicAppendix`
+	// 在 planning 态下**不读**本字段（if/else if 的 else 分支），
+	// 若此时不清，标志会一直挂着，等到退出 planning 后才突然发一条
+	// 早已过期的提示（时点错位）。
+	l.PlanExitReminderPending = false
 	if appendix == "" {
 		return content
 	}

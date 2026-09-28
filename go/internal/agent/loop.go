@@ -152,6 +152,13 @@ type Loop struct {
 	// 对账 TS `loop.ts` 的 `activePlanFilePath`。空串 = 无活动计划文件。
 	// 由 `plan` 工具的 enter action 设置、exit 清除。
 	ActivePlanFilePath string
+	// PlanExitReminderPending 是「下一个渲染轮次发一次 plan-mode 退出提示」
+	// 的一次性标志（对账 TS `engine.ts:229` 的 `planExitReminderPending`）。
+	//
+	// 由 `exitPlanMode` 置位、由 `appendDynamicAppendix` 消费后清除。
+	// **为什么是 Loop 字段而非 CallParams 回调**：它跨 turn 存活
+	// （exit 发生在工具调用期，消费发生在下一轮的 appendix 装配期）。
+	PlanExitReminderPending bool
 	// State 是会话状态容器（跨轮的文件/验证/决策感知）。
 	//
 	// 对账 TS 侧 loop.ts:848 的 `new SessionStateManager(this.config.sessionId)`。
@@ -1403,13 +1410,27 @@ func (l *Loop) enterPlanMode() (activePlanFilePath string, alreadyPlanning bool)
 	return rel, false
 }
 
-// exitPlanMode 退出计划模式（第七十九刀）。
+// exitPlanMode 退出计划模式（第七十九刀；第一百一十一刀 W2 增一次性提示标志）。
 //
 // 对账 TS `loop.ts` 的 `exitPlanMode`：状态置 off、清活动计划文件。
 // **不修改计划文件本身**（对账 TS 注释）。
+//
+// # PlanExitReminderPending 的置位（第一百一十一刀 W2）
+//
+// 退出后需要给模型**一次**提示（「限制已解除，可以正常写文件了」）——
+// 对账 TS `engine.ts:229` 的 `planExitReminderPending`：「One-shot:
+// emit the plan-mode exit reminder on the next rendered turn」。
+//
+// **为什么置位点在这里而非新增 `CallParams` 回调**（执行期解 H3 的结论）：
+// `CallParams` 的 plan 回调注入点是 `loop.go` 的 `p.ExitPlanMode = l.exitPlanMode`
+// ——**`Loop` 方法本身就是注入源**。在此置位少一次跨包字段传递，
+// 也少一个可能漏注入的回调（第一〇六刀踩过「只注入一处」的坑）。
+//
+// 消费与清除在 `appendDynamicAppendix`（发出后即清，保证只发一次）。
 func (l *Loop) exitPlanMode() {
 	l.PlanModeState = PlanModeOff
 	l.ActivePlanFilePath = ""
+	l.PlanExitReminderPending = true
 }
 
 // recordTrajectory 把一次工具调用记进轨迹。
