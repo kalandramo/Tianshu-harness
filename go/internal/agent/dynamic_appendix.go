@@ -107,9 +107,29 @@ func BuildDynamicAppendix(ctx AppendixContext) string {
 	}
 
 	if len(parts) == 0 {
+		// 零块 → 空串（**不是**空信封）。
+		//
+		// 对账 TS `engine.ts:1382`/`:1394` 的 `if (parts.length === 0) return ''`。
+		// 返回空信封会让**所有无 appendix 轮次**的字节发生变化——那是缓存稳定性
+		// 的硬约束（本文件头部的架构说明）。
 		return ""
 	}
-	return strings.Join(parts, "\n\n")
+
+	// ★ `<context-update>` 信封（第一百一十一刀 W1）。
+	//
+	// 对账 TS `engine.ts:1383` 的**无 delta 分支**（逐字）：
+	//
+	//	return `<context-update>\n${parts.map(p => p.content).join('\n\n')}\n</context-update>`
+	//
+	// **为什么是这一支而非 `volatile.ts:865` 的 buildDynamicAppendix(866)**：
+	// 后者是 `join('\n')` 的兼容 wrapper，**主路径不用它**
+	// （`engine.ts:9` 只 import `buildDynamicAppendixParts`）。故分隔符是 `\n\n`。
+	//
+	// **seq/delta 形态不在本刀范围**：那是独立子系统（需跨轮持久化
+	// `lastEmittedAppendixParts` / `appendixSeq` / `appendixBaselineSent`，
+	// 且与「历史压缩后须重发 baseline」耦合）。Go 侧恒发无 seq 的 baseline——
+	// 该形态在 TS 侧真实存在（`appendixDelta=false` 分支），非发明中间态。
+	return "<context-update>\n" + strings.Join(parts, "\n\n") + "\n</context-update>"
 }
 
 // appendDynamicAppendix 把 appendix 追加到 user message 内容尾部。
